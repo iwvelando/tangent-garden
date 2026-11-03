@@ -1,6 +1,6 @@
 package shorten
 
-// Experiment 2 of #322: curve shortening of star-shaped flowers, which need
+// Curve shortening of star-shaped flowers, which need
 // not be convex, as a radial graph about the seed's center.
 //
 // The loop is X(φ) = c + r(φ)(cos φ, sin φ) on N equally spaced polar
@@ -17,7 +17,7 @@ package shorten
 //
 // Space: central differences for p and q (second order, exact on circles
 // about c). Time: ROS2 with the exact cyclic tridiagonal Jacobian, as in
-// experiment 1, and steps dt = τ / max |ℓ_t|, so dt = τR² on a circle.
+// the convex scheme, and steps dt = τ / max |ℓ_t|, so dt = τR² on a circle.
 
 import "math"
 
@@ -125,7 +125,7 @@ func SolveBloom(q BloomRequest) (*Film, error) {
 	switch p.guard(l) {
 	case "":
 	case "resolution":
-		return nil, field("nodes", "%d nodes cannot resolve this seed's curvature; use more.", n)
+		return nil, field("seed.depth", "These petals and ruffles curve too sharply to resolve on %d nodes; make them shallower or fewer.", n)
 	case "star":
 		return nil, field("seed.depth", "This seed's tangents come too close to its rays.")
 	default:

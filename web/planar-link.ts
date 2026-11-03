@@ -7,6 +7,7 @@ import {
 } from "./loom/model";
 import { defaultFamilyAnimation } from "./family-motion";
 import { laceLimits, laceTiling, type LaceStudy } from "./lace/model";
+import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
   gardenLimits,
   gardenSeed,
@@ -108,6 +109,9 @@ export type PlanarStudy = {
   garden?: GardenStudy;
   // Hyperbolic lace open over this study; absent in older links.
   lace?: LaceStudy;
+  // Curves that smooth themselves open over this study; absent in older
+  // links.
+  shorten?: ShortenStudy;
 };
 export const defaultAnimation: PlanarAnimation = {
   mode: "reveal",
@@ -490,6 +494,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "loom",
         "garden",
         "lace",
+        "shorten",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -741,6 +746,8 @@ export function planarStudy(value: unknown): PlanarStudy {
   const loom = raw.loom === undefined ? undefined : loomStudy(raw.loom);
   const garden = raw.garden === undefined ? undefined : gardenStudy(raw.garden);
   const lace = raw.lace === undefined ? undefined : laceStudy(raw.lace);
+  const shorten =
+    raw.shorten === undefined ? undefined : shortenStudy(raw.shorten);
   return {
     ...study,
     animation,
@@ -748,6 +755,7 @@ export function planarStudy(value: unknown): PlanarStudy {
     ...(loom && { loom }),
     ...(garden && { garden }),
     ...(lace && { lace }),
+    ...(shorten && { shorten }),
   };
 }
 
@@ -884,6 +892,57 @@ function laceStudy(value: unknown): LaceStudy {
         `lace.selected[${i}] must be a whole number.`,
       );
   });
+  return out;
+}
+
+// The seed's and the nest's settings, presentation, view, weight and
+// motion timing; never solved geometry. Go validates the seeds again,
+// including the limits that depend on several fields.
+function shortenStudy(value: unknown): ShortenStudy {
+  const out = conform<ShortenStudy>(
+    value,
+    {
+      fields: {
+        family: { options: { flower: true, convex: true } },
+        petals: { range: [0, shortenLimits.petals] },
+        depth: { range: [-shortenLimits.depths, shortenLimits.depths] },
+        ruffles: { range: [0, shortenLimits.ruffles[1]] },
+        ruffle: { range: [-shortenLimits.depths, shortenLimits.depths] },
+        phase: "number",
+        lobes: { range: [3, 6] },
+        ripple: { range: [-1 / 16, 1 / 16] },
+        contours: { range: [1, shortenLimits.contours] },
+        spacing: { options: { early: true, radius: true, time: true } },
+        nest: { options: { whole: true, ghost: true, grows: true } },
+        framing: { options: { physical: true, normalized: true } },
+        view: {
+          fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
+        },
+        weight: lineWeightSchema,
+        motion: {
+          optional: {
+            fields: {
+              duration: { range: [0.1, 3600] },
+              repeat: {
+                options: { once: true, loop: true, "back-and-forth": true },
+              },
+              pacing: { options: { early: true, radius: true, time: true } },
+            },
+          },
+        },
+      },
+    },
+    undefined,
+    "shorten",
+  );
+  for (const k of ["petals", "ruffles", "contours"] as const)
+    if (!Number.isInteger(out[k]))
+      throw new LinkError(
+        `shorten.${k}`,
+        `shorten.${k} must be a whole number.`,
+      );
+  if (out.lobes !== 3 && out.lobes !== 6)
+    throw new LinkError("shorten.lobes", "shorten.lobes must be 3 or 6.");
   return out;
 }
 

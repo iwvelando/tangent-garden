@@ -110,7 +110,7 @@ func solveReference(seed Seed, m int, times []float64) *reference {
 			k1x, k1y, s := referenceVelocity(x, y)
 			// Spectral second derivatives scale like (m/2)²/s²; RK4 is
 			// stable to about 2.78 on the negative real axis.
-			h := min(0.5*s*s/float64(m*m/4), target-now)
+			h := min(2*s*s/float64(m*m/4), target-now)
 			if target-now-h < 1e-3*h {
 				h = target - now
 			}
@@ -184,11 +184,19 @@ func (r *reference) distance(k int, q [2]float64) float64 {
 // reference curve: the shape error at the vertices, without the chords'
 // own departure from the curve.
 func (r *reference) vertexError(k int, c Contour) float64 {
-	e := 0.0
-	for i := range c.X {
-		e = max(e, r.distance(k, [2]float64{c.X[i], c.Y[i]}))
+	return curveDistance(r.contour(k), c)
+}
+
+// contour is the reference curve's samples at time index k.
+func (r *reference) contour(k int) Contour {
+	x, y := append([]complex128{}, r.cx[k]...), append([]complex128{}, r.cy[k]...)
+	fft(x, true)
+	fft(y, true)
+	c := Contour{X: make([]float64, r.m), Y: make([]float64, r.m)}
+	for i := range r.m {
+		c.X[i], c.Y[i] = real(x[i]), real(y[i])
 	}
-	return e
+	return c
 }
 
 // The fixed physical times of the matrix, as fractions of extinction, well

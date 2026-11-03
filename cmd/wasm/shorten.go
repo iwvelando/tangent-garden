@@ -19,7 +19,7 @@ var frozenFilm struct {
 
 // tangentGardenShorten solves (or reuses) an evolution and replies with its
 // summary and the loop at each requested time; the vertices travel as
-// lifted arrays. Research experiment (#322).
+// lifted arrays (docs/architecture.md, curve-shortening interfaces).
 func registerShorten() {
 	js.Global().Set("tangentGardenShorten", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if len(args) != 1 || len(args[0].String()) > 8192 {

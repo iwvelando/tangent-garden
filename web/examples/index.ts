@@ -9,6 +9,7 @@ import { presets } from "../presets";
 import { loomPresets, presetDefinition } from "../loom/model";
 import { gardenPresets } from "../garden/model";
 import { lacePresets } from "../lace/model";
+import { shortenPresets } from "../shorten/model";
 import { spatialPresets } from "../spatial/presets";
 import { defaultSight, isPlain } from "../spatial/sight";
 import { composes } from "../spatial/types";
@@ -104,6 +105,17 @@ export const laceExamples: Example[] = lacePresets.map((p) => ({
   family: "Hyperbolic tilings",
   keywords:
     "hyperbolic lace tiling tessellation poincare disk heptagon reflection escher circle limit infinity star motif",
+  fingerprint: fingerprint(p.study),
+}));
+
+// Curves that smooth themselves likewise open over the study. Their
+// thumbnails are the nest as it opens.
+export const shortenExamples: Example[] = shortenPresets.map((p) => ({
+  title: p.title,
+  caption: p.note,
+  family: "Curves that smooth themselves",
+  keywords:
+    "curve shortening flow curvature smoothing flower petals nest contours grayson circle shrink heat",
   fingerprint: fingerprint(p.study),
 }));
 

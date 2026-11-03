@@ -144,9 +144,9 @@ export class EngineClient {
   ): Promise<import("./lace/model").LaceFrame> {
     return (await this.request({ action: "laceFrame", laceFrame: f })).result;
   }
-  // Research preview (#322): a curve-shortening film's summary and loops at
-  // some physical times, with the worker's preparation time for latency
-  // observations. The worker retains the latest film.
+  // A curve-shortening film's summary and its loops at some physical times
+  // (engine/shorten.Reply), with the worker's preparation time. The worker
+  // retains the latest film, so later times only sample it.
   async shorten(q: import("./shorten/model").ShortenRequest): Promise<{
     result: import("./shorten/model").ShortenReply;
     prepare: number;

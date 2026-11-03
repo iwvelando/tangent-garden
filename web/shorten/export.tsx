@@ -11,25 +11,30 @@ import {
 import { loomMetadata } from "../loom/metadata";
 import { exportSvgAnimation } from "../export-animation";
 import type { MotionExport } from "../MotionExportSettings";
-import { LabStill, type LabDrawingProps } from "./Drawing";
-import { labPage, type ShortenContour } from "./model";
+import { cycles, type Repeat } from "../timing";
+import { ShortenStill, type ShortenDrawingProps } from "./Drawing";
+import { shortenPage, type ShortenContour } from "./model";
 
-export function labSVG(p: LabDrawingProps, metadata: unknown) {
-  const text = renderToStaticMarkup(<LabStill {...p} metadata={metadata} />);
+export function shortenSVG(p: ShortenDrawingProps, metadata: unknown) {
+  const text = renderToStaticMarkup(
+    <ShortenStill {...p} metadata={metadata} />,
+  );
   return new DOMParser().parseFromString(text, "image/svg+xml")
     .documentElement as unknown as SVGSVGElement;
 }
 
-export async function labStill(
+// A vector SVG, or a PNG drawn from it at the target size, each carrying the
+// study's record: the SVG in its root desc, the PNG in an iTXt chunk.
+export async function shortenStill(
   format: "svg" | "png",
-  drawing: LabDrawingProps,
+  drawing: ShortenDrawingProps,
   metadata: object,
-  current: () => boolean,
+  current: () => boolean = () => true,
   still: Still = defaultStill,
 ) {
-  const record = { ...metadata, ...stillRecord(still, labPage) };
-  const svg = labSVG(drawing, record);
-  const size = stillSize(still, labPage);
+  const record = { ...metadata, ...stillRecord(still, shortenPage) };
+  const svg = shortenSVG(drawing, record);
+  const size = stillSize(still, shortenPage);
   const blob =
     format === "svg"
       ? svgFile(svg, still.transparent)
@@ -44,14 +49,16 @@ export async function labStill(
   if (current()) saveFile(blob, `curve-shortening.${format}`);
 }
 
-// The motion through the shared encoder. Each frame's loop is sampled from
-// the worker at that frame's physical time, so the file never depends on
-// playback or on render speed.
-export async function labMovie(o: {
-  drawing: LabDrawingProps;
+// The motion as MP4 or animated WebP through the shared encoder. Each
+// frame's loop is sampled from the worker at that frame's physical time, so
+// the file depends neither on playback nor on render speed, and each frame
+// is drawn as vector SVG at the encoding's size.
+export async function shortenMovie(o: {
+  drawing: ShortenDrawingProps;
   metadata: object;
   duration: number;
-  sample: (progress: number) => Promise<ShortenContour>;
+  repeat: Repeat;
+  sample: (time: number) => Promise<ShortenContour>;
   options: MotionExport;
   signal: AbortSignal;
   current: () => boolean;
@@ -60,18 +67,22 @@ export async function labMovie(o: {
   const blob = await exportSvgAnimation({
     ...o.options,
     duration: o.duration,
-    cyclic: false,
+    cyclic: cycles(o.repeat),
     signal: o.signal,
     lookahead: 1,
     sample: o.sample,
     draw: (contour, scale) => {
-      const svg = labSVG({ ...o.drawing, current: contour }, o.metadata);
-      svg.setAttribute("width", String(Math.round(labPage.width * scale)));
-      svg.setAttribute("height", String(Math.round(labPage.height * scale)));
+      const svg = shortenSVG({ ...o.drawing, current: contour }, o.metadata);
+      svg.setAttribute("width", String(Math.round(shortenPage.width * scale)));
+      svg.setAttribute(
+        "height",
+        String(Math.round(shortenPage.height * scale)),
+      );
       return new XMLSerializer().serializeToString(svg);
     },
     onProgress: (n, of) => o.progress(n / of),
   });
   const annotated = await loomMetadata(blob, o.options.format, o.metadata);
-  if (o.current()) saveFile(annotated, `curve-shortening.${o.options.format}`);
+  if (o.current())
+    saveFile(annotated, `curve-shortening-motion.${o.options.format}`);
 }

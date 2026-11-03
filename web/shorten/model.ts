@@ -1,16 +1,15 @@
-// Research preview for #322: convex curve shortening through Go's support-
-// function solver (engine/shorten). Types mirror engine/shorten's request
-// and reply; nothing here is link-saved or a product contract.
+import { tiered } from "../help";
+import type { LineWeight } from "../line-weight";
+import type { PlotCamera } from "../planar-link";
+import type { Repeat } from "../timing";
 
-export type ShortenSeed = {
-  radius: number;
-  // 0 is a circle; 3 or 6 lobes ripple the support function.
-  mode: 0 | 3 | 6;
-  epsilon: number;
-  centerX: number;
-  centerY: number;
-};
-// Experiment 2's flower: r(φ) = R(1 + a cos kφ + b cos(jφ + ψ)).
+// Curves that smooth themselves: a smooth closed loop evolving by curve
+// shortening, dX/dt = −κ n_out, solved in Go (engine/shorten; see
+// docs/mathematics.md#curve-shortening). A flower is a radial graph about
+// its center; a convex loop is its support function. Types mirror
+// engine/shorten's request and reply.
+
+// A flower, r(φ) = R(1 + a cos kφ + b cos(jφ + ψ)) (engine/shorten.Bloom).
 export type BloomSeed = {
   radius: number;
   petals: number;
@@ -21,9 +20,18 @@ export type BloomSeed = {
   centerX: number;
   centerY: number;
 };
+// A convex loop's support function h(θ) = R(1 + ε cos mθ)
+// (engine/shorten.Seed).
+export type ConvexSeed = {
+  radius: number;
+  mode: 0 | 3 | 6;
+  epsilon: number;
+  centerX: number;
+  centerY: number;
+};
 type Run<S> = { seed: S; nodes: number; tau: number; horizon: number };
 export type ShortenRequest = {
-  convex?: Run<ShortenSeed>;
+  convex?: Run<ConvexSeed>;
   bloom?: Run<BloomSeed>;
   times: number[];
 };
@@ -61,124 +69,191 @@ export type ShortenReply = {
   fresh: boolean;
 };
 
-export type Spacing = "time" | "radius" | "early";
+export type Spacing = "early" | "radius" | "time";
 export type Framing = "physical" | "normalized";
 export type Nest = "whole" | "ghost" | "grows";
+export type ShortenFamily = "flower" | "convex";
 
-// The lab's seeds: experiment 2's flowers, and experiment 1's convex loops
-// for comparison. Every one is resolved at 512 nodes.
-const flower = (
-  petals: number,
-  depth: number,
-  ruffles = 0,
-  ruffle = 0,
-  phase = 0,
-): BloomSeed => ({
-  radius: 1,
-  petals,
-  depth,
-  ruffles,
-  ruffle,
-  phase,
-  centerX: 0,
-  centerY: 0,
-});
-export const labSeeds = {
-  five: { label: "Five petals", bloom: flower(5, 0.3) },
-  six: { label: "Six petals", bloom: flower(6, 0.3) },
-  trefoil: { label: "Trefoil", bloom: flower(3, 0.5) },
-  "five-ruffled": {
-    label: "Five petals, ruffled",
-    bloom: flower(5, 0.25, 24, 0.015),
-  },
-  "eight-ruffled": {
-    label: "Eight petals, ruffled",
-    bloom: flower(8, 0.15, 32, 0.01, 0.4),
-  },
-  convex6: {
-    label: "Convex, six lobes (experiment 1)",
-    convex: {
-      radius: 1,
-      mode: 6,
-      epsilon: 0.5 / 35,
-      centerX: 0,
-      centerY: 0,
-    } as ShortenSeed,
-  },
-  convex3: {
-    label: "Convex, three lobes (experiment 1)",
-    convex: {
-      radius: 1,
-      mode: 3,
-      epsilon: 0.5 / 8,
-      centerX: 0,
-      centerY: 0,
-    } as ShortenSeed,
-  },
-} as const;
-export type LabSeed = keyof typeof labSeeds;
-
-export type LabSettings = {
-  seed: LabSeed;
-  nodes: number;
-  tau: number;
-  horizon: number;
-  count: number;
+// The study. Both seeds' settings are kept, so switching between them
+// returns to the other's last values; only the chosen family is solved.
+export type ShortenStudy = {
+  family: ShortenFamily;
+  petals: number;
+  depth: number;
+  ruffles: number;
+  ruffle: number;
+  phase: number;
+  lobes: 3 | 6;
+  ripple: number;
+  contours: number;
   spacing: Spacing;
-  framing: Framing;
   nest: Nest;
-  pacing: Spacing;
+  framing: Framing;
+  view: PlotCamera;
+  weight: LineWeight;
+  // The motion's timing; absent, defaultShortenMotion.
+  motion?: ShortenMotion;
+};
+export type ShortenMotion = {
   duration: number;
+  repeat: Repeat;
+  pacing: Spacing;
 };
-export const defaultLab: LabSettings = {
-  seed: "five",
-  nodes: 512,
-  tau: 0.0025,
-  horizon: 0.98,
-  count: 24,
-  spacing: "early",
-  framing: "physical",
-  nest: "whole",
-  pacing: "early",
+
+// The engine's limits (engine/shorten): seeds, the fixed resolution and
+// step factor of each solver, and the study's own counts.
+export const shortenLimits = {
+  petals: 12,
+  ruffles: [8, 64],
+  depths: 0.9,
+  contours: 48,
+  flower: { nodes: 512, tau: 0.0025 },
+  convex: { nodes: 256, tau: 0.005 },
+  // Every film runs to the size floor: the equal-area radius at 1/20 of its
+  // start, near extinction.
+  horizon: 0.999,
+} as const;
+// The largest convex ripple for m lobes: |ε|(m² − 1) ≤ ½.
+export const rippleLimit = (lobes: 3 | 6) => 0.5 / (lobes * lobes - 1);
+
+export const defaultShortenMotion: ShortenMotion = {
   duration: 8,
+  repeat: "once",
+  pacing: "early",
+};
+export const defaultShorten: ShortenStudy = {
+  family: "flower",
+  petals: 5,
+  depth: 0.3,
+  ruffles: 0,
+  ruffle: 0,
+  phase: 0,
+  lobes: 6,
+  ripple: 1 / 70,
+  contours: 24,
+  spacing: "early",
+  nest: "whole",
+  framing: "physical",
+  view: { x: 0, y: 0, zoom: 1 },
+  weight: "regular",
 };
 
-// The seed's largest radius, which sets the fixed physical frame.
-export function extentOf(s: LabSettings) {
-  const seed = labSeeds[s.seed];
-  return "bloom" in seed
-    ? seed.bloom.radius *
-        (1 + Math.abs(seed.bloom.depth) + Math.abs(seed.bloom.ruffle))
-    : seed.convex.radius * (1 + Math.abs(seed.convex.epsilon));
+// The authored studies, in the 2D examples gallery. Each opens over the
+// notebook's study without replacing it, and takes nothing from it. The
+// flowers come first; the convex loop of R14.1's first experiment last.
+export const shortenPresets: {
+  title: string;
+  note: string;
+  study: ShortenStudy;
+}[] = [
+  {
+    title: "A flower remembering a circle",
+    note: "Five petals retract and their notches fill as the loop shrinks toward a round point",
+    study: { ...defaultShorten },
+  },
+  {
+    title: "A trefoil folding into a circle",
+    note: "Three deep lobes melt into a disk; each loop is the curve a moment later",
+    study: { ...defaultShorten, petals: 3, depth: 0.5 },
+  },
+  // Six petals; the motion lays each loop down as it passes.
+  {
+    title: "Six petals, a nest that grows",
+    note: "Play to watch the nest build loop by loop as the petals give way",
+    study: { ...defaultShorten, petals: 6, nest: "grows" },
+  },
+  // Eight shallow petals with 32 ruffles a hundredth of the radius deep,
+  // which the flow smooths first; later loops are faint while it plays.
+  {
+    title: "Eight petals and their faint future",
+    note: "Play to watch the loop shrink through the faint loops still ahead of it",
+    study: {
+      ...defaultShorten,
+      petals: 8,
+      depth: 0.15,
+      ruffles: 32,
+      ruffle: 0.01,
+      phase: 0.4,
+      nest: "ghost",
+    },
+  },
+  {
+    title: "A gently rippled convex loop",
+    note: "A convex loop can only ripple slightly, and the ripples fade within the first few loops",
+    study: {
+      ...defaultShorten,
+      family: "convex",
+      lobes: 3,
+      ripple: 1 / 16,
+      spacing: "radius",
+      contours: 16,
+    },
+  },
+];
+export const presetShorten = (index: number): ShortenStudy =>
+  structuredClone(shortenPresets[index].study);
+
+// The engine's request for a study and some physical times.
+export function shortenRequest(
+  s: ShortenStudy,
+  times: number[],
+): ShortenRequest {
+  if (s.family === "convex") {
+    const { nodes, tau } = shortenLimits.convex;
+    return {
+      convex: {
+        seed: {
+          radius: 1,
+          mode: s.lobes,
+          epsilon: s.ripple,
+          centerX: 0,
+          centerY: 0,
+        },
+        nodes,
+        tau,
+        horizon: shortenLimits.horizon,
+      },
+      times,
+    };
+  }
+  const { nodes, tau } = shortenLimits.flower;
+  return {
+    bloom: {
+      seed: {
+        radius: 1,
+        petals: s.petals,
+        depth: s.depth,
+        ruffles: s.ruffles,
+        ruffle: s.ruffle,
+        phase: s.phase,
+        centerX: 0,
+        centerY: 0,
+      },
+      nodes,
+      tau,
+      horizon: shortenLimits.horizon,
+    },
+    times,
+  };
 }
 
-export function requestOf(s: LabSettings, times: number[]): ShortenRequest {
-  const seed = labSeeds[s.seed];
-  // Experiment 1 accepts step factors from 0.001.
-  return "bloom" in seed
-    ? {
-        bloom: {
-          seed: seed.bloom,
-          nodes: s.nodes,
-          tau: s.tau,
-          horizon: s.horizon,
-        },
-        times,
-      }
-    : {
-        convex: {
-          seed: seed.convex,
-          nodes: s.nodes,
-          tau: Math.max(s.tau, 0.001),
-          horizon: s.horizon,
-        },
-        times,
-      };
-}
+// The study fields an engine refusal names, by the request's seed paths.
+export const refusedField: Record<string, keyof ShortenStudy> = {
+  "seed.petals": "petals",
+  "seed.depth": "depth",
+  "seed.ruffles": "ruffles",
+  "seed.ruffle": "ruffle",
+  "seed.phase": "phase",
+  "seed.mode": "lobes",
+  "seed.epsilon": "ripple",
+  // A convex ripple the grid cannot resolve; the node count is fixed.
+  nodes: "ripple",
+};
 
-// Where fraction f of a family or motion falls in [0, end]: equally in time
-// (so in area lost); evenly in the radius a circle ending at its extinction
-// would have, end·(1 − (1 − f)²); or early, end·f³, where petals change.
+// Where fraction f of a family or motion falls in [0, end]: early,
+// end·f³, dense where petals change fastest; evenly in the radius a circle
+// ending at its extinction would have, end·(1 − (1 − f)²); or equally in
+// time, so in area lost.
 export function spaced(f: number, end: number, spacing: Spacing) {
   if (f >= 1) return end;
   if (spacing === "time") return end * f;
@@ -186,15 +261,14 @@ export function spaced(f: number, end: number, spacing: Spacing) {
   return end * (1 - (1 - f) * (1 - f));
 }
 
-// A family of count contours from t = 0, before the film's end.
+// A family of count loops from t = 0, before the film's end.
 export function familyTimes(end: number, count: number, spacing: Spacing) {
   return Array.from({ length: count }, (_, j) =>
     spaced(j / count, end, spacing),
   );
 }
 
-// The physical time shown at playback progress p: linear in time, or in
-// the radius a circle would have, with both ends exact.
+// The physical time shown at motion progress p, both ends exact.
 export function timeAt(p: number, end: number, pacing: Spacing) {
   return spaced(Math.min(1, Math.max(0, p)), end, pacing);
 }
@@ -214,26 +288,88 @@ export function normalized(
   };
 }
 
-export const labPage = { width: 1000, height: 760 };
-// Page units per unit length: the seed's largest support value fills a
-// fixed fraction of the page height in every frame, with no auto-fit.
-export function pageScale(extent: number) {
-  return 340 / extent;
+// The seed's largest radius, which fixes the physical frame: every drawing
+// shows the whole seed at zoom 1, and the nest shrinks within it.
+export function extentOf(s: ShortenStudy) {
+  return s.family === "convex"
+    ? 1 + Math.abs(s.ripple)
+    : 1 + Math.abs(s.depth) + Math.abs(s.ruffle);
 }
-
-export function pathOf(x: number[], y: number[], k: number) {
-  let d = "";
-  for (let i = 0; i < x.length; i++)
-    d += `${i ? "L" : "M"}${(500 + x[i] * k).toFixed(2)} ${(380 - y[i] * k).toFixed(2)}`;
-  return d + "Z";
-}
+export const shortenPage = { width: 1000, height: 760 };
+export const shortenZoom: [number, number] = [0.1, 100];
+// Page units per unit length at zoom 1.
+export const pageScale = (extent: number) => 340 / extent;
 
 export const stopText: Record<string, string> = {
-  horizon: "reached the horizon",
-  curvature: "stopped at the curvature floor (min ρ < 0.05·√(A₀/π))",
-  floor: "stopped at the size floor (equal-area radius < 0.05 of its start)",
-  star: "stopped: the loop stopped being star-shaped about its center",
-  resolution: "stopped: curvature no longer resolved",
-  positivity: "stopped: a step could not keep ρ positive",
-  work: "stopped at a work ceiling",
+  horizon: "reached the size floor",
+  floor: "stops at the size floor, a twentieth of the starting radius",
+  curvature: "stops at the curvature floor, a twentieth of the starting radius",
+  star: "stops where the loop would leave its rays (no longer star-shaped)",
+  resolution: "stops where the curvature is no longer resolved",
+  positivity: "stops where no step keeps the loop valid",
+  work: "stops at the work limit",
+};
+
+const plain = (v: number) => v.toLocaleString("en-US");
+export const shortenHelp = {
+  family: tiered(
+    "A flower, which may be nonconvex, or a convex loop.",
+    "A flower is a radial graph about its center; a convex loop is solved by its support function. Each keeps its own settings when you switch.",
+  ),
+  petals: tiered(
+    `Petals around the loop: 0 (none) or 2–${shortenLimits.petals}.`,
+    "Many deep petals curve too sharply to resolve and are refused under Petal depth.",
+  ),
+  depth: tiered(
+    `How far petals reach, as a fraction of the radius.`,
+    `Petal and ruffle depths together are at most ${shortenLimits.depths}; 0 without petals. Petals deeper than 1/(k² − 1) make the loop nonconvex. Too deep for the resolution is refused, as is a loop whose tangents come within atan(1/10) of its rays.`,
+  ),
+  ruffles: tiered(
+    `Fine ripples around the loop: 0 (none) or ${shortenLimits.ruffles[0]}–${shortenLimits.ruffles[1]}.`,
+    "Any count other than the petals'. Ruffles vanish long before petals do.",
+  ),
+  ruffle: tiered(
+    "How far ruffles reach, as a fraction of the radius.",
+    `0 without ruffles. Petal and ruffle depths together are at most ${shortenLimits.depths}; sharp ruffles cannot be resolved and are refused under Petal depth.`,
+  ),
+  phase: tiered(
+    "Turns the ruffles against the petals, in radians.",
+    "Any finite value; constants such as pi/5 work.",
+  ),
+  lobes: "Three or six gentle lobes.",
+  ripple: tiered(
+    "Lobe depth ε, with |ε|(m² − 1) ≤ ½ for m lobes.",
+    `So |ε| ≤ 1/16 for three lobes and 1/70 for six, which keeps the loop's radius of curvature at least half its radius: a convex loop can only ripple slightly.`,
+  ),
+  contours: tiered(
+    `Loops drawn in the nest: 1–${shortenLimits.contours}.`,
+    "The first is the seed; the rest sample the same evolution at later times.",
+  ),
+  spacing: tiered(
+    "When the nest's loops are drawn.",
+    "Early packs them where petals change fastest (t ∝ j³); equal radius steps a circle evenly; equal time steps the area evenly, since area falls at exactly 2π per unit time.",
+  ),
+  nest: tiered(
+    "Show the whole nest, or only loops up to the shown time.",
+    "During the motion, later loops can be faint or left out, so the nest builds as the loop shrinks. At rest the whole nest is drawn.",
+  ),
+  framing: tiered(
+    "Physical scale, or each loop rescaled to the starting area.",
+    "Normalized scales each loop by √(A₀/A) about its centroid, both measured from the drawn loop. It is presentation only: the evolution and the readouts stay physical.",
+  ),
+  progress:
+    "Seek the motion by its time; the same time always shows the same loop.",
+  duration: tiered(
+    "Seconds for the whole motion: 0.1–3,600.",
+    "Export makes at most 7,200 frames.",
+  ),
+  repeat: tiered(
+    "Once, or back and forth.",
+    "The loop ends far smaller than it starts, so it cannot loop seamlessly; back and forth plays it out and back within the duration.",
+  ),
+  pacing: tiered(
+    "How the motion's time maps to the flow's.",
+    "Early lingers where petals change fastest (t ∝ p³); equal radius shrinks a circle at a steady rate; physical time is linear in the flow's time.",
+  ),
+  limits: `Solved on ${plain(shortenLimits.flower.nodes)} nodes for flowers and ${plain(shortenLimits.convex.nodes)} for convex loops.`,
 };

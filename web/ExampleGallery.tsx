@@ -66,7 +66,7 @@ type Overlay = {
     via: "keyboard" | "pointer",
   ) => void;
 };
-type EntryKind = "curve" | "loom" | "garden" | "lace";
+type EntryKind = "curve" | "loom" | "garden" | "lace" | "shorten";
 
 export function ExampleGallery({
   examples,
@@ -79,6 +79,7 @@ export function ExampleGallery({
   looms,
   gardens,
   laces,
+  shortens,
 }: {
   examples: Example[];
   // null while the study is the reader's own.
@@ -100,6 +101,8 @@ export function ExampleGallery({
   gardens?: Overlay;
   // Examples that open hyperbolic lace over the study, likewise.
   laces?: Overlay;
+  // Examples that open curves that smooth themselves, likewise.
+  shortens?: Overlay;
 }) {
   const { scheme } = useTheme();
   const wrap = useRef<HTMLDivElement>(null);
@@ -134,8 +137,19 @@ export function ExampleGallery({
         index,
         kind: "lace" as EntryKind,
       })),
+      ...(shortens?.examples ?? []).map((example, index) => ({
+        example,
+        index,
+        kind: "shorten" as EntryKind,
+      })),
     ],
-    [examples, looms?.examples, gardens?.examples, laces?.examples],
+    [
+      examples,
+      looms?.examples,
+      gardens?.examples,
+      laces?.examples,
+      shortens?.examples,
+    ],
   );
   const families = useMemo(
     () => [...new Set(entries.map((e) => e.example.family))],
@@ -206,9 +220,14 @@ export function ExampleGallery({
   };
   const openOverlay = (kind: EntryKind, index: number) => {
     close();
-    (({ loom: looms, garden: gardens, lace: laces }) as const)[
-      kind as "loom" | "garden" | "lace"
-    ]?.open(
+    (
+      ({
+        loom: looms,
+        garden: gardens,
+        lace: laces,
+        shorten: shortens,
+      }) as const
+    )[kind as "loom" | "garden" | "lace" | "shorten"]?.open(
       index,
       (returnVia) => {
         via.current = returnVia;
@@ -446,6 +465,9 @@ export function ExampleGallery({
                           kind === "garden" ? index : undefined
                         }
                         data-lace-example={kind === "lace" ? index : undefined}
+                        data-shorten-example={
+                          kind === "shorten" ? index : undefined
+                        }
                         data-example-title={example.title}
                         data-example-slug={slug(example.title)}
                         data-fingerprint={example.fingerprint}

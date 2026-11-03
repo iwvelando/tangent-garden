@@ -2257,6 +2257,55 @@ test("hyperbolic lace entry, scalar blur, phone controls and return preserve foc
   await expect(trigger).toBeFocused();
 });
 
+test("curves that smooth themselves: entry, scalar blur, phone playback and return preserve focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const trigger = page.getByRole("button", {
+    name: "Browse notebook examples",
+  });
+  await trigger.click();
+  await page.locator('[data-shorten-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Curves that smooth themselves" });
+  await expect(d).toHaveAttribute("data-quiet", "");
+  await expect(
+    d.getByRole("button", { name: "Return to study", exact: true }),
+  ).toBeFocused();
+  const art = d.locator("#shorten-artwork");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  // On a phone the drawing leads the controls.
+  const drawing = (await art.boundingBox())!;
+  const seed = (await d.getByLabel("Seed", { exact: true }).boundingBox())!;
+  expect(drawing.y + drawing.height).toBeLessThan(seed.y);
+  // A constant typed and left resolves through the shared parser.
+  const depth = d.getByLabel("Petal depth", { exact: true });
+  await depth.fill("pi/12");
+  await depth.blur();
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  // Play, pause and stop by clicks alone, which Safari does not follow with
+  // focus; Play brings the drawing into view and the playback docks within
+  // reach.
+  const play = d.getByRole("button", { name: "Play motion" });
+  await play.scrollIntoViewIfNeeded();
+  await play.click();
+  await expect(art).toBeInViewport({ ratio: 0.9 });
+  const pauseButton = d.getByRole("button", { name: "Pause motion" });
+  await expect(pauseButton).toBeInViewport();
+  await pauseButton.click();
+  await expect(d.getByRole("button", { name: "Resume motion" })).toBeVisible();
+  await d.getByRole("button", { name: "Stop motion" }).click();
+  await expect(art.locator("path[data-role=current]")).toHaveCount(0);
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await expect(d).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
 test("24-cell section controls and stills survive scalar click and blur in WebKit", async ({
   page,
 }) => {

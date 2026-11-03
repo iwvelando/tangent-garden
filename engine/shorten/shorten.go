@@ -1,7 +1,8 @@
-// Package shorten evolves a strictly convex closed loop by curve shortening,
-// dX/dt = -κ n_out, through its support function h(θ) on a fixed grid of
-// outward normal angles. It is the research solver of #322: a bounded
-// experiment, not a product interface.
+// Package shorten evolves a smooth closed loop by curve shortening,
+// dX/dt = -κ n_out (docs/mathematics.md#curves-that-smooth-themselves).
+// Two schemes share one Film: a flower as a radial graph (bloom.go) and a
+// strictly convex loop through its support function h(θ) on a fixed grid of
+// outward normal angles, described here.
 //
 // For a strictly convex loop the outward normal angle θ is an intrinsic
 // parameter: X(θ) = h n + h_θ T with n = (cos θ, sin θ), T = (−sin θ, cos θ),
@@ -67,7 +68,8 @@ type Stats struct {
 	// the film; that state is never returned.
 	Discarded int `json:"discarded"`
 	// Trials are the steps of root solves that land a partial step on a
-	// horizon (experiment 2); counted in NodeUpdates, not in Attempted.
+	// horizon, used by the tests' arclength reference; counted in
+	// NodeUpdates, not in Attempted.
 	Trials      int `json:"trials,omitempty"`
 	Remeshed    int `json:"remeshed"`
 	NodeUpdates int `json:"nodeUpdates"`
@@ -370,7 +372,7 @@ func (f *Film) partial(h []float64, from, to float64, out []float64, steps *int)
 	return f.partial(h, from, mid, half, steps) && f.partial(half, mid, to, out, steps)
 }
 
-// grid is experiment 1's scheme: the support function on N normal angles.
+// grid is the convex scheme: the support function on N normal angles.
 type grid struct {
 	n        int
 	cos, sin []float64
@@ -555,7 +557,7 @@ func Solve(q Request) (*Film, error) {
 }
 
 // FrameRequest asks for the loop at some physical times of one evolution:
-// experiment 1's convex seed or experiment 2's flower, exactly one.
+// a convex seed or a flower, exactly one.
 type FrameRequest struct {
 	Convex *Request      `json:"convex,omitempty"`
 	Bloom  *BloomRequest `json:"bloom,omitempty"`

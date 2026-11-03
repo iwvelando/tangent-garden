@@ -682,9 +682,10 @@ export function LacePreview({
         </button>
         <ShareLink
           notebook="2d"
-          // One mode per link: a garden there would open instead.
+          // One mode per link: a garden there would open instead, and
+          // curves that smooth themselves would linger unopened.
           study={() => {
-            const { garden: _, ...base } = entry.study;
+            const { garden: _, shorten: __, ...base } = entry.study;
             return { ...base, lace: study };
           }}
           disabled={!valid || !(current || film)}

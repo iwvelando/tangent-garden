@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/cmplx"
 	"math/rand/v2"
+	"strings"
 	"testing"
 
 	"tangentgarden/engine"
@@ -103,42 +104,48 @@ func TestBloomCircleRecoversItsRadiusLaw(t *testing.T) {
 
 func TestBloomSeedsAreValidatedByField(t *testing.T) {
 	good := BloomRequest{Seed: ruffled, Nodes: 512, Tau: 0.0025, Horizon: 0.9}
+	// Refusals on one field are told apart by what they say.
 	cases := []struct {
 		field string
 		edit  func(*BloomRequest)
+		says  string
 	}{
-		{"seed.radius", func(q *BloomRequest) { q.Seed.Radius = -1 }},
-		{"seed.petals", func(q *BloomRequest) { q.Seed.Petals = 1 }},
-		{"seed.petals", func(q *BloomRequest) { q.Seed.Petals = 13 }},
-		{"seed.depth", func(q *BloomRequest) { q.Seed.Depth = 0.88 }},
-		{"seed.depth", func(q *BloomRequest) { q.Seed.Depth = math.NaN() }},
-		{"seed.depth", func(q *BloomRequest) { q.Seed.Petals = 0 }},
-		{"seed.ruffles", func(q *BloomRequest) { q.Seed.Ruffles = 7 }},
-		{"seed.ruffles", func(q *BloomRequest) { q.Seed.Ruffles = 65 }},
-		{"seed.ruffles", func(q *BloomRequest) { q.Seed.Ruffles = 5; q.Seed.Petals = 5 }},
-		{"seed.ruffle", func(q *BloomRequest) { q.Seed.Ruffles = 0 }},
-		{"seed.phase", func(q *BloomRequest) { q.Seed.Phase = math.Inf(1) }},
-		{"seed.centerX", func(q *BloomRequest) { q.Seed.CenterX = 2e3 }},
-		{"nodes", func(q *BloomRequest) { q.Nodes = 255 }},
-		{"nodes", func(q *BloomRequest) { q.Nodes = 514 }},
-		{"tau", func(q *BloomRequest) { q.Tau = 0.051 }},
-		{"tau", func(q *BloomRequest) { q.Tau = 0.0009 }},
-		{"horizon", func(q *BloomRequest) { q.Horizon = 1 }},
+		{"seed.radius", func(q *BloomRequest) { q.Seed.Radius = -1 }, ""},
+		{"seed.petals", func(q *BloomRequest) { q.Seed.Petals = 1 }, ""},
+		{"seed.petals", func(q *BloomRequest) { q.Seed.Petals = 13 }, ""},
+		{"seed.depth", func(q *BloomRequest) { q.Seed.Depth = 0.89 }, "at most 0.9"},
+		{"seed.depth", func(q *BloomRequest) { q.Seed.Depth, q.Seed.Ruffle = 0.88, -0.03 }, "at most 0.9"},
+		{"seed.depth", func(q *BloomRequest) { q.Seed.Depth = math.NaN() }, ""},
+		{"seed.depth", func(q *BloomRequest) { q.Seed.Petals = 0 }, ""},
+		{"seed.ruffles", func(q *BloomRequest) { q.Seed.Ruffles = 7 }, ""},
+		{"seed.ruffles", func(q *BloomRequest) { q.Seed.Ruffles = 65 }, ""},
+		{"seed.ruffles", func(q *BloomRequest) { q.Seed.Ruffles = 5; q.Seed.Petals = 5 }, ""},
+		{"seed.ruffle", func(q *BloomRequest) { q.Seed.Ruffles = 0 }, ""},
+		{"seed.phase", func(q *BloomRequest) { q.Seed.Phase = math.Inf(1) }, ""},
+		{"seed.centerX", func(q *BloomRequest) { q.Seed.CenterX = 2e3 }, ""},
+		{"nodes", func(q *BloomRequest) { q.Nodes = 255 }, ""},
+		{"nodes", func(q *BloomRequest) { q.Nodes = 514 }, ""},
+		{"tau", func(q *BloomRequest) { q.Tau = 0.051 }, ""},
+		{"tau", func(q *BloomRequest) { q.Tau = 0.0009 }, ""},
+		{"horizon", func(q *BloomRequest) { q.Horizon = 1 }, ""},
 		// Harmonics the grid would alias are refused before they run: 24
 		// ruffles need 192 nodes.
-		{"nodes", func(q *BloomRequest) { q.Seed.Ruffles, q.Nodes = 40, 318 }},
-		// A seed whose curvature the grid cannot resolve is refused too.
-		{"nodes", func(q *BloomRequest) { q.Seed = Bloom{Radius: 1, Petals: 12, Depth: 0.3}; q.Nodes = 96 }},
-		// Tangents nearly along their rays leave the radial graph.
-		{"seed.depth", func(q *BloomRequest) { q.Seed = Bloom{Radius: 1, Petals: 12, Depth: 0.88}; q.Nodes = 512 }},
+		{"nodes", func(q *BloomRequest) { q.Seed.Ruffles, q.Nodes = 40, 318 }, ""},
+		// A seed whose curvature the grid cannot resolve is refused on its
+		// depth, which the reader controls; the node count is fixed.
+		{"seed.depth", func(q *BloomRequest) { q.Seed = Bloom{Radius: 1, Petals: 12, Depth: 0.3}; q.Nodes = 96 }, "too sharply"},
+		{"seed.depth", func(q *BloomRequest) { q.Seed = Bloom{Radius: 1, Petals: 6, Depth: 0.45} }, "too sharply"},
+		// Tangents nearly along their rays leave the radial graph; that is
+		// checked before resolution.
+		{"seed.depth", func(q *BloomRequest) { q.Seed = Bloom{Radius: 1, Petals: 12, Depth: 0.88}; q.Nodes = 512 }, "rays"},
 	}
 	for _, c := range cases {
 		q := good
 		c.edit(&q)
 		_, err := SolveBloom(q)
 		var named *engine.FieldError
-		if !errors.As(err, &named) || named.Field != c.field {
-			t.Errorf("%+v: error %v, want a field error on %s", q.Seed, err, c.field)
+		if !errors.As(err, &named) || named.Field != c.field || !strings.Contains(named.Message, c.says) {
+			t.Errorf("%+v: error %v, want a field error on %s saying %q", q.Seed, err, c.field, c.says)
 		}
 	}
 	if _, err := SolveBloom(good); err != nil {
@@ -493,5 +500,31 @@ func TestFrameRequestsNameExactlyOneEvolution(t *testing.T) {
 	var named *engine.FieldError
 	if _, err := f.Frames([]float64{f.End * 1.01}); !errors.As(err, &named) || named.Field != "times.0" {
 		t.Errorf("error %v", err)
+	}
+}
+
+// The seed is the polar curve named, ruffles turned by the phase, and the
+// curvature readout is the drawn loop's: against the polar formula
+// κ = (r² + 2r′² − r r″)/(r² + r′²)^{3/2} at the nodes.
+func TestBloomSeedAndCurvatureReadoutFollowThePolarCurve(t *testing.T) {
+	seed := Bloom{Radius: 1, Petals: 5, Depth: 0.25, Ruffles: 24, Ruffle: 0.015, Phase: 0.4}
+	f := bloom(t, BloomRequest{Seed: seed, Nodes: 512, Tau: 0.0025, Horizon: 0.5})
+	c := bloomAt(t, f, 0)
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for i := range c.X {
+		phi := 2 * math.Pi * float64(i) / float64(len(c.X))
+		r := 1 + seed.Depth*math.Cos(5*phi) + seed.Ruffle*math.Cos(24*phi+seed.Phase)
+		if d := math.Hypot(c.X[i]-r*math.Cos(phi), c.Y[i]-r*math.Sin(phi)); d > 1e-14 {
+			t.Fatalf("node %d is %.2e from the seed", i, d)
+		}
+		dr := -seed.Depth*5*math.Sin(5*phi) - seed.Ruffle*24*math.Sin(24*phi+seed.Phase)
+		ddr := -seed.Depth*25*math.Cos(5*phi) - seed.Ruffle*576*math.Cos(24*phi+seed.Phase)
+		k := (r*r + 2*dr*dr - r*ddr) / math.Pow(r*r+dr*dr, 1.5)
+		lo, hi = min(lo, k), max(hi, k)
+	}
+	// Second-order differences on 512 nodes: within 1% of the range.
+	tol := 0.01 * (hi - lo)
+	if math.Abs(c.MinKappa-lo) > tol || math.Abs(c.MaxKappa-hi) > tol {
+		t.Errorf("curvature readout [%g, %g], polar formula [%g, %g]", c.MinKappa, c.MaxKappa, lo, hi)
 	}
 }

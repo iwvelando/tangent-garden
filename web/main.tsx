@@ -3,6 +3,8 @@ import { GardenContext, type GardenEntry } from "./garden/Context";
 import { presetGarden } from "./garden/model";
 import { LaceContext, type LaceEntry } from "./lace/Context";
 import { presetLace } from "./lace/model";
+import { ShortenContext, type ShortenEntry } from "./shorten/Context";
+import { presetShorten } from "./shorten/model";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
@@ -49,6 +51,7 @@ import { ExampleGallery } from "./ExampleGallery";
 import {
   gardenExamples,
   laceExamples,
+  shortenExamples,
   loomExamples,
   planarExamples,
   planarThumbnail,
@@ -309,6 +312,7 @@ function App({
   const loomOwner = useContext(LoomContext);
   const gardenOwner = useContext(GardenContext);
   const laceOwner = useContext(LaceContext);
+  const shortenOwner = useContext(ShortenContext);
   const loomHelp = useHelp();
   // An entry waiting for the study's inputs to settle: the study's own curve
   // from the loom button, or an authored family from the gallery.
@@ -1421,6 +1425,16 @@ function App({
               .querySelector<HTMLButtonElement>(".example-trigger")
               ?.focus({ preventScroll: true }),
         });
+      // And curves that smooth themselves, after the lace.
+      else if (incoming.shorten)
+        shortenOwner.begin({
+          study: incoming,
+          via: "keyboard",
+          restoreFocus: () =>
+            document
+              .querySelector<HTMLButtonElement>(".example-trigger")
+              ?.focus({ preventScroll: true }),
+        });
     } catch (e) {
       setLinkNotice(
         e instanceof LinkError ? e.message : "This link could not be read.",
@@ -1732,6 +1746,19 @@ function App({
                       study: {
                         ...structuredClone(snapshot()),
                         lace: presetLace(preset),
+                      },
+                      via,
+                      restoreFocus,
+                    }),
+                }}
+                // Nor do curves that smooth themselves.
+                shortens={{
+                  examples: shortenExamples,
+                  open: (preset, restoreFocus, via) =>
+                    shortenOwner.begin({
+                      study: {
+                        ...structuredClone(snapshot()),
+                        shorten: presetShorten(preset),
                       },
                       via,
                       restoreFocus,
@@ -3036,9 +3063,8 @@ const GardenPreview = lazy(() =>
 const LacePreview = lazy(() =>
   import("./lace/Preview").then((m) => ({ default: m.LacePreview })),
 );
-// Research preview (#322), opened only by ?lab=curve-shortening.
-const ShortenLab = lazy(() =>
-  import("./shorten/Lab").then((m) => ({ default: m.ShortenLab })),
+const ShortenPreview = lazy(() =>
+  import("./shorten/Preview").then((m) => ({ default: m.ShortenPreview })),
 );
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
@@ -3057,13 +3083,16 @@ function Notebook() {
   const [loom, setLoom] = useState<LoomEntry | null>(null);
   const [garden, setGarden] = useState<GardenEntry | null>(null);
   const [lace, setLace] = useState<LaceEntry | null>(null);
-  const [lab, setLab] = useState(
-    () =>
-      new URLSearchParams(location.search).get("lab") === "curve-shortening",
-  );
+  const [shorten, setShorten] = useState<ShortenEntry | null>(null);
   // An overlay study holds the notebooks beneath it inert.
   const overlay =
-    !!excursion || !!atlas || !!fit || !!loom || !!garden || !!lace || lab;
+    !!excursion ||
+    !!atlas ||
+    !!fit ||
+    !!loom ||
+    !!garden ||
+    !!lace ||
+    !!shorten;
   const [adoptions, setAdoptions] = useState<
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
@@ -3075,7 +3104,7 @@ function Notebook() {
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion, atlas, fit, loom, garden, lace]);
+  }, [excursion, atlas, fit, loom, garden, lace, shorten]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -3094,6 +3123,7 @@ function Notebook() {
     setLoom(null);
     setGarden(null);
     setLace(null);
+    setShorten(null);
     setExcursion(null);
     focusRequest.current = via;
     show(next);
@@ -3121,6 +3151,8 @@ function Notebook() {
       setLoom(null);
       setGarden(null);
       setLace(null);
+      setShorten(null);
+      setShorten(null);
       show(notebookKind());
     };
     window.addEventListener("popstate", pop);
@@ -3142,6 +3174,8 @@ function Notebook() {
       setLoom(null);
       setGarden(null);
       setLace(null);
+      setShorten(null);
+      setShorten(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -3227,7 +3261,7 @@ function Notebook() {
                 </Suspense>
               </div>
             )}
-            {lab && (
+            {shorten && (
               <div
                 className={theme.dark ? "app dark" : "app"}
                 style={{ ...theme.style, display: "contents" }}
@@ -3235,16 +3269,16 @@ function Notebook() {
                 <Suspense
                   fallback={
                     <div className="loom-loading" role="status">
-                      Opening the curve-shortening lab…
+                      Opening curves that smooth themselves…
                     </div>
                   }
                 >
-                  <ShortenLab
-                    onReturn={() => {
-                      const url = new URL(location.href);
-                      url.searchParams.delete("lab");
-                      history.replaceState(history.state, "", url);
-                      setLab(false);
+                  <ShortenPreview
+                    key={shared["2d"]?.id ?? "local"}
+                    entry={shorten}
+                    onReturn={(via) => {
+                      restoreFocus.current = () => shorten.restoreFocus(via);
+                      setShorten(null);
                     }}
                   />
                 </Suspense>
@@ -3268,6 +3302,8 @@ function Notebook() {
                     onReturn={(via) => {
                       restoreFocus.current = () => lace.restoreFocus(via);
                       setLace(null);
+                      setShorten(null);
+                      setShorten(null);
                     }}
                   />
                 </Suspense>
@@ -3373,11 +3409,13 @@ function Notebook() {
                 <LoomContext.Provider value={{ begin: setLoom }}>
                   <GardenContext.Provider value={{ begin: setGarden }}>
                     <LaceContext.Provider value={{ begin: setLace }}>
-                      <App
-                        active={mode === "2d"}
-                        shared={shared["2d"]}
-                        adoption={adoptions["2d"]}
-                      />
+                      <ShortenContext.Provider value={{ begin: setShorten }}>
+                        <App
+                          active={mode === "2d"}
+                          shared={shared["2d"]}
+                          adoption={adoptions["2d"]}
+                        />
+                      </ShortenContext.Provider>
                     </LaceContext.Provider>
                   </GardenContext.Provider>
                 </LoomContext.Provider>

@@ -458,6 +458,36 @@ The tests check, on the returned geometry and from these definitions:
 - **Work.** A frame's allocations are the same for 29 tiles as for 1,000, while generation's grow.
 - **In the browser.** Drawn corners at several times, forward, backward and paused, against `T` from the drawing at rest; a decoded MP4's frames against seeks at their times; a refused loop when the ends differ in geometry, camera or layers.
 
+## Curves that smooth themselves
+
+Curve shortening moves every point of a smooth closed loop inward along its normal at its curvature: `dX/dt = −κ n_out`, with `κ > 0` where the loop turns toward its inside. It is a separate bounded planar mode, not a curve family. `engine/shorten` solves it; the definitions below are its contract. The flow is the subject of Gage–Hamilton and Grayson's theorems, and [Andrews and Bryan](https://arxiv.org/abs/0908.2682) give a short proof. These describe the continuum. The checks below concern the discrete solver.
+
+**Units and laws.** Lengths are in units of the seed's radius `R`; time has units of length², so `t/R²` is scale-free. For any embedded closed loop the enclosed area falls at exactly `dA/dt = −2π`, so the loop vanishes at the extinction time `T = A₀/2π`. Length strictly decreases, `dL/dt = −∫κ² ds`. A circle stays a circle with `R(t)² = R₀² − 2t`. An embedded loop stays embedded, becomes convex and shrinks toward a round point.
+
+**Flowers, as a radial graph.** A flower is `r(φ) = R(1 + a cos kφ + b cos(jφ + ψ))` about a center: `k` petals of depth `a` and `j` ruffles of depth `b`, turned by `ψ`. With `|a| + |b| ≤ 0.9` it is star-shaped about its center, so embedded, and its area is `πR²(1 + a²/2 + b²/2)` for `k ≠ j`. Petals deeper than `1/(k² − 1)` make it nonconvex. Each point moves along its ray from the center rather than along its normal; that tangential motion only reparameterizes the loop, so the shape follows the flow. With `ℓ = ln r`, `p = ℓ_φ` and `q = ℓ_φφ`:
+
+`ℓ_t = e^{−2ℓ}(q − 1 − p²)/(1 + p²)`, `κ = (1 + p² − q)/(r(1 + p²)^{3/2})`.
+
+The loop is sampled on 512 equally spaced polar angles; `p` and `q` are central differences, second-order and exact on circles about the center. Time steps use the linearly implicit Rosenbrock method ROS2 (Verwer, Spee, Blom and Hundsdorfer; `γ = 1 + 1/√2`, second order for any Jacobian). It uses the exact cyclic tridiagonal Jacobian of the discrete right-hand side, solved in `O(N)`. A step is `dt = τ / max|ℓ_t|` with `τ = 0.0025`, the fastest relative change of a radius, which is `τR²` on a circle: steps shrink with the loop, and the sequence scales exactly with it. A step whose result is not finite is retried at half the length. Nothing is remeshed.
+
+**Convex loops, by support function.** A strictly convex loop is also described by its support function `h(θ)` on equally spaced normal angles: `X = h n + h_θ T`, radius of curvature `ρ = h + h_θθ > 0`, and at fixed normal angle the flow is `h_t = −1/ρ`. The seed is `h = R(1 + ε cos mθ)` with `m ∈ {3, 6}` and `|ε|(m² − 1) ≤ ½`, which keeps `ρ ≥ R/2`. Convexity therefore caps a mode-`m` ripple at `R/(m² − 1)`: a convex loop can only ripple slightly. `ρ_i = h_i + (h_{i+1} − 2h_i + h_{i−1})/(2(1 − cos Δθ))` and `h_θ ≈ (h_{i+1} − h_{i−1})/(2 sin Δθ)` are second order and exact on constants and first harmonics, so circles and translations carry no spatial error. Time uses the same ROS2, on 256 normal angles, with `dt = τ / max|κ + κ_θθ|κ` and `τ = 0.005`.
+
+**Limits and the end of a film.** A seed's finest harmonic needs at least 8 nodes per wavelength. Every accepted state must stay resolved and inside the formulation. A flower must turn at most 0.25 rad between consecutive edges, and its tangents must stay at least `atan(1/10)` off their rays (`|ℓ_φ| ≤ 10`, so the loop stays star-shaped, which the flow does not guarantee). A convex loop must keep `ρ > 0` and `|ρ_{i+1} − ρ_i| ≤ ¼ min(ρ_i, ρ_{i+1})`. Both stop at a floor near extinction: the equal-area radius (for a convex loop, `min ρ`) at 1/20 of the starting equal-area radius. Each solve is capped at 100,000 attempted steps and 20 million node updates. The first state that fails ends the film at the state before; no geometry beyond it is returned. A seed that fails at the start is refused by field: a flower too sharp to resolve under its petal depth.
+
+**Sampling at any time.** A film keeps a checkpoint every `S` accepted steps; `S` doubles whenever more than 64 accumulate. The loop at a time `t ≤ End` is recomputed from the last checkpoint at or before `t` with the solve's own step rule, then one partial step that ends at `t`. A sample is therefore a pure function of the seed and `t`, whatever was played or seeked before. A seek retakes at most `S` steps.
+
+**Contours, pacing and normalization.** The nest shows `n` loops at `t_j = End·f(j/n)`, and the motion's progress `p` shows `End·f(p)`. Here `f(x) = x³` (dense early, where petals change fastest), `1 − (1 − x)²` (equal radius: a circle ending at `T` steps evenly) or `x` (equal time, so equal area). **Normalized** framing draws each loop scaled by `√(A₀/A)` about its centroid, both measured from the drawn polygon, at the page's center. It is a declared presentation: it never feeds the evolution, and the readouts stay physical.
+
+**Evidence.** `engine/shorten`'s tests observe returned geometry:
+
+- **Circle law** to second order through 0.99T, at times between steps.
+- **Area and length:** `A₀ − 2πt` within 1e-4 A₀; strictly decreasing length.
+- **Shape:** every returned flower embedded (all edge pairs), nonconvex at first and convex before the end.
+- **Convergence:** second-order spatial and time convergence against an independent reference: a tangent-angle and length equal-arclength spectral solver with ETDRK4, validated on convex seeds against the support-function solver within 7e-6.
+- **Bookkeeping:** scale and translation covariance to 1e-12, bit-identical seeks in any order, and bounded checkpoints and work.
+
+Near the floor the absolute error stays about 1e-4–3e-4 of the starting radius, but relative to the shrinking loop it grows to about 0.6%, the circle law's fixed `R²` time shift.
+
 ## Finite engravings
 
 A finite engraving draws `n` ordinary studies that differ in one scalar `p`: a point source's polar `θ` or radius `r`, its Cartesian `x` or `y`, a pedal-family pole's `x` or `y`, or the shape parameter `a` where the study's expressions use it. It is a finite overlay, not an envelope or a limit as `n` grows: each member is the complete construction at its own value, computed by the same evaluator, samples, refinement and gaps as the study alone, and nothing is interpolated between members. Each member keeps its own singularities, gaps and unavailable regions; paths of different members are never joined.

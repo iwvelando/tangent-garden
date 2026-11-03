@@ -533,3 +533,79 @@ test("complex loom help fits both tiers in every source family", async ({
     }
   }
 });
+
+test("curves that smooth themselves help fits both tiers and states the engine's limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator('[data-shorten-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Curves that smooth themselves" });
+  const art = d.locator("#shorten-artwork");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const read = () =>
+    d.evaluate((root) =>
+      Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+        const h = document.getElementById(
+          toggle.getAttribute("aria-controls")!,
+        )!;
+        const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+          HTMLElement | undefined;
+        brief?.querySelector(".help-more")?.remove();
+        return {
+          topic: toggle.getAttribute("aria-label"),
+          paired: !!toggle.closest(".pair"),
+          brief: brief?.textContent ?? h.textContent ?? "",
+          more: h.querySelector(".hint-more")?.textContent ?? "",
+        };
+      }),
+    );
+  const flower = await read();
+  expect(flower.map((e) => e.topic)).toEqual([
+    "About Seed",
+    "About Petals",
+    "About Petal depth",
+    "About Ruffles",
+    "About Ruffle depth",
+    "About Phase",
+    "About Loops",
+    "About Spacing",
+    "About Nest",
+    "About View",
+    "About Animation progress",
+    "About Duration",
+    "About Repeat",
+    "About Pacing",
+    "About Export resolution",
+    "About Export quality",
+    "About Line weight",
+  ]);
+  // The convex seed's own help, shown under another setting.
+  await d.getByLabel("Seed", { exact: true }).selectOption("convex");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const convex = (await read()).filter((e) =>
+    ["About Lobes", "About Ripple"].includes(e.topic!),
+  );
+  expect(convex).toHaveLength(2);
+  const entries = [...flower, ...convex];
+  for (const e of entries) {
+    expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+      e.paired ? pairedBriefWords : 20,
+    );
+    expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
+  }
+  // The help states the limits the engine enforces.
+  const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
+  for (const limit of [
+    "2–12",
+    "8–64",
+    "at most 0.9",
+    "1/16",
+    "1/70",
+    "1–48",
+    "0.1–3,600",
+    "7,200",
+    "√(A₀/A)",
+  ])
+    expect(text).toContain(limit);
+});

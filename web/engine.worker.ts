@@ -30,7 +30,7 @@ declare const tangentGardenLaceFrame: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
-// Research preview (#322): a curve-shortening film's loops at some times.
+// A curve-shortening film's loops at some times (engine/shorten.Reply).
 declare const tangentGardenShorten: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
@@ -195,12 +195,12 @@ self.onmessage = async ({
       // JSON would turn NaN or infinity into null, which Go reads as zero.
       const numbers: [string, unknown][] = [
         ...Object.entries(seed).map(([k, v]): [string, unknown] => [
-          `${prefix}.seed.${k}`,
+          `seed.${k}`,
           v,
         ]),
-        [`${prefix}.tau`, run.tau],
-        [`${prefix}.horizon`, run.horizon],
-        [`${prefix}.nodes`, run.nodes],
+        ["tau", run.tau],
+        ["horizon", run.horizon],
+        ["nodes", run.nodes],
         ...q.times.map((t, i): [string, unknown] => [`times.${i}`, t]),
       ];
       for (const [path, v] of numbers)
