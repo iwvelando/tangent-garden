@@ -560,6 +560,18 @@ for (const id of ids)
     ).toBeDisabled();
     expect(await shownConfig(page)).toEqual(original.config);
     expect((await linked(page)).study).toEqual(original);
+    // Reopening the same recipe is a whole-study replacement even though
+    // it needs no new numerical request. It resets the edited layers/view
+    // and ends the previous film, including any pending frame.
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await page.getByRole("slider", { name: "Animation progress" }).fill("0.7");
+    await expect(stage(page)).toHaveAttribute("data-progress", "0.7");
+    await choosePreset(page, String(storyPreset(id)));
+    await expect(stage(page)).not.toHaveAttribute("data-progress");
+    expect((await linked(page)).study).toEqual(presetStudy(storyPreset(id)));
   });
 
 test("a level still being evaluated settles before a state applies", async ({

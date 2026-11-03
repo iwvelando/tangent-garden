@@ -412,6 +412,7 @@ export default function SpatialApp({
     states,
     active,
     journey.requested,
+    generation.current,
     eventSelection,
   ]);
   useEffect(() => {
