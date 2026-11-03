@@ -4412,4 +4412,69 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// Both genuine section families use the same lifted-array transport.
+{
+  const q = {
+    object: "cell24",
+    mode: "section",
+    angles: [0, 0, 0, 0, 0, 0],
+    cell24: { selected: 2, view: "crystal" },
+    slice: 0,
+    count: 1,
+    spread: 0,
+  };
+  const raw = tangentGardenTesseract(JSON.stringify(q));
+  assert.equal(typeof raw, "object");
+  const json = JSON.parse(raw.json);
+  for (const s of json.polytope.sections) {
+    assert.equal(s.points, null, "section xyz must be lifted");
+    assert.equal(s.fourPoints, null, "section 4D coordinates must be lifted");
+  }
+  const r = lifted(raw);
+  assert.deepEqual(
+    r.sections.map((s) => [s.dimension, s.vertices, s.edges, s.faces]),
+    [
+      [3, 12, 24, 14],
+      [3, 14, 24, 12],
+    ],
+  );
+  for (const s of r.polytope.sections) {
+    assert.equal(s.points.length, s.origins.length);
+    assert.equal(s.points.length, s.vertexCells.length);
+    assert.ok(s.vertexCells.every((c) => c.length > 0));
+    for (const v of s.fourPoints) assert.equal(v[3], 0);
+  }
+  const max = { ...q, angles: [0.3, 0.2, 0.1, 0.7, 0.5, 0.3], count: 25 };
+  const start = performance.now(),
+    largest = tangentGardenTesseract(JSON.stringify(max));
+  const family = lifted(largest);
+  assert.equal(family.sections.length, 50);
+  assert.equal(family.emittedPoints, 1600);
+  assert.equal(family.evaluations, 48 + 2 * 25 * (96 + 24 * 12));
+  const empty = hyperResult(
+    tangentGardenTesseract(JSON.stringify({ ...q, slice: Math.SQRT2 + 0.01 })),
+  );
+  assert.ok(empty.sections.every((s) => s.dimension === -1));
+  assert.ok(
+    empty.polytope.sections.every(
+      (s) =>
+        s.points.length === 0 && s.edges.length === 0 && s.facets.length === 0,
+    ),
+  );
+  for (const [key, value] of [
+    ["count", 26],
+    ["spread", 2.9],
+    ["slice", 2.9],
+  ])
+    assert.equal(
+      hyperResult(
+        tangentGardenTesseract(JSON.stringify({ ...q, [key]: value })),
+      ).field,
+      key,
+    );
+  console.log(
+    `24-cell maximum sections WASM: ${family.emittedPoints} vertices; ${(performance.now() - start).toFixed(1)} ms including parse and contract checks; ${replyBytes(largest)} bytes sent`,
+  );
+}
+
 process.exit(0);

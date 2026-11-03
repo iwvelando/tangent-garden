@@ -494,7 +494,9 @@ self.onmessage = async ({
           throw fieldError("samples", "Thread samples must be a whole number.");
       }
       const counted: ("count" | "curves" | "samples" | "grid")[] = polytope
-        ? []
+        ? q.mode === "section"
+          ? ["count"]
+          : []
         : pairedWeave
           ? ["curves", "samples"]
           : weave
@@ -587,7 +589,7 @@ self.onmessage = async ({
           : {}),
         mode: q.mode,
         angles: lift || route ? [0, 0, 0, 0, 0, 0] : q.angles,
-        ...(lift || route || weave || polytope
+        ...(lift || route || weave || (polytope && q.mode !== "section")
           ? {}
           : q.mode === "section"
             ? { count: q.count, slice: q.slice, spread: q.spread }

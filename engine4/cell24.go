@@ -54,10 +54,11 @@ type Polytope24 struct {
 // Cell24Diagnostics is the whole 24-cell study: both configurations and
 // the selected cell's incidence.
 type Cell24Diagnostics struct {
-	View     string     `json:"view"`
-	Selected int        `json:"selected"`
-	Primal   Polytope24 `json:"primal"`
-	Dual     Polytope24 `json:"dual"`
+	Sections []Section24 `json:"sections,omitempty"`
+	View     string      `json:"view"`
+	Selected int         `json:"selected"`
+	Primal   Polytope24  `json:"primal"`
+	Dual     Polytope24  `json:"dual"`
 	// The selected cell's six primal vertices as three opposite pairs,
 	// whose midpoints are all dual vertex Selected, and its 12 edge IDs.
 	CellVertices []int `json:"cellVertices"`
@@ -246,8 +247,8 @@ func (x *complex24) polytope(angles [6]float64, circumradius, edge float64) Poly
 }
 
 func cell24(q Request, r Result) (Result, error) {
-	if q.Mode != "orthographic" {
-		return r, fieldErr("mode", "the 24-cell offers only its orthogonal shadow")
+	if q.Mode != "orthographic" && q.Mode != "section" {
+		return r, fieldErr("mode", "choose the 24-cell’s orthogonal shadow or parallel sections")
 	}
 	for i, a := range q.Angles {
 		if !finite(a) || math.Abs(a) > 1e6 {
@@ -309,5 +310,8 @@ func cell24(q Request, r Result) (Result, error) {
 	r.Radius = math.Sqrt2 // the primal's circumradius contains every rotation
 	r.Evaluations = cell24Vertices
 	r.EmittedPoints = cell24Vertices
+	if q.Mode == "section" {
+		return cell24Sections(q, r, primal, dual)
+	}
 	return r, nil
 }

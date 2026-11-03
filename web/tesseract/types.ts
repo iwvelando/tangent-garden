@@ -9,6 +9,8 @@ export type Object4 =
 export type Cell24 = {
   selected: number;
   view: "cell" | "crystal";
+  // Transient presentation set only by the crystal passage; links accept 0.
+  emphasis?: number;
 };
 export type Weave = {
   family: "tori" | "fibers";
@@ -120,7 +122,13 @@ export type Result = {
   operation: Config["mode"];
   emittedPoints: number;
   evaluations: number;
-  faces: { points: Vec3[]; family: number }[];
+  faces: {
+    points: Vec3[];
+    family: number;
+    guide?: boolean;
+    source?: string;
+    sectionId?: string;
+  }[];
   points: Vec3[];
   sections: {
     id: string;
@@ -131,7 +139,9 @@ export type Result = {
       | "solid"
       | "torus"
       | "circle"
-      | "flower";
+      | "flower"
+      | "primal"
+      | "dual";
     radius?: number;
     level: number;
     vertices?: number;
@@ -184,6 +194,7 @@ export type Result = {
   // The 24-cell and its polar (engine4/cell24.go). Paths and markers are
   // drawn from these arrays (./polytope.ts).
   polytope?: {
+    sections?: Section24[];
     view: Cell24["view"];
     selected: number;
     primal: Polytope24;
@@ -203,6 +214,19 @@ export type Result = {
     absentSources: number;
     projection: string;
   };
+};
+// Finite cell incidence; coordinates are lifted, not JSON number structs.
+export type Section24 = {
+  id: string;
+  object: "primal" | "dual";
+  level: number;
+  dimension: number;
+  points: Vec3[];
+  fourPoints: [number, number, number, number][];
+  origins: [number, number][];
+  vertexCells: number[][];
+  edges: [number, number][];
+  facets: { vertices: number[]; cells: number[] }[];
 };
 export type Polytope24 = {
   circumradius: number;
@@ -249,7 +273,8 @@ export type Motion =
   | "route"
   | "return"
   | "latitude"
-  | "trace";
+  | "trace"
+  | "crystal";
 // Playback and export use this exact sampler. The base definition is immutable.
 export function sample(
   config: Config,
@@ -271,9 +296,11 @@ export function sample(
       ) as Vec3;
     if (motion === "support")
       q.lift.support = q.lift.radiusFrom * (1 - p) + q.lift.radiusTo * p;
-  } else if (motion === "slice") {
+  } else if (motion === "slice" || motion === "crystal") {
     const extent = passageExtent(config);
     q.slice = extent * (2 * p - 1);
+    if (motion === "crystal" && q.cell24)
+      q.cell24.emphasis = (1 - Math.cos(2 * Math.PI * p)) / 2;
   } else if (objects[config.object].rotations) {
     q.angles[3] += 2 * Math.PI * p;
     if (motion === "double") q.angles[2] += 2 * Math.PI * p;
@@ -301,6 +328,9 @@ export function motions(config: Config): MotionChoice[] {
   if (own) return typeof own === "function" ? own(config) : own;
   const choices: MotionChoice[] = [
     ...rotationMotions,
+    ...(config.mode === "section" && objects[config.object].sectionMotion
+      ? [objects[config.object].sectionMotion!]
+      : []),
     ...(config.mode === "section"
       ? [
           {

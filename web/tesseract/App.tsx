@@ -921,7 +921,10 @@ export default function TesseractApp({
                       const offered = motions({ ...config, mode });
                       if (!offered.some((m) => m.value === motion))
                         setMotion(offered[0].value);
-                      update((c) => ({ ...c, mode }));
+                      update(
+                        (c) =>
+                          descriptor.enterMode?.(c, mode) ?? { ...c, mode },
+                      );
                     }}
                   >
                     {descriptor.modes.map((mode) => (

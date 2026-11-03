@@ -256,4 +256,20 @@ export const tesseractPresets: {
     motion: "double",
     repeat: "loop",
   },
+  // Static central section; Play deliberately cuts to an empty plane,
+  // then passes through both fixed crystals while their inks alternate.
+  {
+    name: "A crystal meeting its own dual",
+    detail:
+      "One plane reveals both crystals. A selected cell and the edges from its dual vertex stay accented.",
+    config: {
+      ...objects.cell24.defaults(base),
+      mode: "section",
+      slice: 0,
+      cell24: { selected: 2, view: "crystal" },
+    },
+    motion: "crystal",
+    repeat: "loop",
+    pace: "ease",
+  },
 ];

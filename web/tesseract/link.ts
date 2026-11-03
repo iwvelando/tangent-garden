@@ -85,6 +85,7 @@ const cell24 = {
   fields: {
     selected: { range: [0, 23] },
     view: { options: { cell: true, crystal: true } },
+    emphasis: { optional: { range: [0, 0] } },
   },
 } satisfies SchemaOf<Cell24>;
 const config: SchemaOf<Config> = {

@@ -24,7 +24,7 @@ export const dualRoles: readonly string[] = [
   "vertex",
 ];
 
-// The most paths a 24-cell result draws: both edge sets, the selected
+// The most paths an orthogonal 24-cell shadow draws: both edge sets, the selected
 // cell's 12 edges and 3 diagonals, and the 8 dual edges from its center
 // (engine4 cell24DrawnPaths). Edges drawn in a selected role are not
 // drawn again in the crystal's.
@@ -40,6 +40,7 @@ export function cellOf(source: string): number | undefined {
 export function expandPolytope(result: Result): Result {
   const p = result.polytope;
   if (!p) return result;
+  if (p.sections) return expandSections(result);
   const { primal, dual } = p,
     crystal = p.view === "crystal";
   const paths: Path[] = [],
@@ -109,4 +110,61 @@ export function expandPolytope(result: Result): Result {
   for (const k of others) marker(k, "vertex", 2);
   marker(p.selected, "center", 3);
   return { ...result, paths, markers };
+}
+
+// Every point is already an intersection computed by Go. Only returned
+// indices/provenance choose paths, roles and the sparse construction.
+function expandSections(result: Result): Result {
+  const p = result.polytope!;
+  const paths: Path[] = [],
+    markers: Marker[] = [],
+    faces: Result["faces"] = [];
+  for (const s of p.sections!) {
+    const dual = s.object === "dual";
+    const selected = (i: number) =>
+      dual
+        ? s.origins[i].includes(p.selected)
+        : s.vertexCells[i].includes(p.selected);
+    for (const [j, [a, b]] of s.edges.entries()) {
+      const accent = dual
+        ? selected(a) || selected(b)
+        : selected(a) && selected(b);
+      if (p.view === "cell" && !accent) continue;
+      paths.push({
+        points: [s.points[a], s.points[b]],
+        fourPoints: [s.fourPoints[a], s.fourPoints[b]],
+        source: `${s.id}/edge/${j}`,
+        sectionId: s.id,
+        branch: "0",
+        role: dual ? (accent ? "spoke" : "dual") : accent ? "cell" : "primal",
+        family: dual ? (accent ? 3 : 2) : accent ? 1 : 0,
+        guide: dual,
+      });
+    }
+    for (const [j, f] of (p.sections!.length === 2 ? s.facets : []).entries()) {
+      const accent = !dual && f.vertices.every(selected);
+      if (p.view === "cell" && !accent) continue;
+      faces.push({
+        points: f.vertices.map((i) => s.points[i]),
+        family: dual ? 2 : accent ? 1 : 0,
+        guide: dual,
+        source: `${s.id}/facet/${j}`,
+        sectionId: s.id,
+      });
+    }
+    s.points.forEach((point, i) => {
+      // Point contacts of either solid remain visible. Other dual section
+      // vertices mark edges crossing from the selected cell's center.
+      if (s.dimension !== 0 && !(dual && selected(i))) return;
+      if (p.view === "cell" && !selected(i)) return;
+      markers.push({
+        id: `${s.id}/vertex/${i}`,
+        point,
+        fourPoint: s.fourPoints[i],
+        family: dual ? (selected(i) ? 3 : 2) : selected(i) ? 1 : 0,
+        role: dual ? (selected(i) ? "center" : "vertex") : "sample",
+      });
+    });
+  }
+  return { ...result, paths, markers, faces };
 }

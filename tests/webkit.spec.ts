@@ -2256,3 +2256,53 @@ test("hyperbolic lace entry, scalar blur, phone controls and return preserve foc
   await expect(d).toBeHidden();
   await expect(trigger).toBeFocused();
 });
+
+test("24-cell section controls and stills survive scalar click and blur in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=4d");
+  await choosePreset(page, { label: "A crystal meeting its own dual" });
+  const stage = page.locator(".tesseract-stage"),
+    art = page.locator("#tesseract-artwork");
+  const meta = async () =>
+    JSON.parse((await art.locator(":scope > desc").textContent())!);
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  const offset = page.getByRole("textbox", {
+    name: "Slice offset h",
+    exact: true,
+  });
+  await offset.fill("1/5");
+  await page
+    .getByRole("button", { name: "About Slice offset h", exact: true })
+    .click();
+  await expect.poll(async () => (await meta()).config.slice).toBe(0.2);
+  await page
+    .getByRole("combobox", { name: "Show", exact: true })
+    .selectOption("cell");
+  await page
+    .getByRole("spinbutton", { name: "Selected cell", exact: true })
+    .fill("5");
+  await offset.click();
+  await expect.poll(async () => (await meta()).polytope.selectedCell).toBe(4);
+  await page
+    .getByRole("combobox", { name: "Show", exact: true })
+    .selectOption("crystal");
+  await page
+    .getByRole("button", { name: "About Section spread", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(art.locator("text, foreignObject")).toHaveCount(0);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('data-face="cell24/');
+  expect(svg).not.toMatch(/<text|<foreignObject/);
+  const mode = page.getByRole("combobox", { name: "View of the 24-cell" });
+  await mode.selectOption("orthographic");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await mode.selectOption("section");
+  await expect
+    .poll(async () => (await meta()).config)
+    .toMatchObject({ mode: "section", slice: 0.2, cell24: { selected: 4 } });
+});
