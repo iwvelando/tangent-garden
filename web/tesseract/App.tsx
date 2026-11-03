@@ -1282,7 +1282,7 @@ export default function TesseractApp({
               <div className="eyebrow">
                 FOUR DIMENSIONS /{" "}
                 {config.mode === "paired"
-                  ? "TWO LINKED VIEWS"
+                  ? (descriptor.pairedEyebrow ?? "TWO LINKED VIEWS")
                   : config.mode === "diagram"
                     ? "A COORDINATE DIAGRAM"
                     : config.mode === "section" || config.mode === "reference"

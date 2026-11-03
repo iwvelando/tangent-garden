@@ -9,6 +9,7 @@ import type {
   Lift,
   Bypass,
   Weave,
+  Root,
 } from "./types";
 export const modes = {
   perspective: "Perspective shadow",
@@ -94,7 +95,8 @@ export type ObjectDescriptor = {
   noun: string;
   modes: readonly Config["mode"][];
   rotations: boolean;
-  controls: "polyhedral" | "curved" | "lift" | "route" | "weave" | "polytope";
+  controls:
+    "polyhedral" | "curved" | "lift" | "route" | "weave" | "polytope" | "root";
   linkedViews?: boolean;
   motionChoices?: MotionChoice[] | ((c: Config) => MotionChoice[]);
   sectionMotion?: MotionChoice;
@@ -105,12 +107,13 @@ export type ObjectDescriptor = {
   // is shown while the drawing has such geometry (drawnInks in Drawing.tsx).
   // Without them, the legend names the four coordinate directions.
   legendItems?: LegendItem[] | ((c: Config) => LegendItem[]);
-  parameterKey?: "lift" | "bypass" | "weave" | "cell24";
+  parameterKey?: "lift" | "bypass" | "weave" | "cell24" | "root";
   numericFields?: {
     key:
       | keyof Lift
       | keyof Omit<Bypass, "obstacle">
-      | keyof Omit<Weave, "family" | "path">;
+      | keyof Omit<Weave, "family" | "path">
+      | keyof Omit<Root, "sheet" | "trace">;
     index?: number;
     label: string;
     help: Help<string> | ((c: Config) => Help<string>);
@@ -150,7 +153,7 @@ export type ObjectDescriptor = {
   reconcile?: (c: Config) => Config;
   choicesFirst?: boolean;
   choices?: {
-    key: "obstacle" | "family" | "path" | "view";
+    key: "obstacle" | "family" | "path" | "view" | "sheet";
     label: string;
     help: Help<string>;
     values: { value: string; label: string }[];
@@ -164,6 +167,8 @@ export type ObjectDescriptor = {
   // Draws the companion first: left, or on top when stacked.
   companionFirst?: boolean;
   pairedLabel?: string;
+  // The heading's count of linked views, where it is not two.
+  pairedEyebrow?: string;
   // The legend's entry for a moving point's accent ink, when drawn.
   movingLegend?: (c: Config) => string | undefined;
   animationFramingHelp?: (c: Config) => string;
@@ -1320,5 +1325,162 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           }
         : { ...c, mode },
     motion: "double",
+  },
+  root: {
+    name: "Square-root journey",
+    noun: "square-root journey",
+    controls: "root",
+    parameterKey: "root",
+    modes: ["paired"],
+    modeLabels: { paired: "Source, value and lift" },
+    // The 4D curve is the result; its companion is one flat diagram that
+    // holds the z and w planes side by side.
+    pairedModes: ["orthographic", "diagram"],
+    panelLabels: {
+      diagram: "Source z · value w",
+      orthographic: "The path in 4D",
+    },
+    companionFirst: true,
+    pairedLabel: "Source and value planes and the lifted 4D path",
+    pairedEyebrow: "THREE LINKED VIEWS",
+    flat: (c) => c.mode === "diagram",
+    rotations: true,
+    viewLabel: "View operation",
+    selectorNote:
+      "Flat z and w planes · the 4D path turned, then its fourth coordinate dropped",
+    constructionNumber: "03",
+    radiusFields: [],
+    support: (c) => {
+      const r = c.root!.radius;
+      return Math.sqrt(r * r + r);
+    },
+    familyPassage: false,
+    passageHelp: "",
+    sliceHelp: "",
+    spreadHelp: "",
+    sectionDetail: () => "",
+    legend: "threads",
+    legendItems: [
+      { label: "First circuit, 0 ≤ t ≤ 2π", family: 0 },
+      { label: "Second circuit, 2π ≤ t ≤ 4π (dashed)", family: 2 },
+      { label: "Axes, branch point and principal cut", family: 3 },
+    ],
+    movingLegend: () => "Moving point; the ring marks the start",
+    choicesFirst: true,
+    choices: [
+      {
+        key: "sheet",
+        label: "Initial sheet",
+        help: tiered(
+          "Which square root w starts on, at t = 0.",
+          "+√r starts on the principal root; −√r on the other. Either returns after two circuits.",
+        ),
+        values: [
+          { value: "plus", label: "w(0) = +√r" },
+          { value: "minus", label: "w(0) = −√r" },
+        ],
+      },
+    ],
+    numericFields: [
+      {
+        key: "radius",
+        label: "Radius r",
+        help: tiered(
+          "|z| = r, from 0.25 to 4.",
+          "The path keeps away from the branch point z = 0, drawn separately. |w| = √r, at one scale with z.",
+        ),
+      },
+      {
+        key: "from",
+        label: "Trace start",
+        help: tiered(
+          "Radians, 0 to 4π (4*pi); t where the trace begins.",
+          "A start after the end traverses in reverse. Values within rounding of 0 or 4π are those ends.",
+        ),
+        endpoint: true,
+      },
+      {
+        key: "to",
+        label: "Trace end",
+        help: tiered(
+          "Radians, 0 to 4π (4*pi); t where the trace ends.",
+          "Only a whole 4π journey returns every view, so only it can loop.",
+        ),
+        endpoint: true,
+      },
+    ],
+    motionEndpointsLabel: "Journey endpoints",
+    countFields: () => [
+      { key: "samples", label: "Path intervals", min: 64, max: 4096 },
+    ],
+    countNote:
+      "Intervals divide 0 ≤ t ≤ 4π. Exact points are added at 2π and the moving point.",
+    layerOptions: () => [
+      { key: "edges", label: "Circuits, trace and points" },
+      { key: "guides", label: "Axes, branch point and principal cut" },
+    ],
+    animationFramingHelp: () =>
+      "All views share one parameter. Orbit the 4D view, or pan and zoom the planes, before playback; animation holds both.",
+    viewingHelp: () =>
+      "1: z and w planes · drag to pan · 2: 4D path · drag to orbit · shift-drag to pan · each view zooms independently",
+    // A summary that stays the same through the motion; the circuit is
+    // among the readouts.
+    diagnostics: (r) =>
+      r.root
+        ? `Two circuits of z, ${r.root.intervals.toLocaleString("en-US")} intervals over 0 ≤ t ≤ 4π. The bright trace is the last circuit behind the moving point.`
+        : "",
+    readouts: (r) => {
+      const d = r.root;
+      if (!d) return [];
+      const n = (x: number) => signed(x, 4);
+      return [
+        { label: "Parameter t", value: d.parameter.toPrecision(5) },
+        {
+          label: "Turns of z",
+          value: (d.parameter / (2 * Math.PI)).toFixed(3),
+        },
+        { label: "Circuit", value: `${d.circuit} of 2` },
+        { label: "Re z", value: n(d.z[0]) },
+        { label: "Im z", value: n(d.z[1]) },
+        { label: "Re w", value: n(d.w[0]) },
+        { label: "Im w", value: n(d.w[1]) },
+        {
+          label: "w as a root of z",
+          value: d.principal > 0 ? "+√z (principal)" : "−√z",
+        },
+        { label: "Largest |w² − z|", value: d.residual.toExponential(1) },
+        { label: "Norm |(z, w)|", value: d.normBound.toPrecision(5) },
+      ];
+    },
+    colorNote: () =>
+      "Each circuit has one ink in all three views; the second is dashed. In the z plane they coincide; w and the 4D view separate them. The bright trace is the last circuit behind the moving point.",
+    explanation: () => [
+      "The second time around",
+      "Follow z once around the origin and z is home, but its square root w has only gone halfway: it ends at −w. A second circuit brings w home. The z plane cannot tell the circuits apart; the pair (z, w) in four dimensions can. Turned and projected into space, it is one closed curve whose two passes over each z stay apart. The principal root's cut on the negative real axis is a naming convention only: the path crosses it without a break.",
+      "z = r e^{it},   w = ±√r e^{it/2},   w² = z,   0 ≤ t ≤ 4π,   P = (R(Re z, Im z, Re w, Im w))_xyz",
+    ],
+    title: () => "Tangent Garden — The second time around",
+    limitations:
+      "one circular source path, r from 0.25 to 4; at most 4,096 parameter intervals; orthogonal projection after a declared 4D rotation; no surface or general path continuation",
+    defaults: () => ({
+      ...structuredClone(defaultConfig),
+      object: "root",
+      mode: "paired",
+      samples: 1024,
+      angles: [0, 0, -1, 0, 0, 0.6],
+      root: { radius: 1.6, sheet: "plus", from: 0, to: 4 * Math.PI },
+    }),
+    motion: "trace",
+    motionChoices: [
+      {
+        value: "trace",
+        label: "Follow the root",
+        help: tiered(
+          "Moves t from Trace start to Trace end, carrying z, w and the 4D point.",
+          "The trace is the last circuit behind the point. After one circuit z returns but w is opposite; a whole 4π journey returns every view, so it can loop.",
+        ),
+        loops: true,
+      },
+    ],
   },
 };

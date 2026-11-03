@@ -448,6 +448,31 @@ self.onmessage = async ({
             throw fieldError(field, `${label} must be a whole number.`);
         }
       }
+      const root = q.object === "root" ? q.root : undefined;
+      if (q.object === "root" && !root)
+        throw new Error("Enter square-root journey parameters.");
+      if (root) {
+        for (const [i, value] of q.angles.entries())
+          if (!Number.isFinite(value))
+            throw fieldError(
+              `angles.${i}`,
+              `${["xy", "xz", "yz", "xw", "yw", "zw"][i]} angle must be a finite constant.`,
+            );
+        for (const [field, label, value] of [
+          ["root.radius", "Radius r", root.radius],
+          ["root.from", "Trace start", root.from],
+          ["root.to", "Trace end", root.to],
+        ] as [string, string, number][])
+          if (!Number.isFinite(value))
+            throw fieldError(field, `${label} must be a finite constant.`);
+        if (!Number.isFinite(q.samples))
+          throw fieldError(
+            "samples",
+            "Path intervals must be a finite whole number.",
+          );
+        if (!Number.isInteger(q.samples))
+          throw fieldError("samples", "Path intervals must be a whole number.");
+      }
       if (q.object === "bypass" && !route)
         throw new Error("Enter shell bypass parameters.");
       if (route) {
@@ -535,23 +560,25 @@ self.onmessage = async ({
         if (!Number.isInteger(q.samples))
           throw fieldError("samples", "Thread samples must be a whole number.");
       }
-      const counted: ("count" | "curves" | "samples" | "grid")[] = polytope
-        ? q.mode === "section"
-          ? ["count"]
-          : []
-        : pairedWeave
-          ? ["curves", "samples"]
-          : weave
-            ? ["count", "curves", "samples"]
-            : lift || route
-              ? ["samples"]
-              : curved
-                ? ["count", "curves", "samples"]
-                : q.mode === "section"
-                  ? ["count"]
-                  : q.mode === "stereo"
-                    ? ["grid", "samples"]
-                    : ["grid"];
+      const counted: ("count" | "curves" | "samples" | "grid")[] = root
+        ? ["samples"]
+        : polytope
+          ? q.mode === "section"
+            ? ["count"]
+            : []
+          : pairedWeave
+            ? ["curves", "samples"]
+            : weave
+              ? ["count", "curves", "samples"]
+              : lift || route
+                ? ["samples"]
+                : curved
+                  ? ["count", "curves", "samples"]
+                  : q.mode === "section"
+                    ? ["count"]
+                    : q.mode === "stereo"
+                      ? ["grid", "samples"]
+                      : ["grid"];
       const counts = counted.map((key) => q[key]);
       const values = weave
         ? [q.clip]
@@ -573,6 +600,7 @@ self.onmessage = async ({
         !lift &&
         !route &&
         !weave &&
+        !root &&
         ![...q.angles, ...values, ...counts].every(Number.isFinite)
       )
         throw new Error(
@@ -606,6 +634,18 @@ self.onmessage = async ({
               clip: q.clip,
             }
           : {}),
+        ...(root
+          ? {
+              root: {
+                radius: root.radius,
+                sheet: root.sheet,
+                from: root.from,
+                to: root.to,
+                trace: root.trace ?? 0,
+              },
+              samples: q.samples,
+            }
+          : {}),
         ...(route
           ? {
               bypass: {
@@ -631,7 +671,7 @@ self.onmessage = async ({
           : {}),
         mode: q.mode,
         angles: lift || route ? [0, 0, 0, 0, 0, 0] : q.angles,
-        ...(lift || route || weave || (polytope && q.mode !== "section")
+        ...(lift || route || weave || root || (polytope && q.mode !== "section")
           ? {}
           : q.mode === "section"
             ? { count: q.count, slice: q.slice, spread: q.spread }

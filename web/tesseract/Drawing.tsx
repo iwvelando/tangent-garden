@@ -79,7 +79,7 @@ export const markerShown = (
 ) =>
   m.role === "comparison"
     ? !!layers.comparison
-    : dualRoles.includes(m.role)
+    : dualRoles.includes(m.role) || m.role === "branch-point"
       ? layers.guides
       : layers.edges;
 // The 24-cell's roles: the whole crystals faint, the selected cell and its
@@ -92,6 +92,15 @@ const polytopeStroke: Partial<
   spoke: { width: 2, opacity: 0.95 },
   cell: { width: 2.8, opacity: 1 },
   diagonal: { width: 1.4, opacity: 0.9 },
+  // The square-root journey: both whole circuits quiet, the last circuit
+  // behind the moving point bright.
+  circuit: { width: 1.8, opacity: 0.6 },
+  trace: { width: 3.4, opacity: 1 },
+};
+// Guides, then the quiet circuits, then the trace on top.
+const journeyRank: Partial<Record<Result["paths"][number]["role"], number>> = {
+  circuit: 1,
+  trace: 2,
 };
 // Everything a result (and a paired view's companion) draws with these
 // layers, by ink family and role, so that the legend names only what is
@@ -170,6 +179,10 @@ export function Drawing({
     };
     mapped.sort((a, b) => rank(a.source) - rank(b.source));
   }
+  if (result.object === "root")
+    mapped.sort(
+      (a, b) => (journeyRank[a.role] ?? 0) - (journeyRank[b.role] ?? 0),
+    );
   if (curved)
     mapped.sort((a, b) => {
       const rank = (id?: string) =>
@@ -256,6 +269,14 @@ export function Drawing({
                   })),
               }
             : {}),
+          ...(result.root
+            ? { root: result.root, markers: result.markers }
+            : result.operation === "diagram" && result.object === "root"
+              ? {
+                  representation: "z plane left and w plane right, one scale",
+                  markers: result.markers,
+                }
+              : {}),
           ...(result.polytope
             ? {
                 framingRadius: result.radius,
@@ -363,13 +384,15 @@ export function Drawing({
             strokeDasharray={
               p.role === "diagonal"
                 ? "5 6"
-                : p.dashed
-                  ? "7 5"
-                  : curved &&
-                      (result.sections[sectionIndex(p.sectionId)]?.level ?? 0) <
-                        0
+                : p.role === "circuit" && p.branch === "2"
+                  ? "7 6"
+                  : p.dashed
                     ? "7 5"
-                    : undefined
+                    : curved &&
+                        (result.sections[sectionIndex(p.sectionId)]?.level ??
+                          0) < 0
+                      ? "7 5"
+                      : undefined
             }
             {...stroke(
               own
@@ -446,6 +469,40 @@ export function Drawing({
               </g>
             );
           }
+          if (m.role === "start" || m.role === "current")
+            // The journey's moving point, ringed by the background so it
+            // reads over the trace, and an open ring where it started.
+            return (
+              <circle
+                key={m.id}
+                data-marker={m.id}
+                data-role={m.role}
+                cx={x}
+                cy={y}
+                r={m.role === "current" ? 7 : 11}
+                fill={m.role === "current" ? movingInk(dark, scheme) : "none"}
+                stroke={
+                  m.role === "current"
+                    ? plotPalette(dark, scheme).bg
+                    : movingInk(dark, scheme)
+                }
+                {...stroke(m.role === "current" ? 2 : 1.8)}
+              />
+            );
+          if (m.role === "branch-point")
+            return (
+              <circle
+                key={m.id}
+                data-marker={m.id}
+                data-role={m.role}
+                cx={x}
+                cy={y}
+                r={5}
+                fill={plotPalette(dark, scheme).bg}
+                stroke={colors[3]}
+                {...stroke(1.8)}
+              />
+            );
           if (m.role === "center" || m.role === "vertex")
             // A dual vertex; the selected cell's center is ringed.
             return (

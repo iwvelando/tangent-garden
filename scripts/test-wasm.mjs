@@ -4350,6 +4350,47 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// The square-root journey: three views' paths, parameters and 4D sources
+// travel in the typed buffer; the JSON keeps identities and diagnostics.
+{
+  const request = {
+    object: "root",
+    mode: "paired",
+    samples: 4096,
+    angles: [0, 0, -1, 0, 0, 0.6],
+    root: { radius: 4, sheet: "plus", from: 0, to: 4 * Math.PI, trace: 0.37 },
+  };
+  const times = [];
+  let reply, result;
+  for (let i = 0; i < 5; i++) {
+    const start = performance.now();
+    reply = tangentGardenTesseract(JSON.stringify(request));
+    result = hyperResult(reply);
+    times.push(performance.now() - start);
+  }
+  assert.notEqual(typeof reply, "string");
+  assert.ok(
+    Buffer.byteLength(reply.json) < 20000,
+    "bulk arrays leave the JSON",
+  );
+  const lifted = result.paths.filter((p) => !p.guide);
+  assert.equal(lifted.length, 4);
+  for (const p of lifted)
+    for (const [x, y, u, v] of p.fourPoints)
+      assert.ok(Math.hypot(u * u - v * v - x, 2 * u * v - y) < 1e-13 * 4);
+  const counted = [result, result.companion].reduce(
+    (n, r) =>
+      n + r.markers.length + r.paths.reduce((m, p) => m + p.points.length, 0),
+    0,
+  );
+  assert.equal(result.emittedPoints, counted);
+  assert.ok(counted <= (9 * 4096) / 2 + 64);
+  times.sort((a, b) => a - b);
+  console.log(
+    `Square-root journey WASM at 4,096 intervals: ${result.emittedPoints} points in three views; median ${times[2].toFixed(1)} ms including parse; ${replyBytes(reply)} bytes sent`,
+  );
+}
+
 // The self-dual 24-cell: its vertex arrays travel in the typed buffer and
 // its incidence as small index lists.
 {
