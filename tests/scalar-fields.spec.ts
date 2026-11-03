@@ -1302,6 +1302,86 @@ test("tesseract parameters accept constants, reject variables, and discard stale
   expect(q.angles).toEqual([0, 0, 0, 0, 0, 0]);
 });
 
+test("square-root journey fields share scalar parsing, preserve overlapping edits and discard replaced evaluations", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    (window as any).pendingRootScalars = 0;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action !== "scalars") return send.call(this, q, ...rest);
+      (window as any).pendingRootScalars++;
+      const finished = ({ data }: MessageEvent) => {
+        if (data.id !== q.id) return;
+        (window as any).pendingRootScalars--;
+        this.removeEventListener("message", finished);
+      };
+      this.addEventListener("message", finished);
+      setTimeout(() => send.call(this, q, ...rest), 250);
+    };
+  });
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  const config = async () =>
+    JSON.parse((await stage.getAttribute("data-config"))!);
+  await settle();
+  await choosePreset(page, { label: "The second time around" });
+  await settle();
+  await page.getByText("Journey endpoints", { exact: true }).click();
+  for (const [name, text, key, value] of [
+    ["Radius r", "phi", "radius", phi],
+    ["Trace start", "pi/4", "from", Math.PI / 4],
+    ["Trace end", "3*pi", "to", 3 * Math.PI],
+  ] as const) {
+    const input = field(page, name);
+    await input.fill(text);
+    await settle();
+    expect((await config()).root[key]).toBe(value);
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await input.fill(bad);
+      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Export image" }),
+      ).toBeDisabled();
+    }
+    await input.fill(text);
+    await settle();
+  }
+  await field(page, "Radius r").fill("sqrt(2)");
+  await field(page, "Trace start").fill("pi/3");
+  await page.getByRole("spinbutton", { name: "Path intervals" }).fill("129");
+  await settle();
+  expect((await config()).root).toEqual({
+    radius: Math.SQRT2,
+    sheet: "plus",
+    from: Math.PI / 3,
+    to: 3 * Math.PI,
+  });
+  const drawn = JSON.parse(
+    (await page.locator("#tesseract-orthographic > desc").textContent())!,
+  ).root;
+  expect(drawn.parameter).toBe(Math.PI / 3);
+  expect(drawn.normBound).toBeCloseTo(Math.sqrt(2 + Math.SQRT2), 12);
+  expect(drawn.intervals).toBe(129);
+
+  await field(page, "Radius r").fill("e");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).pendingRootScalars))
+    .toBeGreaterThan(0);
+  await choosePreset(page, { label: "The second time around" });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).pendingRootScalars))
+    .toBe(0);
+  await settle();
+  expect((await config()).root).toEqual({
+    radius: 1.6,
+    sheet: "plus",
+    from: 0,
+    to: 4 * Math.PI,
+  });
+});
+
 test("curved 4D radii share scalar parsing and invalidate superseded definitions", async ({
   page,
 }) => {
