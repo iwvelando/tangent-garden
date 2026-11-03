@@ -8,15 +8,19 @@ import {
   pageScale,
   pathOf,
   type Framing,
+  type Nest,
   type ShortenContour,
-  type ShortenSeed,
 } from "./model";
 
 export type LabDrawingProps = {
-  seed: ShortenSeed;
+  // The seed's largest radius, which fixes the physical frame.
+  extent: number;
   family: ShortenContour[];
   current?: ShortenContour;
   framing: Framing;
+  // Whether family loops later than the shown time are drawn, faint, or
+  // left out, so the nest grows with the motion.
+  nest: Nest;
   dark: boolean;
   scheme: ColorScheme;
 };
@@ -29,7 +33,7 @@ const { width, height } = labPage;
 function Art(p: LabDrawingProps) {
   const palette = plotPalette(p.dark, p.scheme),
     stroke = svgStroke("regular");
-  const k = pageScale(p.seed);
+  const k = pageScale(p.extent);
   const area0 = p.family[0]?.area ?? 1;
   const shape = (c: ShortenContour) =>
     p.framing === "normalized"
@@ -46,16 +50,26 @@ function Art(p: LabDrawingProps) {
     <>
       <rect width={width} height={height} fill={palette.bg} />
       <g fill="none" strokeLinejoin="round">
-        {family.map((d, i) => (
-          <path
-            key={i}
-            data-role="family"
-            d={d}
-            stroke={palette.base}
-            opacity={p.framing === "normalized" ? 0.45 : 0.85}
-            {...stroke(1.1)}
-          />
-        ))}
+        {family.map((d, i) => {
+          const ahead = p.current !== undefined && p.family[i].t > p.current.t;
+          if (ahead && p.nest === "grows") return null;
+          return (
+            <path
+              key={i}
+              data-role="family"
+              d={d}
+              stroke={palette.base}
+              opacity={
+                ahead && p.nest === "ghost"
+                  ? 0.18
+                  : p.framing === "normalized"
+                    ? 0.45
+                    : 0.85
+              }
+              {...stroke(1.1)}
+            />
+          );
+        })}
         {p.current && (
           <path
             data-role="current"

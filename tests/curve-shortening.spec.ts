@@ -24,8 +24,11 @@ test("contour families end where the film ends and space by time or radius", asy
 });
 
 test("pacing maps progress to physical time within the film, ends exact", async () => {
-  const { timeAt } = await import("../web/shorten/model");
-  for (const pacing of ["time", "radius"] as const) {
+  const { timeAt, familyTimes } = await import("../web/shorten/model");
+  // Early spacing and pacing put t = end·f³, where petals change fastest.
+  expect(familyTimes(8, 4, "early")).toEqual([0, 0.125, 1, 3.375]);
+  expect(timeAt(0.5, 8, "early")).toBe(1);
+  for (const pacing of ["time", "radius", "early"] as const) {
     expect(timeAt(0, 0.49, pacing)).toBe(0);
     expect(timeAt(1, 0.49, pacing)).toBe(0.49);
     // Progress outside [0, 1] never leaves the film.
@@ -59,7 +62,7 @@ async function openLab(page: Page) {
   await expect(lab).toBeVisible();
   await expect(
     lab.locator(".shorten-view svg path[data-role=family]"),
-  ).toHaveCount(12);
+  ).toHaveCount(24);
   return lab;
 }
 
@@ -107,12 +110,12 @@ test("playback pauses and stops, and an edit ends it", async ({ page }) => {
   await page.waitForTimeout(300);
   expect(await view.getAttribute("data-progress")).toBe(held);
   await lab.getByRole("button", { name: "Resume motion" }).click();
-  await lab.getByLabel("Nodes").selectOption("128");
+  await lab.getByLabel("Nodes").selectOption("256");
   await expect(lab.getByRole("button", { name: "Play motion" })).toBeVisible();
   await expect(view).toHaveAttribute("data-progress", "0");
   await expect(
     lab.locator(".shorten-view svg path[data-role=family]"),
-  ).toHaveCount(12);
+  ).toHaveCount(24);
 });
 
 test("the normalized view is declared and the still exports geometry only", async ({

@@ -13,8 +13,8 @@ import (
 // recomputed. A request with other settings replaces it. Samples are a pure
 // function of the request and time, so retention changes only latency.
 var frozenFilm struct {
-	request shorten.Request
-	film    *shorten.Film
+	key  string
+	film *shorten.Film
 }
 
 // tangentGardenShorten solves (or reuses) an evolution and replies with its
@@ -30,12 +30,15 @@ func registerShorten() {
 			return refusal(err)
 		}
 		fresh := false
-		if frozenFilm.film == nil || frozenFilm.request != q.Request {
-			film, err := shorten.Solve(q.Request)
+		settings := q
+		settings.Times = nil
+		key, _ := json.Marshal(settings)
+		if frozenFilm.film == nil || frozenFilm.key != string(key) {
+			film, err := q.Solve()
 			if err != nil {
 				return refusal(err)
 			}
-			frozenFilm.request, frozenFilm.film, fresh = q.Request, film, true
+			frozenFilm.key, frozenFilm.film, fresh = string(key), film, true
 		}
 		reply, err := frozenFilm.film.Frames(q.Times)
 		if err != nil {

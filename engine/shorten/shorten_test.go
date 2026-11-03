@@ -402,7 +402,7 @@ func TestFramesRefuseTimesOutsideTheFilmByIndex(t *testing.T) {
 func TestGridIsExactOnFirstHarmonics(t *testing.T) {
 	for _, n := range []int{32, 128, 512} {
 		f := solve(t, Request{Seed: circle, Nodes: n, Tau: 0.005, Horizon: 0.1})
-		g := f.g
+		g := f.s.(*grid)
 		h := make([]float64, n)
 		for i := range n {
 			h[i] = 1.25 + 0.3*g.cos[i] - 0.7*g.sin[i]
@@ -416,7 +416,7 @@ func TestGridIsExactOnFirstHarmonics(t *testing.T) {
 				t.Fatalf("N=%d node %d: ρ = %.15g, want 1.25", n, i, r)
 			}
 		}
-		c := f.contour(0, h, 0)
+		c := g.contour(0, h, 0)
 		for i := range c.X {
 			if d := math.Hypot(c.X[i]-0.3, c.Y[i]+0.7); math.Abs(d-1.25) > 1e-12 {
 				t.Fatalf("N=%d vertex %d is %.15g from (0.3, −0.7), want 1.25", n, i, d)

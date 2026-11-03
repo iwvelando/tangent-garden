@@ -26,50 +26,6 @@ type reference struct {
 	cx, cy [][]complex128
 }
 
-func fft(a []complex128, inverse bool) {
-	n := len(a)
-	for i, j := 1, 0; i < n; i++ {
-		bit := n >> 1
-		for ; j&bit != 0; bit >>= 1 {
-			j ^= bit
-		}
-		j ^= bit
-		if i < j {
-			a[i], a[j] = a[j], a[i]
-		}
-	}
-	sign := -1.0
-	if inverse {
-		sign = 1
-	}
-	for size := 2; size <= n; size <<= 1 {
-		w := cmplx.Rect(1, sign*2*math.Pi/float64(size))
-		for start := 0; start < n; start += size {
-			z := complex(1, 0)
-			for k := range size / 2 {
-				u, v := a[start+k], a[start+k+size/2]*z
-				a[start+k], a[start+k+size/2] = u+v, u-v
-				z *= w
-			}
-		}
-	}
-	if inverse {
-		for i := range a {
-			a[i] /= complex(float64(n), 0)
-		}
-	}
-}
-
-func wavenumber(k, n int) float64 {
-	if 2*k == n {
-		return 0
-	}
-	if k > n/2 {
-		return float64(k - n)
-	}
-	return float64(k)
-}
-
 // derivatives returns the first and second u-derivatives of samples v.
 func derivatives(v []float64) (d1, d2 []float64) {
 	n := len(v)

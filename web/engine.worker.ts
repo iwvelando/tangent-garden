@@ -187,39 +187,34 @@ self.onmessage = async ({
     }
     if (data.action === "shorten") {
       const q = data.shorten;
-      if (!q) throw new Error("Enter curve-shortening settings.");
+      if (!q || !!q.convex === !!q.bloom)
+        throw new Error("Enter one curve-shortening evolution.");
+      const run = (q.convex ?? q.bloom)!;
+      const prefix = q.convex ? "convex" : "bloom";
+      const seed: Record<string, unknown> = { ...run.seed };
       // JSON would turn NaN or infinity into null, which Go reads as zero.
       const numbers: [string, unknown][] = [
-        ["seed.radius", q.seed.radius],
-        ["seed.epsilon", q.seed.epsilon],
-        ["seed.centerX", q.seed.centerX],
-        ["seed.centerY", q.seed.centerY],
-        ["tau", q.tau],
-        ["horizon", q.horizon],
+        ...Object.entries(seed).map(([k, v]): [string, unknown] => [
+          `${prefix}.seed.${k}`,
+          v,
+        ]),
+        [`${prefix}.tau`, run.tau],
+        [`${prefix}.horizon`, run.horizon],
+        [`${prefix}.nodes`, run.nodes],
         ...q.times.map((t, i): [string, unknown] => [`times.${i}`, t]),
       ];
       for (const [path, v] of numbers)
         if (typeof v !== "number" || !Number.isFinite(v))
           throw fieldError(path, "Enter a finite number.");
-      for (const [path, v] of [
-        ["seed.mode", q.seed.mode],
-        ["nodes", q.nodes],
-      ] as const)
-        if (!Number.isInteger(v))
-          throw fieldError(path, "Enter a whole number.");
       const start = performance.now();
       const raw = tangentGardenShorten(
         JSON.stringify({
-          seed: {
-            radius: q.seed.radius,
-            mode: q.seed.mode,
-            epsilon: q.seed.epsilon,
-            centerX: q.seed.centerX,
-            centerY: q.seed.centerY,
+          [prefix]: {
+            seed,
+            nodes: run.nodes,
+            tau: run.tau,
+            horizon: run.horizon,
           },
-          nodes: q.nodes,
-          tau: q.tau,
-          horizon: q.horizon,
           times: q.times,
         }),
       );

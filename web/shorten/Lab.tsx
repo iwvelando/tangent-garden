@@ -17,7 +17,8 @@ import {
   familyTimes,
   labPage,
   requestOf,
-  seedOf,
+  extentOf,
+  labSeeds,
   stopText,
   timeAt,
   type LabSettings,
@@ -164,15 +165,17 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
     setProgress(0);
     setS((x) => ({ ...x, ...change }));
   };
-  const seed = seedOf(s);
+  const seed = labSeeds[s.seed];
+  const flower = "bloom" in seed;
   const current = shown?.key === key ? shown.contour : undefined;
   const drawing = (): LabDrawingProps | undefined =>
     ready
       ? {
-          seed,
+          extent: extentOf(s),
           family: family.reply.contours,
           current,
           framing: s.framing,
+          nest: s.nest,
           dark: theme.dark,
           scheme: theme.scheme,
         }
@@ -180,8 +183,10 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
   const metadata = () => ({
     kind: "curve-shortening",
     research: "https://github.com/iwvelando/tangent-garden/issues/322",
-    flow: "dX/dt = −κ n_out, support function h_t = −1/(h + h_θθ)",
-    seed,
+    flow: flower
+      ? "dX/dt = −κ n_out as a radial graph, (ln r)_t = e^{−2ℓ}(ℓ_φφ − 1 − ℓ_φ²)/(1 + ℓ_φ²)"
+      : "dX/dt = −κ n_out, support function h_t = −1/(h + h_θθ)",
+    seed: requestOf(s, []),
     nodes: s.nodes,
     tau: s.tau,
     horizon: s.horizon,
@@ -189,6 +194,7 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
     stop: family?.reply.stop,
     family: family?.reply.contours.map((c) => c.t),
     spacing: s.spacing,
+    nest: s.nest,
     framing:
       s.framing === "normalized"
         ? "each loop scaled by √(A₀/A) about its centroid (presentation only)"
@@ -305,6 +311,7 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
           revision={JSON.stringify([
             familyKey,
             s.framing,
+            s.nest,
             current?.t,
             theme.dark,
             theme.scheme,
@@ -321,8 +328,8 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
           </p>
           <h2 id="shorten-title">A flower remembering a circle</h2>
           <p>
-            A convex loop moves inward at its curvature. Ripples fade first; the
-            loop rounds and shrinks toward a point.
+            A loop moves inward at its curvature. Petal tips retract and notches
+            fill; the loop rounds and shrinks toward a point.
           </p>
         </div>
         <div className="shorten-layout">
@@ -349,7 +356,9 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
                 Loops at {s.count}{" "}
                 {s.spacing === "time"
                   ? "equal time steps"
-                  : "equal-radius steps"}
+                  : s.spacing === "early"
+                    ? "times t ∝ j³, dense while petals change"
+                    : "equal-radius steps"}
               </span>
               <span>
                 <i
@@ -373,8 +382,10 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
                   </p>
                   <p>
                     Area {fmt(current.area, 7)}; A₀ − 2πt = {fmt(predicted, 7)}{" "}
-                    (polygon areas) · length {fmt(current.length, 6)} · ρ from{" "}
-                    {fmt(current.minRho)} to {fmt(current.maxRho)}
+                    (polygon areas) · length {fmt(current.length, 6)} ·{" "}
+                    {current.minKappa !== undefined
+                      ? `κ from ${fmt(current.minKappa)} to ${fmt(current.maxKappa ?? NaN)}`
+                      : `ρ from ${fmt(current.minRho ?? NaN)} to ${fmt(current.maxRho ?? NaN)}`}
                   </p>
                   <p className="note">
                     Solve: {r.stats.accepted} steps, {r.stats.rejected}{" "}
@@ -402,8 +413,8 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
                   ?lab=curve-shortening only.
                 </li>
                 <li>
-                  Seeds limited to the experiment; radius and center edits
-                  (covariance) are tested in Go only.
+                  Seeds are fixed presets; petal, ruffle, radius and center
+                  edits are tested in Go only.
                 </li>
                 <li>
                   No tiered help, field-error placement or ScalarInput
@@ -418,32 +429,29 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
                 </li>
               </ul>
             </section>
-            {radio("mode", "Seed", [
-              [6, "Six lobes, |ε|·35 ≤ ½"],
-              [3, "Three lobes, |ε|·8 ≤ ½"],
-              [0, "Circle"],
-            ])}
-            {s.mode !== 0 &&
-              radio("ripple", "Ripple", [
-                [1, "Largest allowed"],
-                [0.5, "Half"],
-                [-1, "Largest, inverted"],
-              ])}
+            {radio(
+              "seed",
+              "Seed",
+              Object.entries(labSeeds).map(([k, v]) => [
+                k as LabSettings["seed"],
+                v.label,
+              ]),
+            )}
             {radio("nodes", "Nodes", [
               [128, "128"],
               [256, "256"],
               [512, "512"],
             ])}
             {radio("tau", "Step factor τ", [
-              [0.01, "0.01"],
               [0.005, "0.005"],
               [0.0025, "0.0025"],
+              [0.00125, "0.00125"],
             ])}
             {radio("horizon", "Horizon", [
               [0.5, "0.5 T"],
               [0.9, "0.9 T"],
               [0.98, "0.98 T"],
-              [0.999, "0.999 T (curvature floor)"],
+              [0.999, "0.999 T (size floor)"],
             ])}
             {radio("count", "Contours", [
               [6, "6"],
@@ -452,9 +460,20 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
               [48, "48"],
             ])}
             {radio("spacing", "Spacing", [
+              ["early", "Early (t ∝ j³)"],
               ["radius", "Equal radius"],
               ["time", "Equal time"],
             ])}
+            {radio(
+              "nest",
+              "Nest",
+              [
+                ["whole", "Whole"],
+                ["ghost", "Later loops faint"],
+                ["grows", "Grows with the motion"],
+              ],
+              true,
+            )}
             {radio(
               "framing",
               "View",
@@ -503,6 +522,7 @@ export function ShortenLab({ onReturn }: { onReturn: () => void }) {
               "pacing",
               "Pacing",
               [
+                ["early", "Early (t ∝ p³)"],
                 ["radius", "Equal radius"],
                 ["time", "Physical time"],
               ],
