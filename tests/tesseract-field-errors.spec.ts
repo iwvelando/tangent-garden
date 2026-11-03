@@ -341,6 +341,30 @@ const cases: Case[] = [
     "Selected cell",
   ],
   ["angles.1", object("cell24"), (c) => (c.angles[1] = 2e6), "xz angle"],
+  [
+    "count",
+    (c) => c.object === "cell24" && c.mode === "section",
+    (c) => (c.count = 2.5),
+    "Section count",
+  ],
+  [
+    "count",
+    (c) => c.object === "cell24" && c.mode === "section",
+    (c) => (c.count = 26),
+    "Section count",
+  ],
+  [
+    "slice",
+    (c) => c.object === "cell24" && c.mode === "section",
+    (c) => (c.slice = 2.9),
+    "Slice offset h",
+  ],
+  [
+    "spread",
+    (c) => c.object === "cell24" && c.mode === "section",
+    (c) => (c.spread = 2.9),
+    "Section spread",
+  ],
 ];
 
 const study = (config: Config, motion: TesseractStudy["motion"]) =>

@@ -1114,6 +1114,20 @@ test("fields a link predates take the notebook's defaults", async () => {
   }
   const sectioned = structuredClone(cellStudy) as any;
   sectioned.config.mode = "section";
+  sectioned.config.slice = 0.25;
+  sectioned.config.count = 25;
+  sectioned.config.spread = 2.8;
+  sectioned.motion = "crystal";
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", sectioned))).study,
+    ),
+    sectioned,
+  );
+  const transient = structuredClone(sectioned);
+  transient.config.cell24.emphasis = 0.5;
+  await refused(() => tesseractStudy(transient), "config.cell24.emphasis");
+  sectioned.config.mode = "perspective";
   await refused(() => tesseractStudy(sectioned), "config.mode", /one of/);
 });
 

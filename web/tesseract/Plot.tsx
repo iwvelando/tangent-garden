@@ -155,7 +155,8 @@ export function Plot({
         (objects[config.object].viewingLabel?.(config) ??
           "Interactive tesseract construction. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom. Arrow keys orbit, shift-arrows pan, plus and minus zoom, Home resets.") +
         (onSelect
-          ? " Tap a point or fiber to select it; [ and ] step the selection."
+          ? (objects[config.object].selection?.instructions?.(config) ??
+            " Tap a point or fiber to select it; [ and ] step the selection.")
           : "")
       }
       tabIndex={0}

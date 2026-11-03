@@ -104,7 +104,10 @@ export function drawnInks(result: Result, layers: Layers) {
       if (pathShown(p, layers)) inks.push({ family: p.family, role: p.role });
     for (const m of r.markers ?? [])
       if (markerShown(m, layers)) inks.push({ family: m.family, role: m.role });
-    if (layers.faces) for (const f of r.faces) inks.push({ family: f.family });
+    if (layers.faces)
+      for (const f of r.faces)
+        if (f.guide === undefined || (f.guide ? layers.guides : layers.edges))
+          inks.push({ family: f.family });
     if (layers.edges && r.points.length) inks.push({ family: 0 });
   }
   return inks;
@@ -180,6 +183,10 @@ export function Drawing({
   // Transparent mathematical drawing, not opaque hidden-surface rendering.
   const faces = layers.faces
     ? result.faces
+        .filter(
+          (f) =>
+            f.guide === undefined || (f.guide ? layers.guides : layers.edges),
+        )
         .map((f) => ({ ...f, points: f.points.map(project) }))
         .sort(
           (a, b) =>
@@ -187,6 +194,18 @@ export function Drawing({
             b.points.reduce((s, p) => s + p[2], 0) / b.points.length,
         )
     : [];
+  // A link's permitted zero is the neutral entered still. In the
+  // passage zero occurs only at its empty endpoints.
+  const emphasis =
+    result.polytope?.sections && config.cell24?.emphasis
+      ? config.cell24.emphasis
+      : undefined;
+  const opacity = (dual: boolean) =>
+    emphasis === undefined
+      ? 1
+      : dual
+        ? 0.3 + 0.7 * emphasis
+        : 1 - 0.7 * emphasis;
   const d = (points: number[][]) =>
     points
       .map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(3)},${p[1].toFixed(3)}`)
@@ -254,8 +273,19 @@ export function Drawing({
                     circumradius: result.polytope.dual.circumradius,
                     edgeLength: result.polytope.dual.edgeLength,
                   },
-                  projection: "orthogonal: (x, y, z, w) → (x, y, z)",
-                  ids: "cell24/primal/edge/j, cell24/dual/edge/j, cell24/dual/vertex/k (the center of primal cell k)",
+                  ...(result.polytope.sections
+                    ? {
+                        sections: result.polytope.sections.map(
+                          ({ points: _, fourPoints: __, ...s }) => s,
+                        ),
+                      }
+                    : {}),
+                  projection: result.polytope.sections
+                    ? "intersection: w = h, then xyz"
+                    : "orthogonal: (x, y, z, w) → (x, y, z)",
+                  ids: result.polytope.sections
+                    ? "cell24/{primal|dual}/section/i/{edge|facet|vertex}/j; origins retain source vertex/edge IDs and vertexCells/facet cells retain cell IDs"
+                    : "cell24/primal/edge/j, cell24/dual/edge/j, cell24/dual/vertex/k (the center of primal cell k)",
                 },
               }
             : {}),
@@ -294,6 +324,10 @@ export function Drawing({
       {faces.map((f, i) => (
         <path
           key={`f${i}`}
+          data-face={f.source}
+          data-section={f.sectionId}
+          data-guide={f.guide}
+          opacity={f.guide === undefined ? undefined : opacity(f.guide)}
           d={d(f.points) + " Z"}
           fill={colors[f.family]}
           fillOpacity={dark ? 0.17 : 0.12}
@@ -313,6 +347,7 @@ export function Drawing({
             data-role={p.role}
             data-family={p.family}
             data-guide={p.guide}
+            opacity={emphasis === undefined ? undefined : opacity(p.guide)}
             data-selected={
               curved ? sectionIndex(p.sectionId) === selected : undefined
             }
@@ -414,7 +449,16 @@ export function Drawing({
           if (m.role === "center" || m.role === "vertex")
             // A dual vertex; the selected cell's center is ringed.
             return (
-              <g key={m.id} data-marker={m.id} data-role={m.role}>
+              <g
+                key={m.id}
+                data-marker={m.id}
+                data-role={m.role}
+                opacity={
+                  emphasis === undefined
+                    ? undefined
+                    : opacity(dualRoles.includes(m.role))
+                }
+              >
                 {m.role === "center" && (
                   <circle
                     cx={x}
