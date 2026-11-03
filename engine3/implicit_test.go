@@ -2,6 +2,7 @@ package engine3
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -124,6 +125,125 @@ func closed(m *ImplicitResult) bool {
 }
 
 func squared(p Vec3) float64 { return p.dot(p) }
+
+// Every regular level c > 1 of (rho² − 1)² + z² is a dimpled sphere.
+// At c = 1.04 on 40 cells, sharing roots rounded to nonzero grid
+// endpoints used to fold triangles together, reporting a closed chi = 6.
+func TestImplicitRegularLattice(t *testing.T) {
+	for _, tc := range []struct {
+		level float64
+		cells int
+		box   Box
+	}{
+		{1.04, 40, cube(2)},
+		{1.03, 40, cube(2)},
+		{1.04, 40, Box{-2.0371, 1.9629, -2.0213, 1.9787, -1.9843, 2.0157}},
+		{1.16, 20, cube(2)},
+	} {
+		for _, refine := range []int{0, 1, 2} {
+			t.Run(fmt.Sprintf("c=%g/cells=%d/box=%v/refine=%d", tc.level, tc.cells, tc.box, refine), func(t *testing.T) {
+				q := implicitStudy("(x^2+y^2-1)^2+z^2", tc.level, tc.box, tc.cells)
+				q.Refine = refine
+				m := levelSet(t, q)
+				edges := map[[2]int32]int{}
+				for k := 0; k < len(m.Triangles); k += 3 {
+					for e := range 3 {
+						a, b := m.Triangles[k+e], m.Triangles[k+(e+1)%3]
+						edges[[2]int32{min(a, b), max(a, b)}]++
+					}
+				}
+				bad := 0
+				for _, count := range edges {
+					if count != 2 {
+						bad++
+					}
+				}
+				if len(edges) == 0 || bad != 0 || len(m.Components) != 1 || !closed(m) || m.Components[0].Euler != 2 || !m.Components[0].Orientable {
+					t.Fatalf("components %+v, %d edges not on two triangles", m.Components, bad)
+				}
+				if m.Singular != 0 || m.Cones != 0 || len(m.Crossings) != 0 || m.CrossingsUnresolved != 0 || m.Truncated || m.Refinement.Exhausted {
+					t.Fatal("a resolved regular level must have no singularities or omitted geometry")
+				}
+				m.residual(t, func(p Vec3) float64 { return math.Pow(p.X*p.X+p.Y*p.Y-1, 2) + p.Z*p.Z }, tc.level, 1e-12)
+			})
+		}
+	}
+}
+
+// Three triangles on the same edge are not a closed surface, even if
+// there is no boundary edge. Duplicate the tetrahedron's faces to expose
+// the distinction without relying on any particular meshing failure.
+func TestImplicitClosedEdgeIncidence(t *testing.T) {
+	m := &ImplicitResult{
+		Box:       cube(2),
+		Positions: []float64{0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1},
+		Triangles: []int32{0, 1, 2, 0, 3, 1, 0, 2, 3, 1, 3, 2},
+	}
+	m.topology()
+	if len(m.Components) != 1 || !m.Components[0].Closed || m.Components[0].Euler != 2 {
+		t.Fatalf("tetrahedron: %+v", m.Components)
+	}
+	m.Components = nil
+	m.Triangles = append(m.Triangles, 0, 1, 2)
+	m.topology()
+	if len(m.Components) != 1 || m.Components[0].Closed || len(m.Open) != 0 || len(m.Cut) != 0 {
+		t.Fatalf("non-manifold edge without a boundary: %+v, cut %v, open %v", m.Components, m.Cut, m.Open)
+	}
+}
+
+// Root brackets may end at t = 0 or 1 even when that endpoint's value is
+// nonzero. Those roots belong to their edges; exact zeros belong to the
+// lattice point. Exercise both endpoints and both vertex caches directly.
+func TestImplicitEndpointOwnership(t *testing.T) {
+	for _, upper := range []bool{false, true} {
+		for _, exact := range []bool{false, true} {
+			for _, refined := range []bool{false, true} {
+				t.Run(fmt.Sprintf("upper=%v/exact=%v/refined=%v", upper, exact, refined), func(t *testing.T) {
+					f := "-1e100*(x+1)"
+					p, q, r := point{0, 0, 0}, point{1, 0, 0}, point{1, 1, 0}
+					if upper {
+						f = "1e100*(x-1)"
+						p, q, r = point{3, 0, 0}, point{3, 1, 0}, point{4, 1, 0}
+					}
+					if !exact {
+						// The lower root's fraction underflows, forcing the
+						// bracket to retain t = 0 with a nonzero field value.
+						f += "+5e-324"
+					}
+					s, err := sample(implicitStudy(f, 0, cube(1), 4))
+					if err != nil {
+						t.Fatal(err)
+					}
+					vertex := func(p, q point) (int32, bool) {
+						return s.vertex(s.index(int(p[0]), int(p[1]), int(p[2])), int(q[0]-p[0])|int(q[1]-p[1])<<1|int(q[2]-p[2])<<2)
+					}
+					if refined {
+						a := newAdaptive(s, 1)
+						vertex = func(p, q point) (int32, bool) {
+							for i := range 3 {
+								p[i] *= a.r.scale
+								q[i] *= a.r.scale
+							}
+							return a.vertex(p, q)
+						}
+					}
+					a, ok := vertex(p, r)
+					u, w := p, q
+					if upper {
+						u, w = q, r
+					}
+					b, other := vertex(u, w)
+					if !ok || !other || (a == b) != exact || s.at(a) != s.at(b) {
+						t.Fatalf("coincident endpoint roots %d at %v and %d at %v: exact=%v, valid=%v/%v", a, s.at(a), b, s.at(b), exact, ok, other)
+					}
+					if again, ok := vertex(p, r); !ok || again != a {
+						t.Fatal("an edge must retain its own vertex")
+					}
+				})
+			}
+		}
+	}
+}
 
 func TestImplicitSphere(t *testing.T) {
 	for _, cells := range []int{9, 24, 31} {

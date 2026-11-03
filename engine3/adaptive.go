@@ -485,20 +485,20 @@ func (a *adaptive) vertex(p, q point) (int32, bool) {
 		return 0, false
 	}
 	v, found := int32(0), false
-	switch t {
-	case 0:
+	switch {
+	case ga == 0:
 		x = x0
 		v, found = a.points[e[0]]
-	case 1:
+	case gb == 0:
 		x = x1
 		v, found = a.points[e[1]]
 	}
 	if !found {
 		v = a.newVertex(x, (math.Abs(ga)+math.Abs(gb))/x1.sub(x0).norm())
-		switch t {
-		case 0:
+		switch {
+		case ga == 0:
 			a.points[e[0]] = v
-		case 1:
+		case gb == 0:
 			a.points[e[1]] = v
 		}
 	}
