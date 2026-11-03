@@ -143,6 +143,19 @@ import {
 import { curveInputs } from "./inputs";
 import { implicitGrid, implicitNote } from "./implicit";
 import {
+  storyContext,
+  storyNote,
+  type EventState,
+  type StoryId,
+} from "./story";
+import {
+  drawPreview,
+  EventPreviews,
+  type PreviewIntent,
+  type PreviewSlots,
+} from "./event-previews";
+import { EventStrip } from "./EventStrip";
+import {
   harmonicClosureKey,
   harmonicClosureNote,
   harmonicLabels,
@@ -257,6 +270,12 @@ function CrossedNote({ cusps }: { cusps: number }) {
     </p>
   );
 }
+// The study at another level, all else kept.
+const atLevel = (c: SpatialConfig, level: number): SpatialConfig => ({
+  ...c,
+  implicit: { ...c.implicit, level },
+});
+
 export default function SpatialApp({
   active = true,
   shared,
@@ -274,6 +293,11 @@ export default function SpatialApp({
     jobs = useRef(new Set<Promise<void>>());
   const [config, setConfig] = useState<SpatialConfig>(spatialPresets[0].config);
   const [customOpened, setCustomOpened] = useState(false);
+  // The curated event the study opened as (story.ts), kept until another
+  // study replaces it; it applies only while the study is its recipe.
+  const [story, setStory] = useState<StoryId | undefined>(undefined);
+  // Selecting even the base study's current event state ends playback.
+  const [eventSelection, setEventSelection] = useState(0);
   const [preset, setPreset] = useState("0"),
     [states, setStates] = useState<Record<string, ScalarState>>({});
   const [frame, setFrame] = useState<Frame | null>(null),
@@ -383,7 +407,14 @@ export default function SpatialApp({
     scalarError?.error ?? error.message,
   );
   const receiverPending = receiverView && busy;
-  const revision = JSON.stringify([key, states, active, journey.requested]);
+  const revision = JSON.stringify([
+    key,
+    states,
+    active,
+    journey.requested,
+    generation.current,
+    eventSelection,
+  ]);
   useEffect(() => {
     client.current = new EngineClient();
     return () => {
@@ -487,6 +518,7 @@ export default function SpatialApp({
     setStates({});
     setPreset(preset);
     setCustomOpened(study.config.format === "parametric");
+    setStory(study.story);
     setConfig(study.config);
     setLayers(study.layers);
     setProbe(study.probe);
@@ -533,6 +565,7 @@ export default function SpatialApp({
     sight,
     projection: lensing,
     lensAngle,
+    ...(story && { story }),
   });
   // The cut's buttons compute from its numeric fields, so they wait for
   // evaluations still pending for them; a preset chosen meanwhile wins.
@@ -1663,8 +1696,26 @@ export default function SpatialApp({
   const setSections = (
     change: (s: ImplicitConfig["sections"]) => ImplicitConfig["sections"],
   ) => setImplicit((q) => ({ ...q, sections: change(q.sections) }));
+  // The note on the drawn study: its story's reading of the level first,
+  // while it is its story's, and no genus at the critical level, where the
+  // surface is singular. A story follows the displayed animation frame;
+  // ordinary studies keep their existing base-study notes.
+  const storyFrame = animation?.frame ?? frame;
+  const drawnStory = storyFrame ? storyContext(storyFrame.config, story) : null;
+  const noteFrame = drawnStory?.eligible ? storyFrame : frame;
   const levelSet =
-    frame?.config.format === "implicit" ? frame.result.implicit : undefined;
+    noteFrame?.config.format === "implicit"
+      ? noteFrame.result.implicit
+      : undefined;
+  const levelNote = (r: NonNullable<typeof levelSet>) => {
+    if (!drawnStory?.eligible) return implicitNote(r).join(" ");
+    const { level } = noteFrame!.config.implicit,
+      s = drawnStory.story;
+    return [
+      ...storyNote(s, level, r),
+      ...implicitNote(r, { genus: level !== s.critical }),
+    ].join(" ");
+  };
   const implicitControls = (
     <>
       <Field
@@ -1777,7 +1828,7 @@ export default function SpatialApp({
         </>
       )}
       <p className="note" data-testid="implicit-note">
-        {levelSet ? implicitNote(levelSet).join(" ") : "Meshing the level set…"}
+        {levelSet ? levelNote(levelSet) : "Meshing the level set…"}
       </p>
       <details {...expressions} className="spatial-details">
         <summary>Expression reference</summary>
@@ -1843,6 +1894,71 @@ export default function SpatialApp({
     reset,
   );
   const ready = !!frame && !busy && !failure && !renderError;
+  // The event strip, while the study has a story: its context now, its
+  // previews, and choosing a state.
+  const event = useMemo(() => storyContext(config, story), [key, story]);
+  const eventStory = event?.eligible ? event.story : null;
+  const previews = useRef<EventPreviews | null>(null);
+  const [slots, setSlots] = useState<PreviewSlots | null>(null);
+  useEffect(() => {
+    const p = new EventPreviews(
+      (c) => client.current!.spatial(c),
+      drawPreview,
+      (next) => setSlots(next),
+    );
+    previews.current = p;
+    return () => p.dispose();
+  }, []);
+  // Everything a preview depends on but the level; a change of level alone
+  // asks for nothing. A new intent clears the previews at once, and their
+  // calculations wait for the study to settle without error, so they never
+  // delay its own calculation.
+  const intent: PreviewIntent | null = eventStory
+    ? {
+        key: JSON.stringify([
+          eventStory.id,
+          { ...config.implicit, level: 0 },
+          layers,
+          theme.dark,
+          theme.scheme,
+          userCut.spec,
+          userSight.spec,
+        ]),
+        story: eventStory,
+        configs: {
+          before: atLevel(config, eventStory.levels.before),
+          critical: atLevel(config, eventStory.levels.critical),
+          after: atLevel(config, eventStory.levels.after),
+        },
+        camera:
+          spatialPresets.find((p) => p.story === eventStory.id)?.view ??
+          initialView,
+        layers,
+        dark: theme.dark,
+        scheme: theme.scheme,
+        cut: userCut.spec,
+        sight: userSight.spec,
+      }
+    : null;
+  useEffect(() => {
+    previews.current?.hold(busy || !!failure);
+    previews.current?.request(intent);
+  }, [intent?.key ?? "", busy, !!failure]);
+  // A state changes only the level, after any evaluation still pending, so
+  // a late one cannot overwrite it; a study chosen meanwhile wins.
+  async function chooseState(state: EventState) {
+    if (!eventStory) return;
+    setEventSelection((n) => n + 1);
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    const level = eventStory.levels[state];
+    setConfig((c) =>
+      c.format === "implicit"
+        ? { ...c, implicit: { ...c.implicit, level } }
+        : c,
+    );
+  }
   // The probe draws on the study's own result, or on the animation's frame
   // where the animation stands it (moving it, or holding it at the user's
   // point); a frame without it goes without. The user's position is kept
@@ -2424,7 +2540,24 @@ export default function SpatialApp({
         : ""}
     </p>
   );
-  const behind = leveled ? (
+  const behind = eventStory ? (
+    <StudyExplanation
+      label="BEHIND THE EVENT"
+      title={eventStory.explanation.title}
+      formula={
+        <>
+          {eventStory.explanation.formula[0]}{" "}
+          <span>{eventStory.explanation.formula[1]}</span>
+        </>
+      }
+      note={describeColors(
+        "Gold curves are the section, on its plane outlined in gray with the box. The strip's previews are this study at each level, seen from the story's view; the analysis, not the mesh, says what the surface is.",
+        theme.scheme,
+      )}
+    >
+      <p>{eventStory.explanation.text}</p>
+    </StudyExplanation>
+  ) : leveled ? (
     <StudyExplanation
       label="BEHIND THE LEVEL SET"
       title="A surface where a field takes one value."
@@ -4169,6 +4302,7 @@ export default function SpatialApp({
             onReveal={showPlot}
             settings={animationSettings}
             restore={busy ? null : restoredAnimation}
+            event={eventStory}
             onShowView={(view) => {
               setRestoredView({ reset: reset + 1, view });
               setReset(reset + 1);
@@ -4429,6 +4563,14 @@ export default function SpatialApp({
               </span>
             </div>
           </div>
+          {event && (
+            <EventStrip
+              context={event}
+              slots={slots}
+              waiting={!!failure}
+              onSelect={(state) => void chooseState(state)}
+            />
+          )}
           <div className="camera-controls">
             {shown && (
               <LiveOrientation

@@ -120,6 +120,13 @@ import {
 } from "../export-formats";
 import { saveFile } from "../export-image";
 import { KeyViews, KeyViewEasing, KeyViewSwitch } from "../KeyViews";
+import {
+  heldLevel,
+  holdPlan,
+  holdShare,
+  type Holds,
+  type Story,
+} from "./story";
 import { easedPath, withEase } from "../key-views";
 import { Field } from "../Field";
 import { tiered, withMore } from "../help";
@@ -170,6 +177,8 @@ type Session = {
   first: Frame;
   final: Frame;
   tracks: NumericTrack[];
+  // The level's rests beside a story's event, when it has them.
+  holds?: Holds;
   mode: AnimationMode;
   // Present only while tracing rays.
   timeline?: Timeline;
@@ -233,6 +242,13 @@ type Session = {
 // study.
 export const redraws = (s: Pick<Session, "mode" | "between">) =>
   !(s.mode === "parameters" || (s.mode === "probe" && !!s.between));
+// The rests' help: where the level rests, and for how long.
+const holdsHelp = (story: Story) =>
+  tiered(
+    `The level rests at c = ${story.levels.before} and c = ${story.levels.after} as it passes them.`,
+    `Each rest takes ${Math.round(holdShare * 100)}% of the duration, and the level moves steadily between them, every frame calculated. It applies only while the study keeps its story's expression and box.`,
+  );
+
 type Props = {
   preview?: boolean;
   frame: Frame | null;
@@ -274,6 +290,9 @@ type Props = {
   restore?: { id: number; settings: SpatialAnimation } | null;
   // Shows a key view in the drawing as its manual camera, to adjust it.
   onShowView: (view: SpatialCamera) => void;
+  // The curated event the study is, while it is its story's (story.ts),
+  // whose level can rest beside the event; else null.
+  event?: Story | null;
 };
 
 export function SpatialAnimationPanel({
@@ -300,6 +319,7 @@ export function SpatialAnimationPanel({
   settings,
   restore,
   onShowView,
+  event = null,
 }: Props) {
   const [mode, setMode] = useState<AnimationMode>("reveal");
   const probing = probe !== null;
@@ -335,6 +355,8 @@ export function SpatialAnimationPanel({
   // keeping its share falls back to staying.
   const [probeMotion, setProbeMotion] = useState<ProbeMotion>("stays");
   const [fullRefinement, setFullRefinement] = useState(false);
+  // Whether a story's level rests beside its event (story.ts's holdPlan).
+  const [holds, setHolds] = useState(false);
   const motions =
     frame && probing
       ? probeMotions(
@@ -469,6 +491,7 @@ export function SpatialAnimationPanel({
       tracks,
       probeMotion,
       ...(fullRefinement && { fullRefinement }),
+      ...(holds && { holds }),
       path,
       ride,
       repeat,
@@ -486,6 +509,7 @@ export function SpatialAnimationPanel({
     setTracks(restore.settings.tracks);
     setProbeMotion(restore.settings.probeMotion);
     setFullRefinement(!!restore.settings.fullRefinement);
+    setHolds(!!restore.settings.holds);
     setPath(restore.settings.path);
     setRide(restore.settings.ride);
     setRepeat(restore.settings.repeat);
@@ -607,6 +631,7 @@ export function SpatialAnimationPanel({
     coarse = false,
   ): Promise<AnimationView> {
     const values = applyTracks(s.original.config, s.tracks, p, s.length);
+    if (s.holds) values.config.implicit.level = heldLevel(s.holds, p);
     if (coarse) values.config = playbackRefinement(values.config);
     let current: Frame;
     let held: ProbePlace | GridPlace | string | null | undefined;
@@ -1214,6 +1239,13 @@ export function SpatialAnimationPanel({
         [first, final] = results;
       }
       if (epoch.current !== token) return;
+      // The story's level rests at its bracket's levels, when asked and
+      // while the study is its story's.
+      const level = numeric.find((t) => t.target === "level");
+      const rests =
+        mode === "parameters" && holds && event && level
+          ? holdPlan(level, event)
+          : null;
       // Light enters the sphere the animation camera frames.
       const timeline =
         mode === "trace"
@@ -1246,6 +1278,7 @@ export function SpatialAnimationPanel({
         final,
         tracks: numeric,
         mode,
+        ...(rests && { holds: rests }),
         ...(drawsProbe && { probe: probe!, between, point }),
         ...(mode === "parameters" &&
           probing && { motion: motionOn(target, probeMotion) }),
@@ -1751,6 +1784,17 @@ export function SpatialAnimationPanel({
               >
                 + Add parameter
               </button>
+              {event && tracks.some((t) => t.target === "level") && (
+                <div className="full-refinement">
+                  <KeyViewSwitch
+                    checked={holds}
+                    onChange={setHolds}
+                    label="Rest beside the event"
+                    topic="resting beside the event"
+                    help={holdsHelp(event)}
+                  />
+                </div>
+              )}
               {frame && lowersRefinement(frame.config) && (
                 <div className="full-refinement">
                   <KeyViewSwitch

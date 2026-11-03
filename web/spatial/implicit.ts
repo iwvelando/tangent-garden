@@ -36,11 +36,13 @@ export function implicitGrid(box: ImplicitBox, cells: number) {
 // A piece of the mesh by its topology, each sheet whole through its
 // crossings: a closed orientable surface of Euler characteristic χ has
 // genus (2 − χ)/2, and a closed one-sided surface 2 − χ cross-caps, one a
-// projective plane and two a Klein bottle.
-function piece(c: ImplicitResult["components"][number]) {
+// projective plane and two a Klein bottle. Without genus, as for a surface
+// known to be singular, which is no manifold to have one, only χ is given.
+function pieceOf(c: ImplicitResult["components"][number], genus = true) {
   const euler = `Euler characteristic ${c.euler.toLocaleString().replace("-", "−")}`;
   const sides = c.orientable ? "" : " and one-sided";
   if (!c.closed) return `open${sides}, with ${euler}`;
+  if (!genus) return `closed${sides}, with ${euler}`;
   if (!c.orientable) {
     const caps = 2 - c.euler;
     if (caps === 1)
@@ -55,7 +57,13 @@ function piece(c: ImplicitResult["components"][number]) {
     : `closed, with ${euler}`;
 }
 // What the mesh is, where it stops, and what was not meshed, with why.
-export function implicitNote(r: ImplicitResult): string[] {
+// genus: false reads its pieces by Euler characteristic alone, never as a
+// genus or cross-caps (see story.ts's critical level).
+export function implicitNote(
+  r: ImplicitResult,
+  { genus = true }: { genus?: boolean } = {},
+): string[] {
+  const piece = (c: ImplicitResult["components"][number]) => pieceOf(c, genus);
   const out: string[] = [];
   const triangles = r.triangles.length / 3;
   if (!triangles)

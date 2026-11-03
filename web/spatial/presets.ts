@@ -9,6 +9,7 @@ import { initialView, type Layers, type Projection } from "./scene";
 import type { SpatialCamera } from "./link";
 import { turnTo } from "../named-views";
 import type { Probe, ProbeMotion } from "./probe";
+import type { StoryId } from "./story";
 const base: SpatialConfig = {
   format: "torus",
   construction: "developable",
@@ -202,6 +203,8 @@ export type Flight = {
   // given.
   repeat?: Repeat;
   pace?: Pace;
+  // A story's level rests beside its event (story.ts's holdPlan).
+  holds?: true;
 };
 // A composed opening is also the reveal camera: keep its pan and zoom
 // while the fixed geometry is drawn, including detail and perspective views.
@@ -244,6 +247,24 @@ function approach(view: SpatialCamera): {
   };
 }
 
+// The curated events' opening views: the drops along x seen from above
+// their middle, and the handle's axis z seen obliquely, looking into the
+// upper dimple.
+const dropsView: SpatialCamera = {
+  yaw: 0.3,
+  pitch: 0.75,
+  zoom: 1.9,
+  panX: 0,
+  panY: 0,
+};
+const handleView: SpatialCamera = {
+  yaw: 0.25,
+  pitch: 0.8,
+  zoom: 1.8,
+  panX: 0,
+  panY: 0,
+};
+
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts), its own camera path to fly (see Flight), and its own
 // projection (with its lens angle when chosen) and manual view (see
@@ -266,6 +287,9 @@ export const spatialPresets: {
   // A preset may open with the probe on at its own point; one without opens
   // with the probe off.
   probe?: Probe;
+  // A curated event (story.ts), whose strip it opens with; one without
+  // opens with none.
+  story?: StoryId;
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -5852,6 +5876,115 @@ export const spatialPresets: {
         tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
       },
       path: { style: "steady", keys: [] },
+    },
+  },
+  // The topology theater's two curated events (story.ts): each opens at
+  // its before state in [−2, 2]³, which holds every level the story covers,
+  // with one section plane through the event. Its film moves the level
+  // from the before state to the after state, resting at each (holds),
+  // while the camera draws back from the event to the whole surface. With
+  // 56 cells the origin is a grid point, where the singular point is met
+  // by one vertex.
+  {
+    name: "Two drops become one",
+    detail:
+      "Two drops touch at one point at c = 1 and join through a neck above it",
+    story: "two-drops",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "((x-1)^2+y^2+z^2)*((x+1)^2+y^2+z^2)",
+        a: 1,
+        level: 0.84,
+        box: {
+          xMin: -2,
+          xMax: 2,
+          yMin: -2,
+          yMax: 2,
+          zMin: -2,
+          zMax: 2,
+        },
+        cells: 56,
+        refine: 0,
+        // z = 0 cuts the drops in Cassini ovals: two, then the lemniscate
+        // of Bernoulli at c = 1, then one.
+        sections: { normal: { x: 0, y: 0, z: 1 }, from: 0, to: 0, count: 1 },
+      },
+    },
+    view: dropsView,
+    flight: {
+      duration: 14,
+      holds: true,
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "level", from: "0.84", to: "1.16" }],
+      },
+      path: {
+        style: "steady",
+        keys: [
+          { ...dropsView, name: "Close to the event", turns: 0 },
+          {
+            ...dropsView,
+            name: "The joined drop",
+            yaw: 0.55,
+            pitch: 0.55,
+            zoom: 1.35,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
+  {
+    name: "The instant a handle appears",
+    detail:
+      "As c falls through 1, a sphere's two dimples meet at its center and open into a torus",
+    story: "handle",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "(x^2+y^2-1)^2+z^2",
+        a: 1,
+        level: 1.16,
+        box: {
+          xMin: -2,
+          xMax: 2,
+          yMin: -2,
+          yMax: 2,
+          zMin: -2,
+          zMax: 2,
+        },
+        cells: 56,
+        refine: 0,
+        // y = 0 holds the axis: the meridian, a peanut, then a figure
+        // eight through the origin at c = 1, then two ovals.
+        sections: { normal: { x: 0, y: 1, z: 0 }, from: 0, to: 0, count: 1 },
+      },
+    },
+    view: handleView,
+    flight: {
+      duration: 14,
+      holds: true,
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "level", from: "1.16", to: "0.84" }],
+      },
+      path: {
+        style: "steady",
+        keys: [
+          { ...handleView, name: "Into a dimple", turns: 0 },
+          {
+            ...handleView,
+            name: "Through the new hole",
+            yaw: 0.1,
+            pitch: 0.35,
+            zoom: 1.3,
+            turns: 0,
+          },
+        ],
+      },
     },
   },
 ];

@@ -382,3 +382,111 @@
 .full-refinement {
   margin-top: 14px;
 }
+/* The event strip under a story's drawing (EventStrip.tsx): three states,
+   each a preview with its level, name and mesh reading below it, outside
+   the artwork. The drawing gives up the strip's height, so the strip shows
+   with it on a desktop screen. */
+.spatial-stage:has(> .event-strip) .spatial-canvas-wrap {
+  height: calc(100vh - 545px);
+  min-height: 240px;
+}
+.event-strip {
+  margin-top: 14px;
+}
+.event-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.event-heading .section-label {
+  margin-bottom: 0;
+}
+.event-strip .hint {
+  margin: 8px 0 0;
+}
+.event-refusal {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text);
+}
+.event-states {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.event-state {
+  display: grid;
+  grid-template-rows: auto auto auto auto;
+  gap: 3px;
+  margin: 0;
+  padding: 8px 10px 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+/* The previews carry the paper they are drawn on, so the button keeps it
+   on hover and tap and marks them by its border instead. */
+.event-state {
+  -webkit-tap-highlight-color: transparent;
+}
+.event-state:hover:not(:disabled) {
+  background: var(--paper);
+  border-color: #9bb8ae;
+}
+.event-state[aria-pressed="true"] {
+  background: var(--paper);
+  border-color: #638f82;
+  box-shadow: inset 0 0 0 1px #638f82;
+}
+.event-state:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.event-state:focus-visible {
+  outline: 2px solid #74a89a;
+  outline-offset: 2px;
+}
+.event-image {
+  display: block;
+  height: 84px;
+  margin-bottom: 4px;
+}
+.event-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.event-label,
+.event-reading {
+  font-size: 11px;
+  color: var(--muted);
+}
+.event-name {
+  font:
+    normal 14px Georgia,
+    serif;
+}
+@media (max-width: 700px) {
+  .spatial-stage:has(> .event-strip) .spatial-canvas-wrap {
+    height: 55vh;
+    min-height: 340px;
+  }
+  .event-states {
+    gap: 8px;
+  }
+  .event-state {
+    padding: 6px 7px 8px;
+  }
+  .event-image {
+    height: 64px;
+  }
+}
