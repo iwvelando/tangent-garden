@@ -32,7 +32,7 @@ make pre-pr       # check, thumbnails, and the full Chromium and (on macOS) WebK
 ```
 
 - On Linux, Playwright may also need system libraries: `npx playwright install --with-deps chromium`. CI installs them.
-- MP4 export tests also decode files with `ffprobe` from [FFmpeg](https://ffmpeg.org/) when it is installed. CI installs it; local runs without it skip only those checks.
+- MP4 export tests also decode files with `ffprobe` from [FFmpeg](https://ffmpeg.org/) when it is installed. CI installs it; local runs without it skip only those checks. CI's ffmpeg cannot decode animated WebP, so WebP export tests decode with Chromium instead ([Running the tests](contributing.md#running-the-tests)).
 - `make test-webkit` runs the WebKit-specific checks (`tests/webkit.spec.ts` and `tests/mobile-inputs.spec.ts`). CI runs them on a macOS runner: Safari and every iOS browser use WebKit, which has its own video encoder and no canvas WebP.
 - `make test-go` runs every native test twice, once with race detection and once with coverage. Keeping the instrumentation separate avoids race-checking atomic coverage counters in the numerical loops, which is much slower. CI runs the race pass in shards ([CI shards](contributing.md#ci-shards)).
 - Further targets: `make test-wasm`, `make test-scripts`, `make typecheck`, and `make clean`, which removes generated build artifacts only.
