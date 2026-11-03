@@ -30,6 +30,10 @@ declare const tangentGardenLaceFrame: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
+// Research preview (#322): a curve-shortening film's loops at some times.
+declare const tangentGardenShorten: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
 // (cmd/wasm/lift); the page puts them back (web/lifted.ts). A refusal is
@@ -90,11 +94,13 @@ self.onmessage = async ({
     | "loom"
     | "garden"
     | "lace"
-    | "laceFrame";
+    | "laceFrame"
+    | "shorten";
   loom?: import("./loom/model").LoomRequest;
   garden?: import("./garden/model").GardenRequest;
   lace?: import("./lace/model").LaceRequest;
   laceFrame?: import("./lace/model").LaceFrameRequest;
+  shorten?: import("./shorten/model").ShortenRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
   closed?: boolean;
@@ -174,6 +180,47 @@ self.onmessage = async ({
           ...(q.keep && {
             keep: { curvature: q.keep.curvature, x: q.keep.x, y: q.keep.y },
           }),
+        }),
+      );
+      postLifted(data.id, raw, start);
+      return;
+    }
+    if (data.action === "shorten") {
+      const q = data.shorten;
+      if (!q) throw new Error("Enter curve-shortening settings.");
+      // JSON would turn NaN or infinity into null, which Go reads as zero.
+      const numbers: [string, unknown][] = [
+        ["seed.radius", q.seed.radius],
+        ["seed.epsilon", q.seed.epsilon],
+        ["seed.centerX", q.seed.centerX],
+        ["seed.centerY", q.seed.centerY],
+        ["tau", q.tau],
+        ["horizon", q.horizon],
+        ...q.times.map((t, i): [string, unknown] => [`times.${i}`, t]),
+      ];
+      for (const [path, v] of numbers)
+        if (typeof v !== "number" || !Number.isFinite(v))
+          throw fieldError(path, "Enter a finite number.");
+      for (const [path, v] of [
+        ["seed.mode", q.seed.mode],
+        ["nodes", q.nodes],
+      ] as const)
+        if (!Number.isInteger(v))
+          throw fieldError(path, "Enter a whole number.");
+      const start = performance.now();
+      const raw = tangentGardenShorten(
+        JSON.stringify({
+          seed: {
+            radius: q.seed.radius,
+            mode: q.seed.mode,
+            epsilon: q.seed.epsilon,
+            centerX: q.seed.centerX,
+            centerY: q.seed.centerY,
+          },
+          nodes: q.nodes,
+          tau: q.tau,
+          horizon: q.horizon,
+          times: q.times,
         }),
       );
       postLifted(data.id, raw, start);

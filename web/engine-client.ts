@@ -144,6 +144,16 @@ export class EngineClient {
   ): Promise<import("./lace/model").LaceFrame> {
     return (await this.request({ action: "laceFrame", laceFrame: f })).result;
   }
+  // Research preview (#322): a curve-shortening film's summary and loops at
+  // some physical times, with the worker's preparation time for latency
+  // observations. The worker retains the latest film.
+  async shorten(q: import("./shorten/model").ShortenRequest): Promise<{
+    result: import("./shorten/model").ShortenReply;
+    prepare: number;
+  }> {
+    const reply = await this.request({ action: "shorten", shorten: q });
+    return { result: reply.result, prepare: reply.timings?.prepare ?? NaN };
+  }
   async fitFourier(
     count: number,
     points?: import("./types").Vec[],

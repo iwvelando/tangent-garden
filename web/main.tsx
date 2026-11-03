@@ -3036,6 +3036,10 @@ const GardenPreview = lazy(() =>
 const LacePreview = lazy(() =>
   import("./lace/Preview").then((m) => ({ default: m.LacePreview })),
 );
+// Research preview (#322), opened only by ?lab=curve-shortening.
+const ShortenLab = lazy(() =>
+  import("./shorten/Lab").then((m) => ({ default: m.ShortenLab })),
+);
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
@@ -3053,9 +3057,13 @@ function Notebook() {
   const [loom, setLoom] = useState<LoomEntry | null>(null);
   const [garden, setGarden] = useState<GardenEntry | null>(null);
   const [lace, setLace] = useState<LaceEntry | null>(null);
+  const [lab, setLab] = useState(
+    () =>
+      new URLSearchParams(location.search).get("lab") === "curve-shortening",
+  );
   // An overlay study holds the notebooks beneath it inert.
   const overlay =
-    !!excursion || !!atlas || !!fit || !!loom || !!garden || !!lace;
+    !!excursion || !!atlas || !!fit || !!loom || !!garden || !!lace || lab;
   const [adoptions, setAdoptions] = useState<
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
@@ -3214,6 +3222,29 @@ function Notebook() {
                     onReturn={(via) => {
                       restoreFocus.current = () => garden.restoreFocus(via);
                       setGarden(null);
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {lab && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening the curve-shortening lab…
+                    </div>
+                  }
+                >
+                  <ShortenLab
+                    onReturn={() => {
+                      const url = new URL(location.href);
+                      url.searchParams.delete("lab");
+                      history.replaceState(history.state, "", url);
+                      setLab(false);
                     }}
                   />
                 </Suspense>
