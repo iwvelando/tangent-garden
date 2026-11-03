@@ -1206,9 +1206,17 @@ test("repeated sessions at the largest patch keep the retained heap bounded, and
   await cycle();
   const start = await heap();
   for (let i = 0; i < 6; i++) await cycle();
-  const end = await heap();
+  // Under a loaded full run the last patch can still be held for a moment
+  // after Return; a later collection settles near 1.7 MB. Accumulation over
+  // six sessions would never fall below the bound, so poll it.
+  let end = 0;
+  await expect
+    .poll(async () => (end = await heap()) - start, {
+      intervals: [100, 200, 500],
+      timeout: 5_000,
+    })
+    .toBeLessThan(4_000_000);
   console.log("Lace retained heap (bytes, Chromium):", { start, open, end });
-  expect(end - start).toBeLessThan(4_000_000);
   // Open, the largest patch and its drawing are held; after Return they
   // are not.
   expect(open - end).toBeGreaterThan(1_000_000);
