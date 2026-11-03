@@ -89,6 +89,60 @@ const raster = (page: Page, width: number, height: number) =>
     { width, height },
   );
 
+test("slow playback keeps one frame in flight and Stop discards its late reply", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "hardwareConcurrency", { get: () => 8 });
+    const work = { active: 0, peak: 0, completed: 0 };
+    (window as any).rootWork = work;
+    const OriginalWorker = Worker;
+    window.Worker = class extends OriginalWorker {
+      private pendingFrames = new Set<number>();
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        // Count the reply before EngineClient resolves it: promise
+        // continuations can run between message listeners.
+        this.addEventListener("message", ({ data }) => {
+          if (!this.pendingFrames.delete(data.id)) return;
+          work.active--;
+          work.completed++;
+        });
+      }
+      override postMessage(q: any, ...rest: any[]) {
+        if (q.action !== "tesseract" || q.tesseract?.root?.trace === undefined)
+          return super.postMessage(q, ...rest);
+        work.active++;
+        work.peak = Math.max(work.peak, work.active);
+        this.pendingFrames.add(q.id);
+        setTimeout(() => super.postMessage(q, ...rest), 120);
+      }
+    };
+  });
+  await open(page);
+  await page.getByRole("spinbutton", { name: "Path intervals" }).fill("4096");
+  await settle(page);
+  const base = await meta(page);
+  const original = await drawing(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).rootWork.completed))
+    .toBeGreaterThanOrEqual(6);
+  expect(await page.evaluate(() => (window as any).rootWork.peak)).toBe(1);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).rootWork.active))
+    .toBe(1);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).rootWork.active))
+    .toBe(0);
+  await settle(page);
+  expect((await meta(page)).config).toEqual(base.config);
+  expect(await drawing(page)).toBe(original);
+});
+
 test("the preset opens still at t = 0 with three linked views and no text in the artwork", async ({
   page,
 }) => {

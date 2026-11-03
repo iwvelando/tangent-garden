@@ -99,7 +99,13 @@ func rootJourney(q Request, r Result) (Result, error) {
 		if !finite(v) || v < -rootTolerance || v > period+rootTolerance {
 			return 0, fieldErr("root."+key, "%s must be between 0 and 4π", name)
 		}
-		return math.Max(0, math.Min(period, v)), nil
+		if v <= rootTolerance {
+			return 0, nil
+		}
+		if v >= period-rootTolerance {
+			return period, nil
+		}
+		return v, nil
 	}
 	from, err := endpoint(p.From, "from", "Trace start")
 	if err != nil {

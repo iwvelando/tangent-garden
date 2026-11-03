@@ -95,6 +95,8 @@ export type ObjectDescriptor = {
   noun: string;
   modes: readonly Config["mode"][];
   rotations: boolean;
+  // An object's work budget may allow fewer live engines than the device.
+  playbackEngines?: 1;
   controls:
     "polyhedral" | "curved" | "lift" | "route" | "weave" | "polytope" | "root";
   linkedViews?: boolean;
@@ -1330,6 +1332,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     name: "Square-root journey",
     noun: "square-root journey",
     controls: "root",
+    playbackEngines: 1,
     parameterKey: "root",
     modes: ["paired"],
     modeLabels: { paired: "Source, value and lift" },

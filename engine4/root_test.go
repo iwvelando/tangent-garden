@@ -351,6 +351,25 @@ func TestRootNonGridParameter(t *testing.T) {
 // Expressions such as 4*pi or 2*pi*2 can round past 4π; within rounding they
 // are the endpoint itself, and beyond it they are refused by name.
 func TestRootRoundedEndpoints(t *testing.T) {
+	// Rounding can land on either side of an endpoint. Both sides use
+	// the exact end; values beyond the tolerance inside remain entered.
+	for _, ends := range [][2]float64{
+		{5e-13, 4*math.Pi - 5e-13},
+		{-5e-13, 4*math.Pi + 5e-13},
+		{-rootTolerance, 4*math.Pi + rootTolerance},
+	} {
+		first := rootCompute(t, rootRequest(1, "plus", 128, ends[0], ends[1], 0))
+		last := rootCompute(t, rootRequest(1, "plus", 128, ends[0], ends[1], 1))
+		if first.Root.Parameter != 0 || last.Root.Parameter != 4*math.Pi || !sameDrawing(first, last) {
+			t.Fatalf("rounded endpoints %v must normalize to an exactly closed journey; got %v to %v", ends, first.Root.Parameter, last.Root.Parameter)
+		}
+	}
+	for _, end := range []float64{2e-12, 4*math.Pi - 2e-12} {
+		res := rootCompute(t, rootRequest(1, "plus", 128, end, end, 0))
+		if res.Root.Parameter != end {
+			t.Fatalf("endpoint outside the rounding band changed from %v to %v", end, res.Root.Parameter)
+		}
+	}
 	over := math.Nextafter(4*math.Pi, 20)
 	under := -math.SmallestNonzeroFloat64 * 1e10
 	res := rootCompute(t, rootRequest(1, "plus", 128, under, over, 1))
