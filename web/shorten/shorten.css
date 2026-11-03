@@ -1,0 +1,14 @@
+/* Curves that smooth themselves use the Apollonian garden's full-window
+   layout (garden.css); these rules are its own. */
+.shorten .shorten-first {
+  margin-top: 0;
+}
+.shorten-readout {
+  margin: 6px 4px 0;
+  text-align: center;
+  min-height: 2.6em;
+  font-variant-numeric: tabular-nums;
+}
+.shorten-readout p {
+  margin: 2px 0;
+}

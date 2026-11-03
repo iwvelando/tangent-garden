@@ -30,6 +30,10 @@ declare const tangentGardenLaceFrame: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
+// A curve-shortening film's loops at some times (engine/shorten.Reply).
+declare const tangentGardenShorten: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
 // (cmd/wasm/lift); the page puts them back (web/lifted.ts). A refusal is
@@ -90,11 +94,13 @@ self.onmessage = async ({
     | "loom"
     | "garden"
     | "lace"
-    | "laceFrame";
+    | "laceFrame"
+    | "shorten";
   loom?: import("./loom/model").LoomRequest;
   garden?: import("./garden/model").GardenRequest;
   lace?: import("./lace/model").LaceRequest;
   laceFrame?: import("./lace/model").LaceFrameRequest;
+  shorten?: import("./shorten/model").ShortenRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
   closed?: boolean;
@@ -174,6 +180,42 @@ self.onmessage = async ({
           ...(q.keep && {
             keep: { curvature: q.keep.curvature, x: q.keep.x, y: q.keep.y },
           }),
+        }),
+      );
+      postLifted(data.id, raw, start);
+      return;
+    }
+    if (data.action === "shorten") {
+      const q = data.shorten;
+      if (!q || !!q.convex === !!q.bloom)
+        throw new Error("Enter one curve-shortening evolution.");
+      const run = (q.convex ?? q.bloom)!;
+      const prefix = q.convex ? "convex" : "bloom";
+      const seed: Record<string, unknown> = { ...run.seed };
+      // JSON would turn NaN or infinity into null, which Go reads as zero.
+      const numbers: [string, unknown][] = [
+        ...Object.entries(seed).map(([k, v]): [string, unknown] => [
+          `seed.${k}`,
+          v,
+        ]),
+        ["tau", run.tau],
+        ["horizon", run.horizon],
+        ["nodes", run.nodes],
+        ...q.times.map((t, i): [string, unknown] => [`times.${i}`, t]),
+      ];
+      for (const [path, v] of numbers)
+        if (typeof v !== "number" || !Number.isFinite(v))
+          throw fieldError(path, "Enter a finite number.");
+      const start = performance.now();
+      const raw = tangentGardenShorten(
+        JSON.stringify({
+          [prefix]: {
+            seed,
+            nodes: run.nodes,
+            tau: run.tau,
+            horizon: run.horizon,
+          },
+          times: q.times,
         }),
       );
       postLifted(data.id, raw, start);

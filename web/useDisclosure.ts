@@ -15,6 +15,7 @@ export type Section =
   | "shape-export"
   | "loom-export"
   | "garden-export"
+  | "shorten-export"
   | "lace-export";
 
 function read(): Partial<Record<Section, boolean>> {

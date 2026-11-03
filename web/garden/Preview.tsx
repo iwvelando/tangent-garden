@@ -528,7 +528,12 @@ export function GardenPreview({
         </button>
         <ShareLink
           notebook="2d"
-          study={() => ({ ...entry.study, garden: study })}
+          // One mode per link: the garden opens first, so a lace or curves
+          // that smooth themselves would linger unopened.
+          study={() => {
+            const { lace: _, shorten: __, ...base } = entry.study;
+            return { ...base, garden: study };
+          }}
           disabled={!valid || !(current || film)}
         />
         <ExportImageMenu

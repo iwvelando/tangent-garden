@@ -1,0 +1,3 @@
+# Documentation is formatted by hand; Prettier would re-pad its long tables
+# on every edit, even when a file under docs/ is named explicitly.
+docs/
