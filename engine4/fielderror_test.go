@@ -16,11 +16,19 @@ func TestValidationNamesItsField(t *testing.T) {
 	route := func() Request { return bypassRequest(t, "shadow", "embedded", 1, .5) }
 	section := func() Request { q := request(); q.Mode, q.Count, q.Spread = "section", 3, 1; return q }
 	paired := func() Request { return pairedRequest(.7, 12, 3) }
+	root := func() Request { return rootRequest(1, "plus", 128, 0, 4*math.Pi, 0) }
 	cases := []struct {
 		name  string
 		field string
 		build func() Request
 	}{
+		{"root radius", "root.radius", func() Request { q := root(); q.Root.Radius = 5; return q }},
+		{"root sheet", "root.sheet", func() Request { q := root(); q.Root.Sheet = "other"; return q }},
+		{"root start", "root.from", func() Request { q := root(); q.Root.From = -1; return q }},
+		{"root end", "root.to", func() Request { q := root(); q.Root.To = 13; return q }},
+		{"root samples", "samples", func() Request { q := root(); q.Samples = 63; return q }},
+		{"root angle", "angles.2", func() Request { q := root(); q.Angles[2] = nan; return q }},
+		{"root mode", "mode", func() Request { q := root(); q.Mode = "stereo"; return q }},
 		{"object", "object", func() Request { q := request(); q.Object = "simplex"; return q }},
 		{"mode", "mode", func() Request { q := request(); q.Mode = "lifted"; return q }},
 		{"angle", "angles.4", func() Request { q := request(); q.Angles[4] = nan; return q }},

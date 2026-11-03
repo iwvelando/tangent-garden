@@ -28,6 +28,8 @@ In **4D**, open **A flower below, a bouquet above**. The base sphere and spatial
 
 Under **Base path**, choose **Spherical flower** or **Latitude**. **Central latitude α** and **Flower amplitude A** accept constant expressions such as `pi/4` and `pi/8`; **Petals** is a whole number from 1 to 8. The entire range α ± A must stay between 0 and π/2. A = 0 gives a latitude; equality at a boundary touches a pole, where coincident fibers are drawn once. Samples are even in the path parameter, not in distance along the sphere. **Copy link**, **Export image** and the ordinary animation export keep both panes, cameras and appearance together. See [the spherical flower guide](tesseracts.md#spherical-flower) for formulas, limits and chart conventions.
 
+In **4D**, open **The second time around**. Pane 1 holds the z and w planes; pane 2 the same path in four dimensions. Play **Follow the root**, then pause and scrub to the middle: z is home, but w is opposite its start ring and the 4D point is elsewhere. Scrub to the end and every view returns. Change **Initial sheet** or **Radius r**, or reverse the journey under **Journey endpoints**. See [the square-root journey](tesseracts.md#the-square-root-journey).
+
 ## A field of possible flowers
 
 In the planar notebook, choose **Hypotrochoid & its evolute**, **Ellipse & its pedal**, or **Clifford attractor**, then **Explore parameter atlas**. Your complete study stays in place while you compare variants.

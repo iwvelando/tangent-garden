@@ -281,7 +281,10 @@ export default function TesseractApp({
       played = JSON.stringify([config, motion, repeat, pace]);
     // Every frame is calculated; while one engine calculates, a helper,
     // alive only while playback runs, can calculate the next.
-    const helper = playbackEngineCount() > 1 ? new EngineClient() : null;
+    const helper =
+      (objects[config.object].playbackEngines ?? playbackEngineCount()) > 1
+        ? new EngineClient()
+        : null;
     const frameAt = async (engine: EngineClient, p: number) => {
       const q = sample(config, motion, progressAt(p, repeat, pace));
       return { config: q, result: await engine.tesseract(q) };
@@ -1282,7 +1285,7 @@ export default function TesseractApp({
               <div className="eyebrow">
                 FOUR DIMENSIONS /{" "}
                 {config.mode === "paired"
-                  ? "TWO LINKED VIEWS"
+                  ? (descriptor.pairedEyebrow ?? "TWO LINKED VIEWS")
                   : config.mode === "diagram"
                     ? "A COORDINATE DIAGRAM"
                     : config.mode === "section" || config.mode === "reference"

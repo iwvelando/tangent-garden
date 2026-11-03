@@ -50,7 +50,7 @@ export function fieldLabel(c: Config, path: string): string | undefined {
   }
   let m = /^angles\.(\d)$/.exec(path);
   if (m) return `${axes[+m[1]]} angle`;
-  m = /^(lift|bypass|weave|cell24)\.(\w+)(?:\.(\d))?$/.exec(path);
+  m = /^(lift|bypass|weave|cell24|root)\.(\w+)(?:\.(\d))?$/.exec(path);
   if (!m || m[1] !== d.parameterKey) return undefined;
   if (m[2] === "selected") return d.selection?.label;
   const index = m[3] === undefined ? undefined : +m[3];

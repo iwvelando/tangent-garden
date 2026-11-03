@@ -102,6 +102,11 @@ type Case = [
 const object = (o: Config["object"], mode?: Config["mode"]) => (c: Config) =>
   c.object === o && (!mode || c.mode === mode);
 const cases: Case[] = [
+  ["root.radius", object("root"), (c) => (c.root!.radius = 5), "Radius r"],
+  ["root.from", object("root"), (c) => (c.root!.from = -1), "Trace start"],
+  ["root.to", object("root"), (c) => (c.root!.to = 13), "Trace end"],
+  ["samples", object("root"), (c) => (c.samples = 63), "Path intervals"],
+  ["samples", object("root"), (c) => (c.samples = 64.5), "Path intervals"],
   [
     "angles.4",
     object("tesseract", "perspective"),
@@ -430,6 +435,7 @@ test("every field the engine names has a control", () => {
     lift: "lift",
     route: "bypass",
     cell24Request: "cell24",
+    root: "root",
   };
   for (const [, name, path, builder] of rows) {
     const o =

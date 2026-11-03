@@ -3,7 +3,25 @@ import type { LineWeight } from "../line-weight";
 import { objects, rotationMotions, type MotionChoice } from "./objects";
 export type Vec3 = [number, number, number];
 export type Object4 =
-  "tesseract" | "ball" | "tube" | "lift" | "bypass" | "weave" | "cell24";
+  | "tesseract"
+  | "ball"
+  | "tube"
+  | "lift"
+  | "bypass"
+  | "weave"
+  | "cell24"
+  | "root";
+// The square-root journey (engine4/root.go): z = r e^{it} and its
+// continuously followed root w = ±√r e^{it/2}, for 0 ≤ t ≤ 4π.
+export type Root = {
+  radius: number;
+  sheet: "plus" | "minus";
+  // Radians: where the trace motion begins and ends.
+  from: number;
+  to: number;
+  // Progress from `from` to `to`, which only the sampler below sets.
+  trace?: number;
+};
 // The 24-cell: the selected octahedral cell (counted from 0), which is
 // also the ID of its center, a vertex of the dual, and how much to draw.
 export type Cell24 = {
@@ -69,6 +87,7 @@ export type Config = {
   bypass?: Bypass;
   weave?: Weave;
   cell24?: Cell24;
+  root?: Root;
   angles: [number, number, number, number, number, number];
   distance: number;
   slice: number;
@@ -113,7 +132,11 @@ export type Result = {
       | "dual"
       | "cell"
       | "diagonal"
-      | "spoke";
+      | "spoke"
+      // The square-root journey's circuits, trace and principal cut.
+      | "circuit"
+      | "trace"
+      | "cut";
     dashed?: boolean;
     parameters?: number[];
     fourPoints?: [number, number, number, number][];
@@ -162,7 +185,15 @@ export type Result = {
   };
   markers?: {
     id: string;
-    role: "moving" | "comparison" | "sample" | "center" | "vertex";
+    role:
+      | "moving"
+      | "comparison"
+      | "sample"
+      | "center"
+      | "vertex"
+      | "start"
+      | "current"
+      | "branch-point";
     point: Vec3;
     fourPoint: [number, number, number, number];
     family: number;
@@ -205,6 +236,19 @@ export type Result = {
     neighborEdges: number[];
     sharedFaces: [number, number, number][];
     shadowEdges: [number, number];
+  };
+  root?: {
+    parameter: number;
+    circuit: 1 | 2;
+    z: [number, number];
+    w: [number, number];
+    principal: 1 | -1;
+    residual: number;
+    normBound: number;
+    intervals: number;
+    center: number;
+    projection: string;
+    diagram: string;
   };
   lift?: {
     thickness: number;
@@ -283,7 +327,9 @@ export function sample(
 ): Config {
   const q = structuredClone(config),
     p = Math.max(0, Math.min(1, progress));
-  if (q.weave && motion === "trace") {
+  if (q.root && motion === "trace") {
+    q.root.trace = p;
+  } else if (q.weave && motion === "trace") {
     q.weave.trace = p;
   } else if (q.weave && motion === "latitude") {
     q.weave.alpha = q.weave.alphaFrom * (1 - p) + q.weave.alphaTo * p;

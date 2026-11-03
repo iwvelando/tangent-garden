@@ -23,6 +23,7 @@ import {
   type Vec3,
   type View,
   type Weave,
+  type Root,
 } from "./types";
 
 export type TesseractStudy = {
@@ -79,6 +80,17 @@ const weave = {
     petals: { optional: "number" },
   },
 } satisfies SchemaOf<Weave>;
+// The square-root journey. Only playback moves the point, so a link
+// carries no progress: 0 is the only value it accepts.
+const root = {
+  fields: {
+    radius: "number",
+    sheet: { options: { plus: true, minus: true } },
+    from: "number",
+    to: "number",
+    trace: { optional: { range: [0, 0] } },
+  },
+} satisfies SchemaOf<Root>;
 // The 24-cell: its selected cell, counted from 0, and how much it draws.
 // The worker refuses a fractional cell by name.
 const cell24 = {
@@ -117,6 +129,7 @@ const config: SchemaOf<Config> = {
     bypass: { optional: bypass },
     weave: { optional: weave },
     cell24: { optional: cell24 },
+    root: { optional: root },
     angles: { tuple: "number", length: 6 },
     distance: "number",
     slice: "number",

@@ -18,7 +18,7 @@ Drag to orbit the ordinary 3D viewpoint, shift-drag to pan, and scroll to zoom; 
 
 The **Animation** panel, open by default, offers an **Animate** dropdown adapted to the current construction. Rotation choices are available for tesseract studies; **Slice passage** appears for cross-sections. Animation adds a full turn in xw, or in both xw and yz, to the entered angles. This is a change to those two angles in the stated composition, not an additional global rotation after all six. Tesseract slice passage moves h linearly from −2.05 to 2.05 for one section, and for a family from −(2.05 + spread/2) to 2.05 + spread/2, so its nearest section also passes 2.05 and every section is empty at both ends. Curved passage uses the support and family spread described below. **Repeat** plays once, as a **Loop**, or **Back and forth**, and **Pace** keeps it steady or eases it in and out (see [mathematics](mathematics.md#seamless-loops)). A rotation returns after its whole turn and a slice passage returns when no section cuts the shape at its ends, so those offer a loop; Play compares the drawing at both ends and names what differs. Other motions offer back and forth. **Hopf circles, flowing forever** loops Hopf fibers through a double rotation. Playback can pause/resume or scrub, and a single pass includes both endpoints. A quick scrub draws each frame the engine finishes, as playback does, and settles on the last position; as in the 3D notebook, a frame catching up with the scrubber leaves **Copy link**, **Export image** and the drawing undisturbed. An edit, Play or Stop discards any frame still being computed. Once playback completes, the view is released: orbit, pan, zoom, **Rotate view**, and **Reset view** work on the final frame. **Stop** (or **Back to study** after completion) restores the entered study; edits and notebook switches stop playback. An empty section is a valid result.
 
-**Line weight**, after the layers, draws every stroke fine, regular (as before), bold, or as a one-pixel hairline, live and in every export, as in the 2D notebook; links carry it inside `layers`, and older links open regular. Playback calculates each frame, and on a computer with spare cores a second engine shares that work while it plays.
+**Line weight**, after the layers, draws every stroke fine, regular (as before), bold, or as a one-pixel hairline, live and in every export, as in the 2D notebook; links carry it inside `layers`, and older links open regular. Playback calculates each frame, and on a computer with spare cores a second engine shares that work while it plays, except in the square-root journey, which computes one frame at a time.
 
 PNG exports render vectors at 2000 × 1520, or at 1, 3 or 4 times the 1000 × 760 page under **Export image → PNG size**; a paired view's page is 2000 × 760 or 1000 × 1520, so its default PNG is 4000 × 1520 or 2000 × 3040. **Transparent background** leaves the background out of the PNG and SVG, the page's and each panel's. SVG exports contain true vector paths and metadata recording the numerical definition, camera, and layers. Their page has the still's size (the PNG size), and its root carries the background, so a viewer shows the drawing and nothing beyond it, as for a 3D export. The root keeps none of the live drawing's overflow, focus or touch settings, so a still larger than the window scrolls when opened on its own; the same holds for every notebook's SVG (`svgFile`). A size other than the default is recorded in the metadata as `image`. Motion exports use the same numerical sampler and vector drawing as playback, as MP4 or animated WebP when the browser supports encoding. **Export settings** offers resolution from 500 × 380 to 2000 × 1520, quality from 1 to 100, and 15, 30 or 60 fps (a 60 fps WebP is about twice the size of 30). Defaults match the other notebooks: 2000 × 1520, 30 fps, quality 60 for MP4 or 85 for WebP. WebP may optionally loop; a repeating animation's WebP always loops and leaves out its last frame, which is its first again. Duration is 0.1–3600 seconds for playback; exports are bounded to 7,200 frames and 256 MiB. The full passage is exported regardless of the current scrub position, with both endpoints and the captured camera, theme, and layers. Cancellation, editing, and switching notebooks discard pending output. Files never leave the browser.
 
@@ -281,10 +281,49 @@ On the development macOS arm64 desktop (Apple M5 Max), a native result takes abo
 
 For 25 coincident central planes at angles (0.3, 0.2, 0.1, 0.7, 0.5, 0.3), both configurations together return 1,600 section vertices and 2,400 drawn edges. Three native runs measured 1.53–1.54 ms and about 1.65 MB allocated per request (23,561 allocations). The real WASM reply sent 191,739 bytes; one contract run measured about 14 ms including parsing and additional checks. Chromium measured 115–118 ms control-to-drawing and about 2.2 MiB additional retained main-page heap after GC, with 56–77 ms to cancel a movie request. The signature’s 1-second, 15 fps, 1000 × 760 export took about 0.10–0.13 seconds for MP4 and 0.20–0.23 seconds for WebP. For a 60-second, 30 fps, 2000 × 1520 MP4 of the maximum family’s double rotation, main-page retained heap after at least 20 encoded frames increased about 13.9 MiB beyond the static family, and about 2.0 MiB remained after cancellation; Cancel returned in 81 ms. These observations exclude worker, runtime, native encoder and whole-process memory; allocation/work limits do not establish achieved phone responsiveness.
 
+## The square-root journey
+
+Choose **Square-root journey** in **4D object**, or the example **The second time around**. A point circles the origin twice in the z plane. Its continuously followed square root w goes only halfway around on the first circuit, ending at −w(0), and comes home on the second. Beside them, the same path in four dimensions is one closed curve. The mathematics is in [the square-root journey](mathematics.md#the-square-root-journey).
+
+**Views.** **Source, value and lift** is the study's one view, two panes sharing one result. Pane 1 is a flat diagram with the z plane on the left and the w plane on the right, at one scale. Pane 2 is the 4D path `(Re z, Im z, Re w, Im w)`, turned by the six angles, with its fourth coordinate dropped. Every view draws:
+- both whole circuits, quietly, the second dashed;
+- the bright trace of the last circuit behind the moving point;
+- the moving point, and a ring at the trace start;
+- the branch point, the origin, as a guide.
+
+Each circuit has one ink in all three views. The z plane cannot tell the circuits apart, since they coincide there; the w plane and the 4D view separate them. The z plane also draws the principal cut on the negative real axis, dashed, as a guide. The diagram pans and zooms; the 4D pane orbits, pans and zooms. **Front**, **Side**, **Top**, **Isometric** and **Rotate view** turn only the 4D pane. Keys act on the focused pane.
+
+**Controls.** **Initial sheet** chooses `w(0) = +√r` or `−√r`. **Radius r** is from 0.25 to 4. **Journey endpoints** hold **Trace start** and **Trace end**, radians from 0 to 4π (`4*pi`), within 10⁻¹² of either end; a start after the end traverses in reverse. **Path intervals**, 64 to 4,096, divide 0 ≤ t ≤ 4π; exact points are added at 2π and at the moving point. Errors appear under the field that caused them.
+
+**Motion.** **Follow the root** moves t from Trace start to Trace end. Only a whole 4π journey returns every view, so only it can loop; Play says why another refuses. Playback for this study uses one engine: one frame is computed at a time, and the latest scrub replaces a waiting one. Still, MP4 and WebP exports draw both panes through the shared sampler. A link saves the radius, sheet, endpoints, interval count, angles and both cameras, never the playback progress.
+
+**Readouts.** The parameter t and turns of z, the circuit (1 for t mod 4π below 2π, otherwise 2), z and w, whether w is `+√z` or `−√z` for the principal root, the largest `|w² − z|` over the returned points, and the norm `√(r² + r)`. The status line below the drawing stays the same through the motion.
+
+**Identities and bounds.** Paths are `root/{source|value|lifted}/circuit/{1|2}` (role `circuit`, branch the circuit) and `…/trace/k` (role `trace`, branch the circuit). Markers are `…/start`, `…/current` and `…/branch-point`. Guides are `root/{source|value}/axis/{re|im}` and `root/source/cut`. Lifted paths carry their parameters and 4D source points; diagram paths carry parameters. Each view draws two circuits of at most n/2 + 4 points, a trace of at most n/2 + 6 points in two pieces, and three markers; the diagram adds ten guide points. All three views together return at most `3(3n/2 + 17) + 10` points: 18,493 at n = 4,096, where 18,466 are emitted. The arrays travel in the typed buffer. The request is refused before evaluation outside these limits.
+
+**Checks.** Native tests and targeted mutations are listed with [the mathematics](mathematics.md#the-square-root-journey). The WASM contract checks the lifted reply, `w² = z` on the restored points and the point count at the maximum. Browser tests exercise the following:
+- the opening still, without text in the artwork;
+- seeks at 0, 2π and 4π, the 4π drawing being the 0 drawing;
+- the loop and its refusal;
+- the sheet, radius and reversed endpoints, with refusals under their fields;
+- slow replies: an older edit is never shown, and an example chosen meanwhile wins;
+- restoration of the edited study after switching objects;
+- one frame in flight during slow playback, and Stop discarding a late reply;
+- export cancellation by Cancel, an edit or leaving the notebook;
+- pane ownership of keys and named views;
+- inks under every color scheme in drawing, legend and SVG;
+- link conformance;
+- an independently decoded looping MP4 whose frames match direct seeks.
+
+### Square-root journey performance observations
+
+On the development macOS arm64 desktop (Apple M5 Max), at 4,096 intervals through the real WASM bridge, a reply sent 790,993 bytes in a median 2.9 ms including parsing. Headless Chromium measured 89 ms from editing the interval count to the redrawn study, a seek to a settled frame in about 30 ms, 40 rapid scrubs settled in 309 ms, and 115 ms from Stop to idle. At the preset's 1,024 intervals those were 15 ms, 7 ms, 140 ms and 115 ms. A 2-second, 15 fps, 1000 × 380 looping MP4 encoded in about 0.2 s. These are observations, not limits.
+
 ## Scale and translation
 
 Every tolerance in `engine4` is absolute plus relative to the study's own scale. What a study can move:
 
+- **Square-root journey:** neither. The source is fixed by r, from 0.25 to 4, about the origin. Its only tolerance is the endpoint band below, on parameters.
 - **24-cell:** neither. Coordinates and source incidence are exact; rotated sections use the fixed source-unit contact band stated above.
 - **Tesseract and spherical weave:** neither. They are the unit tesseract and the unit 3-sphere, centered at the origin, and the request carries no size or center for them; the shared size fields leave every mode unchanged. The weave's window radius sets the window, not the sphere.
 - **Ball and tube:** scale only, since they have no center. Radii, slice and spread scale together.
@@ -301,6 +340,7 @@ Every tolerance in `engine4` is absolute plus relative to the study's own scale.
 | Lift present set, on d² | 10⁻¹² r (r + √10) | missing radius r | δ ≤ 5 × 10⁻¹³ (1 + √10/r): below 4 × 10⁻¹¹ for r ≥ 0.05 |
 | Lift line event | 10⁻¹² + 10⁻¹⁰ max(1, r²) | — | none: below zero residual it only repeats the closest-point event |
 | Lift circle event, on a cosine; event coalescing, on a parameter | 10⁻¹²; 10⁻¹³ | dimensionless | — |
+| Square-root journey endpoint snap, on t | 10⁻¹² | radians, 0 ≤ t ≤ 4π | — |
 | 24-cell section contact, on w − h | 64·2⁻⁵²·√2 ≈ 2.01·10⁻¹⁴ | fixed declared coordinates | fixed object |
 | Weave window and latitude snap, on q_w and radians | 10⁻¹² | unit sphere | — |
 | Tesseract stereographic coefficients, cut spacing; section level, coincidence and planarity | 10⁻¹⁴; 10⁻¹⁰, 10⁻⁹ (10⁻¹⁸ squared), 10⁻⁹ | unit tesseract, coordinates within 2 | fixed object |

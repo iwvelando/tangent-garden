@@ -272,4 +272,15 @@ export const tesseractPresets: {
     repeat: "loop",
     pace: "ease",
   },
+  // Opens at t = 0 with both whole circuits and the trace of the second,
+  // the circuit that has just brought w home; Follow the root loops over
+  // the whole 4π journey.
+  {
+    name: "The second time around",
+    detail:
+      "A point circles the origin twice. Its square root goes only halfway around on the first circuit, and comes home on the second. In four dimensions the two circuits are one closed curve.",
+    config: objects.root.defaults(base),
+    motion: "trace",
+    repeat: "loop",
+  },
 ];
