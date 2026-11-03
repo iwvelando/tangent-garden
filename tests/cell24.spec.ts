@@ -1085,11 +1085,20 @@ for (const viewport of [
       name: "Section spread",
       exact: true,
     });
+    // Both controls in one layout: two boundingBox calls can straddle a
+    // reflow above the pair (the slice edit's readouts), which moves both.
+    const count = page.getByRole("spinbutton", {
+      name: "Section count",
+      exact: true,
+    });
     const pairOffset = async () =>
-      (await spread.boundingBox())!.y -
-      (await page
-        .getByRole("spinbutton", { name: "Section count", exact: true })
-        .boundingBox())!.y;
+      spread.evaluate(
+        (s, c) =>
+          Math.round(
+            s.getBoundingClientRect().y - c!.getBoundingClientRect().y,
+          ),
+        await count.elementHandle(),
+      );
     const before = await pairOffset();
     await page
       .getByRole("button", { name: "About Section spread", exact: true })
