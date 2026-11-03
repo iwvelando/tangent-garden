@@ -117,10 +117,18 @@ func SolveBloom(q BloomRequest) (*Film, error) {
 	p.floor = floorFraction * math.Sqrt(f.Area0/math.Pi)
 	f.s = p
 	k, j := float64(s.Petals), float64(s.Ruffles)
+	// Keep the grid angle when the entered phase is much larger. Sincos
+	// performs accurate argument reduction even for huge finite angles;
+	// taking a remainder by the rounded value of 2π would lose that phase.
+	phase := s.Phase
+	if math.Abs(phase) > math.Pi {
+		sn, cs := math.Sincos(phase)
+		phase = math.Atan2(sn, cs)
+	}
 	l := make([]float64, n)
 	for i := range n {
 		phi := 2 * math.Pi * float64(i) / float64(n)
-		l[i] = math.Log(s.Radius * (1 + s.Depth*math.Cos(k*phi) + s.Ruffle*math.Cos(j*phi+s.Phase)))
+		l[i] = math.Log(s.Radius * (1 + s.Depth*math.Cos(k*phi) + s.Ruffle*math.Cos(j*phi+phase)))
 	}
 	switch p.guard(l) {
 	case "":

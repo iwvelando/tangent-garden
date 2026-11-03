@@ -528,3 +528,29 @@ func TestBloomSeedAndCurvatureReadoutFollowThePolarCurve(t *testing.T) {
 		t.Errorf("curvature readout [%g, %g], polar formula [%g, %g]", c.MinKappa, c.MaxKappa, lo, hi)
 	}
 }
+
+// Phase is any finite angle. Reduce it without adding it to each grid
+// angle: for a large phase that sum can lose the grid angle completely.
+func TestBloomLargePhaseKeepsItsRuffles(t *testing.T) {
+	for _, phase := range []float64{1e30, -1e30, math.MaxFloat64} {
+		seed := eightBloom
+		seed.Ruffle = 0.002 // Resolved at every phase in the matrix.
+		seed.Phase = phase
+		f := bloom(t, BloomRequest{Seed: seed, Nodes: 512, Tau: 0.0025, Horizon: 0.8})
+		c := bloomAt(t, f, 0)
+		sp, cp := math.Sincos(phase)
+		for i := range c.X {
+			phi := 2 * math.Pi * float64(i) / float64(len(c.X))
+			sj, cj := math.Sincos(float64(seed.Ruffles) * phi)
+			radius := seed.Radius * (1 + seed.Depth*math.Cos(float64(seed.Petals)*phi) + seed.Ruffle*(cj*cp-sj*sp))
+			got := math.Hypot(c.X[i]-seed.CenterX, c.Y[i]-seed.CenterY)
+			if math.Abs(got-radius) > 1e-12*seed.Radius {
+				t.Fatalf("phase %g vertex %d: radius %.15g, want %.15g", phase, i, got, radius)
+			}
+		}
+		analytic := math.Pi * seed.Radius * seed.Radius * (1 + seed.Depth*seed.Depth/2 + seed.Ruffle*seed.Ruffle/2)
+		if math.Abs(spectralArea(c)-analytic) > 1e-6*analytic {
+			t.Fatalf("phase %g: returned seed area %g, want %g", phase, spectralArea(c), analytic)
+		}
+	}
+}
