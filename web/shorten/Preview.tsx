@@ -331,6 +331,14 @@ export function ShortenPreview({
     endFilm();
     setStudy(change);
   };
+  // A switch may derive a value from a scalar or unmount its input. Let
+  // pending evaluations settle first so neither late values nor refusals
+  // can arrive after the switch. Returning discards the waiting action.
+  const switchSeed = async (change: (s: ShortenStudy) => ShortenStudy) => {
+    const id = generation.current;
+    while (jobs.current.size) await Promise.all([...jobs.current]);
+    if (id === generation.current) edit(change);
+  };
   const present = (change: Partial<ShortenStudy>) =>
     setStudy((s) => ({ ...s, ...change }));
   const setTiming = (change: Partial<ShortenMotion>) => {
@@ -711,7 +719,7 @@ export function ShortenPreview({
                     ["flower", "Flower"],
                     ["convex", "Convex loop"],
                   ],
-                  (family) => edit((s) => ({ ...s, family })),
+                  (family) => void switchSeed((s) => ({ ...s, family })),
                   shortenHelp.family,
                 )}
                 {study.family === "flower" ? (
@@ -738,7 +746,7 @@ export function ShortenPreview({
                       // A ripple beyond the new bound is brought to it,
                       // keeping its sign, so the switch leaves a valid study.
                       (lobes) =>
-                        edit((s) => ({
+                        void switchSeed((s) => ({
                           ...s,
                           lobes,
                           ripple:

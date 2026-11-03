@@ -495,3 +495,78 @@ test("changing the lobes keeps the ripple within the new bound", async ({
   await ready(d);
   await expect(ripple).toHaveValue("-0.01");
 });
+
+// A lobe switch derives its ripple from the latest scalar evaluation.
+test("changing lobes waits for an outstanding ripple expression", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    (window as any).rippleJobs = [];
+    Worker.prototype.postMessage = function (data: any, ...rest: any[]) {
+      if ((window as any).holdRipple && data.action === "scalars") {
+        (window as any).rippleJobs.push(() =>
+          (post as any).call(this, data, ...rest),
+        );
+        return;
+      }
+      return (post as any).call(this, data, ...rest);
+    };
+  });
+  await page.goto("/");
+  const d = await openStudy(page, convex);
+  const ripple = d.getByLabel("Ripple", { exact: true });
+  await page.evaluate(() => {
+    (window as any).holdRipple = true;
+  });
+  await ripple.fill("-1/20");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).rippleJobs.length))
+    .toBe(1);
+  await d.getByLabel("Lobes", { exact: true }).selectOption("6");
+  await page.evaluate(() => {
+    (window as any).holdRipple = false;
+    for (const send of (window as any).rippleJobs) send();
+  });
+  await expect(ripple).toHaveValue(String(-1 / 70));
+  await ready(d);
+  await expect(d.locator(".field-error")).toHaveCount(0);
+});
+
+test("switching families settles a pending scalar before hiding its field", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    (window as any).seedJobs = [];
+    Worker.prototype.postMessage = function (data: any, ...rest: any[]) {
+      if ((window as any).holdSeed && data.action === "scalars") {
+        (window as any).seedJobs.push(() =>
+          (post as any).call(this, data, ...rest),
+        );
+        return;
+      }
+      return (post as any).call(this, data, ...rest);
+    };
+  });
+  await page.goto("/");
+  const d = await openStudy(page);
+  await page.evaluate(() => {
+    (window as any).holdSeed = true;
+  });
+  await d.getByLabel("Petal depth", { exact: true }).fill("t");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).seedJobs.length))
+    .toBe(1);
+  await d.getByLabel("Seed", { exact: true }).selectOption("convex");
+  await page.evaluate(() => {
+    (window as any).holdSeed = false;
+    for (const send of (window as any).seedJobs) send();
+  });
+  await expect(d.getByLabel("Ripple", { exact: true })).toBeVisible();
+  await ready(d);
+  await expect(d.locator(".field-error")).toHaveCount(0);
+  await expect(
+    d.getByRole("button", { name: "Play motion", exact: true }),
+  ).toBeEnabled();
+});
