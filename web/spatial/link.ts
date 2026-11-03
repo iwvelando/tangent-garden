@@ -57,6 +57,7 @@ import {
 import { defaultRide, rideRange, type Ride } from "./ride";
 import type { Pace, Repeat } from "../timing";
 import { loops } from "./loop";
+import { storyIds, type StoryId } from "./story";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
 // bounds the study itself determines.
@@ -87,6 +88,10 @@ export type SpatialAnimation = Omit<
   // levels, rather than one level coarser (see playbackRefinement); off,
   // and left out, unless chosen, as in links made before it.
   fullRefinement?: true;
+  // Whether a story's level track rests at its bracket's levels (see
+  // story.ts's holdPlan); off, and left out, unless chosen, as in links
+  // made before it. It applies only while the study is its story's.
+  holds?: true;
 };
 export type SpatialStudy = {
   config: SpatialConfig;
@@ -105,6 +110,9 @@ export type SpatialStudy = {
   // The chosen lens's angle in degrees, kept while a named lens is shown;
   // the normal lens's in links made before it.
   lensAngle: number;
+  // The curated event the study opened as (see story.ts), absent from
+  // every other study and from links made before stories.
+  story?: StoryId;
 };
 export const defaultAnimation: SpatialAnimation = {
   mode: "reveal",
@@ -139,6 +147,7 @@ function flightAnimation(flight?: Flight): SpatialAnimation {
     ride: structuredClone(ride ?? defaultRide),
     tracks: structuredClone(animate.tracks ?? []),
     probeMotion: animate.probe ?? defaultAnimation.probeMotion,
+    ...(flight.holds && { holds: true as const }),
   };
 }
 // The study an example opens: its own fields, and the notebook's defaults
@@ -155,6 +164,7 @@ export function presetStudy(index: number): SpatialStudy {
     sight: structuredClone(preset.sight ?? defaultSight),
     projection: preset.projection ?? "orthographic",
     lensAngle: preset.lensAngle ?? lensAngles.initial,
+    ...(preset.story && { story: preset.story }),
   };
 }
 
@@ -640,6 +650,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
         "sight",
         "projection",
         "lensAngle",
+        "story",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -669,6 +680,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
     pace,
     probeMotion,
     fullRefinement,
+    holds,
     ...shared
   } = grouped ? (raw.animation as Record<string, unknown>) : {};
   const flying = shared.camera === "path",
@@ -707,6 +719,9 @@ export function spatialStudy(value: unknown): SpatialStudy {
       false,
       "animation.fullRefinement",
     ) && { fullRefinement: true as const }),
+    ...(conform<boolean>(holds, "boolean", false, "animation.holds") && {
+      holds: true as const,
+    }),
   };
   if (animation.repeat === "loop" && !loops(animation.mode))
     throw new LinkError(
@@ -810,5 +825,19 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "projection",
     ),
     lensAngle: wholeAngle(raw.lensAngle),
+    // A story is kept however the study has changed since; it applies only
+    // while the study is its recipe (story.ts's storyContext).
+    ...(raw.story !== undefined && {
+      story: conform<StoryId>(
+        raw.story,
+        {
+          options: Object.fromEntries(
+            storyIds.map((id) => [id, true]),
+          ) as Record<StoryId, true>,
+        },
+        storyIds[0],
+        "story",
+      ),
+    }),
   };
 }

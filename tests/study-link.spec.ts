@@ -192,6 +192,35 @@ test("trajectory family scopes round trip and older links retain the first path"
     await refused(() => spatialStudy(study), "config.allPaths");
   }
 });
+test("a story and its rests round trip; older links and other studies have neither", async () => {
+  const i = spatialPresets.findIndex((p) => p.story === "handle");
+  const study = spatialPreset(i);
+  assert.equal(study.story, "handle");
+  assert.equal(study.animation.holds, true);
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(read.study), study);
+  // A link made before stories opens without one, and without rests.
+  const older = structuredClone(study) as any;
+  delete older.story;
+  delete older.animation.holds;
+  const legacy = spatialStudy(older);
+  assert.equal("story" in legacy, false);
+  assert.equal("holds" in legacy.animation, false);
+  // Rests set back to off carry no flag, as an older link's absence.
+  const off = structuredClone(study) as any;
+  off.animation.holds = false;
+  assert.equal("holds" in spatialStudy(off).animation, false);
+  for (const bad of ["drops", 1, null, {}]) {
+    const wrong = structuredClone(study) as any;
+    wrong.story = bad;
+    await refused(() => spatialStudy(wrong), "story");
+  }
+  for (const bad of ["yes", 1, {}]) {
+    const wrong = structuredClone(study) as any;
+    wrong.animation.holds = bad;
+    await refused(() => spatialStudy(wrong), "animation.holds");
+  }
+});
 const tesseract = (i = 0): TesseractStudy => ({
   config: structuredClone(tesseractPresets[i].config),
   layers: {

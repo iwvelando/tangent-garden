@@ -1463,6 +1463,63 @@ A mesh like this is a picture of the level set, not a differentiable surface: it
 
 Dropping the discontinuity test, the shared vertex at a grid point, the triangle orientation, the consistent tetrahedra, the second triangle of a quadrilateral, the alternating-corner test, the box-face test for cuts, the vanishing-gradient test, the undefined-cube test, the section frame's axis rule, the section budget's skipping, or the bisection safeguard each makes a test fail. Among the crossings, joining a node's adjacent arms rather than its opposite ones, not spreading over unusual edges or around moved corners, not orienting triangles, not seeking a dip on an edge, giving nodes a normal, loosening the level test, sampling edges coarsely, dropping the apex, pairing by the least alike gradients, counting crossing leaves as unresolved, fanning one half of a sheet, not recording crossing edges, not moving roots back onto `F`, skipping zero corners among candidates, seeking nodes in faces without corners apart, keeping folded pairs, moving a root onto a grid point exactly on the level, not merging a grazing nappe's root into its apex, counting apices where nappes do not meet, or shifting along `(1, √2, √3)`, on the cone, each makes a test fail. So does giving the two tetrahedra on a face different copies of its node, keying copies by face alone, dropping the twins, orienting pieces by the stored winding, choosing a sheet's normal by sign rather than line, skipping the split of shared vertices, not listing the vertices whose normal is their sheet's, not giving roots left within the shift their sheet's normal, keeping `∇F`'s normal when its line is nearer the other sheet's, accepting a Hessian whose middle eigenvalue is large, not joining a pinch point's copies, not spreading to the tetrahedra beside a shallow crossing, taking a crossing beside an end exactly on the level as that end's own, or seeking the edges between two sheets among those whose ends lie on opposite sides. Dropping the across test among candidates changes no drawing; it only keeps candidates between nested sheets from costing time. The WebAssembly bridge test checks the sphere, its sections, a pole and validation.
 
+## Curated events in implicit surfaces
+
+Two implicit examples carry a _story_ (`web/spatial/story.ts`): a recipe `F` whose level sets change topology at one known level, analyzed here, not found by the mesher. Both use levels in `[0.64, 1.44]`, the critical level `c* = 1`, and the bracket `1 ± 0.16`.
+
+**Two drops become one.** `F = d₁² d₂²`, with `d₁`, `d₂` the distances to `(±1, 0, 0)`; written `((x-1)^2+y^2+z^2)*((x+1)^2+y^2+z^2)`. With `r² = x² + y² + z²`, `F = (r² + 1)² − 4x²`, so `∇F = (4x(r² − 1), 4y(r² + 1), 4z(r² + 1))`. It vanishes only at the foci, where `F = 0` (minima), and at the origin, where `F = 1` and the Hessian is `diag(−4, 4, 4)`: a saddle of index 1. `F` is proper (it grows like `r⁴`), so between critical values its level sets are diffeomorphic. Each level in `(0, 1)` is two spheres, one about each focus, and each level above 1 is one sphere. At `c = 1` the two drops touch at the origin. The level set is two spheres sharing one point there, and is not a manifold.
+
+**The instant a handle appears.** `F = (ρ² − 1)² + z²` with `ρ² = x² + y²`; written `(x^2+y^2-1)^2+z^2`. In the half-plane of `s = ρ² ≥ 0` and `z`, the level `F = c` is the circle `(s − 1)² + z² = c` of radius `√c` about `(1, 0)`, and the surface is that meridian turned about the z axis.
+
+- For `0 < c < 1`, the circle lies in `s ≥ 1 − √c > 0`, missing the axis, and turns into a torus.
+- For `c > 1`, its part with `s ≥ 0` is an arc meeting the axis at `z = ±√(c − 1)`. It turns into a sphere, dimpled at its poles, since the arc rises to `z = √c` at `s = 1`.
+- At `c = 1` the circle touches the axis at the origin only, and the dimples meet there in one point.
+
+`∇F = (4x(ρ² − 1), 4y(ρ² − 1), 2z)` vanishes on the circle `ρ = 1, z = 0` (minima, `F = 0`) and at the origin, where `F = 1` and the Hessian is `diag(−4, −4, 2)`, of index 2. As `c` falls through 1 a handle appears: the sphere becomes a torus. The plane `y = 0` holds the axis, so it cuts the surface in the meridian `(x² − 1)² + z² = c`: one oval, then the figure eight `z² = x²(2 − x²)` through the origin at `c = 1`, then two ovals.
+
+**The box.** Every point with `F ≤ c` lies in a box about the origin, and each half-width is reached on `F = c`:
+
+- **Two drops.** With `u = x²` and `v = y² + z²`, `F = (u + v + 1)² − 4u`. On `F = c`, `u ≤ 1 + √c` (at `v = 0`). The concave `v = √(c + 4u) − u − 1` is greatest, `c/4`, at `u = 1 − c/4`. So `|x| ≤ √(1 + √c)` and `|y|, |z| ≤ √c / 2`.
+- **The handle.** `ρ² ≤ 1 + √c` (at `z = 0`) and `z² ≤ c` (at `ρ² = 1`). So `|x|, |y| ≤ √(1 + √c)` and `|z| ≤ √c`.
+
+At `c = 1.44` these are 1.4832 and 0.6, and 1.4832 and 1.2. The examples' box `[−2, 2]³` holds them strictly, so no level the story covers reaches a face.
+
+**Applying a story.** A study keeps its story identifier, `"two-drops"` or `"handle"`, until a whole study replaces it: an example, a link or a journey. The story applies while the study is an implicit surface whose `F` is the recipe's exact text and whose box strictly contains the half-widths above at `c = 1.44`. The level, the cells, refinement, sections, the shape parameter (neither recipe uses `a`), layers, camera, cut, sight and animation keep it. Any other `F`, even one drawing the same surface, sets it aside, and so does a box that may cut the surface. The strip then says which, and its states are disabled until both are restored. A story's surface is analyzed only for levels within `[0.64, 1.44]`; at another level the note says so and describes the mesh alone.
+
+**Comparing the mesh.** A regular level's surface is the analysis's: two closed pieces of Euler characteristic 2 and 2, one of 2, a sphere (2) or a torus (0). The mesh is compared with it only when it is complete: closed, two-sided, not cut by the box, nothing left out (no undefined points, poles or unresolved crossing tetrahedra), and refinement within its budget. Then the note says the mesh agrees, or that it reads otherwise and the narrowing feature is finer than the grid resolves; an incomplete mesh is not compared. The mesh's own description follows, unchanged.
+
+At `c = 1` the surface is singular, so the note says so and reads the mesh's pieces by Euler characteristic alone, never as a genus or cross-caps. A finite mesh shows the singular point only by chance. In `[−2, 2]³` with an even number of cells, the origin is a grid point and is met by one vertex without a normal: two spheres sharing it (χ = 3), or a sphere with two points made one (χ = 1). With an odd number of cells the origin lies inside a cell, and the mesh reads as a regular neighbor with no singular vertex: two drops, or a sphere. The examples use 56 cells.
+
+**Finite resolution.** The feature that narrows toward the event has width `w`:
+
+- the gap between the drops, `2√(1 − √c)`, and their neck, `2√(√c − 1)`;
+- the gap between the dimples, `2√(c − 1)`, and the hole, `2√(1 − √c)`.
+
+At the bracket's levels `w` is 0.58 (drops' gap), 0.56 (neck), 0.8 (dimples) and 0.58 (hole). In a box moved off the lattice, the mesh is the analysis's class wherever `w` is at least two cells, unrefined or refined to 2 levels. Nearer the event a grid can misread it. At `c = 0.999` on 24 cells (`w ≈ 0.045`, a quarter of a cell) the drops' gap is bridged into one piece, refined or not, and with no sample disagreeing. The handle's hole is missed, a sphere, though two refinement levels find it. A grid point exactly on the level near the event can also misread a resolved feature: the handle at `c = 1.04` on the symmetric 40-cell grid, whose dimples' poles `(0, 0, ±0.2)` are grid points, meshes as one closed piece with χ = 6. Such a mesh is reported as differing from the analysis, never relabeled. No finite mesh certifies the topology of a level arbitrarily close to the event.
+
+**The strip.** Its three states are the bracket's levels and `c = 1`, ordered as the event is reached: upward for the drops, downward for the handle. A state is selected exactly when the study's level equals it. Choosing one sets the level alone, after any pending evaluation of a numeric field, so the change cannot be overwritten. Each preview is the study at that level, with its own cells, refinement and sections. It is drawn by the ordinary renderer at 360 × 240 pixels, from the example's opening camera at 1.5 times its zoom, about the result's own bounds (the box's at every level). It follows the theme, color scheme, layers, cut and sight. A preview reads the mesh as the note does: agrees, differs, incomplete, or, at `c = 1`, singular.
+
+**The passage.** Each example's animation moves the level from the before state to the after state, with the camera flown from its opening view to a wider one. With **Rest beside the event** (`animation.holds`), while the study is its story's, the level track rests at each bracket level within its range. With rests at motion progress `u₁ < … < u_k` and share `h = 0.15`, the timeline spends `h` at each rest and `(1 − kh)` of it moving steadily between them. At time `q` the level is the track's `from` at `q = 0`, its `to` at `q = 1`, and exactly the rest's level throughout each rest. The camera path and other tracks follow the timeline unchanged. Every frame is a full engine calculation of its own level; meshes are never interpolated across the event. Frame times need not land on `c = 1`, which the strip selects directly.
+
+**Checks.** Native tests (`engine3/implicit_event_test.go`) verify:
+
+- on `F` itself, `F(0) = 1`, `∇F(0) = 0` and the Hessians above;
+- each half-width reached on the level set at 0.64, 1 and 1.44, and held by the examples' box;
+- at 0.64, 0.84, 1.16 and 1.44, the analysis's class on 24, 40, 56 and 60 cells, refined to 0–2 levels, in the cube and in a box moved off its lattice, never cut;
+- the narrowing brackets above, asserting the class wherever `w ≥ 2` cells and the two misreads at `c = 0.999`;
+- at `c = 1`, a closed mesh with a singular vertex or a regular neighbor's class, the examples' pinch (χ = 3 and 1, one singular vertex), and the 57-cell grids' smooth-looking neighbors;
+- a clipped box cut open and not read whole, refinement unresolved at its deepest level, and refinement out of budget.
+
+Browser tests (`tests/spatial-events.spec.ts`) verify:
+
+- the half-widths against a dense sample of `F ≤ 1.44`;
+- eligibility under each preserving and breaking edit, the mesh comparison and notes, including no genus at `c = 1`, and unchanged notes without a story;
+- the rests' exact ends and levels;
+- the strip forward and back with a hidden layer and a turned camera, everything but the level unchanged in the link;
+- keyboard selection, a pending level evaluation, an example chosen meanwhile, refusal and restoration, the 24-cell misread through the real engine, and the preview bound (three per refresh, none for a level);
+- links with and without a story;
+- seeks at the planned levels, and a decoded MP4 of 30 frames over 2 s whose frames during each rest are unchanged.
+
 ## Spatial cutaway plane
 
 The cut is a drawing setting, not part of the study: Go computes the whole study as it would without it, and the cut only hides part of the drawing. It is the plane `n̂·p = d`, with `n̂ = n/|n|`, in world coordinates. The entered normal `n` may have any nonzero length, each component finite and within ±10⁵. Only its direction counts. The offset `d` is the plane's signed distance from the origin along `n̂`, within ±10⁵. The normal points to the hidden side: whatever lies where `n̂·p > d` is hidden, and points on the plane are kept. **Flip** negates both `n` and `d`, which describes the same plane with the other side hidden. The plane is fixed in space. Orbiting the camera, or animating parameters that move the study's bounds, does not move it.
