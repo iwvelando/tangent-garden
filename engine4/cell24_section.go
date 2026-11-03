@@ -43,48 +43,66 @@ type Facet24 struct {
 	Cells    []int `json:"cells"`
 }
 
-// affine24 measures distances in source length units, even for a tiny
-// near-contact polygon: cross products are normalized before comparison.
-func affine24(points []Vec3, ids []int) (int, Vec3) {
+// rank24 is the affine dimension of source vertices, computed exactly on
+// doubled integer coordinates: -1 for none, then 0 (vertex) to 3 (cell).
+// Rotation preserves it, so contacts are classified by incidence rather
+// than by remeasuring rotated, band-snapped points.
+func (x *complex24) rank24(ids []int) int {
 	if len(ids) == 0 {
-		return -1, Vec3{}
+		return -1
 	}
-	a := points[ids[0]]
-	far, length := Vec3{}, 0.
+	rows := make([][4]int, 0, len(ids)-1)
+	for _, i := range ids[1:] {
+		var r [4]int
+		for j := range r {
+			r[j] = x.coords[i][j] - x.coords[ids[0]][j]
+		}
+		rows = append(rows, r)
+	}
+	rank := 0
+	for col := 0; col < 4 && rank < len(rows); col++ {
+		p := -1
+		for i := rank; i < len(rows); i++ {
+			if rows[i][col] != 0 {
+				p = i
+				break
+			}
+		}
+		if p < 0 {
+			continue
+		}
+		rows[rank], rows[p] = rows[p], rows[rank]
+		for i := rank + 1; i < len(rows); i++ {
+			f, g := rows[i][col], rows[rank][col]
+			for j := range rows[i] {
+				rows[i][j] = rows[i][j]*g - rows[rank][j]*f
+			}
+		}
+		rank++
+	}
+	return rank
+}
+
+// normal24 is the unit normal of a polygon contact, from its widest
+// cross product; the contact is a resolved source triangle.
+func normal24(points []Vec3, ids []int) Vec3 {
+	a, best, area := points[ids[0]], Vec3{}, 0.
 	for _, i := range ids {
-		v := sub(points[i], a)
-		d := math.Sqrt(dot(v, v))
-		if d > length {
-			far, length = v, d
+		for _, j := range ids {
+			v := cross(sub(points[i], a), sub(points[j], a))
+			if d := math.Sqrt(dot(v, v)); d > area {
+				best, area = v, d
+			}
 		}
 	}
-	if length <= cell24Contact {
-		return 0, Vec3{}
-	}
-	u := mul3(far, 1/length)
-	normal, area := Vec3{}, 0.
-	for _, i := range ids {
-		v := cross(u, sub(points[i], a))
-		d := math.Sqrt(dot(v, v))
-		if d > area {
-			normal, area = v, d
-		}
-	}
-	if area <= cell24Contact {
-		return 1, Vec3{}
-	}
-	normal = mul3(normal, 1/area)
-	for _, i := range ids {
-		if math.Abs(dot(normal, sub(points[i], a))) > cell24Contact {
-			return 3, normal
-		}
-	}
-	return 2, normal
+	return mul3(best, 1/area)
 }
 func mul3(v Vec3, s float64) Vec3 { return Vec3{v[0] * s, v[1] * s, v[2] * s} }
 
-// Convex polygon in the declared outward orientation. The cell-edge
-// intersection vertices are already extreme, except collinear contacts.
+// Convex polygon in the declared outward orientation. Every point is a
+// source vertex in the plane or the crossing of an edge that is not, so
+// each is already extreme: none is pruned, however small the polygon, and
+// neighboring facets keep the same shared vertices.
 func polygon24(points []Vec3, ids []int, normal Vec3) []int {
 	center := Vec3{}
 	for _, i := range ids {
@@ -98,21 +116,6 @@ func polygon24(points []Vec3, ids []int, normal Vec3) []int {
 	out := append([]int(nil), ids...)
 	angle := func(i int) float64 { p := sub(points[i], center); return math.Atan2(dot(p, v), dot(p, u)) }
 	sort.Slice(out, func(i, j int) bool { return angle(out[i]) < angle(out[j]) })
-	// Remove collinear intermediate vertices without using an area floor
-	// that would erase a small, resolved section.
-	for changed := true; changed && len(out) > 3; {
-		changed = false
-		for i, b := range out {
-			a, c := out[(i+len(out)-1)%len(out)], out[(i+1)%len(out)]
-			ab, ac := sub(points[b], points[a]), sub(points[c], points[a])
-			l := math.Sqrt(dot(ac, ac))
-			if l > 0 && math.Sqrt(dot(cross(ab, ac), cross(ab, ac)))/l <= cell24Contact {
-				out = append(out[:i], out[i+1:]...)
-				changed = true
-				break
-			}
-		}
-	}
 	// Canonical first vertex, independent of traversal and atan2's seam.
 	first := 0
 	for i := range out {
@@ -191,7 +194,32 @@ func (x *complex24) section24(rotated []Vec4, angles [6]float64, h float64, obje
 	for i := range all {
 		all[i] = i
 	}
-	dimension, normal := affine24(s.Points, all)
+	// A set of source vertices meets the plane across its interior when it
+	// has vertices strictly on both sides (beyond the band). Otherwise the
+	// contact is exactly the face spanned by its vertices in the band. The
+	// same band decided which vertices were snapped, so the two agree.
+	contact := func(vertices []int, crossed int) int {
+		above, below, in := false, false, []int{}
+		for _, i := range vertices {
+			switch w := rotated[i][3]; {
+			case on(w):
+				in = append(in, i)
+			case w > h:
+				above = true
+			default:
+				below = true
+			}
+		}
+		if above && below {
+			return crossed
+		}
+		return x.rank24(in)
+	}
+	every := make([]int, len(rotated))
+	for i := range every {
+		every[i] = i
+	}
+	dimension := contact(every, 3)
 	s.Dimension = dimension
 	if dimension < 1 {
 		return s
@@ -219,16 +247,16 @@ func (x *complex24) section24(rotated []Vec4, angles [6]float64, h float64, obje
 	}
 	if dimension == 2 {
 		cells := []int{}
-		for k, ids := range cellVertices {
-			if d, _ := affine24(s.Points, ids); d == 2 {
+		for k := range cellVertices {
+			if contact(x.cells[k][:], 2) == 2 {
 				cells = append(cells, k)
 			}
 		}
-		s.Facets = append(s.Facets, Facet24{Vertices: polygon24(s.Points, all, normal), Cells: cells})
+		s.Facets = append(s.Facets, Facet24{Vertices: polygon24(s.Points, all, normal24(s.Points, all)), Cells: cells})
 	} else {
 		facets := map[string]int{}
 		for k, ids := range cellVertices {
-			if d, _ := affine24(s.Points, ids); d != 2 {
+			if contact(x.cells[k][:], 2) != 2 {
 				continue
 			} // a whole cell is a region, never a face
 			n := rotate(x.other(k), angles)

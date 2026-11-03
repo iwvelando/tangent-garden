@@ -1159,3 +1159,25 @@ func TestCell24SectionNearContactBandAndOwnership(t *testing.T) {
 		}
 	}
 }
+
+// Slices within and just beyond the contact band of every rotated vertex
+// level. Snapping a vertex onto the plane must not make one octahedral cell
+// look nonplanar (and so a whole cell), nor may a tiny corner just outside
+// the band lose a facet: every solid stays a closed, paired boundary.
+func TestCell24SectionAcrossContactBand(t *testing.T) {
+	for _, angles := range [][6]float64{
+		{0, .9188070704038833, 0, math.Pi / 2, math.Pi / 4, 0},
+		{.31, .54, -.13, .81, .75, -.23},
+		{1.7, -2.2, .4, 3.1, -.6, 2.5},
+	} {
+		base := compute(t, cell24Request(0, "crystal", angles)).Polytope
+		for j, levels := range [][]Vec4{base.Primal.Rotated, base.Dual.Rotated} {
+			for _, v := range levels {
+				for _, k := range []float64{-30, -23, -21, -19, -15, -10, -5, -1, 0, 1, 5, 10, 15, 19, 21, 23, 30} {
+					_, ss := section24Result(t, angles, v[3]+k*1e-15, 1, 0)
+					checkSection24(t, ss[j], angles)
+				}
+			}
+		}
+	}
+}
