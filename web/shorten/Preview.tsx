@@ -35,6 +35,7 @@ import {
   extentOf,
   familyTimes,
   refusedField,
+  rippleLimit,
   shortenHelp,
   shortenLimits,
   shortenPage,
@@ -734,7 +735,16 @@ export function ShortenPreview({
                         [3, "Three"],
                         [6, "Six"],
                       ],
-                      (lobes) => edit((s) => ({ ...s, lobes })),
+                      // A ripple beyond the new bound is brought to it,
+                      // keeping its sign, so the switch leaves a valid study.
+                      (lobes) =>
+                        edit((s) => ({
+                          ...s,
+                          lobes,
+                          ripple:
+                            Math.sign(s.ripple) *
+                            Math.min(Math.abs(s.ripple), rippleLimit(lobes)),
+                        })),
                       shortenHelp.lobes,
                     )}
                     {scalar("ripple")}

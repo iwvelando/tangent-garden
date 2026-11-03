@@ -475,3 +475,23 @@ test("the growing and faint nests play as their presets open them", async ({
   expect(opacities.filter((o) => o === "0.18").length).toBeGreaterThan(0);
   expect(opacities[0]).toBe("0.85");
 });
+
+// Switching the lobes keeps a valid study: a ripple beyond the new bound is
+// brought to it, keeping its sign; one within it is kept.
+test("changing the lobes keeps the ripple within the new bound", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openStudy(page, convex);
+  const ripple = d.getByLabel("Ripple", { exact: true });
+  await expect(ripple).toHaveValue("0.0625");
+  await d.getByLabel("Lobes", { exact: true }).selectOption("6");
+  await ready(d);
+  await expect(d.locator(".field-error")).toHaveCount(0);
+  await expect(ripple).toHaveValue(String(1 / 70));
+  await ripple.fill("-0.01");
+  await ready(d);
+  await d.getByLabel("Lobes", { exact: true }).selectOption("3");
+  await ready(d);
+  await expect(ripple).toHaveValue("-0.01");
+});
