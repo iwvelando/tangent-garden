@@ -1,4 +1,4 @@
-import { test, type Page } from "@playwright/test";
+import { test, type BrowserContext, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 
 // ffprobe is an independent demuxer and decoder. CI installs it; local runs
@@ -140,19 +140,29 @@ function decode(page: Page, bytes: Buffer) {
     // Neither "loadeddata" nor "seeked" means a frame can be drawn yet:
     // under load, Chromium on Linux drew nothing for the first frame (every
     // channel zero) and the previous frame after a seek. Seek, wait until
-    // that frame is presented, then capture; the last seek lands inside the
-    // last frame rather than at the very end of the file.
-    const at = async (time: number) => {
-      const presented = new Promise<void>((resolve) =>
-        video.requestVideoFrameCallback(() => resolve()),
-      );
+    // that frame is presented, then capture. A seek to the frame already
+    // shown presents nothing, and WebKit may show the first frame before
+    // "loadeddata" is handled (#334), so seek to the last frame first, then
+    // back to the first: each seek changes the frame, and only a frame from
+    // the seek's side of the file counts. The last seek lands inside the last
+    // frame rather than at the very end of the file.
+    const at = async (time: number, shows: (t: number) => boolean) => {
+      const presented = new Promise<number>((resolve) => {
+        const next = () =>
+          video.requestVideoFrameCallback((_, frame) =>
+            shows(frame.mediaTime) ? resolve(frame.mediaTime) : next(),
+          );
+        next();
+      });
       const seeked = event("seeked");
       video.currentTime = time;
-      await Promise.all([seeked, presented]);
-      return capture();
+      const [, shown] = await Promise.all([seeked, presented]);
+      return shown;
     };
-    const first = await at(0);
-    const last = await at(Math.max(0, video.duration - 0.005));
+    const end = await at(Math.max(0, video.duration - 0.005), (t) => t > 0);
+    const last = capture();
+    await at(0, (t) => t < end);
+    const first = capture();
     URL.revokeObjectURL(url);
     return {
       duration: video.duration,
@@ -162,6 +172,54 @@ function decode(page: Page, bytes: Buffer) {
       last,
     };
   }, Array.from(bytes));
+}
+
+// The ordering behind CI's decoder hangs (#334), made certain: every video
+// a later page of this context loads has presented its first frame and
+// settled at time 0 before its "loadeddata" listeners run. WebKit presents
+// the first frame on its own, sometimes before that event is handled; in
+// Chromium a seek shows it, after which a seek to the time already shown
+// presents nothing. A test decodes once without this and once with it, and
+// expects the same result.
+export async function presentFirstFrameEarly(context: BrowserContext) {
+  await context.addInitScript(() => {
+    const add = HTMLMediaElement.prototype.addEventListener;
+    HTMLMediaElement.prototype.addEventListener = function (
+      this: HTMLVideoElement,
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: boolean | AddEventListenerOptions,
+    ) {
+      if (type !== "loadeddata") return add.call(this, type, listener, options);
+      const video = this;
+      add.call(
+        video,
+        type,
+        async (event: Event) => {
+          // Each seek changes the frame shown, so each presents one.
+          const seek = (time: number, shows: (t: number) => boolean) => {
+            const presented = new Promise<void>((resolve) => {
+              const next = () =>
+                video.requestVideoFrameCallback((_, frame) =>
+                  shows(frame.mediaTime) ? resolve() : next(),
+                );
+              next();
+            });
+            const seeked = new Promise<void>((resolve) =>
+              add.call(video, "seeked", () => resolve(), { once: true }),
+            );
+            video.currentTime = time;
+            return Promise.all([presented, seeked]);
+          };
+          await seek(video.duration / 2, (t) => t > 0);
+          await seek(0, (t) => t === 0);
+          if (typeof listener === "function") listener.call(video, event);
+          else listener.handleEvent(event);
+        },
+        options,
+      );
+    } as typeof HTMLMediaElement.prototype.addEventListener;
+  });
 }
 
 // Decode every actual frame independently; allow codec color rounding rather
