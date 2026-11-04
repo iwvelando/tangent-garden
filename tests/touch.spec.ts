@@ -94,6 +94,53 @@ test("2D: pinch zooms about the fingers, two fingers pan, one finger pans", asyn
   await expect(art).not.toHaveAttribute("data-camera-center", panned!);
 });
 
+test("4D: an off-center pinch keeps the point between the fingers in place", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await chooseNotebook(page, "4d");
+  const art = page.locator("#tesseract-artwork");
+  await expect(art).toBeVisible();
+  await page.getByRole("button", { name: "Adjust view", exact: true }).click();
+  await art.scrollIntoViewIfNeeded();
+  const view = async () =>
+    JSON.parse((await art.locator("desc").textContent())!).view;
+  await expect.poll(async () => !!(await view())).toBe(true);
+  // The first vertex drawn, and a screen point, in page units of the
+  // 1000 × 760 drawing.
+  const vertex = async () => {
+    const d = (await art
+      .locator('path[data-guide="false"]')
+      .first()
+      .getAttribute("d"))!;
+    const [x, y] = d.slice(1).split(/[L ]/)[0].split(",").map(Number);
+    return { x, y };
+  };
+  const box = (await art.boundingBox())!,
+    s = Math.min(box.width / 1000, box.height / 760);
+  const c = await center(art);
+  const mid = plus(c, 50, -40).map(Math.round) as Point;
+  const at = {
+    x: 500 + (mid[0] - c[0]) / s,
+    y: 380 + (mid[1] - c[1]) / s,
+  };
+  const start = await view(),
+    from = await vertex();
+  await fingers(
+    page,
+    [plus(mid, -30), plus(mid, 30)],
+    [plus(mid, -90), plus(mid, 90)],
+  );
+  await expect
+    .poll(async () => (await view()).zoom)
+    .toBeCloseTo(start.zoom * 3, 1);
+  const k = (await view()).zoom / start.zoom,
+    to = await vertex();
+  expect(Math.abs(to.x - at.x - (from.x - at.x) * k)).toBeLessThan(1.5);
+  expect(Math.abs(to.y - at.y - (from.y - at.y) * k)).toBeLessThan(1.5);
+});
+
 test("2D: gestures wait while an animation holds the camera", async ({
   page,
 }) => {

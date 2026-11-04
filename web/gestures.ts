@@ -62,3 +62,19 @@ export function createGesture() {
     },
   };
 }
+
+// A planar camera's zoom by factor k about a page point (u, v), measured
+// from the middle of the page, as its pan is: the point keeps showing what
+// it showed. The zoom stops at its range, and the pan scales by the zoom
+// actually reached. The middle, the default, is where + and − zoom.
+export function zoomAbout<C extends { x: number; y: number; zoom: number }>(
+  c: C,
+  k: number,
+  [lo, hi]: readonly [number, number],
+  u = 0,
+  v = 0,
+): C {
+  const zoom = Math.max(lo, Math.min(hi, c.zoom * k)),
+    ratio = zoom / c.zoom;
+  return { ...c, zoom, x: u - (u - c.x) * ratio, y: v - (v - c.y) * ratio };
+}

@@ -1,4 +1,4 @@
-import { createGesture } from "../gestures";
+import { createGesture, zoomAbout } from "../gestures";
 import { useEffect, useId, useMemo, useRef, type PointerEvent } from "react";
 import { framingPoints, pathData } from "../Plot";
 import type { PlotCamera } from "../planar-link";
@@ -8,6 +8,8 @@ import { svgStroke, type LineWeight } from "../line-weight";
 import type { Vec } from "../types";
 import type { LoomResult, LoomMarker } from "./model";
 export type Pane = "source" | "image";
+// The zoom range of each pane's manual camera.
+const zoomRange: [number, number] = [0.1, 100];
 export function loomFit(result: LoomResult, pane: Pane) {
   const points = result.members.flatMap((m) => {
     // The ordinary fitter has a legacy coordinate fence. Normalize extreme
@@ -103,7 +105,10 @@ export function PaneDrawing(p: DrawingProps) {
       change.current?.(next);
       return;
     }
-    const zoom = Math.max(0.1, Math.min(100, c.zoom * motion.scale)),
+    const zoom = Math.max(
+        zoomRange[0],
+        Math.min(zoomRange[1], c.zoom * motion.scale),
+      ),
       k = zoom / c.zoom;
     const u = (motion.mid.x - r.left - r.width / 2) * ratio,
       v = (motion.mid.y - r.top - r.height / 2) * ratio;
@@ -192,16 +197,18 @@ export function PaneDrawing(p: DrawingProps) {
         tapped.current = null;
       }}
       onLostPointerCapture={(e) => gesture.current.up(e)}
+      // + and − zoom about the middle of the pane. Keys repeat faster than
+      // renders, so each applies to the latest camera, as gestures do.
       onKeyDown={(e) => {
         if (!p.onCamera) return;
-        const c = p.camera;
-        const next =
+        const c = camera.current;
+        const next: PlotCamera | null =
           e.key === "Home"
             ? { x: 0, y: 0, zoom: 1 }
             : e.key === "+" || e.key === "="
-              ? { ...c, zoom: Math.min(100, c.zoom * 1.2) }
+              ? zoomAbout(c, 1.2, zoomRange)
               : e.key === "-"
-                ? { ...c, zoom: Math.max(0.1, c.zoom / 1.2) }
+                ? zoomAbout(c, 1 / 1.2, zoomRange)
                 : e.key === "ArrowLeft"
                   ? { ...c, x: c.x - 25 }
                   : e.key === "ArrowRight"
@@ -213,6 +220,7 @@ export function PaneDrawing(p: DrawingProps) {
                         : null;
         if (next) {
           e.preventDefault();
+          camera.current = next;
           p.onCamera(next);
         }
       }}

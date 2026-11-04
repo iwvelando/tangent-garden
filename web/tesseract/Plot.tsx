@@ -1,6 +1,6 @@
 import type { ColorScheme } from "../color-schemes";
 import { useEffect, useRef } from "react";
-import { createGesture } from "../gestures";
+import { createGesture, zoomAbout } from "../gestures";
 import { useDrawingTouch } from "../MobileNotebookNav";
 import {
   Composition,
@@ -18,6 +18,36 @@ import {
   type Result,
   type Layers,
 } from "./types";
+// The manual camera's zoom range, and its zoom by k about a page point
+// (u, v) measured from the middle of the 1000 × 760 drawing, which keeps
+// showing what it showed: the pan is in page units from the middle, after
+// the projection's scale.
+const zoomRange: [number, number] = [0.2, 8];
+function zoomed(view: View, k: number, u = 0, v = 0): View {
+  const c = zoomAbout(
+    { x: view.panX, y: view.panY, zoom: view.zoom },
+    k,
+    zoomRange,
+    u,
+    v,
+  );
+  return { ...view, zoom: c.zoom, panX: c.x, panY: c.y };
+}
+// A client point's page offset from the middle of the drawing, as its
+// default meet fitting draws it, or null while it has no size. Nested SVG
+// panels can have zero clientWidth/clientHeight, so their screen rectangle
+// gives the scale.
+function fromMiddle(el: Element, clientX: number, clientY: number) {
+  const box = el.getBoundingClientRect();
+  const scale = Math.min(box.width / 1000, box.height / 760);
+  if (!(scale > 0)) return null;
+  return {
+    scale,
+    u: (clientX - (box.left + box.width / 2)) / scale,
+    v: (clientY - (box.top + box.height / 2)) / scale,
+  };
+}
+
 export function Plot({
   result,
   config,
@@ -58,16 +88,19 @@ export function Plot({
   const flat = objects[config.object].flat?.(config);
   useEffect(() => {
     const el = ref.current!;
+    // The wheel zooms about the point under the pointer.
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      const { view, onView } = state.current;
-      onView({
-        ...view,
-        zoom: Math.max(
-          0.2,
-          Math.min(8, view.zoom * Math.exp(-e.deltaY * 0.001)),
-        ),
-      });
+      const at = fromMiddle(el, e.clientX, e.clientY);
+      if (!at) return;
+      const next = zoomed(
+        state.current.view,
+        Math.exp(-e.deltaY * 0.001),
+        at.u,
+        at.v,
+      );
+      state.current.view = next;
+      state.current.onView(next);
     };
     el.addEventListener("wheel", wheel, { passive: false });
     return () => el.removeEventListener("wheel", wheel);
@@ -188,33 +221,34 @@ export function Plot({
         if (e.pointerType === "touch" && !touchEnabled) return;
         const motion = gesture.current.move(e);
         if (!motion) return;
-        // Nested SVG panels can have zero clientWidth/clientHeight. Their
-        // screen rectangle gives the actual scale for pan and pinch gestures.
-        const box = e.currentTarget.getBoundingClientRect();
-        const scale = Math.min(box.width / 1000, box.height / 760);
-        if (!(scale > 0)) return;
+        const at = fromMiddle(
+          e.currentTarget,
+          motion.kind === "pinch" ? motion.mid.x : 0,
+          motion.kind === "pinch" ? motion.mid.y : 0,
+        );
+        if (!at) return;
+        const { scale } = at;
         // Moves can outpace renders, so each builds on the latest view.
         const view = state.current.view;
-        const zoom =
-          motion.kind === "pinch"
-            ? Math.max(0.2, Math.min(8, view.zoom * motion.scale))
-            : view.zoom;
+        const moved = {
+          ...view,
+          panX: view.panX + motion.dx / scale,
+          panY: view.panY + motion.dy / scale,
+        };
+        // Two fingers pan together and pinch about the point between them.
         const next =
-          motion.kind === "pinch" || panning.current
-            ? {
-                ...view,
-                zoom,
-                panX: view.panX + motion.dx / scale,
-                panY: view.panY + motion.dy / scale,
-              }
-            : {
-                ...view,
-                yaw: view.yaw + motion.dx * 0.008,
-                pitch: Math.max(
-                  -1.5,
-                  Math.min(1.5, view.pitch + motion.dy * 0.008),
-                ),
-              };
+          motion.kind === "pinch"
+            ? zoomed(moved, motion.scale, at.u, at.v)
+            : panning.current
+              ? moved
+              : {
+                  ...view,
+                  yaw: view.yaw + motion.dx * 0.008,
+                  pitch: Math.max(
+                    -1.5,
+                    Math.min(1.5, view.pitch + motion.dy * 0.008),
+                  ),
+                };
         state.current.view = next;
         onView(next);
       }}
@@ -231,8 +265,10 @@ export function Plot({
         gesture.current.up(e);
       }}
       onLostPointerCapture={(e) => gesture.current.up(e)}
+      // + and − zoom about the middle of the drawing. Keys repeat faster
+      // than renders, so each applies to the latest view.
       onKeyDown={(e) => {
-        const v = { ...view };
+        let v = { ...state.current.view };
         switch (e.key) {
           case "ArrowLeft":
             if (e.shiftKey || flat) v.panX -= 20;
@@ -252,10 +288,10 @@ export function Plot({
             break;
           case "+":
           case "=":
-            v.zoom = Math.min(8, v.zoom * 1.1);
+            v = zoomed(v, 1.1);
             break;
           case "-":
-            v.zoom = Math.max(0.2, v.zoom / 1.1);
+            v = zoomed(v, 1 / 1.1);
             break;
           case "Home":
             Object.assign(v, initialView);
@@ -271,6 +307,7 @@ export function Plot({
             return;
         }
         e.preventDefault();
+        state.current.view = v;
         onView(v);
       }}
     >

@@ -330,6 +330,76 @@ test("keyboard selection steps through circles and their generators", async ({
   await expect(art).toHaveAttribute("data-zoom", "1");
 });
 
+// The model point at the middle of the 1000 × 760 page, read from the pan
+// and the drawn enclosing circle (the unit circle about the origin, drawn
+// at its page radius before the pan), with the zoom.
+async function middle(art: Locator) {
+  const [x, y] = (await art.getAttribute("data-pan"))!.split(",").map(Number);
+  const r = await art
+    .locator('circle[data-circle="0"]')
+    .evaluate((c) => +c.getAttribute("r")!);
+  return { x: -x / r, y: y / r, zoom: r / 350 };
+}
+// Keys sent within one task, faster than the drawing renders.
+const burst = (art: Locator, key: string, n: number) =>
+  art.evaluate(
+    (el, [key, n]) => {
+      for (let i = 0; i < n; i++)
+        el.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+    },
+    [key, n] as const,
+  );
+
+test("+ and − zoom about the middle of a panned view, compound when quick, and stop at the zoom limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openGarden(page);
+  const art = d.locator("#garden-artwork");
+  await art.focus();
+  for (const key of ["ArrowLeft", "ArrowLeft", "ArrowDown", "ArrowDown"])
+    await page.keyboard.press(key);
+  await expect(art).toHaveAttribute("data-pan", "-50,50");
+  const at = await middle(art);
+  expect(at).toEqual({ x: 50 / 350, y: 50 / 350, zoom: 1 });
+  const stays = async (zoom: number) => {
+    await expect
+      .poll(async () => (await middle(art)).zoom)
+      .toBeCloseTo(zoom, 9);
+    const m = await middle(art);
+    expect(m.x).toBeCloseTo(at.x, 12);
+    expect(m.y).toBeCloseTo(at.y, 12);
+  };
+  await page.keyboard.press("+");
+  await stays(1.2);
+  await page.keyboard.press("-");
+  await page.keyboard.press("-");
+  await stays(1 / 1.2);
+  // Three keys before a render are three steps.
+  await burst(art, "+", 3);
+  await stays(1.2 ** 2);
+  // Past either limit the zoom stops there, still about the middle.
+  await burst(art, "=", 40);
+  await expect(art).toHaveAttribute("data-zoom", "100");
+  await stays(100);
+  await burst(art, "-", 60);
+  await expect(art).toHaveAttribute("data-zoom", "0.1");
+  await stays(0.1);
+  // Arrows still pan by 25 page units, and Home still resets.
+  const pan = (await art.getAttribute("data-pan"))!.split(",").map(Number);
+  await page.keyboard.press("ArrowRight");
+  await expect(art).toHaveAttribute("data-pan", `${pan[0] + 25},${pan[1]}`);
+  await page.keyboard.press("Home");
+  await expect(art).toHaveAttribute("data-pan", "0,0");
+  await expect(art).toHaveAttribute("data-zoom", "1");
+});
+
 async function save(page: Page, d: Locator, format: "SVG" | "PNG") {
   const download = page.waitForEvent("download");
   await d.getByRole("button", { name: "Export image" }).click();

@@ -444,6 +444,28 @@ test("keyboard selection steps through tiles and across their sides", async ({
   await expect(art).toHaveAttribute("data-pan", "25,0");
   await page.keyboard.press("Home");
   await expect(art).toHaveAttribute("data-zoom", "1");
+  // In a panned view + and − zoom about the middle of the page: the disk's
+  // center, drawn at the pan from the middle, moves away from it and back
+  // by the zoom.
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  await expect(art).toHaveAttribute("data-pan", "-25,-25");
+  const pan = async () =>
+    (await art.getAttribute("data-pan"))!.split(",").map(Number);
+  await page.keyboard.press("+");
+  await page.keyboard.press("+");
+  await expect(art).toHaveAttribute("data-zoom", String(1.2 * 1.2));
+  for (const v of await pan()) expect(v).toBeCloseTo(-25 * 1.44, 9);
+  await expect(art.locator('circle[data-role="rim"]')).toHaveAttribute(
+    "r",
+    String(350 * 1.2 * 1.2),
+  );
+  await page.keyboard.press("-");
+  await page.keyboard.press("-");
+  await expect
+    .poll(async () => Number(await art.getAttribute("data-zoom")))
+    .toBeCloseTo(1, 12);
+  for (const v of await pan()) expect(v).toBeCloseTo(-25, 9);
 });
 
 test("layers hide the motif or the sides, never the rim, and zoom moves the camera only", async ({
