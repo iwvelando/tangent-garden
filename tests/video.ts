@@ -140,28 +140,34 @@ function decode(page: Page, bytes: Buffer) {
     // Neither "loadeddata" nor "seeked" means a frame can be drawn yet:
     // under load, Chromium on Linux drew nothing for the first frame (every
     // channel zero) and the previous frame after a seek. Seek, wait until
-    // that frame is presented, then capture. A seek to the frame already
-    // shown presents nothing, and WebKit may show the first frame before
-    // "loadeddata" is handled (#334), so seek to the last frame first, then
-    // back to the first: each seek changes the frame, and only a frame from
-    // the seek's side of the file counts. The last seek lands inside the last
-    // frame rather than at the very end of the file.
+    // that frame is presented, then capture. Two orderings present nothing
+    // after a seek (#334). A seek to the frame already shown presents no new
+    // frame, and WebKit may show the first frame before "loadeddata" is
+    // handled. And WebKit drops a seek made before it has presented the
+    // first frame: it presents the first frame instead, once, and keeps
+    // showing it. So first seek to the middle and accept whatever is
+    // presented, then to the last frame and back to the first: each of those
+    // changes the frame shown, and only a frame from the seek's half of the
+    // file counts. That needs at least three frames (the shortest export
+    // here has three). The seek to the end lands inside the last frame
+    // rather than at the very end of the file.
     const at = async (time: number, shows: (t: number) => boolean) => {
-      const presented = new Promise<number>((resolve) => {
+      const presented = new Promise<void>((resolve) => {
         const next = () =>
           video.requestVideoFrameCallback((_, frame) =>
-            shows(frame.mediaTime) ? resolve(frame.mediaTime) : next(),
+            shows(frame.mediaTime) ? resolve() : next(),
           );
         next();
       });
       const seeked = event("seeked");
       video.currentTime = time;
-      const [, shown] = await Promise.all([seeked, presented]);
-      return shown;
+      await Promise.all([seeked, presented]);
     };
-    const end = await at(Math.max(0, video.duration - 0.005), (t) => t > 0);
+    const half = video.duration / 2;
+    await at(half, () => true);
+    await at(Math.max(0, video.duration - 0.005), (t) => t > half);
     const last = capture();
-    await at(0, (t) => t < end);
+    await at(0, (t) => t < half);
     const first = capture();
     URL.revokeObjectURL(url);
     return {
@@ -196,7 +202,9 @@ export async function presentFirstFrameEarly(context: BrowserContext) {
         video,
         type,
         async (event: Event) => {
-          // Each seek changes the frame shown, so each presents one.
+          // The decoder's own order, so that no seek here waits on a frame
+          // that is never presented: the first seek may present only the
+          // first frame, and each later one changes the frame shown.
           const seek = (time: number, shows: (t: number) => boolean) => {
             const presented = new Promise<void>((resolve) => {
               const next = () =>
@@ -211,7 +219,9 @@ export async function presentFirstFrameEarly(context: BrowserContext) {
             video.currentTime = time;
             return Promise.all([presented, seeked]);
           };
-          await seek(video.duration / 2, (t) => t > 0);
+          const half = video.duration / 2;
+          await seek(half, () => true);
+          await seek(video.duration - 0.005, (t) => t > half);
           await seek(0, (t) => t === 0);
           if (typeof listener === "function") listener.call(video, event);
           else listener.handleEvent(event);
