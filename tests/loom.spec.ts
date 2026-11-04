@@ -332,6 +332,78 @@ test("canceling a loom movie during a pending scrub restores the current corresp
   expect(downloads).toBe(0);
 });
 
+test("+ and − zoom each loom pane about its middle, compound when quick, and stop at the zoom limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  const pane = d.locator('[data-pane="source"]'),
+    marker = pane.locator("[data-marker]");
+  // The drawn marker's offset from the middle of the 1000 × 760 pane.
+  const offset = async () => {
+    const [cx, cy] = await marker.evaluate((c) => [
+      +c.getAttribute("cx")!,
+      +c.getAttribute("cy")!,
+    ]);
+    return { x: cx - 500, y: cy - 380 };
+  };
+  await pane.focus();
+  for (const key of ["ArrowLeft", "ArrowLeft", "ArrowUp"])
+    await page.keyboard.press(key);
+  await expect(pane).toHaveAttribute("data-pan", "-50,-25");
+  const start = await offset();
+  expect(Math.hypot(start.x, start.y)).toBeGreaterThan(20);
+  // Zooming about the middle leaves it fixed, so every drawn point's
+  // offset from it scales by the zoom.
+  const scaled = async (zoom: number) => {
+    await expect
+      .poll(async () => Number(await pane.getAttribute("data-zoom")))
+      .toBeCloseTo(zoom, 9);
+    const o = await offset();
+    expect(o.x).toBeCloseTo(start.x * zoom, 6);
+    expect(o.y).toBeCloseTo(start.y * zoom, 6);
+  };
+  await page.keyboard.press("+");
+  await scaled(1.2);
+  await page.keyboard.press("-");
+  await page.keyboard.press("-");
+  await scaled(1 / 1.2);
+  // Keys sent within one task, faster than the panes render.
+  const burst = (key: string, n: number) =>
+    pane.evaluate(
+      (el, [key, n]) => {
+        for (let i = 0; i < n; i++)
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+      },
+      [key, n] as const,
+    );
+  await burst("+", 3);
+  await scaled(1.2 ** 2);
+  await burst("=", 40);
+  await expect(pane).toHaveAttribute("data-zoom", "100");
+  await scaled(100);
+  await burst("-", 60);
+  await expect(pane).toHaveAttribute("data-zoom", "0.1");
+  await scaled(0.1);
+  // The image pane keeps its own camera.
+  await expect(d.locator('[data-pane="image"]')).toHaveAttribute(
+    "data-zoom",
+    "1",
+  );
+  await page.keyboard.press("Home");
+  await expect(pane).toHaveAttribute("data-pan", "0,0");
+  await expect(pane).toHaveAttribute("data-zoom", "1");
+});
+
 test("rational loom controls split poles, seek maps and save vector metadata", async ({
   page,
 }) => {

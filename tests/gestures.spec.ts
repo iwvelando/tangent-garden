@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { createGesture } from "../web/gestures";
+import { createGesture, zoomAbout } from "../web/gestures";
 
 const touch = (pointerId: number, clientX: number, clientY: number) => ({
   pointerId,
@@ -61,4 +61,38 @@ test("fingers landing and lifting never jump, and a third is ignored", () => {
   g.down(touch(5, 5, 5));
   const still = g.move(touch(5, 5, 5))!;
   expect(still.kind === "pinch" && still.scale).toBe(1);
+});
+
+test("zooming about a page point keeps it fixed, within the zoom range", () => {
+  // A camera pans in page units from the middle of the page, so the page
+  // point (u, v) shows what was at (u − x, v − y) / zoom before the pan.
+  const shown = (
+    c: { x: number; y: number; zoom: number },
+    u: number,
+    v: number,
+  ) => ({
+    x: (u - c.x) / c.zoom,
+    y: (v - c.y) / c.zoom,
+  });
+  const c = { x: -50, y: 30, zoom: 2 };
+  // About the middle, by default: the pan scales with the zoom.
+  expect(zoomAbout(c, 1.5, [0.1, 100])).toEqual({ x: -75, y: 45, zoom: 3 });
+  for (const [u, v] of [
+    [0, 0],
+    [120, -80],
+  ])
+    for (const k of [1.2, 1 / 1.2, 1e3, 1e-3]) {
+      const next = zoomAbout(c, k, [0.1, 8], u, v);
+      // Past the range the zoom stops at its limit.
+      expect(next.zoom).toBe(Math.max(0.1, Math.min(8, c.zoom * k)));
+      const before = shown(c, u, v),
+        after = shown(next, u, v);
+      expect(after.x).toBeCloseTo(before.x, 12);
+      expect(after.y).toBeCloseTo(before.y, 12);
+    }
+  // Other camera fields are kept.
+  expect(zoomAbout({ ...c, reset: 3 }, 1, [0.1, 8])).toEqual({
+    ...c,
+    reset: 3,
+  });
 });

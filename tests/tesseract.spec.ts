@@ -159,6 +159,95 @@ test("notebook switching preserves study and manual camera and stops motion", as
   await expect(art).toBeVisible();
 });
 
+test("+ and − zoom about the middle of a panned view, compound when quick, and the wheel zooms about the pointer", async ({
+  page,
+}) => {
+  await ready(page);
+  const art = page.locator("#tesseract-artwork");
+  const view = async () =>
+    JSON.parse((await art.locator("desc").textContent())!).view;
+  // The first vertex drawn, in page units of the 1000 × 760 drawing.
+  const vertex = async () => {
+    const d = (await art
+      .locator('path[data-guide="false"]')
+      .first()
+      .getAttribute("d"))!;
+    const [x, y] = d.slice(1).split(/[L ]/)[0].split(",").map(Number);
+    return { x, y };
+  };
+  // Zooming by k about a page point leaves it fixed, so a drawn point's
+  // offset from it scales by k; the path data carries three decimals.
+  const about = (
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    at: { x: number; y: number },
+    k: number,
+  ) => {
+    const tolerance = 0.002 * Math.max(1, k);
+    expect(Math.abs(to.x - at.x - (from.x - at.x) * k)).toBeLessThan(tolerance);
+    expect(Math.abs(to.y - at.y - (from.y - at.y) * k)).toBeLessThan(tolerance);
+  };
+  const middle = { x: 500, y: 380 };
+  await art.focus();
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Shift+ArrowLeft");
+  await page.keyboard.press("Shift+ArrowUp");
+  await expect.poll(async () => (await view()).panX).toBe(-40);
+  expect((await view()).panY).toBe(-20);
+  const start = await vertex();
+  const zoomed = async (zoom: number) => {
+    await expect.poll(async () => (await view()).zoom).toBeCloseTo(zoom, 9);
+    about(start, await vertex(), middle, zoom);
+  };
+  await page.keyboard.press("+");
+  await zoomed(1.1);
+  await page.keyboard.press("-");
+  await page.keyboard.press("-");
+  await zoomed(1 / 1.1);
+  // Keys sent within one task, faster than the drawing renders.
+  const burst = (key: string, n: number) =>
+    art.evaluate(
+      (el, [key, n]) => {
+        for (let i = 0; i < n; i++)
+          el.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key,
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+      },
+      [key, n] as const,
+    );
+  await burst("+", 3);
+  await zoomed(1.1 ** 2);
+  // Past either limit the zoom stops there, still about the middle.
+  await burst("=", 40);
+  await zoomed(8);
+  await burst("-", 60);
+  await zoomed(0.2);
+  await page.keyboard.press("Home");
+  await expect.poll(async () => (await view()).zoom).toBe(1);
+  expect(await view()).toMatchObject({ panX: 0, panY: 0 });
+  // The wheel zooms about the page point under the pointer.
+  const box = (await art.boundingBox())!;
+  const s = Math.min(box.width / 1000, box.height / 760);
+  // A whole client pixel near page point (700, 250), and the page point
+  // it is.
+  const cx = Math.round(box.x + box.width / 2 + 200 * s),
+    cy = Math.round(box.y + box.height / 2 - 130 * s);
+  const pointer = {
+    x: 500 + (cx - (box.x + box.width / 2)) / s,
+    y: 380 + (cy - (box.y + box.height / 2)) / s,
+  };
+  await page.mouse.move(cx, cy);
+  const before = await vertex();
+  await page.mouse.wheel(0, -200);
+  const k = Math.exp(0.2);
+  await expect.poll(async () => (await view()).zoom).toBeCloseTo(k, 9);
+  about(before, await vertex(), pointer, k);
+});
+
 for (const width of [1440, 390])
   for (const theme of ["light", "dark"] as const)
     test(`tesseract visuals and stable layout ${width} ${theme}`, async ({

@@ -4,16 +4,16 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
-import { createGesture, type Motion } from "./gestures";
+import { createGesture, zoomAbout, type Motion } from "./gestures";
 import type { PlotCamera } from "./planar-link";
 
 // The manual camera of a drawing in a fixed page, such as the Apollonian
 // garden's and hyperbolic lace's 1000 × 760: drag to pan, wheel or pinch
-// to zoom about the pointer, arrows, + / − and Home from the keyboard, and
-// a tap that moved less than 4 pixels to choose something. The camera
-// pans in page units and zooms within range; the drawing decides what a
-// tap at a page point means, with a tolerance in page units that is wider
-// for a finger than for a cursor.
+// to zoom about the pointer, arrows, + / − (about the middle) and Home
+// from the keyboard, and a tap that moved less than 4 pixels to choose
+// something. The camera pans in page units and zooms within range; the
+// drawing decides what a tap at a page point means, with a tolerance in
+// page units that is wider for a finger than for a cursor.
 export function usePageGestures(o: {
   page: { width: number; height: number };
   range: [number, number];
@@ -124,18 +124,20 @@ export function usePageGestures(o: {
     },
     onLostPointerCapture: (e: PointerEvent<SVGSVGElement>) =>
       gesture.current.up(e),
+    // + and − zoom about the middle of the page. Keys repeat faster than
+    // renders, so each applies to the latest camera, as gestures do.
     onKeyDown: (e: KeyboardEvent<SVGSVGElement>) => {
       const onCamera = o.onCamera;
       if (!onCamera) return;
-      const c = o.camera,
-        [lo, hi] = o.range;
-      const next =
+      const c = camera.current,
+        range = o.range;
+      const next: PlotCamera | null =
         e.key === "Home"
           ? { x: 0, y: 0, zoom: 1 }
           : e.key === "+" || e.key === "="
-            ? { ...c, zoom: Math.min(hi, c.zoom * 1.2) }
+            ? zoomAbout(c, 1.2, range)
             : e.key === "-"
-              ? { ...c, zoom: Math.max(lo, c.zoom / 1.2) }
+              ? zoomAbout(c, 1 / 1.2, range)
               : e.key === "ArrowLeft"
                 ? { ...c, x: c.x - 25 }
                 : e.key === "ArrowRight"
@@ -147,6 +149,7 @@ export function usePageGestures(o: {
                       : null;
       if (next) {
         e.preventDefault();
+        camera.current = next;
         onCamera(next);
       }
     },

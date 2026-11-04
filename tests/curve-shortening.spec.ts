@@ -115,6 +115,39 @@ test("the study opens from the gallery over an untouched study and returns to it
   await expect(x).toHaveValue("cos(t) + 0.25");
 });
 
+test("the drawing's keys pan, zoom about the middle of the view, and reset", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const d = await openStudy(page);
+  const pan = async () =>
+    (await art(d).getAttribute("data-pan"))!.split(",").map(Number);
+  await art(d).focus();
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(art(d)).toHaveAttribute("data-pan", "25,50");
+  // The pan is the drawing's offset from the middle of the page, so
+  // zooming about the middle scales it by the zoom.
+  await page.keyboard.press("+");
+  await expect(art(d)).toHaveAttribute("data-zoom", "1.2");
+  const [x, y] = await pan();
+  expect(x).toBeCloseTo(30, 9);
+  expect(y).toBeCloseTo(60, 9);
+  await page.keyboard.press("-");
+  await page.keyboard.press("-");
+  await expect
+    .poll(async () => Number(await art(d).getAttribute("data-zoom")))
+    .toBeCloseTo(1 / 1.2, 12);
+  const [u, v] = await pan();
+  expect(u).toBeCloseTo(25 / 1.2, 9);
+  expect(v).toBeCloseTo(50 / 1.2, 9);
+  await page.keyboard.press("Home");
+  await expect(art(d)).toHaveAttribute("data-pan", "0,0");
+  await expect(art(d)).toHaveAttribute("data-zoom", "1");
+});
+
 test("seeks depend only on time, and the readout states the area law", async ({
   page,
 }) => {

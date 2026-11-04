@@ -480,6 +480,71 @@ test("rapid zoom gestures keep one request, coalesce the rest, and show only the
   expect(await total(d)).toBe(1273);
 });
 
+test("a keyboard zoom past 1.4× with detail refines the gaps about the view's middle, and the summary's cutoff follows", async ({
+  page,
+}) => {
+  await instrument(page, 0);
+  const d = await openGarden(page);
+  await d.getByLabel("Finer circles when zoomed in").check();
+  await ready(d);
+  await art(d).focus();
+  // Bring the gaps beside curvature 23, about (125, 175) / 350 in model
+  // units, to the middle of the page.
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowLeft");
+  for (let i = 0; i < 7; i++) await page.keyboard.press("ArrowDown");
+  await expect(art(d)).toHaveAttribute("data-pan", "-125,175");
+  await ready(d);
+  const mx = 125 / 350,
+    my = 175 / 350;
+  for (let i = 0; i < 10; i++) await page.keyboard.press("+");
+  const zoom = 1.2 ** 10;
+  await expect
+    .poll(async () => Number(await art(d).getAttribute("data-zoom")))
+    .toBeCloseTo(zoom, 9);
+  await ready(d);
+  // Zoom 6.19 is level floor(2 log2 6.19) = 5: the cutoff is the minimum
+  // radius over 2^2.5, 0.000354, drawn 0.000354 · 350 · 6.19 = 0.77 units.
+  const level = 5,
+    cutoff = 0.002 / 2 ** (level / 2);
+  await expect(summary(d)).toContainText(
+    `Finer circles for this view reach ${(cutoff * 350 * zoom).toFixed(2)} drawing units in radius.`,
+  );
+  const q = (
+    await page.evaluate(() => (window as any).gardenPosts as any[])
+  ).at(-1);
+  expect(q.minRadius).toBeCloseTo(cutoff, 15);
+  // The request's window covers the view about that middle, half the
+  // page's 1000 × 760 either side of it at this zoom, and reaches less
+  // than two quarter-view cells of 1000 / (350 · 2^2.5) / 4 beyond it.
+  const hw = 500 / (350 * zoom),
+    hh = 380 / (350 * zoom),
+    cell = 1000 / (350 * 2 ** (level / 2)) / 4;
+  const w = q.window;
+  expect(w.xMin).toBeLessThanOrEqual(mx - hw);
+  expect(w.xMax).toBeGreaterThanOrEqual(mx + hw);
+  expect(w.yMin).toBeLessThanOrEqual(my - hh);
+  expect(w.yMax).toBeGreaterThanOrEqual(my + hh);
+  expect(w.xMin).toBeGreaterThan(mx - hw - 2 * cell);
+  expect(w.xMax).toBeLessThan(mx + hw + 2 * cell);
+  expect(w.yMin).toBeGreaterThan(my - hh - 2 * cell);
+  expect(w.yMax).toBeLessThan(my + hh + 2 * cell);
+  // Circles finer than the static cutoff, 0.002 · 350 · 6.19 = 4.3 units,
+  // are drawn on the page.
+  const [px, py] = (await art(d).getAttribute("data-pan"))!
+    .split(",")
+    .map(Number);
+  const fine = (await geometry(d)).filter(
+    (c) =>
+      c.role === "base" &&
+      c.r < cutoff * 350 * zoom * Math.SQRT2 &&
+      c.cx + px > 0 &&
+      c.cx + px < 1000 &&
+      c.cy + py > 0 &&
+      c.cy + py < 760,
+  );
+  expect(fine.length).toBeGreaterThan(10);
+});
+
 test("a circle limit or depth truncates deep detail and the summary says why", async ({
   page,
 }) => {
