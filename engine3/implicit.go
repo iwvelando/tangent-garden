@@ -63,7 +63,7 @@ type ImplicitSection struct {
 }
 
 // ImplicitComponent is one connected piece of the mesh: its triangles, its
-// Euler characteristic V − E + F, whether it has no boundary edge, whether
+// Euler characteristic V − E + F, whether every edge has two triangles, whether
 // it is two-sided, and its edges along which it passes through itself or
 // another piece (see crossing.go).
 type ImplicitComponent struct {
@@ -362,13 +362,15 @@ func (s *field) vertex(p, bits int) (int32, bool) {
 		s.rejected[e] = x
 		return 0, false
 	}
-	// A crossing at a grid point is one vertex, whichever edge finds it;
-	// grid points are keyed after every edge.
+	// Only an exact zero at a grid point is one vertex whichever edge
+	// finds it. A root can round to an endpoint with a nonzero value;
+	// merging those roots can fold neighboring triangles onto one face.
+	// Grid points are keyed after every edge.
 	key := e
-	switch t {
-	case 0:
+	switch {
+	case ga == 0:
 		key, x = 7*len(s.values)+p, a
-	case 1:
+	case gb == 0:
 		key, x = 7*len(s.values)+q, b
 	}
 	v, ok := s.vertices[key]
@@ -645,10 +647,12 @@ func (m *ImplicitResult) topology() {
 	for _, e := range order {
 		c := &m.Components[piece[find(e[0])]]
 		c.Euler--
+		if edges[e] != 2 {
+			c.Closed = false
+		}
 		if edges[e] != 1 {
 			continue
 		}
-		c.Closed = false
 		if onFace(m.vertex(e[0]), m.vertex(e[1])) {
 			m.Cut = append(m.Cut, e[0], e[1])
 		} else {

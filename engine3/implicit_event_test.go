@@ -298,14 +298,21 @@ func TestEventSingular(t *testing.T) {
 			}
 		}
 		q := base
+		// The 60-cell Cassini mesh formerly shared rounded endpoint
+		// roots as exact grid zeros, giving chi = 5 instead of 3.
+		for _, cells := range []int{56, 60} {
+			for _, refine := range []int{0, 1} {
+				q.Cells, q.Refine = cells, refine
+				m := eventMesh(t, q)
+				got, whole := eventPieces(m)
+				if want := [][]int{{3}, {1}}[i]; !whole || !slices.Equal(got, want) || m.Singular != 1 {
+					t.Fatalf("%s at c = 1 on %d cells, refinement %d: %v, %d singular, whole=%v", r.preset, cells, refine, got, m.Singular, whole)
+				}
+			}
+		}
+		q.Cells, q.Refine = 57, base.Refine
 		m := eventMesh(t, q)
 		got, _ := eventPieces(m)
-		if want := [][]int{{3}, {1}}[i]; !slices.Equal(got, want) || m.Singular != 1 {
-			t.Fatalf("%s's own grid at c = 1: %v, %d singular", r.preset, got, m.Singular)
-		}
-		q.Cells = 57
-		m = eventMesh(t, q)
-		got, _ = eventPieces(m)
 		if want := [][]int{{2, 2}, {2}}[i]; !slices.Equal(got, want) || m.Singular != 0 || m.Cones != 0 {
 			t.Fatalf("%s on 57 cells at c = 1: %v, %d singular, %d cones", r.preset, got, m.Singular, m.Cones)
 		}

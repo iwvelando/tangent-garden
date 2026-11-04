@@ -36,7 +36,8 @@ import { decodePng } from "./png";
 // Seeing through the drawing. Studies drawn with opaque sheets and hidden
 // lines hidden must not change. Their line drawings, computed on the CPU,
 // were recorded before seeing through existed, except for the tube baseline
-// updated for shared contact-circle mesh edges. Their PNGs depend on the
+// updated for shared contact-circle mesh edges and the gyroid baseline for
+// corrected ownership of roots rounded to grid points. Their PNGs depend on the
 // machine's rasterizer (they matched main at 0e7ad8f on macOS, not on CI's
 // SwiftShader), so here each must come back byte-identical after the
 // setting has been changed and returned to plain.
@@ -81,14 +82,16 @@ const predating = (b: Buffer) =>
   );
 
 // Line drawings recorded from main at 0e7ad8f, before seeing through; the
-// tube includes the intentional contact-circle mesh alignment.
+// tube includes the intentional contact-circle mesh alignment. The gyroid's
+// endpoint ownership correction adds one repeated point to a zero-length
+// box-edge path, leaving all nonzero linework unchanged.
 const recorded: Record<string, string> = {
   "The focal sheets of an ellipsoid":
     "f7ef384c68a1ce46ed25942bb4691645c19a75b7024791881f10d3a785c3779f",
   "A tube around the trefoil":
     "f0b35e4237a18bc6598f0a044fd932ea79ddee247b1ad6314e7e7d3dfa35516d",
   "A gyroid, cut open":
-    "4c1a8b9fc31085e41e181039519499b93cb5c3fd42133356dc7e642715fff02f",
+    "6419859280960de6c6c848a915a17d78768c2bdb72403eae78be4ccf22594452",
   "A lamp sealed in an ellipsoid":
     "8654adbeaf6abe349c7524cb54b11e86e23f8df6ec13b7537a8913525516fc99",
 };

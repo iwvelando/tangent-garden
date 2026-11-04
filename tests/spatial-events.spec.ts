@@ -460,6 +460,38 @@ const token = (study: unknown) =>
     Buffer.from(JSON.stringify({ v: 1, notebook: "3d", study })),
   ).toString("base64url");
 
+test("the resolved handle lattice reads as a sphere after editing its controls", async ({
+  page,
+}) => {
+  await openStory(page, "handle");
+  await page.locator("summary", { hasText: "Sampling & definition" }).click();
+  await page.getByRole("spinbutton", { name: "Cells", exact: true }).fill("40");
+  await page
+    .getByRole("textbox", { name: "Level c", exact: true })
+    .fill("1.04");
+  await expect
+    .poll(async () => (await shownConfig(page)).implicit)
+    .toMatchObject({
+      cells: 40,
+      level: 1.04,
+    });
+  await expect(note(page)).toContainText("the mesh agrees");
+  await expect(note(page)).toContainText(
+    "closed, of genus 0 (Euler characteristic 2)",
+  );
+  await settled(page);
+  // Refinement uses a separate vertex cache and must preserve the class.
+  await page.getByLabel("Refinement levels", { exact: true }).fill("1");
+  await expect
+    .poll(async () => (await shownConfig(page)).implicit.refine)
+    .toBe(1);
+  await expect(note(page)).toContainText("the mesh agrees");
+  await expect(note(page)).toContainText(
+    "closed, of genus 0 (Euler characteristic 2)",
+  );
+  await settled(page);
+});
+
 for (const id of ids)
   test(`${id}: the strip chooses each state, forward and back, changing only the level`, async ({
     page,
