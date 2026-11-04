@@ -9,7 +9,12 @@ import {
   open,
   openAnimation,
 } from "./helpers";
-import { decodeVideo, probe, frameCoverage } from "./video";
+import {
+  decodeVideo,
+  presentFirstFrameEarly,
+  probe,
+  frameCoverage,
+} from "./video";
 import { exportTiming } from "../web/export-quality";
 import { namedViews } from "../web/named-views";
 import { deflateRawSync } from "node:zlib";
@@ -344,8 +349,14 @@ test("a 60 fps MP4 decodes with exact timing", async ({ page }) => {
       exportTiming(1, 60).map((f) => f.duration),
     );
   }
-  const decoded = await decodeVideo(page, await readFile(path));
+  const bytes = await readFile(path);
+  const decoded = await decodeVideo(page, bytes);
   expect(decoded.duration).toBeCloseTo(1, 3);
+  expect(decoded.first.hash).not.toBe(decoded.last.hash);
+  // WebKit presents the first frame on its own, sometimes before the
+  // decoder handles "loadeddata"; its endpoints must not depend on that.
+  await presentFirstFrameEarly(page.context());
+  expect(await decodeVideo(page, bytes)).toEqual(decoded);
 });
 
 test("PNG export works in WebKit", async ({ page }) => {

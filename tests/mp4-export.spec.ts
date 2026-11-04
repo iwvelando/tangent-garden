@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openExportSettings, choosePreset } from "./helpers";
-import { decodeVideo, probe, frameDifference } from "./video";
+import {
+  decodeVideo,
+  presentFirstFrameEarly,
+  probe,
+  frameDifference,
+} from "./video";
 import { exportImage } from "./helpers";
 import { decodePng } from "./png";
 import { readFile } from "node:fs/promises";
@@ -277,12 +282,14 @@ test("a 60 fps MP4 has exact frame timing and decodes", async ({ page }) => {
     expect(probed.frames).toBe(12);
     expect(probed.durations).toEqual(durations);
   }
-  const decoded = await decodeVideo(
-    page,
-    await (await import("node:fs/promises")).readFile(path),
-  );
+  const bytes = await (await import("node:fs/promises")).readFile(path);
+  const decoded = await decodeVideo(page, bytes);
   expect(decoded.duration).toBeCloseTo(0.2, 3);
   expect(decoded.first.hash).not.toBe(decoded.last.hash);
+  // The decoder must not depend on whether the first frame was already
+  // presented when it starts seeking (#334).
+  await presentFirstFrameEarly(page.context());
+  expect(await decodeVideo(page, bytes)).toEqual(decoded);
 });
 
 test("without canvas WebP, as on iOS, MP4 is the only format and exports", async ({
