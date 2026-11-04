@@ -10,6 +10,8 @@ The strongest expansion combines three things: better ways to discover the beaut
 
 This is the accepted expansion design brief, not a running implementation log or a promise of delivery dates. Keep the visual goals, scope boundaries and wave rationale here; track assignments, dependencies, completion and deferrals in GitHub issues. All 16 subjects remain in the expansion; research gates decide their supported implementation, and changing that scope requires the project owner's agreement. Implemented mathematics and architecture belong in the permanent guides, and verification evidence belongs in each PR. Follow [Project delivery](../contributing.md#project-delivery) when working on an item. The [expansion issues](https://github.com/iwvelando/tangent-garden/issues?q=is%3Aissue%20label%3Aexpansion) are the current delivery record.
 
+For extensions that deepen these subjects and connect their capabilities, see [Garden stems](garden-stems.md).
+
 ## 1. Where the garden stands
 
 The project already has three substantial notebooks and **219 presets: 65 planar, 141 spatial, and 13 four-dimensional**. These counts come from the current preset declarations; some overview prose still reports an earlier planar count.
