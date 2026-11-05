@@ -502,8 +502,8 @@ export function AnimationPanel({
   const traceable = !!frame && canTrace(frame.config);
   // Light is traced only in an optical study; another falls back to drawing.
   useEffect(() => {
-    if (!traceable && mode === "trace") setMode("reveal");
-  }, [traceable, mode]);
+    if (frame && !traceable && mode === "trace") setMode("reveal");
+  }, [!!frame, traceable, mode]);
   // A phrase needs a continuous input the study consumes; without one, the
   // curve is drawn.
   const phrasable = !!frame && phraseTargets(frame.config).length > 0;
@@ -520,6 +520,8 @@ export function AnimationPanel({
     if (!loops(mode) && repeat === "loop") setRepeat("back-and-forth");
   }, [mode, repeat]);
   useEffect(() => {
+    // A missing result is not an empty set of supported parameters.
+    if (!frame) return;
     setTracks((previous) => {
       const retained = previous.filter((track) =>
         targets.includes(track.target),
@@ -531,7 +533,7 @@ export function AnimationPanel({
           ? [defaultTrack(targets[0])]
           : [];
     });
-  }, [targets.join(",")]);
+  }, [!!frame, targets.join(",")]);
   if (settings && !family)
     settings.current = {
       mode,

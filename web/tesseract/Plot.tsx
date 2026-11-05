@@ -318,6 +318,7 @@ export function Plot({
 
 export function StudyPlot(
   p: CompositionProps & {
+    id?: string;
     onView: (v: View) => void;
     onDiagramView: (v: View) => void;
     onSelect?: (sample: number) => void;
@@ -329,7 +330,7 @@ export function StudyPlot(
   const size = exportBaseSize(p.layout ?? "columns");
   return (
     <svg
-      id="tesseract-artwork"
+      id={p.id ?? "tesseract-artwork"}
       style={{
         background: plotPalette(p.dark, p.scheme).bg,
         touchAction: touchEnabled ? "none" : "pan-y pinch-zoom",
@@ -349,7 +350,7 @@ export function StudyPlot(
           <Plot
             {...panel}
             viewport={viewport}
-            id={`tesseract-${panel.config.mode}`}
+            id={`${p.id ?? "tesseract"}-${panel.config.mode}`}
             onView={index === 0 ? p.onView : p.onDiagramView}
             onSelect={p.onSelect}
             onStep={p.onStep}

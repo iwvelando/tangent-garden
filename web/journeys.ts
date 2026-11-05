@@ -5,6 +5,7 @@ import { spatialPresets } from "./spatial/presets";
 import { presetStudy as spatialStudy, type SpatialStudy } from "./spatial/link";
 import { tesseractPresets } from "./tesseract/presets";
 import { fieldLabel as shapeFieldLabel } from "./tesseract/fields";
+import { fieldLabel as spatialFieldLabel } from "./spatial/fields";
 import {
   presetStudy as tesseractStudy,
   type TesseractStudy,
@@ -108,7 +109,8 @@ const across = (
   const controlLabel =
     notebook === "4d"
       ? shapeFieldLabel(tesseractPresets[preset].config, path.join("."))
-      : label;
+      : (label ??
+        spatialFieldLabel(spatialPresets[preset].config, path.join(".")));
   if (!controlLabel)
     throw new Error(`Unknown journey control: ${path.join(".")}`);
   return {
@@ -239,9 +241,71 @@ export const dimensionsJourney: Journey = {
     ),
   ],
 };
+export const shadowJourney: Journey = {
+  title: "What a shadow leaves out",
+  steps: [
+    across(
+      "4d",
+      "The heart of a cell",
+      "To draw the 4D 24-cell and its companion dual, we rotate them and drop the fourth coordinate, making a 3D shadow. The highlighted octahedron's center is a vertex of the dual; crossings in this shadow need not meet in 4D.",
+      "Try changing xw angle by pi/4 to turn the cell and its dual edges before projection, then play their rotation.",
+      null,
+      ["angles", "3"],
+    ),
+    across(
+      "4d",
+      "A crystal meeting its own dual",
+      "Now a 3D plane cuts both rotated 4D crystals: you see only what lies in that plane. Move the cut to change the two solids it reveals, or pass beyond them into empty space; their sections need not be duals in 3D.",
+      "Try Slice offset h at 1/2 to move the plane, then play its passage through both crystals.",
+      null,
+      ["slice"],
+    ),
+    across(
+      "4d",
+      "The second time around",
+      "Pane 1 shows a point circling in the input plane z and its square root in the value plane w. Pane 2 combines their four coordinates into one path, rotates it in 4D and drops the fourth coordinate: the first lap returns z, and the second returns w.",
+      "Try Radius r at 1/2 to compare the sizes of the z and w circles, then play both circuits.",
+      null,
+      ["root", "radius"],
+    ),
+  ],
+};
+
+export const surfaceJourney: Journey = {
+  title: "A thread learns the surface",
+  steps: [
+    across(
+      "3d",
+      "A torus woven from one point",
+      "These threads go straight within a torus even as they bend in space. Launched from one point in every direction, some weave its outside while others pass through the hole. Together they reveal the hidden surface.",
+      "Try Thread length L at 15 to see how the textile builds, then play to reveal every thread together.",
+      null,
+      ["surface", "geodesics", "length"],
+    ),
+    across(
+      "3d",
+      "An arrow carried along a torus thread",
+      "Follow one geodesic on a torus with a tangent arrow. Parallel transport carries it without turning within the surface: its angle to the thread stays fixed even as both turn in space. This is a separate study of one path.",
+      "Try Arrow angle α (°) at 0 to align it with the thread, then play its journey across the surface.",
+      null,
+      ["surface", "geodesics", "transport", "angle"],
+    ),
+    across(
+      "3d",
+      "A staircase becoming a throat",
+      "Leave the torus for a helicoid's grid. This surface bends into a catenoid while every grid curve keeps its length. It is a new surface and a new construction, not a continuous deformation of the previous torus threads.",
+      "Try Associate angle θ at pi/4 to inspect the bend halfway, then play the full unfolding.",
+      null,
+      ["surface", "b"],
+    ),
+  ],
+};
+
 export const journeys: Journey[] = [
   lightJourney,
   threadsJourney,
   orderJourney,
   dimensionsJourney,
+  shadowJourney,
+  surfaceJourney,
 ];

@@ -38,6 +38,75 @@ import { defaultSight } from "../web/spatial/sight";
 import { defaultPath, legRange, maxKeys } from "../web/spatial/path";
 import { defaultRide } from "../web/spatial/ride";
 import { initialView } from "../web/tesseract/types";
+import { journeys, journeyStudy, journeyTitle } from "../web/journeys";
+import { fieldLabel as spatialFieldLabel } from "../web/spatial/fields";
+import { fieldLabel as shapeFieldLabel } from "../web/tesseract/fields";
+
+test("expanded journeys adopt complete independent presets with active scalar experiments and ordinary links", async () => {
+  const expected = [
+    [
+      "What a shadow leaves out",
+      [
+        ["The heart of a cell", "angles.3"],
+        ["A crystal meeting its own dual", "slice"],
+        ["The second time around", "root.radius"],
+      ],
+    ],
+    [
+      "A thread learns the surface",
+      [
+        ["A torus woven from one point", "surface.geodesics.length"],
+        [
+          "An arrow carried along a torus thread",
+          "surface.geodesics.transport.angle",
+        ],
+        ["A staircase becoming a throat", "surface.b"],
+      ],
+    ],
+  ] as const;
+  for (const [title, steps] of expected) {
+    const journey = journeys.find((j) => j.title === title);
+    expect(journey, title).toBeDefined();
+    expect(
+      journey!.steps.map((s) => [
+        journeyTitle(s),
+        s.control.kind === "scalar" && s.control.path.join("."),
+      ]),
+    ).toEqual(steps);
+    for (const step of journey!.steps) {
+      expect(step.notebook).not.toBe("2d");
+      expect(step.control.kind).toBe("scalar");
+      if (step.notebook === "2d" || step.control.kind !== "scalar") continue;
+      const ordinary =
+        step.notebook === "3d"
+          ? spatialPreset(step.preset)
+          : tesseractPreset(step.preset);
+      const path = step.control.path;
+      const label =
+        step.notebook === "3d"
+          ? spatialFieldLabel((ordinary as SpatialStudy).config, path.join("."))
+          : shapeFieldLabel(
+              (ordinary as TesseractStudy).config,
+              path.join("."),
+            );
+      expect(step.control.label).toBe(label);
+      const edited = structuredClone(ordinary);
+      let target: any = edited.config;
+      for (const key of path.slice(0, -1)) target = target[key];
+      expect(typeof target[path.at(-1)!]).toBe("number");
+      target[path.at(-1)!] = 0.5;
+      const actual = journeyStudy(step, 0.5);
+      expect(actual).toEqual(edited);
+      expect(journeyStudy(step)).toEqual(ordinary);
+      expect(
+        (await readStudyLink(await writeStudyLink(step.notebook, actual)))
+          .study,
+      ).toEqual(edited);
+      (actual.config as any)[path[0]] = null;
+      expect(journeyStudy(step)).toEqual(ordinary);
+    }
+  }
+});
 
 // Links are encoded here independently of the app, with Node's zlib, so a
 // fault shared by the app's encoder and decoder cannot hide.
