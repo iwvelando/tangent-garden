@@ -108,20 +108,22 @@ jobs:
 
   # The Chromium suite, split across runners. Each shard builds its own copy of
   # the production app, which takes seconds, rather than waiting on `check`.
-  # Shards get whole spec files, so they are uneven; six keep the slowest near
-  # the `webkit` job while setup stays a small share of each.
+  # Shards get whole spec files, so they are uneven. Keep the predicted
+  # slowest shard at least 5 minutes inside the limit, counting runner
+  # variance (docs/contributing.md, CI shards); setup is about a minute each.
   browser:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
     name: chromium (${{ matrix.shard }}/${{ matrix.total }})
     runs-on: ubuntu-latest
-    # Each shard takes about 10 minutes, and 15 on a slow day.
+    # Each shard is predicted at about 15 minutes, and 20 on a slow runner. A
+    # shard that reaches the limit uploads no timings.
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
-        total: [6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        total: [8]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
