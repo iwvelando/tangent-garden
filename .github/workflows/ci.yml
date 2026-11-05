@@ -108,9 +108,9 @@ jobs:
 
   # The Chromium suite, split across runners. Each shard builds its own copy of
   # the production app, which takes seconds, rather than waiting on `check`.
-  # Shards get whole spec files, so they are uneven. Keep the predicted
-  # slowest shard at least 5 minutes inside the limit, counting runner
-  # variance (docs/contributing.md, CI shards); setup is about a minute each.
+  # Shards get whole spec files, and one worker runs each file. Keep the
+  # predicted slowest shard at least 5 minutes inside the limit, counting
+  # runner variance (docs/contributing.md, CI shards); setup is about a minute.
   browser:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
