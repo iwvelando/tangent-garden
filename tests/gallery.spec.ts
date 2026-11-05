@@ -26,10 +26,12 @@ const journeyTitles = [
   "Threads becoming surfaces",
   "Order inside apparent chaos",
   "A glimpse of four dimensions",
+  "What a shadow leaves out",
+  "A thread learns the surface",
 ];
 
 for (const dimension of ["2d", "3d", "4d"] as const)
-  test(`all four journeys are available from the ${dimension} gallery`, async ({
+  test(`all journeys are available from the ${dimension} gallery`, async ({
     page,
   }) => {
     await page.goto(dimension === "2d" ? "/" : `/?study=${dimension}`);
@@ -229,7 +231,7 @@ for (const [width, height] of [
     expect(clear).toBe(true);
     await last.click();
     await expect(
-      page.getByRole("dialog", { name: journeyTitles[3], exact: true }),
+      page.getByRole("dialog", { name: journeyTitles.at(-1), exact: true }),
     ).toBeVisible();
   });
 
@@ -478,11 +480,9 @@ for (const colorScheme of ["light", "dark"] as const)
 
 const journey = (page: Page) =>
   page.getByRole("dialog", { name: "Light finding a cusp", exact: true });
-async function startJourney(page: Page) {
+async function startJourney(page: Page, title = "Light finding a cusp") {
   await examplesButton(page).click();
-  await gallery(page)
-    .getByRole("button", { name: "Light finding a cusp", exact: true })
-    .click();
+  await gallery(page).getByRole("button", { name: title, exact: true }).click();
 }
 async function journeyReady(page: Page) {
   await expect(journey(page)).toBeVisible();
@@ -548,6 +548,24 @@ for (const [title, names, controls] of [
     ],
     ["4D eye distance", "Slice offset h", "Central latitude α"],
   ],
+  [
+    journeyTitles[4],
+    [
+      "The heart of a cell",
+      "A crystal meeting its own dual",
+      "The second time around",
+    ],
+    ["xw angle", "Slice offset h", "Radius r"],
+  ],
+  [
+    journeyTitles[5],
+    [
+      "A torus woven from one point",
+      "An arrow carried along a torus thread",
+      "A staircase becoming a throat",
+    ],
+    ["Thread length L", "Arrow angle α (°)", "Associate angle θ"],
+  ],
 ] as const)
   test(`journey ${title} presents every authored step, one experiment and opt-in motion`, async ({
     page,
@@ -562,6 +580,16 @@ for (const [title, names, controls] of [
       await expect(
         dialog.getByRole("heading", { name, exact: true }),
       ).toBeVisible();
+      if (title === journeyTitles[4])
+        await expect(
+          dialog.locator('.journey-copy[data-current="true"] p'),
+        ).toHaveText(
+          [
+            /rotate.*fourth coordinate.*3D shadow/i,
+            /3D plane.*rotated 4D crystals/i,
+            /Pane 1.*input plane z.*value plane w.*Pane 2.*four coordinates.*fourth coordinate/i,
+          ][i],
+        );
       await expect(dialog.getByRole("textbox")).toHaveCount(1);
       await expect(
         dialog.getByLabel(controls[i], { exact: true }),
@@ -612,6 +640,190 @@ for (const [title, names, controls] of [
     await page.keyboard.press("Escape");
   });
 
+for (const title of [journeyTitles[4], journeyTitles[5]])
+  for (const colorScheme of ["light", "dark"] as const)
+    for (const viewport of [
+      { width: 1280, height: 600 },
+      { width: 390, height: 844 },
+      { width: 844, height: 390 },
+    ])
+      test(`expanded ${title} walkthrough in ${colorScheme} at ${viewport.width}x${viewport.height}`, async ({
+        page,
+      }, info) => {
+        await page.setViewportSize(viewport);
+        await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
+        await page.goto("/");
+        await settled(page);
+        await page
+          .getByLabel("Shape parameter a", { exact: true })
+          .fill("2*pi");
+        const dialog = await excursion(page, title);
+        for (let step = 0; step < 3; step++) {
+          await expect(dialog.locator(".journey-art")).toHaveAttribute(
+            "aria-busy",
+            "false",
+          );
+          await expect(
+            dialog.getByRole("button", { name: "Pause", exact: true }),
+          ).toHaveCount(0);
+          await expect(dialog.getByRole("textbox")).toHaveCount(1);
+          await dialog
+            .getByRole("textbox")
+            .fill(
+              title === journeyTitles[4]
+                ? step === 0
+                  ? "pi/4"
+                  : "1/2"
+                : ["15", "0", "pi/4"][step],
+            );
+          await expect(
+            dialog.getByRole("button", { name: "Open study", exact: true }),
+          ).toBeEnabled();
+          await dialog
+            .getByRole("button", { name: "Play animation", exact: true })
+            .click();
+          const progress = dialog.getByLabel("Animation progress", {
+            exact: true,
+          });
+          await expect
+            .poll(async () => Number(await progress.inputValue()))
+            .toBeGreaterThan(0.01);
+          await dialog
+            .getByRole("button", { name: "Pause", exact: true })
+            .click();
+          await progress.fill("0.5");
+          await expect(progress).toHaveValue("0.5");
+          await dialog
+            .getByRole("button", { name: "Stop", exact: true })
+            .click();
+          await expect(progress).toHaveValue("0");
+          expect(
+            await dialog.evaluate((el) => el.scrollWidth - el.clientWidth),
+          ).toBeLessThanOrEqual(1);
+          if (step < 2)
+            await dialog
+              .getByRole("button", { name: "Next step", exact: true })
+              .click();
+        }
+        if (title === journeyTitles[4]) {
+          const panels = dialog.locator("svg[data-representation]");
+          await expect(panels).toHaveCount(2);
+          await expect(dialog.locator(".paired-view-labels span")).toHaveText([
+            `1 / Source z · value w (${viewport.width <= 700 ? "top" : "left"})`,
+            `2 / The path in 4D (${viewport.width <= 700 ? "bottom" : "right"})`,
+          ]);
+          await expect(dialog.locator(".journey-art text")).toHaveCount(0);
+          const boxes = await panels.evaluateAll((els) =>
+            els.map((el) => {
+              const r = el.getBoundingClientRect();
+              return { x: r.x, y: r.y, width: r.width, height: r.height };
+            }),
+          );
+          if (viewport.width <= 700)
+            expect(boxes[0].y + boxes[0].height).toBeCloseTo(boxes[1].y, 0);
+          else expect(boxes[0].x + boxes[0].width).toBeCloseTo(boxes[1].x, 0);
+          await panels.last().focus();
+          await page.keyboard.press("+");
+          await expect
+            .poll(
+              async () =>
+                JSON.parse(
+                  (await panels.last().locator(":scope > desc").textContent())!,
+                ).view.zoom,
+            )
+            .toBeGreaterThan(1);
+          expect(
+            JSON.parse(
+              (await panels.first().locator(":scope > desc").textContent())!,
+            ).view.zoom,
+          ).toBe(1);
+        } else await expect(dialog.locator("canvas")).toBeVisible();
+        await dialog.screenshot({ path: info.outputPath("exploration.png") });
+        await page.keyboard.press("Escape");
+        await expect(dialog).toBeHidden();
+        await expect(
+          page.getByLabel("Shape parameter a", { exact: true }),
+        ).toHaveValue("2*pi");
+      });
+
+test("shadow journey keeps the edited root's complete paired composition through motion and navigation", async ({
+  page,
+}) => {
+  // Keep a paired notebook mounted behind the preview as well: panel IDs
+  // must belong to their own drawing, and neither pane may be dropped.
+  await page.goto("/?study=4d");
+  await choosePreset(page, { label: "The second time around" });
+  await settled(page);
+  const dialog = await excursion(page, journeyTitles[4], 2);
+  const art = dialog.locator(".journey-art");
+  const panels = art.locator("svg[data-representation]");
+  await expect(panels).toHaveCount(2);
+  for (const panel of await panels.all())
+    await expect(panel).toHaveAttribute("viewBox", "0 0 1000 760");
+  // Each pane must occupy its own half. CSS sizing the outer drawing must
+  // not override the nested SVG viewport widths and clip the second view.
+  const panelBoxes = await panels.evaluateAll((items) =>
+    items.map((el) => {
+      const box = el.getBoundingClientRect();
+      return { x: box.x, width: box.width };
+    }),
+  );
+  expect(panelBoxes[0].x + panelBoxes[0].width).toBeCloseTo(panelBoxes[1].x, 0);
+  expect(panelBoxes[0].width).toBeCloseTo(panelBoxes[1].width, 0);
+  expect(
+    await panels.evaluateAll((items) =>
+      items.map((el) => el.getAttribute("data-representation")),
+    ),
+  ).toEqual(["diagram", "orthographic"]);
+  await expect(art.locator("svg text")).toHaveCount(0);
+  const input = dialog.getByLabel("Radius r", { exact: true });
+  await input.fill("pi/2");
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await art.locator("svg > desc").first().textContent())!)
+          .config.root.radius,
+    )
+    .toBe(Math.PI / 2);
+  const still = await panels.last().innerHTML();
+  await dialog
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  const progress = dialog.getByLabel("Animation progress", { exact: true });
+  await expect
+    .poll(async () => Number(await progress.inputValue()))
+    .toBeGreaterThan(0.03);
+  await dialog.getByRole("button", { name: "Pause", exact: true }).click();
+  await progress.fill("0.5");
+  await expect.poll(async () => panels.last().innerHTML()).not.toBe(still);
+  await expect(panels).toHaveCount(2);
+  await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect.poll(async () => panels.last().innerHTML()).toBe(still);
+  await dialog
+    .getByRole("button", { name: "Previous step", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("heading", {
+      name: "A crystal meeting its own dual",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Next step", exact: true }).click();
+  await expect(input).toHaveValue("pi/2");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  expect(
+    await page.evaluate(() => {
+      const ids = [...document.querySelectorAll("[id]")].map((e) => e.id);
+      return ids.filter((id, n) => ids.indexOf(id) !== n);
+    }),
+  ).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(
+    page.locator("#tesseract-artwork svg[data-representation]"),
+  ).toHaveCount(2);
+});
+
 for (const item of [
   {
     notebook: "2d",
@@ -640,8 +852,26 @@ for (const item of [
     control: "Central latitude α",
     value: "pi/4",
   },
+  {
+    notebook: "4d",
+    source: "2d",
+    journey: journeyTitles[4],
+    step: 2,
+    preset: "The second time around",
+    control: "Radius r",
+    value: "pi/2",
+  },
+  {
+    notebook: "3d",
+    source: "4d",
+    journey: journeyTitles[5],
+    step: 2,
+    preset: "A staircase becoming a throat",
+    control: "Associate angle θ",
+    value: "pi/4",
+  },
 ] as const)
-  test(`journey adoption in ${item.notebook} equals a normal edited preset, preserves the source, and exports`, async ({
+  test(`journey adoption of ${item.preset} in ${item.notebook} equals a normal edited preset, preserves the source, and exports`, async ({
     page,
     context,
   }, info) => {
@@ -736,7 +966,11 @@ for (const item of [
     const motionPath = (await motionFile.path())!;
     const decoded = await decodeVideo(page, await readFile(motionPath));
     expect(decoded.duration).toBeCloseTo(0.4, 3);
-    expect(decoded.width).toBe(1000);
+    expect(decoded.height).toBe(760);
+    expect(decoded.width / decoded.height).toBeCloseTo(
+      plainPNG.width / plainPNG.height,
+      5,
+    );
     expect(decoded.last.ink).toBeGreaterThan(100);
     const demuxed = videoProbe(motionPath);
     if (demuxed) {
@@ -752,113 +986,221 @@ for (const item of [
     expect((await copiedStudy(page)).study).toEqual(exported.study);
   });
 
-test("journey retains edited studies, raw drafts, layers, animations, probes and manual cameras in all notebooks", async ({
+test("expanded geodesic journey matches the ordinary maximum-length study and retains its work cap", async ({
   page,
-  context,
-}) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto("/");
-  await choosePreset(page, { label: "Sunlight gathering in an oval mirror" });
-  await page
-    .locator(".app:visible")
-    .getByLabel("Shape parameter a", { exact: true })
-    .fill("2*pi");
-  await page
-    .locator(".app:visible")
-    .getByLabel("Duration (seconds)", { exact: true })
-    .fill("23");
-  await page
-    .locator(".app:visible")
-    .getByLabel("Line weight", { exact: true })
-    .selectOption("bold");
-  await settled(page);
-  await page.locator("#artwork").focus();
-  await page.keyboard.press("+");
-  await page.keyboard.press("ArrowRight");
-  const planar = await copiedStudy(page);
-  await chooseNotebook(page, "3d");
-  await choosePreset(page, {
-    label: "A trefoil breathing under a moving probe",
+}, info) => {
+  test.setTimeout(90_000);
+  await page.addInitScript(() => {
+    const OriginalWorker = Worker;
+    (window as any).geodesicObservations = [];
+    window.Worker = class extends OriginalWorker {
+      private requests = new Map<number, { length: number; start: number }>();
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        this.addEventListener("message", (event) => {
+          const request = this.requests.get(event.data.id);
+          if (!request) return;
+          this.requests.delete(event.data.id);
+          const elapsed = performance.now() - request.start;
+          // EngineClient restores the typed geometry synchronously in its
+          // onmessage handler, before this microtask reads the returned fan.
+          queueMicrotask(async () => {
+            const g = event.data.result?.surface?.geodesics;
+            if (!g) return;
+            const hash = await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(JSON.stringify(g)),
+            );
+            (window as any).geodesicObservations.push({
+              length: request.length,
+              elapsed,
+              prepare: event.data.timings?.prepare,
+              bytes: event.data.timings?.bytes,
+              hash: [...new Uint8Array(hash)]
+                .map((n) => n.toString(16).padStart(2, "0"))
+                .join(""),
+              threads: g.threads.length,
+              points: g.threads.reduce(
+                (n: number, t: any) => n + t.points.length,
+                0,
+              ),
+              steps: g.steps,
+              exhausted: g.threads.filter((t: any) => t.reason === "exhausted")
+                .length,
+            });
+          });
+        });
+      }
+      postMessage(q: any, transfer?: any) {
+        if (q.action === "spatial" && q.spatial?.surface?.geodesics)
+          this.requests.set(q.id, {
+            length: q.spatial.surface.geodesics.length,
+            start: performance.now(),
+          });
+        super.postMessage(q, transfer);
+      }
+    };
   });
+  const maximum = () =>
+    page.evaluate(() =>
+      (window as any).geodesicObservations.filter(
+        (x: any) => x.length === 100000,
+      ),
+    );
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A torus woven from one point" });
+  await page.getByLabel("Thread length L", { exact: true }).fill("100000");
+  await expect.poll(async () => (await maximum()).length).toBe(1);
   await settled(page);
-  await page
-    .locator(".app:visible")
-    .getByLabel("Major radius R", { exact: true })
-    .fill("1+1/4");
-  await page
-    .locator(".app:visible")
-    .getByLabel("Duration (seconds)", { exact: true })
-    .fill("23");
-  await settled(page);
-  await page.locator("#spatial-artwork").focus();
-  await page.keyboard.press("+");
-  await page.keyboard.press("ArrowRight");
-  const spatial = await copiedStudy(page);
-  await chooseNotebook(page, "4d");
-  await choosePreset(page, { label: "An octahedron within" });
-  await page
-    .locator(".app:visible")
-    .getByLabel("Slice offset h", { exact: true })
-    .fill("pi/12");
-  await page
-    .locator(".app:visible")
-    .getByLabel("Duration (seconds)", { exact: true })
-    .fill("23");
-  await page
-    .locator(".app:visible")
-    .getByLabel("Line weight", { exact: true })
-    .selectOption("bold");
-  await settled(page);
-  await page.locator("#tesseract-artwork").focus();
-  await page.keyboard.press("+");
-  await page.keyboard.press("ArrowRight");
-  const shape = await copiedStudy(page);
-  // An invalid raw draft in a dormant target is never captured or replaced.
-  await page
-    .locator(".app:visible")
-    .getByLabel("Slice offset h", { exact: true })
-    .fill("sqrt(-1)");
-  await expect(
-    page.locator(".app:visible").getByLabel("Slice offset h", { exact: true }),
-  ).toHaveAttribute("aria-invalid", "true");
-  await chooseNotebook(page, "2d");
-  const dialog = await excursion(page, journeyTitles[2]);
-  for (let n = 0; n < 2; n++)
-    await dialog
-      .getByRole("button", { name: "Next step", exact: true })
-      .click();
+  const dialog = await excursion(page, journeyTitles[5]);
+  await dialog.getByLabel("Thread length L", { exact: true }).fill("100000");
+  await expect.poll(async () => (await maximum()).length).toBe(2);
   await expect(dialog.locator(".journey-art")).toHaveAttribute(
     "aria-busy",
     "false",
   );
+  const [ordinary, preview] = await maximum();
+  expect(preview.hash).toBe(ordinary.hash);
+  expect(preview.threads).toBe(32);
+  expect(preview.points).toBeGreaterThan(32);
+  expect(preview.points).toBeLessThanOrEqual(32 * 1501);
+  expect(preview.steps).toBeLessThanOrEqual(200000);
+  expect(preview.exhausted).toBeGreaterThan(0);
+  const canceledAt = Date.now();
   await page.keyboard.press("Escape");
-  await settled(page);
-  await expect(
-    page
-      .locator(".app:visible")
-      .getByLabel("Shape parameter a", { exact: true }),
-  ).toHaveValue("2*pi");
-  expect((await copiedStudy(page)).study).toEqual(planar.study);
-  await chooseNotebook(page, "3d");
-  await settled(page);
-  await expect(
-    page.locator(".app:visible").getByLabel("Major radius R", { exact: true }),
-  ).toHaveValue("1+1/4");
-  expect((await copiedStudy(page)).study).toEqual(spatial.study);
-  await chooseNotebook(page, "4d");
-  await expect(
-    page.locator(".app:visible").getByLabel("Slice offset h", { exact: true }),
-  ).toHaveValue("sqrt(-1)");
-  await expect(
-    page.locator(".app:visible").getByLabel("Slice offset h", { exact: true }),
-  ).toHaveAttribute("aria-invalid", "true");
-  await page
-    .locator(".app:visible")
-    .getByLabel("Slice offset h", { exact: true })
-    .fill("pi/12");
-  await settled(page);
-  expect((await copiedStudy(page)).study).toEqual(shape.study);
+  await expect(dialog).toBeHidden();
+  const observations = {
+    ordinary,
+    preview,
+    returnMs: Date.now() - canceledAt,
+    browser: await page.evaluate(() => navigator.userAgent),
+  };
+  await info.attach("maximum-length-observations", {
+    body: JSON.stringify(observations, null, 2),
+    contentType: "application/json",
+  });
+  console.log(
+    "Maximum-length geodesic observations:",
+    JSON.stringify(observations),
+  );
 });
+
+for (const title of [journeyTitles[2], journeyTitles[4], journeyTitles[5]])
+  test(`${title} retains edited studies, raw drafts, layers, animations, probes and manual cameras in all notebooks`, async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto("/");
+    await choosePreset(page, { label: "Sunlight gathering in an oval mirror" });
+    await page
+      .locator(".app:visible")
+      .getByLabel("Shape parameter a", { exact: true })
+      .fill("2*pi");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Duration (seconds)", { exact: true })
+      .fill("23");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Line weight", { exact: true })
+      .selectOption("bold");
+    await settled(page);
+    await page.locator("#artwork").focus();
+    await page.keyboard.press("+");
+    await page.keyboard.press("ArrowRight");
+    const planar = await copiedStudy(page);
+    await chooseNotebook(page, "3d");
+    await choosePreset(page, {
+      label: "A trefoil breathing under a moving probe",
+    });
+    await settled(page);
+    await page
+      .locator(".app:visible")
+      .getByLabel("Major radius R", { exact: true })
+      .fill("1+1/4");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Duration (seconds)", { exact: true })
+      .fill("23");
+    await settled(page);
+    await page.locator("#spatial-artwork").focus();
+    await page.keyboard.press("+");
+    await page.keyboard.press("ArrowRight");
+    const spatial = await copiedStudy(page);
+    await chooseNotebook(page, "4d");
+    await choosePreset(page, { label: "An octahedron within" });
+    await page
+      .locator(".app:visible")
+      .getByLabel("Slice offset h", { exact: true })
+      .fill("pi/12");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Duration (seconds)", { exact: true })
+      .fill("23");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Line weight", { exact: true })
+      .selectOption("bold");
+    await settled(page);
+    await page.locator("#tesseract-artwork").focus();
+    await page.keyboard.press("+");
+    await page.keyboard.press("ArrowRight");
+    const shape = await copiedStudy(page);
+    // An invalid raw draft in a dormant target is never captured or replaced.
+    await page
+      .locator(".app:visible")
+      .getByLabel("Slice offset h", { exact: true })
+      .fill("sqrt(-1)");
+    await expect(
+      page
+        .locator(".app:visible")
+        .getByLabel("Slice offset h", { exact: true }),
+    ).toHaveAttribute("aria-invalid", "true");
+    await chooseNotebook(page, "2d");
+    const dialog = await excursion(page, title);
+    for (let n = 0; n < 2; n++)
+      await dialog
+        .getByRole("button", { name: "Next step", exact: true })
+        .click();
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await page.keyboard.press("Escape");
+    await settled(page);
+    await expect(
+      page
+        .locator(".app:visible")
+        .getByLabel("Shape parameter a", { exact: true }),
+    ).toHaveValue("2*pi");
+    expect((await copiedStudy(page)).study).toEqual(planar.study);
+    await chooseNotebook(page, "3d");
+    await settled(page);
+    await expect(
+      page
+        .locator(".app:visible")
+        .getByLabel("Major radius R", { exact: true }),
+    ).toHaveValue("1+1/4");
+    expect((await copiedStudy(page)).study).toEqual(spatial.study);
+    await chooseNotebook(page, "4d");
+    await expect(
+      page
+        .locator(".app:visible")
+        .getByLabel("Slice offset h", { exact: true }),
+    ).toHaveValue("sqrt(-1)");
+    await expect(
+      page
+        .locator(".app:visible")
+        .getByLabel("Slice offset h", { exact: true }),
+    ).toHaveAttribute("aria-invalid", "true");
+    await page
+      .locator(".app:visible")
+      .getByLabel("Slice offset h", { exact: true })
+      .fill("pi/12");
+    await settled(page);
+    expect((await copiedStudy(page)).study).toEqual(shape.study);
+  });
 
 test("journey previews all three presets statically and restores the edited study and camera", async ({
   page,
@@ -947,44 +1289,59 @@ test("journey previews all three presets statically and restores the edited stud
   expect(await page.locator("#artwork").innerHTML()).toBe(svg);
 });
 
-test("journey entry waits for delayed scalar resolution and keeps invalid drafts editable", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const send = Worker.prototype.postMessage;
-    (window as any).releaseScalar = () => {};
-    Worker.prototype.postMessage = function (message: any, ...rest: any[]) {
-      if (message.action === "scalars") {
-        (window as any).releaseScalar = () => send.call(this, message, ...rest);
-      } else send.call(this, message, ...rest);
-    };
-  });
-  await page.goto("/");
-  await settled(page);
-  const input = page.getByLabel("Shape parameter a", { exact: true });
-  await input.fill("2*pi");
-  await startJourney(page);
-  await expect(journey(page)).toBeHidden();
-  await page.evaluate(() => (window as any).releaseScalar());
-  await journeyReady(page);
-  await journey(page)
-    .getByRole("button", { name: "Return to my study", exact: true })
-    .click();
-  await expect(input).toHaveValue("2*pi");
-  await input.fill("sqrt(-1)");
-  await startJourney(page);
-  await page.evaluate(() => (window as any).releaseScalar());
-  await expect(
-    page.getByText(
-      "Correct the highlighted input before starting the journey.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(journey(page)).toBeHidden();
-  await expect(input).toBeVisible();
-  await expect(input).toHaveValue("sqrt(-1)");
-  await expect(input).toHaveAttribute("aria-invalid", "true");
-});
+for (const title of [
+  "Light finding a cusp",
+  journeyTitles[4],
+  journeyTitles[5],
+])
+  for (const [source, label] of [
+    ["2d", "Shape parameter a"],
+    ["3d", "Major radius R"],
+    ["4d", "4D eye distance"],
+  ])
+    test(`${title} entry from ${source} waits for delayed scalar resolution and keeps invalid drafts editable`, async ({
+      page,
+    }) => {
+      await page.addInitScript(() => {
+        const send = Worker.prototype.postMessage;
+        (window as any).releaseScalar = () => {};
+        Worker.prototype.postMessage = function (message: any, ...rest: any[]) {
+          if (message.action === "scalars") {
+            (window as any).releaseScalar = () =>
+              send.call(this, message, ...rest);
+          } else send.call(this, message, ...rest);
+        };
+      });
+      await page.goto(source === "2d" ? "/" : `/?study=${source}`);
+      await settled(page);
+      const input = page.getByLabel(label, { exact: true });
+      await input.fill("2*pi");
+      await startJourney(page, title);
+      const dialog = page.getByRole("dialog", { name: title, exact: true });
+      await expect(dialog).toBeHidden();
+      await page.evaluate(() => (window as any).releaseScalar());
+      await expect(dialog.locator(".journey-art")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      await dialog
+        .getByRole("button", { name: "Return to my study", exact: true })
+        .click();
+      await expect(input).toHaveValue("2*pi");
+      await input.fill("sqrt(-1)");
+      await startJourney(page, title);
+      await page.evaluate(() => (window as any).releaseScalar());
+      await expect(
+        page.getByText(
+          "Correct the highlighted input before starting the journey.",
+          { exact: true },
+        ),
+      ).toBeVisible();
+      await expect(dialog).toBeHidden();
+      await expect(input).toBeVisible();
+      await expect(input).toHaveValue("sqrt(-1)");
+      await expect(input).toHaveAttribute("aria-invalid", "true");
+    });
 
 test("journey Open study adopts the whole preset, its animation, link and image", async ({
   page,
@@ -1196,8 +1553,8 @@ test("journey keeps playback visible in a short desktop window", async ({
 
 // Holds worker compute replies while `holdReplies` is set, for release one
 // at a time from `replies`, and counts those delivered.
-function interceptComputeReplies(page: Page) {
-  return page.addInitScript(() => {
+function interceptComputeReplies(page: Page, lifted = false) {
+  return page.addInitScript((lifted) => {
     const w = window as any;
     const property = Object.getOwnPropertyDescriptor(
       Worker.prototype,
@@ -1210,15 +1567,108 @@ function interceptComputeReplies(page: Page) {
       ...property,
       set(listener: (event: MessageEvent) => void) {
         property.set!.call(this, (event: MessageEvent) => {
+          const computation =
+            event.data.config || (lifted && event.data.result);
           const deliver = () => {
-            if (event.data.config) w.delivered++;
+            if (computation) w.delivered++;
             listener.call(this, event);
           };
-          if (w.holdReplies && event.data.config) w.replies.push(deliver);
+          if (w.holdReplies && computation) w.replies.push(deliver);
           else deliver();
         });
       },
     });
+  }, lifted);
+}
+
+for (const title of [journeyTitles[4], journeyTitles[5]]) {
+  test(`${title} keeps artwork and prose together through superseded slow steps and cancellation`, async ({
+    page,
+  }) => {
+    await interceptComputeReplies(page, true);
+    await page.goto("/");
+    await settled(page);
+    await page.evaluate(() => ((window as any).holdReplies = true));
+    await startJourney(page, title);
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect
+      .poll(() => page.evaluate(() => (window as any).replies.length))
+      .toBe(1);
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+    expect(await page.evaluate(() => (window as any).replies.length)).toBe(1);
+    await page.evaluate(() => (window as any).replies.shift()());
+    await expect
+      .poll(() => page.evaluate(() => (window as any).replies.length))
+      .toBe(1);
+    await expect(
+      dialog.locator(".journey-art svg, .journey-art canvas"),
+    ).toHaveCount(0);
+    await page.evaluate(() => (window as any).replies.shift()());
+    const last =
+      title === journeyTitles[4]
+        ? "The second time around"
+        : "A staircase becoming a throat";
+    await expect(
+      dialog.getByRole("heading", { name: last, exact: true }),
+    ).toBeVisible();
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect
+      .poll(() => page.evaluate(() => (window as any).replies.length))
+      .toBe(1);
+    await dialog
+      .getByRole("button", { name: "Previous step", exact: true })
+      .click();
+    await expect(dialog.locator(".journey-feedback")).toHaveText(
+      "Preparing step 2…",
+    );
+    await expect(
+      dialog.getByRole("heading", { name: last, exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Open study", exact: true }),
+    ).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => {
+      (window as any).holdReplies = false;
+      (window as any).replies.splice(0).forEach((run: () => void) => run());
+    });
+    await expect(dialog).toBeHidden();
+    await expect(page.locator(".app:visible .example-current")).toHaveText(
+      "Ellipse & its evolute",
+    );
+  });
+
+  test(`${title} refuses invalid experiments without losing return, and incoming links dismiss it`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const dialog = await excursion(page, title, 2);
+    await dialog
+      .getByRole("textbox")
+      .fill(title === journeyTitles[4] ? "0" : "-1");
+    await expect(dialog.getByRole("alert").first()).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Open study", exact: true }),
+    ).toBeDisabled();
+    await dialog
+      .getByRole("button", { name: "Return to my study", exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    await startJourney(page, title);
+    await expect(dialog).toBeVisible();
+    await page.evaluate(() => {
+      location.hash = "s=not-a-study";
+    });
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(/This link/).first()).toBeVisible();
   });
 }
 
@@ -2253,6 +2703,189 @@ test("journey scalar range errors belong to the experiment field", async ({
     dialog.getByRole("button", { name: "Open study", exact: true }),
   ).toBeEnabled();
   await expect(radius).toHaveValue("1/4");
+});
+
+test("completed notebook changes still prune unsupported animation tracks and light tracing", async ({
+  page,
+}) => {
+  const controls = page.locator(".app:visible");
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A staircase becoming a throat" });
+  await settled(page);
+  await open(page, "#spatial-animation-section");
+  await expect(controls.getByLabel("Parameter 1", { exact: true })).toHaveValue(
+    "surfaceB",
+  );
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("torus");
+  await expect(controls.getByLabel("Parameter 1", { exact: true })).toHaveValue(
+    "length",
+  );
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("rays");
+  await settled(page);
+  await controls.getByLabel("Animate", { exact: true }).selectOption("trace");
+  await expect(controls.getByLabel("Animate", { exact: true })).toHaveValue(
+    "trace",
+  );
+  await page
+    .getByLabel("Spatial definition", { exact: true })
+    .selectOption("torus");
+  await expect(controls.getByLabel("Animate", { exact: true })).toHaveValue(
+    "reveal",
+  );
+  await chooseNotebook(page, "2d");
+  await choosePreset(page, { label: "Parallel light & a circle" });
+  await settled(page);
+  await openAnimation(page);
+  await expect(controls.getByLabel("Animate", { exact: true })).toHaveValue(
+    "trace",
+  );
+  await controls.getByRole("button", { name: "evolute", exact: true }).click();
+  await expect(controls.getByLabel("Animate", { exact: true })).toHaveValue(
+    "reveal",
+  );
+});
+
+test("staircase journey keeps its authored parameter track after typing through invalid pi", async ({
+  page,
+}, info) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    const property = Object.getOwnPropertyDescriptor(
+      Worker.prototype,
+      "onmessage",
+    )!;
+    const requests = new WeakMap<Worker, Set<number>>();
+    (window as any).staircaseCornerZs = [];
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (
+        q.action === "spatial" &&
+        q.spatial.surface.kind === "helicoid-catenoid"
+      ) {
+        if (!requests.has(this)) requests.set(this, new Set());
+        requests.get(this)!.add(q.id);
+      }
+      send.call(this, q, ...rest);
+    };
+    Object.defineProperty(Worker.prototype, "onmessage", {
+      ...property,
+      set(listener: (event: MessageEvent) => void) {
+        property.set!.call(this, (event: MessageEvent) => {
+          listener.call(this, event);
+          // EngineClient has now restored Go's actual typed points.
+          if (!requests.get(this)?.delete(event.data.id)) return;
+          const point = event.data.result?.surface?.surface.points[0][0];
+          if (point) (window as any).staircaseCornerZs.push(point.z);
+        });
+      },
+    });
+  });
+  await page.goto("/");
+  const dialog = await excursion(page, journeyTitles[5], 2);
+  const theta = dialog.getByLabel("Associate angle θ", { exact: true });
+  await theta.fill("");
+  await theta.pressSequentially("p");
+  await expect(theta).toHaveAttribute("aria-invalid", "true");
+  // pi parses successfully but lies beyond the associate angle's pi/2
+  // limit. Wait for that actual engine refusal before finishing the text.
+  await theta.pressSequentially("i");
+  await expect(dialog.locator(".journey-feedback")).toContainText(
+    /associate angle/i,
+  );
+  await theta.pressSequentially("/");
+  await expect(theta).toHaveAttribute("aria-invalid", "true");
+  await theta.pressSequentially("4");
+  await expect(theta).toHaveValue("pi/4");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await dialog
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  const progress = dialog.getByLabel("Animation progress", { exact: true });
+  await expect
+    .poll(async () => Number(await progress.inputValue()))
+    .toBeGreaterThan(0.01);
+  await dialog.getByRole("button", { name: "Pause", exact: true }).click();
+  await progress.fill("0.5");
+  await expect(progress).toHaveValue("0.5");
+  // Halfway through the back-and-forth film is the catenoid, theta=pi/2:
+  // its first grid point has z=vMin=-1.2, independent of the edited still.
+  // Endpoints are prepared at Play and reused by a seek; retain those
+  // returned points rather than requiring another request for the same end.
+  for (const z of [-0.85 * Math.PI, -1.2])
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (z) =>
+            (window as any).staircaseCornerZs.some(
+              (value: number) => Math.abs(value - z) < 1e-10,
+            ),
+          z,
+        ),
+      )
+      .toBe(true);
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+  await theta.fill("0");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+  await dialog.screenshot({ path: info.outputPath("recovered-staircase.png") });
+});
+
+test("planar journey preserves its authored light trace across a temporary worker failure", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (message: any, ...rest: any[]) {
+      if (message.action === "compute" && message.config.source.angle === 1) {
+        queueMicrotask(() =>
+          this.dispatchEvent(
+            new MessageEvent("message", {
+              data: { id: message.id, error: "Temporary calculation failure." },
+            }),
+          ),
+        );
+      } else send.call(this, message, ...rest);
+    };
+  });
+  await page.goto("/");
+  const dialog = await excursion(page, journeyTitles[0], 1);
+  const direction = dialog.getByLabel("Travel direction (degrees)", {
+    exact: true,
+  });
+  await direction.fill("1");
+  await expect(dialog.locator(".journey-feedback")).toContainText(
+    "Temporary calculation failure.",
+  );
+  await direction.fill("0");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await dialog.locator("svg desc").textContent())!).animation
+          ?.mode,
+    )
+    .toBe("trace");
+  await dialog.getByRole("button", { name: "Stop", exact: true }).click();
 });
 
 for (const [title, control] of [

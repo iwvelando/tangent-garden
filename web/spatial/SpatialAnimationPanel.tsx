@@ -329,8 +329,8 @@ export function SpatialAnimationPanel({
   // Light is traced only in a mirror or interface study; another falls back
   // to revealing.
   useEffect(() => {
-    if (!traceable && mode === "trace") setMode("reveal");
-  }, [traceable, mode]);
+    if (frame && !traceable && mode === "trace") setMode("reveal");
+  }, [!!frame, traceable, mode]);
   // The probe moves only while it is on; another study falls back to
   // revealing.
   useEffect(() => {
@@ -471,6 +471,9 @@ export function SpatialAnimationPanel({
   };
   const targets = frame ? availableTargets(frame.config) : [];
   useEffect(() => {
+    // A failed or unfinished calculation says nothing about which tracks
+    // the study supports. Keep its setup until a result can decide.
+    if (!frame) return;
     setTracks((previous) => {
       const retained = previous.filter((track) =>
         targets.includes(track.target),
@@ -482,7 +485,7 @@ export function SpatialAnimationPanel({
           ? [defaultTrack(targets[0])]
           : [];
     });
-  }, [targets.join(",")]);
+  }, [!!frame, targets.join(",")]);
   if (settings)
     settings.current = {
       mode,

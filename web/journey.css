@@ -184,6 +184,16 @@
   border-radius: 8px;
   overflow: hidden;
 }
+/* Reserve the paired captions even on a single-pane 4D step, so naming
+   both views never shifts the artwork or player during navigation. */
+.journey .paired-view-labels {
+  padding: 0;
+  margin: 0 0 8px;
+  border: 0;
+}
+.journey .paired-view-labels span {
+  min-height: 1.5em;
+}
 .journey-art svg,
 .journey-art canvas {
   display: block;

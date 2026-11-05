@@ -1515,6 +1515,114 @@ for (const source of ["3d", "4d"] as const)
     } else await expect(browse).toBeFocused();
   });
 
+for (const [title, label, value, target, adopted] of [
+  ["What a shadow leaves out", "Radius r", "1/2", "4D studies", "0.5"],
+  [
+    "A thread learns the surface",
+    "Associate angle θ",
+    "pi/4",
+    "3D studies",
+    "pi/4",
+  ],
+] as const)
+  test(`${title} keeps Safari experiment focus, keyboard return and ordinary adoption`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/");
+    const browse = page.getByRole("button", {
+      name: "Browse notebook examples",
+      exact: true,
+    });
+    await browse.click();
+    const entry = page
+      .getByRole("dialog", { name: "Notebook examples" })
+      .getByRole("button", { name: title, exact: true });
+    await entry.focus();
+    await entry.press("Enter");
+    const dialog = page.getByRole("dialog", { name: title, exact: true });
+    await expect(dialog).not.toHaveAttribute("data-quiet", "");
+    for (let i = 0; i < 2; i++)
+      await dialog
+        .getByRole("button", { name: "Next step", exact: true })
+        .click();
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const input = dialog.getByLabel(label, { exact: true });
+    await input.fill(value);
+    await expect(input).toBeFocused();
+    await expect(
+      dialog.getByRole("button", { name: "Open study", exact: true }),
+    ).toBeEnabled();
+    await input.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(browse).toBeFocused();
+    await browse.click();
+    await entry.click();
+    for (let i = 0; i < 2; i++)
+      await dialog
+        .getByRole("button", { name: "Next step", exact: true })
+        .click();
+    await input.fill(value);
+    await dialog
+      .getByRole("button", { name: "Open study", exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    await expect(
+      page.locator(".app:visible").getByLabel(label, { exact: true }),
+    ).toHaveValue(adopted);
+    await expect(
+      page.getByRole("radio", { name: target, exact: true }),
+    ).toBeFocused();
+  });
+
+test("staircase journey recovers its animation after an out-of-range typing intermediate in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Browse notebook examples", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Notebook examples" })
+    .getByRole("button", { name: "A thread learns the surface", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "A thread learns the surface",
+    exact: true,
+  });
+  for (let i = 0; i < 2; i++)
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+  const theta = dialog.getByLabel("Associate angle θ", { exact: true });
+  await theta.fill("pi");
+  await expect(dialog.locator(".journey-feedback")).toContainText(
+    /associate angle/i,
+  );
+  await theta.pressSequentially("/4");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+  await theta.fill("0");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Stop", exact: true }).click();
+});
+
 for (const width of [390, 1440])
   test(`atlas pointer blur and keyboard focus preserve the study at ${width}px`, async ({
     page,

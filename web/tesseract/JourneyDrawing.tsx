@@ -8,7 +8,10 @@ import { play } from "../playback";
 import { cycles, progressAt } from "../timing";
 import type { TesseractStudy } from "./link";
 import { sample } from "./types";
-import { Plot } from "./Plot";
+import { StudyPlot } from "./Plot";
+import { pairedOrder } from "./Composition";
+import { modeLabel, objects } from "./objects";
+import { useMediaQuery } from "../useMediaQuery";
 import { Sampler } from "./sampler";
 import "./style.css";
 
@@ -28,6 +31,8 @@ export default function JourneyDrawing(p: {
   scheme: ColorScheme;
 }) {
   const [view, setView] = useState(p.study.view);
+  const [diagramView, setDiagramView] = useState(p.study.diagramView);
+  const narrow = useMediaQuery("(max-width: 700px)");
   const [motion, setMotion] = useState<ShapeFrame | null>(null);
   const [progress, setProgress] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -120,7 +125,7 @@ export default function JourneyDrawing(p: {
           motion: p.study.motion,
           view,
           layers: p.study.layers,
-          diagramView: p.study.diagramView,
+          diagramView,
         });
         if (ticket !== epoch.current) return;
         if (gap) {
@@ -144,14 +149,33 @@ export default function JourneyDrawing(p: {
     (p.pending && p.slow) || !p.frame || p.invalid || !!p.error || preparing;
   return (
     <div className="journey-drawing">
+      <div
+        className="paired-view-labels"
+        data-layout={narrow ? "rows" : "columns"}
+        aria-hidden={!shown?.result.companion || undefined}
+      >
+        {(shown?.result.companion
+          ? pairedOrder(objects[shown.config.object])
+          : [undefined, undefined]
+        ).map((mode, index) => (
+          <span key={index}>
+            {mode && shown
+              ? `${index + 1} / ${objects[shown.config.object].panelLabels?.[mode] ?? modeLabel(shown.config.object, mode)} (${(narrow ? ["top", "bottom"] : ["left", "right"])[index]})`
+              : null}
+          </span>
+        ))}
+      </div>
       <div className="journey-art" aria-busy={p.pending}>
         {shown && (
-          <Plot
+          <StudyPlot
             id="journey-artwork"
             result={shown.result}
             config={shown.config}
             view={view}
             onView={setView}
+            diagramView={diagramView}
+            onDiagramView={setDiagramView}
+            layout={narrow ? "rows" : "columns"}
             layers={p.study.layers}
             dark={p.dark}
             scheme={p.scheme}
