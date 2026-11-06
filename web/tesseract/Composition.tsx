@@ -1,7 +1,7 @@
 import type { ColorScheme } from "../color-schemes";
 import type { ReactNode } from "react";
 import { Drawing } from "./Drawing";
-import { objects, type ObjectDescriptor } from "./objects";
+import { modeLabel, objects, type ObjectDescriptor } from "./objects";
 import {
   initialView,
   type Config,
@@ -32,6 +32,18 @@ export type PanelViewport = {
 // A paired study's modes in display order: left to right, or top to bottom.
 export const pairedOrder = (d: ObjectDescriptor): Config["mode"][] =>
   d.companionFirst ? [...d.pairedModes!].reverse() : [...d.pairedModes!];
+// Captions sit outside the drawing, in the same order as its paired panels.
+export function paneCaptions(
+  object: Config["object"],
+  layout: ExportLayout = "columns",
+): string[] {
+  const descriptor = objects[object];
+  const positions = layout === "rows" ? ["top", "bottom"] : ["left", "right"];
+  return pairedOrder(descriptor).map(
+    (mode, index) =>
+      `${index + 1} / ${descriptor.panelLabels?.[mode] ?? modeLabel(object, mode)} (${positions[index]})`,
+  );
+}
 // Compose already-projected Go geometry. No collision or 4D geometry is
 // evaluated here. One returned result determines both panels' physical time.
 export function Composition(
