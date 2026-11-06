@@ -2242,11 +2242,14 @@ for (const colorScheme of ["light", "dark"] as const)
         0,
       );
       await expect(
-        dialog.getByRole("button", { name: "Pause", exact: true }),
+        dialog.getByRole("button", {
+          name: /^Pause(?: (?:traversal|reveal|motion))?$/,
+          exact: true,
+        }),
       ).toHaveCount(0);
       await expect(dialog.locator("svg text")).toHaveCount(0);
       const play = dialog.getByRole("button", {
-        name: "Play animation",
+        name: /^(?:Play animation|Play (?:traversal|reveal|motion))$/,
         exact: true,
       });
       await play.scrollIntoViewIfNeeded();
