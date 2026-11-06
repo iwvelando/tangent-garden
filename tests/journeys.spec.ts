@@ -62,6 +62,11 @@ async function excursion(page: Page, title: string, step = 0) {
     await dialog
       .getByRole("button", { name: "Next step", exact: true })
       .click();
+  // A pending step leaves the previous one, possibly settled, on show, so
+  // wait for the requested step before its drawing settles.
+  await expect(dialog.locator(".journey-step")).toHaveText(
+    new RegExp(`^Step ${step + 1} of \\d+$`),
+  );
   await expect(dialog.locator(".journey-art")).toHaveAttribute(
     "aria-busy",
     "false",
@@ -663,7 +668,12 @@ test("expanded geodesic journey matches the ordinary maximum-length study and re
   );
 });
 
-for (const title of [journeyTitles[2], journeyTitles[4], journeyTitles[5]])
+for (const title of [
+  journeyTitles[2],
+  journeyTitles[4],
+  journeyTitles[5],
+  journeyTitles[7],
+])
   test(`${title} retains edited studies, raw drafts, layers, animations, probes and manual cameras in all notebooks`, async ({
     page,
     context,
@@ -1159,7 +1169,7 @@ function interceptComputeReplies(page: Page, lifted = false) {
   }, lifted);
 }
 
-for (const title of [journeyTitles[4], journeyTitles[5]]) {
+for (const title of [journeyTitles[4], journeyTitles[5], journeyTitles[7]]) {
   test(`${title} keeps artwork and prose together through superseded slow steps and cancellation`, async ({
     page,
   }) => {
@@ -1190,7 +1200,9 @@ for (const title of [journeyTitles[4], journeyTitles[5]]) {
     const last =
       title === journeyTitles[4]
         ? "The second time around"
-        : "A staircase becoming a throat";
+        : title === journeyTitles[5]
+          ? "A staircase becoming a throat"
+          : "Hopf circles, flowing forever";
     await expect(
       dialog.getByRole("heading", { name: last, exact: true }),
     ).toBeVisible();
@@ -1249,6 +1261,64 @@ for (const title of [journeyTitles[4], journeyTitles[5]]) {
     await expect(page.getByText(/This link/).first()).toBeVisible();
   });
 }
+
+// Selections made while the drawing waits are all kept, and only the
+// latest is presented and adopted.
+test("selection edits during a pending calculation present and adopt only the latest", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await interceptComputeReplies(page, true);
+  await page.goto("/");
+  await settled(page);
+  const dialog = await excursion(page, journeyTitles[7]);
+  // Let the other examples prepare first, so only edits are held.
+  const delivered = () => page.evaluate(() => (window as any).delivered);
+  await expect(async () => {
+    const before = await delivered();
+    await page.waitForTimeout(500);
+    expect(before).toBeGreaterThanOrEqual(3);
+    expect(await delivered()).toBe(before);
+  }).toPass();
+  const field = dialog.getByRole("spinbutton", { name: "Selected fiber" });
+  const drawnSelected = async () =>
+    JSON.parse(
+      (await dialog
+        .locator('svg[data-representation="base"] > desc')
+        .textContent())!,
+    ).weave.correspondence.selected;
+  await page.evaluate(() => ((window as any).holdReplies = true));
+  await field.fill("5");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).replies.length))
+    .toBe(1);
+  await dialog.locator('svg[data-representation="base"]').focus();
+  await page.keyboard.press("]");
+  await page.keyboard.press("]");
+  await expect(field).toHaveValue("7");
+  // The superseded reply arrives but is not presented.
+  await page.evaluate(() => (window as any).replies.shift()());
+  await expect
+    .poll(() => page.evaluate(() => (window as any).replies.length))
+    .toBe(1);
+  expect(await drawnSelected()).toBe(0);
+  await expect(
+    dialog.getByRole("button", { name: "Open study", exact: true }),
+  ).toBeDisabled();
+  await page.evaluate(() => {
+    (window as any).holdReplies = false;
+    (window as any).replies.splice(0).forEach((run: () => void) => run());
+  });
+  await expect(dialog.locator(".journey-art")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  expect(await drawnSelected()).toBe(6);
+  await dialog.getByRole("button", { name: "Open study", exact: true }).click();
+  await settled(page);
+  expect((await copiedStudy(page)).study.config.weave.selected).toBe(6);
+});
 
 test("journey navigation bounds work and presents only the requested step", async ({
   page,

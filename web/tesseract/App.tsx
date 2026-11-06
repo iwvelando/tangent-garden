@@ -46,6 +46,7 @@ import {
 } from "../export-image";
 import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { StudyPlot } from "./Plot";
+import { ChoiceField, SelectionField } from "./DescriptorControls";
 import { exportBaseSize, type ExportLayout } from "../export-quality";
 import { drawnInks, inks, movingInk, sectionInk } from "./Drawing";
 import { paneCaptions } from "./Composition";
@@ -659,30 +660,21 @@ export default function TesseractApp({
   const choices = descriptor.choices
     ?.filter((choice) => !choice.visible || choice.visible(config))
     .map((choice) => (
-      <Field key={choice.key} label={choice.label} help={choice.help}>
-        <select
-          value={
-            (parameters as unknown as Record<string, string>)[choice.key] ??
-            choice.values[0].value
-          }
-          onChange={(e) => {
-            const value = e.target.value;
-            update((c) => ({
-              ...c,
-              [parameterKey]: {
-                ...c[parameterKey],
-                [choice.key]: value,
-              },
-            }));
-          }}
-        >
-          {choice.values.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <ChoiceField
+        key={choice.key}
+        choice={choice}
+        config={config}
+        help={choice.help}
+        onChoose={(value) =>
+          update((c) => ({
+            ...c,
+            [parameterKey]: {
+              ...c[parameterKey],
+              [choice.key]: value,
+            },
+          }))
+        }
+      />
     ));
   const info = descriptor.explanation(config);
   const selection = descriptor.selection;
@@ -1058,32 +1050,15 @@ export default function TesseractApp({
                       )
                     )}
                     {selection?.visible(config) && (
-                      <Field
-                        label={selection.label}
+                      <SelectionField
+                        config={config}
                         help={
                           typeof selection.help === "function"
                             ? selection.help(config)
                             : selection.help
                         }
-                      >
-                        <input
-                          type="number"
-                          min="1"
-                          max={selection.count(config)}
-                          step="1"
-                          value={selection.get(config) + 1}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            if (
-                              !Number.isInteger(n) ||
-                              n < 1 ||
-                              n > selection.count(config)
-                            )
-                              return;
-                            select(n - 1);
-                          }}
-                        />
-                      </Field>
+                        onSelect={select}
+                      />
                     )}
                     {descriptor.motionEndpointsLabel &&
                       liftFields.some((f) => f.endpoint) && (
