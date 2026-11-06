@@ -13,6 +13,8 @@ import {
   journeyTitles,
   settled,
   copiedStudy,
+  observeAtlasWorkers,
+  openAtlas,
 } from "./gallery-helpers";
 
 import { readFile } from "node:fs/promises";
@@ -592,79 +594,6 @@ test("atlas scheduler bounds work, supersedes stale generations and isolates sna
   );
 });
 
-async function observeAtlasWorkers(page: Page, delay = 0) {
-  await page.addInitScript(
-    ({ delay }) => {
-      const Native = window.Worker;
-      const logs: any[] = [];
-      Object.assign(window, { atlasWorkers: logs, atlasDelay: delay });
-      window.Worker = class extends Native {
-        log: any;
-        constructor(url: string | URL, options?: WorkerOptions) {
-          super(url, options);
-          this.log = {
-            url: String(url),
-            requests: [],
-            replies: [],
-            active: 0,
-            maximum: 0,
-            terminated: false,
-          };
-          logs.push(this.log);
-        }
-        postMessage(data: any, options?: any) {
-          if (data.action === "compute" && !data.probeOnly) {
-            this.log.active++;
-            this.log.maximum = Math.max(this.log.maximum, this.log.active);
-            this.log.requests.push({
-              data: structuredClone(data),
-              started: performance.now(),
-            });
-          }
-          super.postMessage(data, options);
-        }
-        set onmessage(handler: any) {
-          super.onmessage = (event: MessageEvent) => {
-            const deliver = () => {
-              const request = this.log.requests.find(
-                (r: any) => r.data.id === event.data.id,
-              );
-              if (request) {
-                this.log.active--;
-                this.log.replies.push({
-                  data: structuredClone(event.data),
-                  took: performance.now() - request.started,
-                });
-              }
-              handler?.call(this, event);
-            };
-            if (logs.indexOf(this.log) > 0)
-              setTimeout(deliver, (window as any).atlasDelay);
-            else deliver();
-          };
-        }
-        terminate() {
-          this.log.terminated = true;
-          super.terminate();
-        }
-      };
-    },
-    { delay },
-  );
-}
-
-async function openAtlas(page: Page) {
-  await page
-    .getByRole("button", { name: "Explore parameter atlas", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog", {
-    name: "A field of possible flowers",
-    exact: true,
-  });
-  await expect(dialog).toBeVisible();
-  return dialog;
-}
-
 test("atlas geometry and resolved parameters match ordinary WASM requests in every cell", async ({
   page,
 }, info) => {
@@ -1033,8 +962,16 @@ test("atlas entry uses tiered compatibility help and disables unsupported or exc
   );
   await expect(help.locator(".hint-more")).toBeHidden();
   await help.getByRole("button", { name: "Show more", exact: true }).click();
-  await expect(help.locator(".hint-more")).toContainText("Roulette");
-  await expect(help.locator(".hint-more")).toContainText("along a line");
+  await expect(help.locator(".hint-more")).toContainText("roulette");
+  await expect(help.locator(".hint-more")).toContainText(
+    "whole Lissajous frequencies",
+  );
+  await expect(help.locator(".hint-more")).toContainText(
+    "a Fourier term's whole frequency and radius",
+  );
+  await expect(help.locator(".hint-more")).toContainText(
+    "implicit level and a, when F uses a",
+  );
   await expect(help.locator(".hint-more")).toContainText(
     "Cartesian point light",
   );
@@ -1618,6 +1555,7 @@ test("atlas admission reserves capped previews and original-quality hidden famil
   expect(atlasBudget(config)).toEqual({
     points: 40000,
     work: 360000,
+    grid: 0,
     iterations: 0,
     density: 0,
     error: undefined,
@@ -3106,7 +3044,7 @@ test("atlas entry refuses an unsupported study that settles after the request", 
     Object.getOwnPropertyDescriptor(
       HTMLSelectElement.prototype,
       "value",
-    )!.set!.call(select, "implicit");
+    )!.set!.call(select, "pursuit");
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await settled(page);
@@ -3119,7 +3057,7 @@ test("atlas entry refuses an unsupported study that settles after the request", 
     page.getByRole("dialog", { name: "A field of possible flowers" }),
   ).toHaveCount(0);
   await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
-    "implicit",
+    "pursuit",
   );
   expect(errors).toEqual([]);
 });

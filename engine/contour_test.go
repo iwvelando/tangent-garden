@@ -1125,3 +1125,35 @@ func TestEngravingDetail(t *testing.T) {
 		}
 	}
 }
+
+// The result reports whether F's text reads the shape parameter a, the only
+// way a caller can tell an active a from a dormant one without parsing.
+// Names that merely contain the letter, numbers and functions do not count.
+func TestContourReportsShapeUse(t *testing.T) {
+	for _, tc := range []struct {
+		f    string
+		uses bool
+	}{
+		{"x^2+y^2", false},
+		{"atan(y/x)+tan(x)*abs(y)", false},
+		{"x^2+y^2-1e-3*pi*phi", false},
+		{"x^2+y^2-a", true},
+		{"((x-A)^2+y^2)*((x+a)^2+y^2)", true},
+		{"cos(a)*sin(pi*x)*sin(2*pi*y)", true},
+		{"x^2+y^2-2*a", true},
+		{"a*0+x^2+y^2", true},
+	} {
+		q := implicitRequest(tc.f, 1, square(2), 16)
+		q.Curve.A = 0.5
+		if got := contours(t, q).UsesA; got != tc.uses {
+			t.Errorf("%q: usesA = %v, want %v", tc.f, got, tc.uses)
+		}
+		raw, err := json.Marshal(contours(t, q))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `"usesA":` + map[bool]string{true: "true", false: "false"}[tc.uses]; !strings.Contains(string(raw), want) {
+			t.Errorf("%q: JSON lacks %s", tc.f, want)
+		}
+	}
+}

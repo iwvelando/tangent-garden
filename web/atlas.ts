@@ -1,8 +1,9 @@
-import { availableTargets } from "./animation";
+import { availableTargets, subscript, termLabels } from "./animation";
 import { EngineError, type EngineClient } from "./engine-client";
 import type { PlanarStudy } from "./planar-link";
 import { refineBudget } from "./refinement";
 import {
+  maxTerms,
   refinesBetweenSamples,
   usesPole,
   type Config,
@@ -37,22 +38,54 @@ export function rememberAtlasGridSize(size: AtlasSize) {
     /* Subsequent excursions still use sizeMemory. */
   }
 }
-export type AtlasPairId = "roulette" | "pole" | "light" | "clifford" | "dejong";
+export type AtlasPairId =
+  | "roulette"
+  | "lissajous"
+  | `term-${number}`
+  | "level"
+  | "pole"
+  | "light"
+  | "clifford"
+  | "dejong";
 export type AtlasRanges = Record<string, [number, number]>;
-export type AtlasOptions = { pair?: AtlasPairId; size?: AtlasSize };
-type Axis = {
+// What a settled source frame reports about its study, which the config alone
+// cannot show: whether an implicit F reads the shape parameter a.
+export type AtlasFacts = { usesA?: boolean };
+export type AtlasOptions = {
+  pair?: AtlasPairId;
+  size?: AtlasSize;
+  facts?: AtlasFacts;
+};
+// A whole-number axis takes exactly evenly spaced whole numbers, never
+// continuous values rounded; its endpoints must differ by a multiple of the
+// grid's steps.
+export type AtlasAxis = {
   key: string;
   label: string;
   symbol: string;
-  path: readonly string[];
+  path: readonly (string | number)[];
+  integer?: boolean;
 };
 export type AtlasPair = {
   id: AtlasPairId;
   label: string;
-  axes: readonly [Axis, Axis];
-  supports: (config: Config) => boolean;
+  axes: readonly [AtlasAxis, AtlasAxis];
+  supports: (config: Config, facts: AtlasFacts) => boolean;
   ranges: (config: Config) => AtlasRanges;
 };
+// Only Go parses F, so an implicit curve's use of a comes from the frame Go
+// returned for that same F.
+export function atlasFacts(
+  frame: Frame | null | undefined,
+  config: Config,
+): AtlasFacts {
+  return {
+    usesA:
+      frame?.result.contours?.usesA === true &&
+      frame.config.curve.format === "implicit" &&
+      frame.config.curve.implicit.f === config.curve.implicit.f,
+  };
+}
 
 // The catalog owns applicability, request paths, labels and defaults.
 // No descriptor switches a study's definition or construction to make it fit.
@@ -69,6 +102,17 @@ const around = (v: number, least: number): [number, number] => {
   const d = Math.max(Math.abs(v) * 0.25, least);
   return roundedRange(v - d, v + d, Math.max(Math.abs(v), d));
 };
+// Four whole steps about a whole source divide into both grid sizes.
+const wholeAround = (v: number): [number, number] => [v - 2, v + 2];
+// The same span, moved the least whole amount that keeps every value on the
+// source's side of zero: a Lissajous frequency of 0 flattens the figure.
+const wholeBeside = (v: number): [number, number] =>
+  v > 0
+    ? [Math.max(1, v - 2), Math.max(1, v - 2) + 4]
+    : v < 0
+      ? [Math.min(-1, v + 2) - 4, Math.min(-1, v + 2)]
+      : wholeAround(v);
+const whole = (v: number) => Number.isSafeInteger(v);
 const catalog: readonly AtlasPair[] = [
   {
     id: "roulette",
@@ -91,6 +135,91 @@ const catalog: readonly AtlasPair[] = [
     ranges: (c) => ({
       radius: positiveRange(c.curve.roulette.radius, c.curve.roulette.radius),
       arm: positiveRange(c.curve.roulette.arm, c.curve.roulette.radius),
+    }),
+  },
+  {
+    id: "lissajous",
+    label: "Lissajous frequencies m / n",
+    axes: [
+      {
+        key: "m",
+        label: "Frequency m",
+        symbol: "m",
+        path: ["curve", "lissajous", "frequencyX"],
+        integer: true,
+      },
+      {
+        key: "n",
+        label: "Frequency n",
+        symbol: "n",
+        path: ["curve", "lissajous", "frequencyY"],
+        integer: true,
+      },
+    ],
+    // A zero amplitude makes its own frequency dormant.
+    supports: ({ curve: { format, lissajous: l } }) =>
+      format === "lissajous" &&
+      whole(l.frequencyX) &&
+      whole(l.frequencyY) &&
+      l.amplitudeX > 0 &&
+      l.amplitudeY > 0,
+    ranges: (c) => ({
+      m: wholeBeside(c.curve.lissajous.frequencyX),
+      n: wholeBeside(c.curve.lissajous.frequencyY),
+    }),
+  },
+  // One entry per Fourier term; a zero radius makes its frequency dormant,
+  // and a single term only retraces its circle.
+  ...Array.from({ length: maxTerms }, (_, k): AtlasPair => ({
+    id: `term-${k + 1}`,
+    label: `Term ${k + 1} frequency / radius`,
+    axes: [
+      {
+        key: "frequency",
+        label: termLabels.Frequency(k + 1),
+        symbol: `k${subscript(k + 1)}`,
+        path: ["curve", "terms", k, "frequency"],
+        integer: true,
+      },
+      {
+        key: "radius",
+        label: termLabels.Radius(k + 1),
+        symbol: `r${subscript(k + 1)}`,
+        path: ["curve", "terms", k, "radius"],
+      },
+    ],
+    supports: ({ curve: { format, terms } }) =>
+      format === "fourier" &&
+      terms.length >= 2 &&
+      k < terms.length &&
+      whole(terms[k].frequency) &&
+      terms[k].radius > 0,
+    ranges: (c) => ({
+      frequency: wholeAround(c.curve.terms[k].frequency),
+      radius: positiveRange(c.curve.terms[k].radius, c.curve.terms[k].radius),
+    }),
+  })),
+  {
+    id: "level",
+    label: "Implicit level c / shape parameter a",
+    axes: [
+      {
+        key: "level",
+        label: "Level c",
+        symbol: "c",
+        path: ["curve", "implicit", "level"],
+      },
+      {
+        key: "a",
+        label: "Shape parameter a",
+        symbol: "a",
+        path: ["curve", "a"],
+      },
+    ],
+    supports: (c, facts) => c.curve.format === "implicit" && !!facts.usesA,
+    ranges: (c) => ({
+      level: around(c.curve.implicit.level, 0.25),
+      a: around(c.curve.a, 0.25),
     }),
   },
   {
@@ -156,8 +285,8 @@ const catalog: readonly AtlasPair[] = [
     }),
   })),
 ];
-export const atlasPairs = (config: Config) =>
-  catalog.filter((p) => p.supports(config));
+export const atlasPairs = (config: Config, facts: AtlasFacts = {}) =>
+  catalog.filter((p) => p.supports(config, facts));
 export const atlasPair = (id: AtlasPairId) => catalog.find((p) => p.id === id)!;
 export const atlasControlHelp = {
   pair: "Only pairs used by your current study are offered.",
@@ -169,9 +298,13 @@ export const atlasControlHelp = {
 };
 export const atlasRangeHelp =
   "Constant expressions; endpoints must be finite and increasing.";
+export const atlasWholeRangeHelp = tiered(
+  "Whole numbers, spaced evenly across the grid.",
+  "To minus from must be a multiple of 2 for 3 × 3, or of 4 for 5 × 5. Constant expressions are accepted.",
+);
 export const atlasEntryHelp = tiered(
   "Compare nearby parameter choices for supported definitions.",
-  "Supported: Roulette inside/outside a circle or along a line; active pedal pole or Cartesian point light; Clifford or De Jong coefficients. Curves allow 8,000 samples and 256 lines; refinement, families and integration have work limits. Previews cap quality; inspection restores it. Density grids allow 20 million evaluated iterations and two million bins in total.",
+  "Supported: roulette radius and arm; whole Lissajous frequencies; a Fourier term's whole frequency and radius; implicit level and a, when F uses a; active pedal pole or Cartesian point light; Clifford or De Jong coefficients. Curves allow 8,000 samples and 256 lines; refinement, families and integration have work limits. Previews cap quality; inspection restores it.",
 );
 export type AtlasCell = {
   values: [number, number];
@@ -216,10 +349,11 @@ function roundedRange(
 }
 export function atlasDefaults(
   config: Config,
-  pair = atlasPairs(config)[0]?.id ?? "roulette",
+  pair: AtlasPairId = atlasPairs(config)[0]?.id ?? "roulette",
 ): AtlasRanges {
   return atlasPair(pair).ranges(config);
 }
+const implicitPreviewCells = { 3: 256, 5: 160 } as const;
 export function atlasPreviewConfig(config: Config, size: AtlasSize): Config {
   const preview = structuredClone(config);
   preview.lines = Math.min(config.lines, size === 3 ? 128 : 64);
@@ -228,6 +362,11 @@ export function atlasPreviewConfig(config: Config, size: AtlasSize): Config {
     a.iterates = Math.min(a.iterates, 50000);
     a.discard = Math.min(a.discard, 1000);
     a.cells = Math.min(a.cells, 128);
+  } else if (config.curve.format === "implicit") {
+    // A level set's work is its grid; samples and refinement are dormant.
+    const v = preview.curve.implicit;
+    v.cells = Math.min(v.cells, implicitPreviewCells[size]);
+    return preview;
   } else {
     preview.samples = Math.min(config.samples, size === 3 ? 2000 : 1000);
     // Thumbnail refinement is expensive and resolves detail below their size.
@@ -249,20 +388,33 @@ const refines = (c: Config) =>
   !!c.adaptive && refinesBetweenSamples(c.curve.format);
 // Reserve N capped previews and one original-quality inspection. Bounds are
 // operation/storage counts, not timings; fitted densities traverse iterates twice.
+// An implicit request evaluates F at most at (cells + 1)² grid points; its
+// crossings and refined points are bounded by Go per request.
 export function atlasBudget(
   config: Config,
   size: AtlasSize = 3,
+  facts: AtlasFacts = {},
 ): {
   points: number;
   work: number;
   iterations: number;
   density: number;
+  grid: number;
   error?: string;
 } {
   const preview = atlasPreviewConfig(config, size);
   const n = size * size;
   const density = config.curve.format === "attractor";
+  const implicit = config.curve.format === "implicit";
   const reserve = (c: Config) => {
+    if (implicit)
+      return {
+        points: 0,
+        work: 0,
+        iterations: 0,
+        density: 0,
+        grid: (c.curve.implicit.cells + 1) ** 2,
+      };
     if (density) {
       const a = c.curve.attractor;
       return {
@@ -270,6 +422,7 @@ export function atlasBudget(
         work: 0,
         iterations: a.discard + a.iterates * (a.fit ? 2 : 1),
         density: a.cells ** 2,
+        grid: 0,
       };
     }
     const family =
@@ -310,7 +463,7 @@ export function atlasBudget(
         (refined ? 8 : 1) *
         (integrated ? 16 : 1) *
         (refined && c.adaptiveFrame ? 2 : 1);
-    return { points, work, iterations: 0, density: 0 };
+    return { points, work, iterations: 0, density: 0, grid: 0 };
   };
   const full = reserve(config),
     small = reserve(preview);
@@ -320,10 +473,12 @@ export function atlasBudget(
     work: n * small.work + passes * full.work,
     iterations: n * small.iterations + full.iterations,
     density: n * small.density + full.density,
+    grid: n * small.grid + full.grid,
   };
   const over =
     (size !== 3 && size !== 5) ||
     (!density &&
+      !implicit &&
       (config.samples > 8000 ||
         n * preview.samples + passes * config.samples > 80000)) ||
     config.lines > 256 ||
@@ -331,12 +486,13 @@ export function atlasBudget(
     totals.points > 500000 ||
     totals.work > 80000000 ||
     totals.iterations > 20000000 ||
-    totals.density > 2000000;
-  const error = !atlasPairs(config).length
+    totals.density > 2000000 ||
+    totals.grid > 2000000;
+  const error = !atlasPairs(config, facts).length
     ? "This study has no curated parameter pair. Your study is kept."
     : !over
       ? undefined
-      : size === 5 && !atlasBudget(config, 3).error
+      : size === 5 && !atlasBudget(config, 3, facts).error
         ? "This study exceeds the 5 × 5 atlas work limit. Choose 3 × 3, or reduce samples, lines, family members, trajectories, pursuers, or refinement in your study."
         : "This study exceeds the atlas work limit. Reduce samples, lines, family members, trajectories, pursuers, or refinement in your study, then try again.";
   return { ...totals, error };
@@ -344,9 +500,30 @@ export function atlasBudget(
 export function atlasRangeError(
   ranges: AtlasRanges,
   pair: AtlasPairId = "roulette",
+  size: AtlasSize = 3,
 ) {
-  for (const { key, label: name } of atlasPair(pair).axes) {
+  for (const { key, label: name, integer } of atlasPair(pair).axes) {
     const [from, to] = ranges[key] ?? [NaN, NaN];
+    const lower = name.toLowerCase();
+    if (integer) {
+      if (!whole(from))
+        return {
+          label: `${name} from`,
+          message: `${name} from must be a whole number.`,
+        };
+      if (!whole(to) || to <= from)
+        return {
+          label: `${name} to`,
+          message: `${name} to must be a whole number greater than ${lower} from.`,
+        };
+      // Exact: the difference of safe integers can exceed 2^53.
+      if ((BigInt(to) - BigInt(from)) % BigInt(size - 1))
+        return {
+          label: `${name} to`,
+          message: `${name} to must exceed ${lower} from by a multiple of ${size - 1}, so every grid value is a whole number.`,
+        };
+      continue;
+    }
     if (!Number.isFinite(from))
       return {
         label: `${name} from`,
@@ -360,10 +537,10 @@ export function atlasRangeError(
   }
   return null;
 }
-function field(config: Config, axis: Axis): number {
+function field(config: Config, axis: AtlasAxis): number {
   return axis.path.reduce<any>((v, key) => v[key], config);
 }
-function setField(config: Config, axis: Axis, value: number) {
+function setField(config: Config, axis: AtlasAxis, value: number) {
   const owner = axis.path.slice(0, -1).reduce<any>((v, key) => v[key], config);
   owner[axis.path.at(-1)!] = value;
 }
@@ -371,7 +548,21 @@ function setField(config: Config, axis: Axis, value: number) {
 // the frozen value within rounding at the scale of it and the endpoints.
 // Endpoint arithmetic matters for a small pole coordinate between ±1: using
 // only the coordinate's magnitude loses an otherwise symmetric center.
-function axis([a, b]: [number, number], current: number, size: AtlasSize) {
+function axis(
+  [a, b]: [number, number],
+  current: number,
+  size: AtlasSize,
+  integer?: boolean,
+) {
+  // Validated whole endpoints whose difference divides: exact, in integer
+  // arithmetic, since b − a and its multiples can exceed 2^53. Every value
+  // lies between the safe endpoints, so it converts back exactly.
+  if (integer)
+    return Array.from({ length: size }, (_, i) =>
+      Number(
+        BigInt(a) + (BigInt(i) * (BigInt(b) - BigInt(a))) / BigInt(size - 1),
+      ),
+    );
   return Array.from({ length: size }, (_, i) => {
     if (i === 0) return a;
     if (i === size - 1) return b;
@@ -443,16 +634,20 @@ export class ParameterAtlas {
     options: AtlasOptions = {},
   ) {
     this.cancel();
-    const pair = options.pair ?? atlasPairs(study.config)[0]?.id ?? "roulette";
+    const pair =
+      options.pair ??
+      atlasPairs(study.config, options.facts)[0]?.id ??
+      "roulette";
     const descriptor = atlasPair(pair);
     const size = options.size ?? 3;
+    const facts = options.facts ?? {};
     const error =
       this.failed ??
-      atlasBudget(study.config, size).error ??
-      (!descriptor?.supports(study.config)
+      atlasBudget(study.config, size, facts).error ??
+      (!descriptor?.supports(study.config, facts)
         ? "This study has no curated parameter pair for that choice."
         : undefined) ??
-      atlasRangeError(ranges, pair)?.message;
+      atlasRangeError(ranges, pair, size)?.message;
     if (error) {
       this.state = { ...this.state, error };
       this.emit();
@@ -466,11 +661,13 @@ export class ParameterAtlas {
         ranges[descriptor.axes[1].key],
         field(study.config, descriptor.axes[1]),
         size,
+        descriptor.axes[1].integer,
       ).flatMap((y) =>
         axis(
           ranges[descriptor.axes[0].key],
           field(study.config, descriptor.axes[0]),
           size,
+          descriptor.axes[0].integer,
         ).map((x) => ({ values: [x, y] as [number, number] })),
       ),
       selection: null,

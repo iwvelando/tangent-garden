@@ -13,7 +13,12 @@ import {
   phrasePaceHelp,
   phraseRayLengthHelp,
 } from "../web/PhraseEditor";
-import { atlasRangeHelp, atlasEntryHelp, atlasControlHelp } from "../web/atlas";
+import {
+  atlasRangeHelp,
+  atlasWholeRangeHelp,
+  atlasEntryHelp,
+  atlasControlHelp,
+} from "../web/atlas";
 import { fitEntryHelp, fitTermsHelp } from "../web/fourier-fit";
 import {
   betweenHelp as planarBetweenHelp,
@@ -200,6 +205,7 @@ test("every help a setting reveals keeps to the same limits", () => {
   };
   add("line weight", svgWeightHelp);
   add("atlas ranges", atlasRangeHelp, true);
+  add("atlas whole-number ranges", atlasWholeRangeHelp, true);
   add("atlas entry", atlasEntryHelp);
   add("drawn Fourier terms", fitTermsHelp);
   add("drawn Fourier entry", fitEntryHelp);

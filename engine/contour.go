@@ -62,7 +62,8 @@ type Normal struct {
 // Discontinuities are where F changes sign along a grid edge without
 // reaching the level (a pole or a jump), one per edge in edge order, and
 // Nonfinite counts the grid points where F is not a finite number; neither
-// is drawn through.
+// is drawn through. UsesA reports whether F's text reads the shape
+// parameter a, so a caller can tell an active a from a dormant one.
 type ContourResult struct {
 	Window          Window     `json:"window"`
 	Columns         int        `json:"columns"`
@@ -72,6 +73,7 @@ type ContourResult struct {
 	Normals         []Normal   `json:"normals"`
 	Discontinuities []Vec      `json:"discontinuities"`
 	Nonfinite       int        `json:"nonfinite"`
+	UsesA           bool       `json:"usesA"`
 }
 
 const (
@@ -175,6 +177,8 @@ type sheet struct {
 	// a segment ends there, kept between levels and cleared after each.
 	next    []int32
 	entered []bool
+	// Whether F's text reads the shape parameter a.
+	usesA bool
 }
 
 func (s *sheet) node(i, j int) Vec {
@@ -194,14 +198,15 @@ func (s *sheet) gradient(p Vec) Vec {
 }
 
 func newSheet(v Implicit, a float64) (*sheet, error) {
-	f, timed, err := expr.ParseField(v.F, a)
+	f, uses, err := expr.ParseFieldUses(v.F, a)
 	if err != nil {
 		return nil, fieldErr("f", "F(x, y): %v", err)
 	}
-	if timed {
+	if uses.T {
 		return nil, fieldErr("f", "F(x, y) cannot use t; animate a or the level instead")
 	}
 	s := sample(func(x, y float64) float64 { return f(x, y, 0) }, v.Window, v.Cells)
+	s.usesA = uses.A
 	s.tolerance = drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
 	s.flatness, s.refresh = drawingBend/8, 5
 	return s, nil
@@ -653,5 +658,6 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 	}
 	out.Discontinuities = s.discontinuities()
 	out.Nonfinite = s.nonfinite
+	out.UsesA = s.usesA
 	return out, warnings, nil
 }

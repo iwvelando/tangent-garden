@@ -19,6 +19,7 @@ import {
   atlasDefaults,
   atlasRangeError,
   atlasRangeHelp,
+  atlasWholeRangeHelp,
   atlasControlHelp,
   type AtlasRanges,
   type AtlasState,
@@ -76,7 +77,8 @@ export function AtlasPreview({
   const quiet = useQuietFocus(dialog);
   const via = useRef(request.via);
   const title = useId();
-  const pairs = useMemo(() => atlasPairs(study.config), [study]);
+  const facts = request.facts;
+  const pairs = useMemo(() => atlasPairs(study.config, facts), [study, facts]);
   // Entry admits only supported studies; without a pair, the scheduler
   // refuses and the dialog shows why rather than failing to render.
   const [pair, setPair] = useState<AtlasPairId>(
@@ -92,9 +94,11 @@ export function AtlasPreview({
   const quality = (config: typeof study.config) =>
     config.curve.format === "attractor"
       ? `${config.curve.attractor.iterates.toLocaleString("en-US")} accumulated iterates, ${config.curve.attractor.discard.toLocaleString("en-US")} discarded, grid up to ${config.curve.attractor.cells} × ${config.curve.attractor.cells} bins, ${config.lines} orbit segments`
-      : `${config.samples.toLocaleString("en-US")} samples, ${config.lines} construction lines, refinement ${config.adaptive && refinesBetweenSamples(config.curve.format) ? "on" : "off"}`;
+      : config.curve.format === "implicit"
+        ? `${config.curve.implicit.cells.toLocaleString("en-US")} grid cells along the window's longer side, ${config.lines} construction lines`
+        : `${config.samples.toLocaleString("en-US")} samples, ${config.lines} construction lines, refinement ${config.adaptive && refinesBetweenSamples(config.curve.format) ? "on" : "off"}`;
   const [ranges, setRanges] = useState<AtlasRanges>(() =>
-    atlasDefaults(study.config),
+    atlasDefaults(study.config, pair),
   );
   const [state, setState] = useState<AtlasState>({
     cells: [],
@@ -122,8 +126,8 @@ export function AtlasPreview({
   );
   const pending = Object.values(scalars).some((s) => s.pending);
   const invalid = Object.values(scalars).find((s) => s.error);
-  const rangeError = atlasRangeError(ranges, pair);
-  const budget = atlasBudget(study.config, size);
+  const rangeError = atlasRangeError(ranges, pair, size);
+  const budget = atlasBudget(study.config, size, facts);
   // Range expressions are evaluated by the atlas's own worker. Once it has
   // failed, their errors are that failure, shown once below, not the fields'.
   const failure = state.failed
@@ -145,7 +149,11 @@ export function AtlasPreview({
     client.current = engine;
     const atlas = new ParameterAtlas(engine, setState);
     scheduler.current = atlas;
-    atlas.generate(study, atlasDefaults(study.config, pair), { pair, size });
+    atlas.generate(study, atlasDefaults(study.config, pair), {
+      pair,
+      size,
+      facts,
+    });
     return () => {
       generation.current++;
       atlas.cancel();
@@ -421,7 +429,7 @@ export function AtlasPreview({
                     key={pair}
                     onChangeCapture={editRanges}
                   >
-                    {descriptor.axes.map(({ key, label }) => (
+                    {descriptor.axes.map(({ key, label, integer }) => (
                       <div className="pair" key={key}>
                         {([0, 1] as const).map((index) => {
                           const name = `${label} ${index === 0 ? "from" : "to"}`;
@@ -429,7 +437,13 @@ export function AtlasPreview({
                             <Field
                               key={index}
                               label={name}
-                              help={index === 0 ? atlasRangeHelp : undefined}
+                              help={
+                                index !== 0
+                                  ? undefined
+                                  : integer
+                                    ? atlasWholeRangeHelp
+                                    : atlasRangeHelp
+                              }
                             >
                               <ScalarInput
                                 name={name}
@@ -457,7 +471,11 @@ export function AtlasPreview({
                 type="button"
                 disabled={blocked}
                 onClick={() =>
-                  scheduler.current?.generate(study, ranges, { pair, size })
+                  scheduler.current?.generate(study, ranges, {
+                    pair,
+                    size,
+                    facts,
+                  })
                 }
               >
                 Generate atlas
@@ -483,8 +501,12 @@ export function AtlasPreview({
                 )}
               </p>
               <p className="note atlas-quality">
-                Preview quality: {quality(preview)}. Inspect at original quality
-                before adoption.
+                Preview quality: {quality(preview)}.{" "}
+                {preview.curve.format === "implicit" &&
+                  preview.curve.implicit.cells <
+                    study.config.curve.implicit.cells &&
+                  "A coarser grid can join or split contours near a saddle. "}
+                Inspect at original quality before adoption.
               </p>
               <p className="note">Original quality: {quality(study.config)}.</p>
               <details>
@@ -494,7 +516,9 @@ export function AtlasPreview({
                   flight and 25 unsent requests. Up to 80,000 uniform samples,
                   2,560 construction lines, 500,000 reserved path points and 80
                   million weighted work units. Map densities reserve at most 20
-                  million evaluated iterations and two million bins. Retained
+                  million evaluated iterations and two million bins. Implicit
+                  previews use at most 256 grid cells (160 for 5 × 5), and grids
+                  reserve at most two million evaluations of F. Retained
                   geometry is limited to four million numbers.
                 </p>
               </details>

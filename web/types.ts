@@ -409,7 +409,7 @@ export type Normal = { point: Vec; gradient: Vec };
 // the curve. discontinuities are where F changes sign along a grid edge
 // without reaching the level (a pole or a jump), one per edge; nonfinite
 // counts grid points where F is not a finite number. Neither is drawn
-// through.
+// through. usesA is whether F's text reads the shape parameter a.
 export type ContourResult = {
   window: Window;
   columns: number;
@@ -419,6 +419,7 @@ export type ContourResult = {
   normals: Normal[];
   discontinuities: Vec[];
   nonfinite: number;
+  usesA: boolean;
 };
 
 // How often the accumulated iterates visit each cell of the window: counts

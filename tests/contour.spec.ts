@@ -564,6 +564,7 @@ test("the contour note counts pieces, poles, and undefined points", () => {
       y: 0,
     })),
     nonfinite,
+    usesA: false,
   });
   expect(contourNote(result([]))).toBe(
     "F does not cross the level anywhere in the window, so there is no curve here. A level F only touches, at an isolated point or along a fold, is not drawn.",
@@ -613,6 +614,7 @@ test("reveal draws every contour along together; the window frames the drawing",
     normals: [0, 1, 2, 3].map((x) => ({ point: point(x), gradient: point(1) })),
     discontinuities: [point(9, 9)],
     nonfinite: 0,
+    usesA: false,
   };
   const result: Result = {
     base: [],
