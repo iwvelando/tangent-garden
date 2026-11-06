@@ -1035,6 +1035,10 @@ test("atlas entry uses tiered compatibility help and disables unsupported or exc
   await help.getByRole("button", { name: "Show more", exact: true }).click();
   await expect(help.locator(".hint-more")).toContainText("Roulette");
   await expect(help.locator(".hint-more")).toContainText("along a line");
+  await expect(help.locator(".hint-more")).toContainText(
+    "Cartesian point light",
+  );
+  await expect(help.locator(".hint-more")).toContainText("De Jong");
   expect(await page.evaluate(() => (window as any).atlasWorkers.length)).toBe(
     1,
   );
@@ -1889,7 +1893,7 @@ test("atlas keeps focus in a range when editing after inspecting a variant", asy
   ).toBeDisabled();
 });
 
-test("atlas catalog supports only active roulette, consumed poles and Clifford coefficients", async () => {
+test("atlas catalog supports only active roulette, consumed poles and curated map coefficients", async () => {
   const { atlasPairs, atlasDefaults, atlasRangeError } =
     await import("../web/atlas");
   const config = structuredClone(presets[0].config);
@@ -1906,6 +1910,8 @@ test("atlas catalog supports only active roulette, consumed poles and Clifford c
   config.curve.format = "attractor";
   expect(atlasPairs(config).map((p) => p.id)).toEqual(["clifford"]);
   config.curve.attractor.map = "dejong";
+  expect(atlasPairs(config).map((p) => p.id)).toEqual(["dejong"]);
+  config.curve.attractor.map = "henon";
   expect(atlasPairs(config)).toEqual([]);
   config.curve.format = "parametric";
   config.pole = { x: -3, y: 0 };
@@ -1920,7 +1926,7 @@ test("atlas catalog supports only active roulette, consumed poles and Clifford c
   );
 });
 
-for (const pair of ["roulette", "pole", "clifford"] as const)
+for (const pair of ["roulette", "pole", "light", "clifford", "dejong"] as const)
   for (const size of [3, 5] as const)
     test(`atlas catalog ${pair} ${size} samples inclusive values and isolates preview quality from adoption`, async () => {
       const { ParameterAtlas, atlasDefaults, atlasPreviewConfig, atlasBudget } =
@@ -1931,7 +1937,11 @@ for (const pair of ["roulette", "pole", "clifford"] as const)
           ? "Hypotrochoid & its evolute"
           : pair === "pole"
             ? "Ellipse & its pedal"
-            : "Clifford attractor";
+            : pair === "light"
+              ? "Light inside a circle"
+              : pair === "dejong"
+                ? "De Jong attractor"
+                : "Clifford attractor";
       const study = presetStudy(presets.findIndex((p) => p.title === title));
       study.config.curve.a = 7.25; // distinct from the map's coefficient a
       study.config.samples = 4000;
@@ -1957,7 +1967,7 @@ for (const pair of ["roulette", "pole", "clifford"] as const)
       const keys =
         pair === "roulette"
           ? ["radius", "arm"]
-          : pair === "pole"
+          : pair === "pole" || pair === "light"
             ? ["x", "y"]
             : ["a", "b"];
       for (let i = 0; i < size * size; i++) {
@@ -1968,7 +1978,9 @@ for (const pair of ["roulette", "pole", "clifford"] as const)
             ? expected.curve.roulette
             : pair === "pole"
               ? expected.pole
-              : expected.curve.attractor;
+              : pair === "light"
+                ? expected.source.position
+                : expected.curve.attractor;
         target[keys[0]] = values[0];
         target[keys[1]] = values[1];
         expect(calls[i]).toEqual(atlasPreviewConfig(expected, size));
@@ -1985,7 +1997,9 @@ for (const pair of ["roulette", "pole", "clifford"] as const)
           ? frozen.config.curve.roulette
           : pair === "pole"
             ? frozen.config.pole
-            : frozen.config.curve.attractor;
+            : pair === "light"
+              ? frozen.config.source.position
+              : frozen.config.curve.attractor;
       expect(atlas.state.cells[center].values).toEqual(
         keys.map((k) => current[k]),
       );
@@ -2322,6 +2336,8 @@ test("atlas Clifford full-density adoption survives links and PNG/SVG exports wi
 for (const [family, title] of [
   ["roulette", "Hypotrochoid & its evolute"],
   ["pole", "Ellipse & its pedal"],
+  ["light", "Light inside a circle"],
+  ["dejong", "De Jong attractor"],
   ["clifford", "Clifford attractor"],
 ] as const)
   for (const mode of ["light", "dark"] as const)
@@ -4733,3 +4749,936 @@ test("finite engraving all-member construction also applies to pedal constructio
     .poll(async () => (await counts()).map((n) => n > 0))
     .toEqual([true, true, true]);
 });
+
+test("atlas point light applicability follows consumed Cartesian coordinates and preserves other pairs", async () => {
+  const { atlasPairs, atlasPair } = await import("../web/atlas");
+  const c = structuredClone(presets[0].config);
+  for (const format of [
+    "parametric",
+    "cartesian",
+    "polar",
+    "roulette",
+    "lissajous",
+    "fourier",
+    "field",
+    "pursuit",
+    "implicit",
+    "attractor",
+  ] as const)
+    for (const kind of [
+      "evolute",
+      "catacaustic",
+      "diacaustic",
+      "pedal",
+      "inversion",
+    ] as const)
+      for (const input of ["curve", "pedal", "offset"] as const)
+        for (const source of ["cartesian", "polar", "parallel"] as const) {
+          c.curve.format = format;
+          c.kind = kind;
+          c.input = input;
+          c.source.kind = source === "parallel" ? "parallel" : "point";
+          c.source.coordinates = source === "polar" ? "polar" : "cartesian";
+          const expected =
+            !["implicit", "attractor"].includes(format) &&
+            ["catacaustic", "diacaustic"].includes(kind) &&
+            source === "cartesian";
+          expect(
+            atlasPairs(c).some((p) => p.id === "light"),
+            JSON.stringify({ format, kind, input, source }),
+          ).toBe(expected);
+        }
+  c.curve.format = "roulette";
+  c.kind = "diacaustic";
+  c.input = "pedal";
+  c.source.kind = "point";
+  delete c.source.coordinates; // old Cartesian studies omit this optional field
+  expect(atlasPairs(c).map((p) => p.id)).toEqual(["roulette", "pole", "light"]);
+  expect(atlasPair("light").axes.map((a) => a.path)).toEqual([
+    ["source", "position", "x"],
+    ["source", "position", "y"],
+  ]);
+  expect(atlasPair("dejong").axes.map((a) => a.path)).toEqual([
+    ["curve", "attractor", "a"],
+    ["curve", "attractor", "b"],
+  ]);
+});
+
+test("atlas new pairs use clean scale-aware ranges, exact centers and unchanged literal work limits", async () => {
+  const { atlasDefaults, atlasBudget, ParameterAtlas } =
+    await import("../web/atlas");
+  const { presetStudy } = await import("../web/planar-link");
+  for (const [pair, title] of [
+    ["light", "Light inside a circle"],
+    ["dejong", "De Jong attractor"],
+  ] as const) {
+    const study = presetStudy(presets.findIndex((p) => p.title === title));
+    for (const values of [
+      [1.15, -0.2],
+      [1e-17, -1e-17],
+      [1.234567890123456, -0.2],
+      [999, -999],
+    ]) {
+      const target =
+        pair === "light"
+          ? study.config.source.position
+          : study.config.curve.attractor;
+      const [x, y] = pair === "light" ? ["x", "y"] : ["a", "b"];
+      target[x] = values[0];
+      target[y] = values[1];
+      const frozen = structuredClone(study);
+      const ranges = atlasDefaults(study.config, pair);
+      if (values[0] === 1.15)
+        expect(ranges).toEqual(
+          pair === "light"
+            ? { x: [0.15, 2.15], y: [-1.2, 0.8] }
+            : { a: [0.8625, 1.4375], b: [-0.45, 0.05] },
+        );
+      for (const size of [3, 5] as const) {
+        const atlas = new ParameterAtlas(
+          { compute: () => new Promise(() => {}) },
+          () => {},
+        );
+        atlas.generate(study, ranges, { pair, size });
+        expect(atlas.state.error).toBeUndefined();
+        expect(atlas.state.cells[(size * size - 1) / 2].values).toEqual(values);
+        expect(atlas.state.cells[0].values).toEqual([
+          ranges[x][0],
+          ranges[y][0],
+        ]);
+        expect(atlas.state.cells.at(-1)!.values).toEqual([
+          ranges[x][1],
+          ranges[y][1],
+        ]);
+        atlas.cancel();
+      }
+      expect(study).toEqual(frozen);
+    }
+    if (pair === "light") {
+      Object.assign(study.config, {
+        samples: 8000,
+        lines: 256,
+        adaptive: false,
+      });
+      expect(atlasBudget(study.config, 3).error).toBeUndefined();
+      expect(atlasBudget(study.config, 5).error).toBeUndefined();
+      expect(atlasBudget({ ...study.config, samples: 8001 }, 3).error).toMatch(
+        /limit/,
+      );
+      expect(atlasBudget({ ...study.config, lines: 257 }, 5).error).toMatch(
+        /limit/,
+      );
+    } else {
+      Object.assign(study.config.curve.attractor, {
+        iterates: 5000000,
+        discard: 1000000,
+        cells: 1024,
+        fit: true,
+      });
+      const b = atlasBudget(study.config, 5);
+      expect(b).toMatchObject({
+        iterations: 13525000,
+        density: 1458176,
+        error: undefined,
+      });
+      study.config.curve.attractor.iterates = 9000000;
+      expect(atlasBudget(study.config, 5).error).toMatch(/limit/);
+      study.config.curve.attractor.iterates = 5000000;
+      study.config.curve.attractor.cells = 1300;
+      expect(atlasBudget(study.config, 5).error).toMatch(/5 × 5/);
+      expect(atlasBudget(study.config, 3).error).toBeUndefined();
+    }
+  }
+});
+
+for (const [pair, title] of [
+  ["light", "Light inside a circle"],
+  ["dejong", "De Jong attractor"],
+] as const)
+  for (const size of [3, 5] as const)
+    test(`atlas independent ${pair} ${size} preview and inspection equal ordinary requests`, async ({
+      page,
+    }, info) => {
+      const { presetStudy } = await import("../web/planar-link");
+      const source = presetStudy(presets.findIndex((p) => p.title === title));
+      source.config.samples = 4000;
+      source.config.lines = 144;
+      source.config.curve.a = 7.25;
+      Object.assign(source.config.curve.attractor, {
+        iterates: 120000,
+        discard: 2500,
+        cells: 512,
+      });
+      await observeAtlasWorkers(page);
+      await page.goto(
+        `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study: source })).toString("base64url")}`,
+      );
+      await settled(page);
+      const atlas = await openAtlas(page);
+      await expect(
+        atlas.getByLabel("Parameter pair", { exact: true }),
+      ).toHaveValue(pair);
+      await atlas
+        .getByLabel("Grid size", { exact: true })
+        .selectOption(String(size));
+      const labels =
+        pair === "light"
+          ? ["Source x", "Source y"]
+          : ["Coefficient a", "Coefficient b"];
+      const ranges =
+        pair === "light"
+          ? [
+              [0, 2],
+              [-1, 1],
+            ]
+          : [
+              [1, 2],
+              [-3, -2],
+            ];
+      for (let i = 0; i < 2; i++) {
+        // Keep intermediate endpoints increasing.
+        await atlas
+          .getByLabel(`${labels[i]} from`, { exact: true })
+          .fill(String(ranges[i][0]));
+        await atlas
+          .getByLabel(`${labels[i]} to`, { exact: true })
+          .fill(String(ranges[i][1]));
+      }
+      await atlas
+        .getByRole("button", { name: "Generate atlas", exact: true })
+        .click();
+      await expect(
+        atlas.locator('.atlas-cell[data-state="valid"]'),
+      ).toHaveCount(size * size);
+      await expect(atlas.locator(".atlas-quality")).toContainText(
+        pair === "light"
+          ? `${size === 3 ? "2,000" : "1,000"} samples`
+          : "50,000 accumulated iterates, 1,000 discarded",
+      );
+      await expect(atlas.getByText(/^Original quality:/)).toContainText(
+        pair === "light"
+          ? "4,000 samples"
+          : "120,000 accumulated iterates, 2,500 discarded",
+      );
+      const compare = async (full: boolean) =>
+        page.evaluate(
+          async ({ source, pair, size, ranges, full }) => {
+            const grid = (window as any).atlasWorkers[1];
+            const requests = full
+              ? [grid.requests.at(-1)]
+              : grid.requests.slice(-size * size);
+            const ordinary = new Worker(grid.url);
+            const outcomes = [];
+            // Study-link conformance may reorder fields; compare every value.
+            const canonical = (v: any): any =>
+              Array.isArray(v)
+                ? v.map(canonical)
+                : v && typeof v === "object"
+                  ? Object.fromEntries(
+                      Object.keys(v)
+                        .sort()
+                        .map((k) => [k, canonical(v[k])]),
+                    )
+                  : v;
+            for (let i = 0; i < requests.length; i++) {
+              // Assemble from the independent frozen source and known entered grid,
+              // never from the request being checked or an atlas config helper.
+              const config = structuredClone(source.config);
+              const index = full ? 0 : i;
+              const x =
+                ranges[0][0] +
+                ((ranges[0][1] - ranges[0][0]) * (index % size)) / (size - 1);
+              const y =
+                ranges[1][0] +
+                ((ranges[1][1] - ranges[1][0]) * Math.floor(index / size)) /
+                  (size - 1);
+              if (pair === "light") config.source.position = { x, y };
+              else Object.assign(config.curve.attractor, { a: x, b: y });
+              if (!full) {
+                config.lines = size === 3 ? 128 : 64;
+                if (pair === "light") {
+                  config.samples = size === 3 ? 2000 : 1000;
+                  // No refinement requested in the source: absent flags stay absent.
+                } else
+                  Object.assign(config.curve.attractor, {
+                    iterates: 50000,
+                    discard: 1000,
+                    cells: 128,
+                  });
+              }
+              const expected: any = await new Promise((resolve) => {
+                ordinary.onmessage = (e) => resolve(e.data);
+                ordinary.postMessage({
+                  id: 10000 + i,
+                  action: "compute",
+                  config,
+                  bounds: source.bounds,
+                  base: location.origin + "/",
+                });
+              });
+              const actual = grid.replies.find(
+                (r: any) => r.data.id === requests[i].data.id,
+              ).data;
+              const density = actual.result?.attractor;
+              outcomes.push({
+                same:
+                  JSON.stringify(expected.result) ===
+                    JSON.stringify(actual.result) &&
+                  JSON.stringify(canonical(expected.config)) ===
+                    JSON.stringify(canonical(actual.config)),
+                resultSame:
+                  JSON.stringify(expected.result) ===
+                  JSON.stringify(actual.result),
+                error: expected.error,
+                nonempty:
+                  pair === "light"
+                    ? actual.result.derived.filter(Boolean).length > 900
+                    : density.accumulated === (full ? 120000 : 50000) &&
+                      density.counts.some((n: number) => n > 0),
+                conserved:
+                  !density ||
+                  density.counts.reduce((a: number, b: number) => a + b, 0) +
+                    density.outside ===
+                    density.accumulated,
+                milliseconds: grid.replies.find(
+                  (r: any) => r.data.id === requests[i].data.id,
+                ).took,
+              });
+            }
+            ordinary.terminate();
+            return { outcomes, maximum: grid.maximum };
+          },
+          { source, pair, size, ranges, full },
+        );
+      const previews = await compare(false);
+      for (const outcome of previews.outcomes)
+        expect(outcome, JSON.stringify(outcome)).toMatchObject({
+          same: true,
+          nonempty: true,
+          conserved: true,
+        });
+      expect(previews.maximum).toBe(1);
+      await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
+      await expect(
+        atlas.getByText("Shared framing", { exact: true }),
+      ).toBeVisible();
+      await atlas.screenshot({
+        path: info.outputPath(`${pair}-${size}-grid.png`),
+      });
+      await atlas
+        .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+        .click();
+      await expect(
+        atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+      ).toBeEnabled();
+      const inspection = await compare(true);
+      expect(inspection.outcomes[0]).toMatchObject({
+        same: true,
+        nonempty: true,
+        conserved: true,
+      });
+      await atlas.screenshot({
+        path: info.outputPath(`${pair}-${size}-inspection.png`),
+      });
+      await info.attach("independent-atlas-observations", {
+        body: JSON.stringify({ previews, inspection }, null, 2),
+        contentType: "application/json",
+      });
+    });
+
+for (const [pair, title] of [
+  ["light", "Light inside a circle"],
+  ["dejong", "De Jong attractor"],
+] as const)
+  test(`atlas ${pair} cancel and adoption preserve edited study through playback links and real still exports`, async ({
+    page,
+  }) => {
+    const { presetStudy } = await import("../web/planar-link");
+    const source = presetStudy(presets.findIndex((p) => p.title === title));
+    source.camera = { x: 31, y: -19, zoom: 1.4 };
+    source.weight = "bold";
+    source.layers.lines = false;
+    source.layers.axes = true;
+    source.probe = {
+      enabled: pair === "light",
+      between: true,
+      position: 0.417,
+    };
+    source.animation = { ...source.animation, duration: 10, camera: "current" };
+    await page
+      .context()
+      .grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto(
+      `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study: source })).toString("base64url")}`,
+    );
+    await settled(page);
+    const raw = page.getByLabel(
+      pair === "light" ? "Shape parameter a" : "Coefficient c",
+      { exact: true },
+    );
+    const text = pair === "light" ? "2+1" : "2+0.4";
+    await raw.fill(text);
+    await settled(page);
+    const before = (await copiedStudy(page)).study;
+    let atlas = await openAtlas(page);
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    await atlas
+      .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+      .click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    await page.keyboard.press("Escape");
+    expect((await copiedStudy(page)).study).toEqual(before);
+    await expect(raw).toHaveValue(text);
+    atlas = await openAtlas(page);
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    await atlas
+      .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+      .click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    const drawing = await atlas.locator("#atlas-inspected").evaluate((e) => ({
+      paths: [...e.querySelectorAll("path")].map((p) => p.getAttribute("d")),
+      image: e.querySelector("image")?.getAttribute("href"),
+    }));
+    await atlas
+      .getByRole("button", { name: "Adopt variant", exact: true })
+      .click();
+    await expect(page.locator(".plot-heading .eyebrow")).toHaveText(
+      "YOUR OWN EXPLORATION",
+    );
+    await settled(page);
+    const expected = structuredClone(before);
+    if (pair === "light") expected.config.source.position = { x: 0, y: -1 };
+    else Object.assign(expected.config.curve.attractor, { a: 1.05, b: -2.875 });
+    const adopted = await copiedStudy(page);
+    expect(adopted.study).toEqual(expected);
+    await expect(raw).toHaveValue(text);
+    expect(
+      await page.locator("#artwork").evaluate((e) => ({
+        paths: [...e.querySelectorAll("path")].map((p) => p.getAttribute("d")),
+        image: e.querySelector("image")?.getAttribute("href"),
+      })),
+    ).toEqual(drawing);
+    const download = page.waitForEvent("download");
+    await exportImage(page, "SVG");
+    const svg = await readFile((await (await download).path())!, "utf8");
+    expect(svg).not.toMatch(/<text\b/);
+    const metadata = JSON.parse(
+      svg
+        .match(/<desc>(.*?)<\/desc>/s)![1]
+        .replaceAll("&quot;", '"')
+        .replaceAll("&lt;", "<")
+        .replaceAll("&gt;", ">")
+        .replaceAll("&amp;", "&"),
+    );
+    expect(metadata.source).toEqual(expected.config.source);
+    expect(metadata.curve.attractor).toEqual(expected.config.curve.attractor);
+    if (pair === "dejong") expect(svg).toContain(drawing.image!);
+    const pngDownload = page.waitForEvent("download");
+    await exportImage(page, "PNG");
+    const png = decodePng(await readFile((await (await pngDownload).path())!));
+    expect(png.width).toBeGreaterThanOrEqual(1000);
+    const colors = new Set<string>();
+    for (let i = 0; i < png.rgba.length; i += 4)
+      colors.add(`${png.rgba[i]},${png.rgba[i + 1]},${png.rgba[i + 2]}`);
+    expect(colors.size).toBeGreaterThan(100);
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await expect(
+      page.getByRole("slider", { name: "Animation progress", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
+    await settled(page);
+    expect((await copiedStudy(page)).study).toEqual(expected);
+    await page.goto(adopted.url);
+    await settled(page);
+    expect((await copiedStudy(page)).study).toEqual(expected);
+  });
+
+for (const [pair, title, label, ranges] of [
+  ["dejong", "De Jong attractor", "Coefficient a", [999, 1001]],
+] as const)
+  test(`atlas ${pair} ordinary validation exposes unavailable cells without clamping`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await choosePreset(page, { label: title });
+    const atlas = await openAtlas(page);
+    await atlas
+      .getByLabel(`${label} to`, { exact: true })
+      .fill(String(ranges[1]));
+    await atlas
+      .getByLabel(`${label} from`, { exact: true })
+      .fill(String(ranges[0]));
+    await atlas
+      .getByRole("button", { name: "Generate atlas", exact: true })
+      .click();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      6,
+    );
+    await expect(
+      atlas.locator('.atlas-cell[data-state="invalid"]'),
+    ).toHaveCount(3);
+    await expect(
+      atlas.locator('.atlas-cell[data-state="invalid"]').first(),
+    ).toContainText(pair === "light" ? "100000" : "1000");
+    for (const row of [1, 2, 3])
+      await expect(
+        atlas.getByRole("button", {
+          name: `Inspect row ${row}, column 3`,
+          exact: true,
+        }),
+      ).toBeDisabled();
+    await atlas
+      .getByRole("button", { name: "Inspect row 2, column 1", exact: true })
+      .click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+  });
+
+test("atlas point source coordinate and map transitions admit only the current active pair", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Light inside a circle" });
+  const entry = page.getByRole("button", {
+    name: "Explore parameter atlas",
+    exact: true,
+  });
+  await expect(entry).toBeEnabled();
+  await page
+    .getByLabel("Source coordinates", { exact: true })
+    .selectOption("polar");
+  await settled(page);
+  await expect(entry).toBeDisabled();
+  await page
+    .getByLabel("Source coordinates", { exact: true })
+    .selectOption("cartesian");
+  await settled(page);
+  await expect(entry).toBeEnabled();
+  await page.getByLabel("Source", { exact: true }).selectOption("parallel");
+  await settled(page);
+  await expect(entry).toBeDisabled();
+  await page.getByLabel("Source", { exact: true }).selectOption("point");
+  await settled(page);
+  let atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Parameter pair", { exact: true })).toHaveValue(
+    "light",
+  );
+  await page.keyboard.press("Escape");
+  await choosePreset(page, { label: "De Jong attractor" });
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Parameter pair", { exact: true })).toHaveValue(
+    "dejong",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByLabel("Map", { exact: true }).selectOption("henon");
+  await settled(page);
+  await expect(entry).toBeDisabled();
+  await page.getByLabel("Map", { exact: true }).selectOption("clifford");
+  await settled(page);
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Parameter pair", { exact: true })).toHaveValue(
+    "clifford",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByLabel("Map", { exact: true }).selectOption("dejong");
+  await settled(page);
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Parameter pair", { exact: true })).toHaveValue(
+    "dejong",
+  );
+});
+
+test("atlas new pair range edits and study replacement retire delayed previews and inspection", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const source = presetStudy(
+    presets.findIndex((p) => p.title === "Hypotrochoid & its evolute"),
+  );
+  source.config.kind = "catacaustic";
+  source.config.input = "pedal";
+  await observeAtlasWorkers(page, 150);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study: source })).toString("base64url")}`,
+  );
+  await settled(page);
+  const before = (await copiedStudy(page)).study;
+  let atlas = await openAtlas(page);
+  await atlas
+    .getByLabel("Parameter pair", { exact: true })
+    .selectOption("light");
+  await atlas.getByLabel("Source x to", { exact: true }).fill("5");
+  await atlas.getByLabel("Source x from", { exact: true }).fill("pi/2");
+  // Scalar work also shares the busy worker. A pair switch owns new fields.
+  await atlas
+    .getByLabel("Parameter pair", { exact: true })
+    .selectOption("pole");
+  await expect(atlas.getByLabel("Pole x from", { exact: true })).toHaveValue(
+    "-1",
+  );
+  await atlas
+    .getByLabel("Parameter pair", { exact: true })
+    .selectOption("light");
+  await expect(atlas.getByLabel("Source x from", { exact: true })).toHaveValue(
+    "0",
+  );
+  await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Inspect row 1, column 1", exact: true }),
+  ).toBeEnabled();
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeDisabled();
+  await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+  await atlas.getByLabel("Source x from", { exact: true }).fill("0.5");
+  await expect(atlas.locator(".atlas-cell")).toHaveCount(0);
+  await expect(
+    atlas.getByRole("tab", { name: "Selected variant", exact: true }),
+  ).toBeDisabled();
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Inspect row 1, column 1", exact: true }),
+  ).toBeEnabled();
+  await atlas
+    .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+    .click();
+  const replacement = presetStudy(
+    presets.findIndex((p) => p.title === "De Jong attractor"),
+  );
+  replacement.config.curve.attractor.c = 1.37;
+  await page.goto(
+    `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study: replacement })).toString("base64url")}`,
+  );
+  await expect.poll(() => new URL(page.url()).hash).toBe("");
+  await expect(atlas).toBeHidden();
+  await settled(page);
+  expect((await copiedStudy(page)).study).toEqual(replacement);
+  expect(
+    await page.evaluate(() => (window as any).atlasWorkers[1].terminated),
+  ).toBe(true);
+  atlas = await openAtlas(page);
+  await expect(atlas.getByLabel("Parameter pair", { exact: true })).toHaveValue(
+    "dejong",
+  );
+  await page.keyboard.press("Escape");
+  expect((await copiedStudy(page)).study).toEqual(replacement);
+  expect(before.config.kind).toBe("catacaustic");
+});
+
+test("atlas largest admitted new interactions retain quality and cancel alongside existing equivalents", async ({
+  page,
+}, info) => {
+  const { presetStudy } = await import("../web/planar-link");
+  await observeAtlasWorkers(page);
+  const measurements = [];
+  for (const pair of ["roulette", "light", "clifford", "dejong"] as const) {
+    const density = pair === "clifford" || pair === "dejong";
+    const source = presetStudy(
+      presets.findIndex(
+        (p) =>
+          p.title ===
+          (density
+            ? pair === "clifford"
+              ? "Clifford attractor"
+              : "De Jong attractor"
+            : "Hypotrochoid & its evolute"),
+      ),
+    );
+    if (density)
+      Object.assign(source.config.curve.attractor, {
+        iterates: 5000000,
+        discard: 1000000,
+        cells: 1024,
+        fit: true,
+      });
+    else {
+      source.config.kind = "catacaustic";
+      source.config.samples = 8000;
+    }
+    source.config.lines = 256;
+    await page.goto(
+      `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study: source })).toString("base64url")}`,
+    );
+    await expect.poll(() => new URL(page.url()).hash).toBe("");
+    await settled(page);
+    const atlas = await openAtlas(page);
+    await atlas
+      .getByLabel("Parameter pair", { exact: true })
+      .selectOption(pair);
+    await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+    await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
+    const started = await page.evaluate(() => performance.now());
+    await atlas
+      .getByRole("button", { name: "Generate atlas", exact: true })
+      .click();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      25,
+    );
+    const gridShown = await page.evaluate(() => performance.now());
+    await atlas
+      .getByRole("button", { name: "Inspect row 3, column 3", exact: true })
+      .click();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    const inspection = await page.evaluate(() => {
+      const grid = (window as any).atlasWorkers.at(-1);
+      const full = grid.replies.at(-1);
+      return {
+        maximum: grid.maximum,
+        workerMilliseconds: full.took,
+        config: full.data.config,
+        density: full.data.result.attractor && {
+          accumulated: full.data.result.attractor.accumulated,
+          bins: full.data.result.attractor.counts.length,
+        },
+      };
+    });
+    expect(inspection.maximum).toBe(1);
+    expect(inspection.config.lines).toBe(256);
+    if (density) {
+      expect(inspection.density.accumulated).toBe(5000000);
+      expect(inspection.config.curve.attractor.cells).toBe(1024);
+    } else expect(inspection.config.samples).toBe(8000);
+    await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+    await atlas
+      .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+      .click();
+    const cancelObservation = await page.evaluate(() => ({
+      time: performance.now(),
+      active: (window as any).atlasWorkers.at(-1).active,
+    }));
+    await atlas
+      .getByRole("button", { name: "Cancel atlas", exact: true })
+      .click();
+    await expect(atlas).toBeHidden();
+    const returned = await page.evaluate(() => ({
+      time: performance.now(),
+      terminated: (window as any).atlasWorkers.at(-1).terminated,
+    }));
+    expect(returned.terminated).toBe(true);
+    measurements.push({
+      pair,
+      framing: "shared",
+      gridMilliseconds: gridShown - started,
+      inspectionWorkerMilliseconds: inspection.workerMilliseconds,
+      cancelUiMilliseconds: returned.time - cancelObservation.time,
+      activeAtCancel: cancelObservation.active,
+      maximum: inspection.maximum,
+    });
+  }
+  await info.attach("largest-atlas-interactions", {
+    body: JSON.stringify(
+      {
+        browser: await page.evaluate(() => navigator.userAgent),
+        method:
+          "Request/transport and visible UI timings via Playwright, not FPS or heap; actual phone pending",
+        measurements,
+      },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+});
+
+for (const [title, label] of [
+  ["Light inside a circle", "Source x"],
+  ["De Jong attractor", "Coefficient a"],
+])
+  test(`atlas ${title} waits for scalar settlement and keeps raw drafts`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const post = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (data: any, options?: any) {
+        if (data.action === "scalars")
+          setTimeout(() => post.call(this, data, options), 350);
+        else post.call(this, data, options);
+      };
+    });
+    await page.goto("/");
+    await choosePreset(page, { label: title });
+    const entry = page.getByRole("button", {
+      name: "Explore parameter atlas",
+      exact: true,
+    });
+    const field = page.getByLabel(label, { exact: true });
+    await field.fill("t");
+    await expect(entry).toBeDisabled();
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await field.fill("1+2");
+    await expect(entry).toBeDisabled();
+    await expect(entry).toBeEnabled();
+    const atlas = await openAtlas(page);
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    await expect(atlas.locator(".atlas-values").nth(4)).toContainText(
+      `${title === "Light inside a circle" ? "x" : "a"} = 3`,
+    );
+    await page.keyboard.press("Escape");
+    await expect(field).toHaveValue("1+2");
+  });
+
+for (const [pair, title] of [
+  ["light", "Through a parabola"],
+  ["dejong", "De Jong attractor"],
+] as const)
+  test(`atlas shared ${pair} framing waits for all outcomes and reveals one stable grid`, async ({
+    page,
+  }, info) => {
+    const { presetStudy } = await import("../web/planar-link");
+    const source = presetStudy(presets.findIndex((p) => p.title === title));
+    if (pair === "dejong") source.config.curve.attractor.a = 999; // fifteen valid, ten unavailable at 5×5
+    await page.addInitScript(() => {
+      localStorage.setItem("tangent-garden.atlas-size", "5");
+      const Native = Worker;
+      let workers = 0;
+      Object.assign(window, { atlasDeliveries: [] });
+      window.Worker = class extends Native {
+        atlas = workers++ > 0;
+        set onmessage(handler: any) {
+          super.onmessage = (event: MessageEvent) => {
+            if (this.atlas)
+              (window as any).atlasDeliveries.push(() =>
+                handler?.call(this, event),
+              );
+            else handler?.call(this, event);
+          };
+        }
+      };
+    });
+    await page.goto(
+      `/#s=${deflateRawSync(JSON.stringify({ v: 1, notebook: "2d", study: source })).toString("base64url")}`,
+    );
+    await settled(page);
+    const atlas = await openAtlas(page);
+    await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
+    const release = async () => {
+      await expect
+        .poll(() => page.evaluate(() => (window as any).atlasDeliveries.length))
+        .toBeGreaterThan(0);
+      await page.evaluate(() => (window as any).atlasDeliveries.shift()());
+    };
+    await release();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      1,
+    );
+    await expect(atlas.locator(".atlas-art")).toHaveCount(0);
+    await expect(atlas.locator(".atlas-cell").first()).toContainText(
+      "Waiting for shared scale",
+    );
+    // A completed member is inspectable while another numerical request waits.
+    await atlas
+      .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+      .click();
+    await release(); // active second preview
+    await release(); // priority full-quality inspection
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+    await expect(atlas.locator(".atlas-art")).toHaveCount(0);
+    // Independent fits remain progressive; returning to shared hides partial fits.
+    await atlas
+      .getByLabel("Framing", { exact: true })
+      .selectOption("independent");
+    await expect(atlas.locator(".atlas-art")).toHaveCount(2);
+    await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
+    for (let completed = 2; completed < 25; completed++) {
+      await expect(atlas.locator(".atlas-art")).toHaveCount(0);
+      await release();
+      await expect(
+        atlas.locator('.atlas-cell:not([data-state="pending"])'),
+      ).toHaveCount(completed + 1);
+    }
+    const valid = pair === "light" ? 25 : 15;
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      valid,
+    );
+    await expect(atlas.locator(".atlas-art")).toHaveCount(valid);
+    await expect(
+      atlas.getByText("Waiting for shared scale", { exact: true }),
+    ).toHaveCount(0);
+    await expect(atlas.locator("svg text")).toHaveCount(0);
+    const paths = () =>
+      atlas
+        .locator(".atlas-art")
+        .evaluateAll((arts) => arts.map((a) => a.innerHTML));
+    const final = await paths();
+    await atlas
+      .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+      .click();
+    await release();
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+    expect(await paths()).toEqual(final);
+    for (const [width, height] of [
+      [390, 844],
+      [844, 390],
+      [1280, 700],
+    ]) {
+      await page.setViewportSize({ width, height });
+      expect(await atlas.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
+        true,
+      );
+      const scroll = atlas.locator(".atlas-grid-scroll");
+      await scroll.scrollIntoViewIfNeeded();
+      await scroll.evaluate(
+        (e) => (e.scrollLeft = e.scrollWidth - e.clientWidth),
+      );
+      const last = atlas.getByRole("button", {
+        name: `Inspect row 5, column ${pair === "light" ? 5 : 3}`,
+        exact: true,
+      });
+      await last.scrollIntoViewIfNeeded();
+      await expect(last).toBeInViewport();
+      await last.click();
+      await release();
+      const adopt = atlas.getByRole("button", {
+        name: "Adopt variant",
+        exact: true,
+      });
+      await expect(adopt).toBeEnabled();
+      await expect(adopt).toBeInViewport({ ratio: 1 });
+      await atlas.getByRole("tab", { name: "Atlas grid", exact: true }).click();
+    }
+    await atlas.screenshot({
+      path: info.outputPath(`${pair}-stable-shared-grid.png`),
+    });
+    // Regeneration never retains the old generation's completed common frame.
+    await atlas
+      .getByRole("button", { name: "Generate atlas", exact: true })
+      .click();
+    await expect(atlas.locator(".atlas-art")).toHaveCount(0);
+    await release();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      1,
+    );
+    await expect(atlas.locator(".atlas-art")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  });

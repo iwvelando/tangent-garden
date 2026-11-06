@@ -1,3 +1,4 @@
+import { availableTargets } from "./animation";
 import { EngineError, type EngineClient } from "./engine-client";
 import type { PlanarStudy } from "./planar-link";
 import { refineBudget } from "./refinement";
@@ -36,7 +37,7 @@ export function rememberAtlasGridSize(size: AtlasSize) {
     /* Subsequent excursions still use sizeMemory. */
   }
 }
-export type AtlasPairId = "roulette" | "pole" | "clifford";
+export type AtlasPairId = "roulette" | "pole" | "light" | "clifford" | "dejong";
 export type AtlasRanges = Record<string, [number, number]>;
 export type AtlasOptions = { pair?: AtlasPairId; size?: AtlasSize };
 type Axis = {
@@ -105,8 +106,34 @@ const catalog: readonly AtlasPair[] = [
     ranges: (c) => ({ x: around(c.pole.x, 1), y: around(c.pole.y, 1) }),
   },
   {
-    id: "clifford",
-    label: "Clifford coefficients a / b",
+    id: "light",
+    label: "Point light x / y",
+    axes: [
+      {
+        key: "x",
+        label: "Source x",
+        symbol: "x",
+        path: ["source", "position", "x"],
+      },
+      {
+        key: "y",
+        label: "Source y",
+        symbol: "y",
+        path: ["source", "position", "y"],
+      },
+    ],
+    supports: (c) => {
+      const targets = availableTargets(c);
+      return targets.includes("sourceX") && targets.includes("sourceY");
+    },
+    ranges: (c) => ({
+      x: around(c.source.position.x, 1),
+      y: around(c.source.position.y, 1),
+    }),
+  },
+  ...(["clifford", "dejong"] as const).map((map): AtlasPair => ({
+    id: map,
+    label: `${map === "clifford" ? "Clifford" : "De Jong"} coefficients a / b`,
     axes: [
       {
         key: "a",
@@ -122,12 +149,12 @@ const catalog: readonly AtlasPair[] = [
       },
     ],
     supports: (c) =>
-      c.curve.format === "attractor" && c.curve.attractor.map === "clifford",
+      c.curve.format === "attractor" && c.curve.attractor.map === map,
     ranges: (c) => ({
       a: around(c.curve.attractor.a, 0.25),
       b: around(c.curve.attractor.b, 0.25),
     }),
-  },
+  })),
 ];
 export const atlasPairs = (config: Config) =>
   catalog.filter((p) => p.supports(config));
@@ -135,13 +162,16 @@ export const atlasPair = (id: AtlasPairId) => catalog.find((p) => p.id === id)!;
 export const atlasControlHelp = {
   pair: "Only pairs used by your current study are offered.",
   size: "Includes both range endpoints.",
-  framing: "Compare shapes separately or at one scale.",
+  framing: tiered(
+    "Compare shapes separately or at one scale.",
+    "Shared-scale artwork appears together after every variant finishes or is marked unavailable. Ready cells can already be inspected. Independent fits appear progressively.",
+  ),
 };
 export const atlasRangeHelp =
   "Constant expressions; endpoints must be finite and increasing.";
 export const atlasEntryHelp = tiered(
   "Compare nearby parameter choices for supported definitions.",
-  "Supported definitions: Roulette inside/outside a circle or along a line; a pedal-family pole in use; Clifford map coefficients. Curves allow 8,000 samples and 256 lines; refinement, families and integration have work limits. Previews cap quality; inspection restores it. Clifford grids allow 20 million evaluated iterations and two million density bins in total.",
+  "Supported: Roulette inside/outside a circle or along a line; active pedal pole or Cartesian point light; Clifford or De Jong coefficients. Curves allow 8,000 samples and 256 lines; refinement, families and integration have work limits. Previews cap quality; inspection restores it. Density grids allow 20 million evaluated iterations and two million bins in total.",
 );
 export type AtlasCell = {
   values: [number, number];

@@ -1734,83 +1734,88 @@ test("atlas portrait Generate clearance survives first open and landscape rotati
   await expect(adopt).toBeInViewport({ ratio: 1 });
 });
 
-for (const width of [390, 1440])
-  test(`atlas curated pair, size, framing and range controls preserve focus at ${width}px`, async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
-    await page.goto("/");
-    await choosePreset(page, { label: "Ellipse & its pedal" });
-    await expect(page.locator(".plot-wrap")).toHaveAttribute(
-      "aria-busy",
-      "false",
-    );
-    const entry = page.getByRole("button", {
-      name: "Explore parameter atlas",
-      exact: true,
-    });
-    await entry.click();
-    const atlas = page.getByRole("dialog", {
-      name: "A field of possible flowers",
-      exact: true,
-    });
-    await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
-    await atlas.getByLabel("Pole x from", { exact: true }).fill("-pi");
-    await atlas.getByLabel("Pole x to", { exact: true }).fill("pi");
-    await atlas.getByLabel("Pole y to", { exact: true }).fill("-2");
-    await expect(
-      atlas.getByLabel("Pole y to", { exact: true }),
-    ).toHaveAttribute("aria-invalid", "true");
-    await expect(
-      atlas.getByRole("button", { name: "Generate atlas", exact: true }),
-    ).toBeDisabled();
-    await atlas.getByLabel("Pole y to", { exact: true }).fill("phi");
-    await atlas
-      .getByRole("button", { name: "Generate atlas", exact: true })
-      .click();
-    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
-      25,
-    );
-    await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
-    await expect(
-      atlas.getByText("Shared framing", { exact: true }),
-    ).toBeVisible();
-    const first = atlas.getByRole("button", {
-      name: "Inspect row 1, column 1",
-      exact: true,
-    });
-    await first.focus();
-    await page.keyboard.press("ArrowRight");
-    await expect(
-      atlas.getByRole("button", {
-        name: "Inspect row 1, column 2",
+for (const [title, x, y] of [
+  ["Ellipse & its pedal", "Pole x", "Pole y"],
+  ["Light inside a circle", "Source x", "Source y"],
+  ["De Jong attractor", "Coefficient a", "Coefficient b"],
+])
+  for (const width of [390, 1440])
+    test(`atlas curated ${title} pair, size, framing and range controls preserve focus at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+      await page.goto("/");
+      await choosePreset(page, { label: title });
+      await expect(page.locator(".plot-wrap")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      const entry = page.getByRole("button", {
+        name: "Explore parameter atlas",
         exact: true,
-      }),
-    ).toBeFocused();
-    await page.keyboard.press("ArrowDown");
-    await expect(
-      atlas.getByRole("button", {
-        name: "Inspect row 2, column 2",
+      });
+      await entry.click();
+      const atlas = page.getByRole("dialog", {
+        name: "A field of possible flowers",
         exact: true,
-      }),
-    ).toBeFocused();
-    await page.keyboard.press("Enter");
-    await expect(
-      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
-    ).toBeEnabled();
-    await expect(
-      atlas.getByRole("tab", { name: "Selected variant", exact: true }),
-    ).toBeFocused();
-    await expect(atlas).not.toHaveAttribute("data-quiet", "");
-    await atlas
-      .getByRole("button", { name: "Cancel atlas", exact: true })
-      .click();
-    await expect(entry).toBeFocused();
-    await expect(page.locator(".atlas-entry")).toHaveAttribute(
-      "data-quiet",
-      "",
-    );
-  });
+      });
+      await atlas.getByLabel("Grid size", { exact: true }).selectOption("5");
+      await atlas.getByLabel(`${x} from`, { exact: true }).fill("-pi");
+      await atlas.getByLabel(`${x} to`, { exact: true }).fill("pi");
+      await atlas.getByLabel(`${y} to`, { exact: true }).fill("-4");
+      await expect(
+        atlas.getByLabel(`${y} to`, { exact: true }),
+      ).toHaveAttribute("aria-invalid", "true");
+      await expect(
+        atlas.getByRole("button", { name: "Generate atlas", exact: true }),
+      ).toBeDisabled();
+      await atlas.getByLabel(`${y} to`, { exact: true }).fill("phi");
+      await atlas
+        .getByRole("button", { name: "Generate atlas", exact: true })
+        .click();
+      await expect(
+        atlas.locator('.atlas-cell[data-state="valid"]'),
+      ).toHaveCount(25);
+      await atlas.getByLabel("Framing", { exact: true }).selectOption("shared");
+      await expect(
+        atlas.getByText("Shared framing", { exact: true }),
+      ).toBeVisible();
+      const first = atlas.getByRole("button", {
+        name: "Inspect row 1, column 1",
+        exact: true,
+      });
+      await first.focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(
+        atlas.getByRole("button", {
+          name: "Inspect row 1, column 2",
+          exact: true,
+        }),
+      ).toBeFocused();
+      await page.keyboard.press("ArrowDown");
+      await expect(
+        atlas.getByRole("button", {
+          name: "Inspect row 2, column 2",
+          exact: true,
+        }),
+      ).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(
+        atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+      ).toBeEnabled();
+      await expect(
+        atlas.getByRole("tab", { name: "Selected variant", exact: true }),
+      ).toBeFocused();
+      await expect(atlas).not.toHaveAttribute("data-quiet", "");
+      await atlas
+        .getByRole("button", { name: "Cancel atlas", exact: true })
+        .click();
+      await expect(entry).toBeFocused();
+      await expect(page.locator(".atlas-entry")).toHaveAttribute(
+        "data-quiet",
+        "",
+      );
+    });
 
 for (const suppressMargins of [false, true])
   test(`atlas first range has independent portrait clearance before native UI relayout (margin suppression ${suppressMargins})`, async ({

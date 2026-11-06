@@ -244,9 +244,18 @@ export function AtlasPreview({
       viewRect(inspectedFraming(selected.frame, study)),
     );
   }, [state.selection]);
+  // A fit of arriving subsets moves every completed member. Reveal the
+  // shared-scale artwork once, after valid and unavailable outcomes settle.
+  // Inspection still uses each finished member immediately.
+  const gridComplete =
+    state.cells.length > 0 && state.cells.every((c) => c.frame || c.error);
+  const waitingForSharedFrame = framing === "shared" && !gridComplete;
   const sharedFrame = useMemo(
-    () => (framing === "shared" ? atlasSharedFrame(state.cells) : undefined),
-    [framing, state.cells],
+    () =>
+      framing === "shared" && gridComplete
+        ? atlasSharedFrame(state.cells)
+        : undefined,
+    [framing, state.cells, gridComplete],
   );
   const selected = state.selection;
   const frame =
@@ -464,9 +473,14 @@ export function AtlasPreview({
                 </p>
               )}
               <p className="note">
-                {framing === "shared"
-                  ? "Shared framing"
-                  : "Independent framing"}
+                {framing === "shared" ? (
+                  <>
+                    <span>Shared framing</span>. Artwork appears once every
+                    variant has finished.
+                  </>
+                ) : (
+                  "Independent framing"
+                )}
               </p>
               <p className="note atlas-quality">
                 Preview quality: {quality(preview)}. Inspect at original quality
@@ -479,9 +493,9 @@ export function AtlasPreview({
                   At most 25 previews and one inspection, one calculation in
                   flight and 25 unsent requests. Up to 80,000 uniform samples,
                   2,560 construction lines, 500,000 reserved path points and 80
-                  million weighted work units. Clifford densities reserve at
-                  most 20 million evaluated iterations and two million bins.
-                  Retained geometry is limited to four million numbers.
+                  million weighted work units. Map densities reserve at most 20
+                  million evaluated iterations and two million bins. Retained
+                  geometry is limited to four million numbers.
                 </p>
               </details>
             </div>
@@ -546,7 +560,7 @@ export function AtlasPreview({
                         }
                       }}
                     >
-                      {cell.frame ? (
+                      {cell.frame && !waitingForSharedFrame ? (
                         <div className="atlas-art" inert>
                           <Plot
                             id={`atlas-cell-${index}`}
@@ -564,7 +578,11 @@ export function AtlasPreview({
                         </div>
                       ) : (
                         <div className="atlas-placeholder">
-                          {cell.error ? "Unavailable" : "Pending"}
+                          {cell.error
+                            ? "Unavailable"
+                            : cell.frame
+                              ? "Waiting for shared scale"
+                              : "Pending"}
                         </div>
                       )}
                       <span className="atlas-values">
