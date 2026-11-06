@@ -516,7 +516,8 @@ export function atlasRangeError(
           label: `${name} to`,
           message: `${name} to must be a whole number greater than ${lower} from.`,
         };
-      if ((to - from) % (size - 1))
+      // Exact: the difference of safe integers can exceed 2^53.
+      if ((BigInt(to) - BigInt(from)) % BigInt(size - 1))
         return {
           label: `${name} to`,
           message: `${name} to must exceed ${lower} from by a multiple of ${size - 1}, so every grid value is a whole number.`,
@@ -553,11 +554,14 @@ function axis(
   size: AtlasSize,
   integer?: boolean,
 ) {
-  // Validated whole endpoints whose difference divides: exact.
+  // Validated whole endpoints whose difference divides: exact, in integer
+  // arithmetic, since b − a and its multiples can exceed 2^53. Every value
+  // lies between the safe endpoints, so it converts back exactly.
   if (integer)
-    return Array.from(
-      { length: size },
-      (_, i) => a + (i * (b - a)) / (size - 1),
+    return Array.from({ length: size }, (_, i) =>
+      Number(
+        BigInt(a) + (BigInt(i) * (BigInt(b) - BigInt(a))) / BigInt(size - 1),
+      ),
     );
   return Array.from({ length: size }, (_, i) => {
     if (i === 0) return a;

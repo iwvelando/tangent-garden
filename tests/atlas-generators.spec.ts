@@ -211,6 +211,44 @@ test("atlas whole-number axes take exact evenly spaced values and name the endpo
     top - 2,
     top,
   ]);
+  // Endpoints more than 2^53 apart: divisibility and values use the exact
+  // difference, never its rounded double. 2^54 − 3 is odd, though its double
+  // is even; 2^54 − 4 divides by 4, but i · (to − from) rounds.
+  for (const size of [3, 5] as const)
+    expect(
+      atlasRangeError(lissajous([-top, top - 1], [1, 5]), "lissajous", size)
+        ?.label,
+    ).toBe("Frequency m to");
+  atlas.generate(
+    study,
+    { m: [-top, top - 1], n: [1, 5] },
+    { pair: "lissajous", size: 3 },
+  );
+  expect(atlas.state.error).toMatch(/Frequency m to must exceed/);
+  atlas.generate(
+    study,
+    { m: [1 - top, top - 1], n: [1, 5] },
+    { pair: "lissajous", size: 5 },
+  );
+  expect(atlas.state.cells.slice(0, 5).map((c) => c.values[0])).toEqual([
+    1 - top,
+    -(top - 1) / 2,
+    0,
+    (top - 1) / 2,
+    top - 1,
+  ]);
+  atlas.generate(
+    study,
+    { m: [-top, top - 2], n: [1, 5] },
+    { pair: "lissajous", size: 5 },
+  );
+  expect(atlas.state.cells.slice(0, 5).map((c) => c.values[0])).toEqual([
+    -top,
+    -(2 ** 52),
+    -1,
+    2 ** 52 - 2,
+    top - 2,
+  ]);
   // An undivided range is refused rather than rounded.
   atlas.generate(
     study,
