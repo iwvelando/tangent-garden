@@ -2642,3 +2642,100 @@ for (const [width, height] of [
       await expectZoomUsesWholeViewport(d);
     }
   });
+
+// The Hopf journey's selection and choice experiments: Safari does not
+// focus a clicked button, and a select keeps its choice after blur.
+for (const [width, height] of [
+  [390, 844],
+  [844, 390],
+])
+  test(`Hopf journey selection and Base path keep focus and choice in WebKit at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    const browse = page.getByRole("button", {
+      name: "Browse notebook examples",
+    });
+    await browse.click();
+    await page
+      .getByRole("dialog", { name: "Notebook examples" })
+      .getByRole("button", { name: "Every point owns a circle", exact: true })
+      .click();
+    const journey = page.getByRole("dialog", {
+      name: "Every point owns a circle",
+      exact: true,
+    });
+    const ready = () =>
+      expect(journey.locator(".journey-art")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+    const selected = async () =>
+      JSON.parse(
+        (await journey
+          .locator('svg[data-representation="stereo"] > desc')
+          .textContent())!,
+      ).weave.correspondence.selected;
+    await ready();
+    const navigation = () =>
+      journey.evaluate((d) => {
+        const r = d
+          .querySelector(".journey-navigation")!
+          .getBoundingClientRect();
+        return [r.x + d.scrollLeft, r.y + d.scrollTop, r.width, r.height];
+      });
+    const original = await navigation();
+    const field = journey.getByRole("spinbutton", {
+      name: "Selected fiber",
+      exact: true,
+    });
+    await field.click();
+    await field.fill("4");
+    await expect(field).toBeFocused();
+    await ready();
+    expect(await selected()).toBe(3);
+    await journey.getByRole("heading", { level: 3 }).first().click();
+    await expect(field).not.toBeFocused();
+    await expect(field).toHaveValue("4");
+    // A tap on a base point selects it.
+    const base = journey.locator('svg[data-representation="base"]');
+    await base.locator('g[data-sample="6"]').scrollIntoViewIfNeeded();
+    const at = await base.locator('g[data-sample="6"]').evaluate((g) => {
+      const c = g.querySelector("circle:last-child") as SVGCircleElement;
+      const m = (g as SVGGElement).ownerSVGElement!.getScreenCTM()!;
+      const x = c.cx.baseVal.value,
+        y = c.cy.baseVal.value;
+      return { x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f };
+    });
+    await page.mouse.click(at.x, at.y);
+    await ready();
+    await expect(field).toHaveValue("7");
+    await base.focus();
+    await page.keyboard.press("[");
+    await ready();
+    await expect(field).toHaveValue("6");
+    expect(await selected()).toBe(5);
+    await journey
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+    await ready();
+    expect(await navigation()).toEqual(original);
+    const path = journey.getByRole("combobox", {
+      name: "Base path",
+      exact: true,
+    });
+    await path.selectOption("latitude");
+    await ready();
+    await journey.getByRole("heading", { level: 3 }).first().click();
+    await expect(path).toHaveValue("latitude");
+    await journey
+      .getByRole("button", { name: "Return to my study", exact: true })
+      .click();
+    await expect(journey).toBeHidden();
+    await expect(browse).toBeFocused();
+    await expect(page.locator(".example-picker")).toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+  });

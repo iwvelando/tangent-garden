@@ -10,7 +10,10 @@ import {
   type StudyJourney,
   type JourneyStep,
   type JourneyAdoption,
+  type JourneyValue,
 } from "./journeys";
+import { objects } from "./tesseract/objects";
+import { ChoiceField, SelectionField } from "./tesseract/DescriptorControls";
 import type { SpatialStudy } from "./spatial/link";
 import type { TesseractStudy } from "./tesseract/link";
 import type { Frame as SpatialFrame } from "./spatial/types";
@@ -39,11 +42,12 @@ type Outcome = {
   error?: string;
   field?: string;
 };
-// A step's calculation, by its example and the value of an edited field. A
-// probe edit needs none: the probe is read from the example's result.
-const calculation = (i: number, step: JourneyStep, edit?: number) =>
-  step.control.kind === "scalar" && edit !== undefined
-    ? `${i}:${edit}`
+// A step's calculation, by its example and the value of an edited field,
+// choice or selection. A probe edit needs none: the probe is read from the
+// example's result.
+const calculation = (i: number, step: JourneyStep, edit?: JourneyValue) =>
+  step.control.kind !== "probe" && edit !== undefined
+    ? `${i}:${JSON.stringify(edit)}`
     : `${i}`;
 const short = (v: number) => String(Number(v.toPrecision(4)));
 
@@ -74,9 +78,14 @@ export function JourneyPreview({
   // Each step's edited control, as a resolved value; absent while unedited.
   // The field's own value follows an invalid entry (NaN), as the notebook's
   // configuration does, while the drawing and adoption keep the last valid
-  // edit. Edits live only as long as the excursion.
-  const [entered, setEntered] = useState<Record<number, number>>({});
-  const [edits, setEdits] = useState<Record<number, number>>({});
+  // edit. A choice or selection is never invalid: its control offers only
+  // what the descriptor allows. Edits live only as long as the excursion.
+  const [entered, setEntered] = useState<Record<number, JourneyValue>>({});
+  const [edits, setEdits] = useState<Record<number, JourneyValue>>({});
+  const edit = (i: number, value: JourneyValue) => {
+    setEntered((e) => ({ ...e, [i]: value }));
+    if (!Number.isNaN(value)) setEdits((e) => ({ ...e, [i]: value }));
+  };
   const outcomes = useRef(new Map<string, Outcome>());
   // Load the renderer alongside its first calculation, before presenting
   // that step. A Suspense fallback would hide the completed drawing during
@@ -247,6 +256,22 @@ export function JourneyPreview({
   };
   const shown = presented?.step ?? index;
   const study = journeyStudy(steps[shown], edits[shown]);
+  // On a selection step, choosing an item in either pane or stepping with
+  // [ and ] is that step's one experiment, from its latest edit.
+  const selecting =
+    shown === index && steps[index].control.kind === "selection";
+  const selectItem = (sample: number) => edit(index, sample);
+  const stepItem = (by: 1 | -1) => {
+    setEdits((all) => {
+      const config = (journeyStudy(steps[index], all[index]) as TesseractStudy)
+        .config;
+      const selection = objects[config.object].selection!;
+      const n = selection.count(config);
+      return { ...all, [index]: (selection.get(config) + by + n) % n };
+    });
+    // The field then shows the stepped selection.
+    setEntered(({ [index]: _, ...rest }) => rest);
+  };
   const frame = presented?.outcome.frame ?? null;
   const [renderError, setRenderError] = useState<{
     key: string;
@@ -361,6 +386,8 @@ export function JourneyPreview({
               client={client}
               dark={theme.dark}
               scheme={theme.scheme}
+              onSelect={selecting ? selectItem : undefined}
+              onStep={selecting ? stepItem : undefined}
             />
           ) : (
             <div className="journey-drawing">
@@ -439,11 +466,7 @@ export function JourneyPreview({
                         ""
                       }
                       frame={outcomes.current.get(calculation(i, step))?.frame}
-                      onEdit={(value) => {
-                        setEntered((e) => ({ ...e, [i]: value }));
-                        if (!Number.isNaN(value))
-                          setEdits((e) => ({ ...e, [i]: value }));
-                      }}
+                      onEdit={(value) => edit(i, value)}
                     />
                   </ScalarStatus.Provider>
                 </div>
@@ -465,7 +488,7 @@ export function JourneyPreview({
                       preset: step.preset,
                       study: journeyStudy(step, edits[index]),
                       custom:
-                        step.control.kind === "scalar" &&
+                        step.control.kind !== "probe" &&
                         edits[index] !== undefined,
                     } as JourneyAdoption,
                     interaction.current,
@@ -493,10 +516,10 @@ function StepControl({
   onEdit,
 }: {
   step: JourneyStep;
-  entered?: number;
+  entered?: JourneyValue;
   error: string;
   frame?: Frame;
-  onEdit: (value: number) => void;
+  onEdit: (value: JourneyValue) => void;
 }) {
   const { control } = step;
   const study = journeyStudy(step, entered);
@@ -520,6 +543,25 @@ function StepControl({
           />
         </Field>
       </FieldErrorContext.Provider>
+    );
+  if (control.kind === "choice") {
+    const config = (study as TesseractStudy).config;
+    return (
+      <ChoiceField
+        choice={objects[config.object].choices!.find(
+          (c) => c.key === control.key,
+        )!}
+        config={config}
+        onChoose={onEdit}
+      />
+    );
+  }
+  if (control.kind === "selection")
+    return (
+      <SelectionField
+        config={(study as TesseractStudy).config}
+        onSelect={onEdit}
+      />
     );
   const d = frame?.result.diagnostics;
   const n = d ? d.curvature.length - 1 : 1;

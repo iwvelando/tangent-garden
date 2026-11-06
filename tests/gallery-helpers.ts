@@ -19,6 +19,7 @@ export const journeyTitles = [
   "What a shadow leaves out",
   "A thread learns the surface",
   "Rules that grow a garden",
+  "Every point owns a circle",
 ];
 
 export async function settled(page: Page) {

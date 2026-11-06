@@ -28,6 +28,10 @@ export default function JourneyDrawing(p: {
   client: { current: EngineClient | null };
   dark: boolean;
   scheme: ColorScheme;
+  // A selection step's experiment, chosen in either pane or stepped with
+  // [ and ]; absent where the step offers another experiment.
+  onSelect?: (sample: number) => void;
+  onStep?: (step: 1 | -1) => void;
 }) {
   const [view, setView] = useState(p.study.view);
   const [diagramView, setDiagramView] = useState(p.study.diagramView);
@@ -174,6 +178,8 @@ export default function JourneyDrawing(p: {
             layers={p.study.layers}
             dark={p.dark}
             scheme={p.scheme}
+            onSelect={p.onSelect}
+            onStep={p.onStep}
           />
         )}
       </div>

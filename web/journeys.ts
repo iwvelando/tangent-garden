@@ -7,6 +7,8 @@ import { spatialPresets } from "./spatial/presets";
 import { presetStudy as spatialStudy, type SpatialStudy } from "./spatial/link";
 import { tesseractPresets } from "./tesseract/presets";
 import { fieldLabel as shapeFieldLabel } from "./tesseract/fields";
+import { objects, type ObjectDescriptor } from "./tesseract/objects";
+import { motions } from "./tesseract/types";
 import { fieldLabel as spatialFieldLabel } from "./spatial/fields";
 import {
   presetStudy as tesseractStudy,
@@ -14,11 +16,19 @@ import {
 } from "./tesseract/link";
 
 // The one control a step offers to experiment with, labeled as the notebook
-// labels it: a numeric field of the configuration, or the probe's position
-// along the curve.
+// labels it: a numeric field of the configuration, the probe's position
+// along the curve, or, in 4D, one of the object descriptor's discrete
+// choices or its selected item.
+export type ChoiceKey = NonNullable<ObjectDescriptor["choices"]>[number]["key"];
 export type JourneyControl =
   | { kind: "scalar"; label: string; path: string[] }
-  | { kind: "probe"; label: string };
+  | { kind: "probe"; label: string }
+  | { kind: "choice"; label: string; key: ChoiceKey }
+  | { kind: "selection"; label: string };
+type ShapeControl = Exclude<JourneyControl, { kind: "probe" }>;
+// An experiment's edited value: a number for a scalar, probe or selection
+// (counted from 0), and a choice's option value.
+export type JourneyValue = number | string;
 
 // Steps reference existing descriptors; titles and complete studies have one
 // source of truth. Journey progress is transient, never part of a study link.
@@ -46,12 +56,20 @@ const step = (
 export type JourneyStep =
   | PlanarJourneyStep
   | {
-      notebook: "3d" | "4d";
+      notebook: "3d";
       preset: number;
       note: string;
       suggestion: string;
       control: Extract<JourneyControl, { kind: "scalar" }>;
-    };
+    }
+  | ShapeJourneyStep;
+export type ShapeJourneyStep = {
+  notebook: "4d";
+  preset: number;
+  note: string;
+  suggestion: string;
+  control: ShapeControl;
+};
 export type StudyJourney = {
   kind?: undefined;
   title: string;
@@ -75,7 +93,7 @@ export type AdoptedJourney = JourneyAdoption & { id: number };
 
 export function journeyStudy<S extends JourneyStep>(
   step: S,
-  value?: number,
+  value?: JourneyValue,
 ): JourneyStudies[S["notebook"]] {
   const study =
     step.notebook === "2d"
@@ -86,13 +104,121 @@ export function journeyStudy<S extends JourneyStep>(
   const edited =
     value === undefined
       ? study
-      : step.control.kind === "probe"
-        ? {
-            ...study,
-            probe: { ...(study as PlanarStudy).probe, position: value },
-          }
-        : { ...study, config: setIn(study.config, step.control.path, value) };
+      : step.control.kind === "choice" || step.control.kind === "selection"
+        ? shapeEdit(study as TesseractStudy, step.control, value)
+        : step.control.kind === "probe"
+          ? {
+              ...study,
+              probe: { ...(study as PlanarStudy).probe, position: value },
+            }
+          : {
+              ...study,
+              config: setIn(study.config, step.control.path, value as number),
+            };
   return edited as JourneyStudies[S["notebook"]];
+}
+
+// A 4D study kept valid after an edit, as the notebook keeps it: the
+// descriptor's reconciliation (a selection beyond a reduced count), then a
+// motion the study no longer offers gives way to the first one offered,
+// and Loop gives way to Back and forth for a motion that does not loop.
+export function reconcileShapeStudy(study: TesseractStudy): TesseractStudy {
+  const reconcile = objects[study.config.object].reconcile;
+  const config = reconcile ? reconcile(study.config) : study.config;
+  const offered = motions(config);
+  const motion = offered.some((m) => m.value === study.motion)
+    ? study.motion
+    : offered[0].value;
+  const loops = !!offered.find((m) => m.value === motion)?.loops;
+  const repeat =
+    !loops && study.repeat === "loop" ? "back-and-forth" : study.repeat;
+  return config === study.config &&
+    motion === study.motion &&
+    repeat === study.repeat
+    ? study
+    : { ...study, config, motion, repeat };
+}
+
+// A descriptor choice or selection applied as the notebook's own control
+// applies it. A value the control cannot offer is refused, never coerced:
+// an option the descriptor lacks, or a selection that is not one of the
+// drawing's items.
+function shapeEdit(
+  study: TesseractStudy,
+  control: Extract<ShapeControl, { kind: "choice" | "selection" }>,
+  value: JourneyValue,
+): TesseractStudy {
+  const descriptor = objects[study.config.object];
+  if (control.kind === "choice") {
+    const choice = descriptor.choices!.find((c) => c.key === control.key)!;
+    if (
+      typeof value !== "string" ||
+      !choice.values.some((option) => option.value === value)
+    )
+      throw new RangeError(
+        `${choice.label} offers no option ${JSON.stringify(value)}.`,
+      );
+    const key = descriptor.parameterKey!;
+    return reconcileShapeStudy({
+      ...study,
+      config: {
+        ...study.config,
+        [key]: { ...study.config[key], [control.key]: value },
+      },
+    });
+  }
+  const selection = descriptor.selection!;
+  const count = selection.count(study.config);
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value >= count
+  )
+    throw new RangeError(
+      `${selection.label} must be a whole number from 1 to ${count}.`,
+    );
+  return reconcileShapeStudy({
+    ...study,
+    config: selection.set(study.config, value),
+  });
+}
+
+// A 4D step whose experiment is one of its object's discrete choices, by
+// key, or its selected item. The label and options are the descriptor's;
+// a choice or selection the example does not show cannot be a step.
+export function shapeStep(
+  title: string,
+  note: string,
+  suggestion: string,
+  control: { kind: "choice"; key: ChoiceKey } | { kind: "selection" },
+): ShapeJourneyStep {
+  const preset = tesseractPresets.findIndex((p) => p.name === title);
+  if (preset < 0) throw new Error(`Unknown journey preset: ${title}`);
+  const config = tesseractPresets[preset].config;
+  const descriptor = objects[config.object];
+  if (control.kind === "selection") {
+    const selection = descriptor.selection;
+    if (!selection?.visible(config))
+      throw new Error(`${title} shows no selection to experiment with`);
+    return {
+      notebook: "4d",
+      preset,
+      note,
+      suggestion,
+      control: { kind: "selection", label: selection.label },
+    };
+  }
+  const choice = descriptor.choices?.find((c) => c.key === control.key);
+  if (!choice || (choice.visible && !choice.visible(config)))
+    throw new Error(`${title} shows no choice ${control.key}`);
+  return {
+    notebook: "4d",
+    preset,
+    note,
+    suggestion,
+    control: { kind: "choice", label: choice.label, key: control.key },
+  };
 }
 
 export function journeyTitle(step: JourneyStep) {
@@ -308,6 +434,32 @@ export const surfaceJourney: StudyJourney = {
   ],
 };
 
+export const hopfJourney: StudyJourney = {
+  title: "Every point owns a circle",
+  steps: [
+    shapeStep(
+      "A circle over every point",
+      "Pane 1 is the base sphere S²; pane 2 shows circles of the 3-sphere in four dimensions, projected into space. Each point on the latitude owns one whole circle, its Hopf fiber, and any two fibers link once.",
+      "Try tapping another point or fiber in either pane, or set Selected fiber, then play to carry that circle around the latitude.",
+      { kind: "selection" },
+    ),
+    shapeStep(
+      "A flower below, a bouquet above",
+      "Now the path on the sphere wanders north and south as a five-petal flower. Its points lift to fibers on different tori, so the linked circles gather into a bouquet instead of lying on one torus.",
+      "Try Base path at Latitude to flatten the flower into one circle of latitude, then play the trace.",
+      { kind: "choice", key: "path" },
+    ),
+    across(
+      "4d",
+      "Hopf circles, flowing forever",
+      "Leave the base sphere behind. Fibers over three latitudes lie on three nested tori, turning together in four dimensions; a circle that meets the projection pole opens into a line within the drawing's finite window.",
+      "Try Latitude spread at 1/8 to draw the three tori together, then play the seamless double rotation.",
+      null,
+      ["weave", "spread"],
+    ),
+  ],
+};
+
 export const journeys: Journey[] = [
   lightJourney,
   threadsJourney,
@@ -316,4 +468,5 @@ export const journeys: Journey[] = [
   shadowJourney,
   surfaceJourney,
   overlayJourney,
+  hopfJourney,
 ];
