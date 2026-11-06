@@ -40,6 +40,7 @@ import { AtlasContext, type AtlasRequest } from "./AtlasContext";
 import { atlasBudget, atlasEntryHelp } from "./atlas";
 import { useQuietFocus } from "./quiet-focus";
 import { JourneyPreview } from "./JourneyPreview";
+import { OverlayJourneyPreview } from "./OverlayJourneyPreview";
 import {
   JourneyContext,
   useJourneyEntry,
@@ -304,10 +305,12 @@ function App({
   active,
   shared,
   adoption,
+  sourceSnapshot,
 }: {
   active: boolean;
   shared?: SharedStudy;
   adoption?: AdoptedJourney;
+  sourceSnapshot?: { current: () => PlanarStudy };
 }) {
   const loomOwner = useContext(LoomContext);
   const gardenOwner = useContext(GardenContext);
@@ -1464,6 +1467,15 @@ function App({
       pendingAnimation ?? animationSettings.current ?? defaultAnimation,
     ...(family && { family }),
   });
+  // Keep the last settled definition available to excursions from any
+  // notebook. Raw drafts stay in this mounted editor, including invalid ones.
+  if (
+    sourceSnapshot &&
+    !busy &&
+    !error &&
+    !scalarStates.some((s) => s.pending || s.error)
+  )
+    sourceSnapshot.current = snapshot;
   const familyState = usePlanarFamily(
     snapshot(),
     active && !excursionActive,
@@ -3078,6 +3090,10 @@ function Notebook() {
   const focusRequest = useRef<FocusRequest>(false);
   const theme = useTheme();
   const [excursion, setExcursion] = useState<JourneyRequest | null>(null);
+  const sourceSnapshot = useRef<() => PlanarStudy>(() => opening);
+  const overlayBase = useRef<PlanarStudy>(opening);
+  const planarContainer = useRef<HTMLDivElement>(null);
+  const planarQuiet = useQuietFocus(planarContainer);
   const [atlas, setAtlas] = useState<AtlasRequest | null>(null);
   const [fit, setFit] = useState<FourierFitRequest | null>(null);
   const [loom, setLoom] = useState<LoomEntry | null>(null);
@@ -3212,7 +3228,10 @@ function Notebook() {
           <JourneyContext.Provider
             value={{
               active: overlay,
-              begin: setExcursion,
+              begin: (request) => {
+                overlayBase.current = structuredClone(sourceSnapshot.current());
+                setExcursion(request);
+              },
             }}
           >
             {loom && (
@@ -3376,36 +3395,78 @@ function Notebook() {
                 className={theme.dark ? "app dark" : "app"}
                 style={{ ...theme.style, display: "contents" }}
               >
-                <JourneyPreview
-                  journey={excursion.journey}
-                  via={excursion.via}
-                  onReturn={(via) => {
-                    restoreFocus.current = () => excursion.restoreFocus(via);
-                    setExcursion(null);
-                  }}
-                  onOpen={(adoption: JourneyAdoption, via) => {
-                    links.current++;
-                    setShared((s) => ({
-                      ...s,
-                      [adoption.notebook]: undefined,
-                    }));
-                    setAdoptions((a) => ({
-                      ...a,
-                      [adoption.notebook]: {
-                        ...adoption,
-                        id: ++adoptionId.current,
-                      },
-                    }));
-                    if (adoption.notebook === mode)
+                {excursion.journey.kind === "overlay" ? (
+                  <OverlayJourneyPreview
+                    journey={excursion.journey}
+                    base={overlayBase.current}
+                    via={excursion.via}
+                    onReturn={(via) => {
                       restoreFocus.current = () => excursion.restoreFocus(via);
-                    else choose(adoption.notebook, via);
-                    setExcursion(null);
-                  }}
-                />
+                      setExcursion(null);
+                    }}
+                    onOpen={(kind, study, via) => {
+                      if (mode !== "2d") choose("2d", via);
+                      const entry = {
+                        study,
+                        via,
+                        restoreFocus: (returnVia: "keyboard" | "pointer") => {
+                          if (returnVia === "pointer")
+                            planarQuiet.onPointerDown();
+                          else planarQuiet.onKeyDownCapture();
+                          planarQuiet.quiet();
+                          planarContainer.current
+                            ?.querySelector<HTMLButtonElement>(
+                              ".example-trigger",
+                            )
+                            ?.focus();
+                        },
+                      };
+                      if (kind === "loom") setLoom(entry);
+                      else if (kind === "garden") setGarden(entry);
+                      else if (kind === "lace") setLace(entry);
+                      else setShorten(entry);
+                      setExcursion(null);
+                    }}
+                  />
+                ) : (
+                  <JourneyPreview
+                    journey={excursion.journey}
+                    via={excursion.via}
+                    onReturn={(via) => {
+                      restoreFocus.current = () => excursion.restoreFocus(via);
+                      setExcursion(null);
+                    }}
+                    onOpen={(adoption: JourneyAdoption, via) => {
+                      links.current++;
+                      setShared((s) => ({
+                        ...s,
+                        [adoption.notebook]: undefined,
+                      }));
+                      setAdoptions((a) => ({
+                        ...a,
+                        [adoption.notebook]: {
+                          ...adoption,
+                          id: ++adoptionId.current,
+                        },
+                      }));
+                      if (adoption.notebook === mode)
+                        restoreFocus.current = () =>
+                          excursion.restoreFocus(via);
+                      else choose(adoption.notebook, via);
+                      setExcursion(null);
+                    }}
+                  />
+                )}
               </div>
             )}
             {seen["2d"] && (
-              <div inert={overlay} hidden={mode !== "2d"}>
+              <div
+                ref={planarContainer}
+                inert={overlay}
+                hidden={mode !== "2d"}
+                onPointerDown={planarQuiet.onPointerDown}
+                onKeyDownCapture={planarQuiet.onKeyDownCapture}
+              >
                 <LoomContext.Provider value={{ begin: setLoom }}>
                   <GardenContext.Provider value={{ begin: setGarden }}>
                     <LaceContext.Provider value={{ begin: setLace }}>
@@ -3414,6 +3475,7 @@ function Notebook() {
                           active={mode === "2d"}
                           shared={shared["2d"]}
                           adoption={adoptions["2d"]}
+                          sourceSnapshot={sourceSnapshot}
                         />
                       </ShortenContext.Provider>
                     </LaceContext.Provider>

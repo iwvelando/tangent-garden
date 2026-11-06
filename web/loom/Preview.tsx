@@ -1,3 +1,8 @@
+import {
+  OverlayJourneyLayout,
+  type OverlayGuide,
+} from "../OverlayJourneyGuide";
+import { withOverlay } from "../overlay-journeys";
 import { AppHeader } from "../AppHeader";
 import { AnimationButton } from "../AnimationButton";
 import { ExportImageMenu } from "../ExportImageMenu";
@@ -90,11 +95,22 @@ function gapSummary(result: LoomResult) {
   ].filter(Boolean);
   return `${result.exhausted ? "Refinement ran out of budget. " : ""}${parts.length ? `Gaps: ${parts.join(", ")}.` : "No gaps."}`;
 }
+const geometryKey = (s: LoomRequest) =>
+  JSON.stringify([
+    s.map,
+    s.mapParameter,
+    s.exclusionRadius,
+    s.source,
+    s.samples,
+    s.tolerance,
+  ]);
 export function LoomPreview({
   entry,
   onReturn,
+  journey,
 }: {
   entry: LoomEntry;
+  journey?: OverlayGuide;
   onReturn: (via: "keyboard" | "pointer") => void;
 }) {
   const theme = useTheme(),
@@ -108,9 +124,27 @@ export function LoomPreview({
     () => !matchMedia(phoneLayout).matches,
   );
   const [weight, setWeight] = useState(entry.study.weight);
-  const [result, setResult] = useState<LoomResult>();
-  const [resultKey, setResultKey] = useState("");
-  const [placed, setPlaced] = useState<{ key: string; marker: LoomMarker }>();
+  const prepared =
+    journey?.prepared?.kind === "loom" ? journey.prepared : undefined;
+  const [result, setResult] = useState<LoomResult | undefined>(
+    () => prepared?.result,
+  );
+  const [resultKey, setResultKey] = useState(() =>
+    prepared ? geometryKey(study) : "",
+  );
+  const [placed, setPlaced] = useState<
+    { key: string; marker: LoomMarker } | undefined
+  >(
+    () =>
+      prepared && {
+        key: JSON.stringify([
+          geometryKey(study),
+          study.selected,
+          study.parameter,
+        ]),
+        marker: prepared.marker,
+      },
+  );
   const [error, setError] = useState<{
     message: string;
     field?: string;
@@ -160,15 +194,6 @@ export function LoomPreview({
     if (bar && box)
       box.style.setProperty("--loom-playback-height", `${bar.offsetHeight}px`);
   };
-  const geometryKey = (s: LoomRequest) =>
-    JSON.stringify([
-      s.map,
-      s.mapParameter,
-      s.exclusionRadius,
-      s.source,
-      s.samples,
-      s.tolerance,
-    ]);
   const key = geometryKey(study);
   const [applied, setApplied] = useState<LoomRequest>(loomRequest(study));
   const mapInfo = maps[study.map];
@@ -669,6 +694,193 @@ export function LoomPreview({
       />
     </Field>
   );
+  const paneHeadings = (["source", "image"] as const).map((pane) => (
+    <div key={pane} className="loom-pane-heading">
+      <h3>{pane === "source" ? "Source plane · z" : mapInfo.imageHeading}</h3>
+      <button
+        disabled={exporting || (!!journey && !result)}
+        onClick={() =>
+          setStudy((s) => ({
+            ...s,
+            framing: {
+              source: s.framing?.source ?? loomFit(result!, "source"),
+              image: s.framing?.image ?? loomFit(result!, "image"),
+              [pane]: loomFit(result!, pane),
+            },
+            views: {
+              ...s.views,
+              [pane]: { x: 0, y: 0, zoom: 1 },
+            },
+          }))
+        }
+      >
+        Fit {pane}
+      </button>
+    </div>
+  ));
+  const artwork = (
+    <div ref={panes} className="loom-panes" aria-busy={!ready}>
+      {(["source", "image"] as const).map((pane, index) => (
+        <section key={pane}>
+          {!journey && paneHeadings[index]}
+          {result && marker ? (
+            <PaneDrawing
+              {...props(pane)}
+              onCamera={exporting ? undefined : props(pane).onCamera}
+              onSelect={exporting ? undefined : select}
+            />
+          ) : (
+            <p>Preparing paired geometry…</p>
+          )}
+        </section>
+      ))}
+    </div>
+  );
+  const playbackControls = result && marker && (
+    <div
+      ref={playback}
+      id="loom-playback"
+      className={`playback ${playerActive ? "active" : ""}`}
+      role="group"
+      aria-label="Playback"
+    >
+      <div className="animation-buttons">
+        <button
+          disabled={(!canAct && !playing) || exporting}
+          onClick={() => (playing ? pause() : start())}
+        >
+          {playing
+            ? study.motion
+              ? "Pause map motion"
+              : "Pause traversal"
+            : playbackActive && progress < 1
+              ? study.motion
+                ? "Resume map motion"
+                : "Resume traversal"
+              : study.motion
+                ? "Play map motion"
+                : "Play traversal"}
+        </button>
+        <button
+          onClick={() => {
+            if (exporting) cancelExport();
+            else {
+              if (study.motion) void seekMotion(0);
+              else changeParameter(lo);
+              setPlaybackActive(false);
+            }
+          }}
+        >
+          {exporting
+            ? "Cancel export"
+            : study.motion
+              ? "Stop map motion"
+              : "Stop traversal"}
+        </button>
+      </div>
+      <div className="timeline">
+        <fieldset disabled={exporting}>
+          <Field
+            label={study.motion ? "Motion progress" : "Source parameter"}
+            className="loom-parameter"
+            helpBeforeControl
+            value={(study.motion
+              ? study.mapParameter!
+              : study.parameter
+            ).toPrecision(6)}
+            help={
+              study.motion
+                ? "Seek the same absolute map time used by playback and export."
+                : tiered(
+                    "Move corresponding points at the same original source parameter.",
+                    mapInfo.traversalHelp,
+                  )
+            }
+          >
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step="any"
+              value={scrubProgress ?? progress}
+              aria-valuetext={String(
+                study.motion ? study.mapParameter : study.parameter,
+              )}
+              onChange={(e) =>
+                study.motion
+                  ? seekMotion(+e.target.value, true)
+                  : changeParameter(
+                      traversal(study, +e.target.value).parameter,
+                      true,
+                    )
+              }
+            />
+          </Field>
+        </fieldset>
+        <div className="note" aria-live="off">
+          {Number.isFinite(progress) && !durationError
+            ? `${(progress * study.duration).toFixed(1)} / ${study.duration} s`
+            : "—"}
+          {playbackActive && !playing && progress < 1 ? " · Paused" : ""}
+        </div>
+        <div className="animation-values">
+          t = {marker.parameter.toPrecision(6)}
+          {study.motion && (
+            <>
+              {" "}
+              · {mapInfo.symbol} = {(applied.mapParameter ?? 0).toPrecision(6)}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+  const experiment = scalar(
+    "Circle radius",
+    "radius",
+    "Positive, at most 1,000,000. Concentric radii increase evenly to this value.",
+  );
+  if (journey)
+    return (
+      <dialog
+        ref={dialog}
+        className="journey guided-overlay"
+        aria-label={journey.title}
+        onCancel={(e) => {
+          e.preventDefault();
+          onReturn("keyboard");
+        }}
+        onPointerDown={quiet.onPointerDown}
+        onKeyDownCapture={quiet.onKeyDownCapture}
+      >
+        <ScalarStatus.Provider value={scalarStatus}>
+          <FieldErrorContext.Provider value={target}>
+            <OverlayJourneyLayout
+              guide={journey}
+              study={withOverlay({ ...entry.study, weight }, "loom", study)}
+              disabled={!canAct || exporting}
+              busy={!ready}
+              error={!claimed ? message : ""}
+              backRef={back}
+              onReturn={onReturn}
+              control={experiment}
+              drawing={artwork}
+              prepared={
+                ready && result && placed
+                  ? { kind: "loom", result, marker: placed.marker }
+                  : undefined
+              }
+              failure={
+                activeError.message
+                  ? { message: activeError.message, field: activeError.field }
+                  : undefined
+              }
+              player={playbackControls}
+            />
+          </FieldErrorContext.Provider>
+        </ScalarStatus.Provider>
+      </dialog>
+    );
   return (
     <dialog
       ref={dialog}
@@ -787,7 +999,10 @@ export function LoomPreview({
                           checked={study.showExclusion ?? true}
                           onChange={(e) => {
                             const checked = e.currentTarget.checked;
-                            setStudy((s) => ({ ...s, showExclusion: checked }));
+                            setStudy((s) => ({
+                              ...s,
+                              showExclusion: checked,
+                            }));
                           }}
                         />{" "}
                         Show pole exclusion
@@ -926,11 +1141,7 @@ export function LoomPreview({
                             }}
                           />
                         </Field>
-                        {scalar(
-                          "Circle radius",
-                          "radius",
-                          "Positive, at most 1,000,000. Concentric radii increase evenly to this value.",
-                        )}
+                        {experiment}
                       </>
                     ) : null}
                     <details>
@@ -985,52 +1196,7 @@ export function LoomPreview({
                 </fieldset>
               </aside>
               <main>
-                <div ref={panes} className="loom-panes" aria-busy={!ready}>
-                  {(["source", "image"] as const).map((pane) => (
-                    <section key={pane}>
-                      <div className="loom-pane-heading">
-                        <h3>
-                          {pane === "source"
-                            ? "Source plane · z"
-                            : mapInfo.imageHeading}
-                        </h3>
-                        <button
-                          disabled={exporting}
-                          onClick={() =>
-                            setStudy((s) => ({
-                              ...s,
-                              framing: {
-                                source:
-                                  s.framing?.source ??
-                                  loomFit(result!, "source"),
-                                image:
-                                  s.framing?.image ?? loomFit(result!, "image"),
-                                [pane]: loomFit(result!, pane),
-                              },
-                              views: {
-                                ...s.views,
-                                [pane]: { x: 0, y: 0, zoom: 1 },
-                              },
-                            }))
-                          }
-                        >
-                          Fit {pane}
-                        </button>
-                      </div>
-                      {result && marker ? (
-                        <PaneDrawing
-                          {...props(pane)}
-                          onCamera={
-                            exporting ? undefined : props(pane).onCamera
-                          }
-                          onSelect={exporting ? undefined : select}
-                        />
-                      ) : (
-                        <p>Preparing paired geometry…</p>
-                      )}
-                    </section>
-                  ))}
-                </div>
+                {artwork}
                 <div className="loom-controls">
                   {result && marker && (
                     <>
@@ -1054,113 +1220,7 @@ export function LoomPreview({
                           </select>
                         </Field>
                       </fieldset>
-                      <div
-                        ref={playback}
-                        id="loom-playback"
-                        className={`playback ${playerActive ? "active" : ""}`}
-                        role="group"
-                        aria-label="Playback"
-                      >
-                        <div className="animation-buttons">
-                          <button
-                            disabled={(!canAct && !playing) || exporting}
-                            onClick={() => (playing ? pause() : start())}
-                          >
-                            {playing
-                              ? study.motion
-                                ? "Pause map motion"
-                                : "Pause traversal"
-                              : playbackActive && progress < 1
-                                ? study.motion
-                                  ? "Resume map motion"
-                                  : "Resume traversal"
-                                : study.motion
-                                  ? "Play map motion"
-                                  : "Play traversal"}
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (exporting) cancelExport();
-                              else {
-                                if (study.motion) void seekMotion(0);
-                                else changeParameter(lo);
-                                setPlaybackActive(false);
-                              }
-                            }}
-                          >
-                            {exporting
-                              ? "Cancel export"
-                              : study.motion
-                                ? "Stop map motion"
-                                : "Stop traversal"}
-                          </button>
-                        </div>
-                        <div className="timeline">
-                          <fieldset disabled={exporting}>
-                            <Field
-                              label={
-                                study.motion
-                                  ? "Motion progress"
-                                  : "Source parameter"
-                              }
-                              className="loom-parameter"
-                              helpBeforeControl
-                              value={(study.motion
-                                ? study.mapParameter!
-                                : study.parameter
-                              ).toPrecision(6)}
-                              help={
-                                study.motion
-                                  ? "Seek the same absolute map time used by playback and export."
-                                  : tiered(
-                                      "Move corresponding points at the same original source parameter.",
-                                      mapInfo.traversalHelp,
-                                    )
-                              }
-                            >
-                              <input
-                                type="range"
-                                min={0}
-                                max={1}
-                                step="any"
-                                value={scrubProgress ?? progress}
-                                aria-valuetext={String(
-                                  study.motion
-                                    ? study.mapParameter
-                                    : study.parameter,
-                                )}
-                                onChange={(e) =>
-                                  study.motion
-                                    ? seekMotion(+e.target.value, true)
-                                    : changeParameter(
-                                        traversal(study, +e.target.value)
-                                          .parameter,
-                                        true,
-                                      )
-                                }
-                              />
-                            </Field>
-                          </fieldset>
-                          <div className="note" aria-live="off">
-                            {Number.isFinite(progress) && !durationError
-                              ? `${(progress * study.duration).toFixed(1)} / ${study.duration} s`
-                              : "—"}
-                            {playbackActive && !playing && progress < 1
-                              ? " · Paused"
-                              : ""}
-                          </div>
-                          <div className="animation-values">
-                            t = {marker.parameter.toPrecision(6)}
-                            {study.motion && (
-                              <>
-                                {" "}
-                                · {mapInfo.symbol} ={" "}
-                                {(applied.mapParameter ?? 0).toPrecision(6)}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                      {playbackControls}
                       <fieldset disabled={exporting}>
                         <Field
                           label="Exact source parameter"
@@ -1283,7 +1343,10 @@ export function LoomPreview({
                                 onChange={(e) => {
                                   const value = e.currentTarget.valueAsNumber;
                                   pause();
-                                  setStudy((s) => ({ ...s, duration: value }));
+                                  setStudy((s) => ({
+                                    ...s,
+                                    duration: value,
+                                  }));
                                 }}
                               />
                             </Field>

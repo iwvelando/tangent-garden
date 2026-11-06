@@ -1,4 +1,6 @@
 import { setIn } from "./config-path";
+import { overlayJourney, type OverlayJourney } from "./overlay-journeys";
+export { overlayJourney, overlayJourneyStudy } from "./overlay-journeys";
 import { presetStudy, type PlanarStudy } from "./planar-link";
 import { presets } from "./presets";
 import { spatialPresets } from "./spatial/presets";
@@ -50,7 +52,12 @@ export type JourneyStep =
       suggestion: string;
       control: Extract<JourneyControl, { kind: "scalar" }>;
     };
-export type Journey = { title: string; steps: JourneyStep[] };
+export type StudyJourney = {
+  kind?: undefined;
+  title: string;
+  steps: JourneyStep[];
+};
+export type Journey = StudyJourney | OverlayJourney;
 export type JourneyStudies = {
   "2d": PlanarStudy;
   "3d": SpatialStudy;
@@ -150,7 +157,7 @@ export const lightJourney = {
   ],
 };
 
-export const threadsJourney: Journey = {
+export const threadsJourney: StudyJourney = {
   title: "Threads becoming surfaces",
   steps: [
     across(
@@ -179,7 +186,7 @@ export const threadsJourney: Journey = {
     ),
   ],
 };
-export const orderJourney: Journey = {
+export const orderJourney: StudyJourney = {
   title: "Order inside apparent chaos",
   steps: [
     step(
@@ -212,7 +219,7 @@ export const orderJourney: Journey = {
     ),
   ],
 };
-export const dimensionsJourney: Journey = {
+export const dimensionsJourney: StudyJourney = {
   title: "A glimpse of four dimensions",
   steps: [
     across(
@@ -241,7 +248,7 @@ export const dimensionsJourney: Journey = {
     ),
   ],
 };
-export const shadowJourney: Journey = {
+export const shadowJourney: StudyJourney = {
   title: "What a shadow leaves out",
   steps: [
     across(
@@ -271,7 +278,7 @@ export const shadowJourney: Journey = {
   ],
 };
 
-export const surfaceJourney: Journey = {
+export const surfaceJourney: StudyJourney = {
   title: "A thread learns the surface",
   steps: [
     across(
@@ -308,4 +315,5 @@ export const journeys: Journey[] = [
   dimensionsJourney,
   shadowJourney,
   surfaceJourney,
+  overlayJourney,
 ];

@@ -1,4 +1,9 @@
 import {
+  OverlayJourneyLayout,
+  type OverlayGuide,
+} from "../OverlayJourneyGuide";
+import { withOverlay } from "../overlay-journeys";
+import {
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -74,8 +79,10 @@ type Film = { result: GardenResult; key: string; time: number };
 export function GardenPreview({
   entry,
   onReturn,
+  journey,
 }: {
   entry: GardenEntry;
+  journey?: OverlayGuide;
   onReturn: (via: "keyboard" | "pointer") => void;
 }) {
   const theme = useTheme(),
@@ -85,8 +92,18 @@ export function GardenPreview({
   const [study, setStudy] = useState<GardenStudy>(() =>
     structuredClone(entry.study.garden ?? defaultGarden),
   );
+  const prepared =
+    journey?.prepared?.kind === "garden" ? journey.prepared : undefined;
   // The result shown and the generation settings it answers.
-  const [shown, setShown] = useState<{ key: string; result: GardenResult }>();
+  const [shown, setShown] = useState<
+    { key: string; result: GardenResult } | undefined
+  >(
+    () =>
+      prepared && {
+        key: JSON.stringify(gardenRequest(study)),
+        result: prepared.result,
+      },
+  );
   const [error, setError] = useState<{
     message: string;
     field?: string;
@@ -507,6 +524,129 @@ export function GardenPreview({
       />
     </Field>
   );
+  const artwork = (
+    <div
+      className="garden-view"
+      ref={view}
+      data-reveal-time={film?.time}
+      data-playing={playing || undefined}
+    >
+      {props ? (
+        <GardenDrawing
+          {...props}
+          busy={!ready && !film}
+          onCamera={manual}
+          onSelect={select}
+        />
+      ) : (
+        <p className="garden-placeholder" role="status">
+          Growing the packing…
+        </p>
+      )}
+    </div>
+  );
+  const playbackControls = (
+    <div
+      ref={playback}
+      id="garden-playback"
+      className={`playback ${film || playing || exporting ? "active" : ""}`}
+      role="group"
+      aria-label="Reveal playback"
+    >
+      <div className="animation-buttons">
+        <button
+          disabled={(!canReveal && !playing) || exporting}
+          onClick={() => (playing ? pause() : start())}
+        >
+          {playing
+            ? "Pause reveal"
+            : film && film.time < 1
+              ? "Resume reveal"
+              : "Play reveal"}
+        </button>
+        <button
+          disabled={!film && !playing && !exporting && !finished}
+          onClick={() => (exporting ? cancelExport() : endFilm())}
+        >
+          {exporting ? "Cancel export" : "Stop reveal"}
+        </button>
+      </div>
+      <div className="timeline">
+        <Field
+          label="Animation progress"
+          help={gardenHelp.progress}
+          helpBeforeControl
+        >
+          <ProgressSlider
+            progress={film?.time ?? (finished ? 1 : 0)}
+            disabled={!source || exporting}
+            onSeek={seek}
+          />
+        </Field>
+        <p className="note garden-reveal-status" aria-live="off">
+          {(
+            (film?.time ?? (finished ? 1 : 0)) *
+            (durationError ? 0 : reveal.duration)
+          ).toFixed(1)}{" "}
+          / {durationError ? "—" : reveal.duration} s
+          {film && result
+            ? ` · ${count!.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} circles`
+            : ""}
+          {film && !playing && film.time < 1 ? " · Paused" : ""}
+        </p>
+      </div>
+    </div>
+  );
+  const experiment = (
+    <Field label="Minimum radius" help={gardenHelp.minRadius}>
+      <ScalarInput
+        name="Minimum radius"
+        value={study.minRadius}
+        onChange={(v) => edit((s) => ({ ...s, minRadius: v }))}
+      />
+    </Field>
+  );
+  if (journey)
+    return (
+      <dialog
+        ref={dialog}
+        className="journey guided-overlay"
+        aria-label={journey.title}
+        onCancel={(e) => {
+          e.preventDefault();
+          onReturn("keyboard");
+        }}
+        onPointerDown={quiet.onPointerDown}
+        onKeyDownCapture={quiet.onKeyDownCapture}
+      >
+        <ScalarStatus.Provider value={scalarStatus}>
+          <FieldErrorContext.Provider value={target}>
+            <OverlayJourneyLayout
+              guide={journey}
+              study={withOverlay(entry.study, "garden", study)}
+              disabled={!valid || !(current || film) || exporting}
+              busy={!ready}
+              error={!claimed ? message : ""}
+              backRef={back}
+              onReturn={onReturn}
+              control={experiment}
+              drawing={artwork}
+              prepared={
+                current && shown
+                  ? { kind: "garden", result: shown.result }
+                  : undefined
+              }
+              failure={
+                activeError
+                  ? { message: activeError.message, field: activeError.field }
+                  : undefined
+              }
+              player={playbackControls}
+            />
+          </FieldErrorContext.Provider>
+        </ScalarStatus.Provider>
+      </dialog>
+    );
   return (
     <dialog
       ref={dialog}
@@ -566,25 +706,7 @@ export function GardenPreview({
           <FieldErrorContext.Provider value={target}>
             <div className="garden-layout">
               <main>
-                <div
-                  className="garden-view"
-                  ref={view}
-                  data-reveal-time={film?.time}
-                  data-playing={playing || undefined}
-                >
-                  {props ? (
-                    <GardenDrawing
-                      {...props}
-                      busy={!ready && !film}
-                      onCamera={manual}
-                      onSelect={select}
-                    />
-                  ) : (
-                    <p className="garden-placeholder" role="status">
-                      Growing the packing…
-                    </p>
-                  )}
-                </div>
+                {artwork}
                 <p className="note garden-gestures">
                   Click or tap near a circle to select it. Drag to pan; scroll
                   or pinch to zoom
@@ -699,7 +821,10 @@ export function GardenPreview({
                             disabled={selected < 0 && !study.selected}
                             onClick={() => {
                               setCircleDraft(undefined);
-                              setStudy((s) => ({ ...s, selected: undefined }));
+                              setStudy((s) => ({
+                                ...s,
+                                selected: undefined,
+                              }));
                             }}
                           >
                             Clear selection
@@ -776,56 +901,7 @@ export function GardenPreview({
                   </p>
                 )}
                 <h3 className="garden-section">Reveal</h3>
-                <div
-                  ref={playback}
-                  id="garden-playback"
-                  className={`playback ${film || playing || exporting ? "active" : ""}`}
-                  role="group"
-                  aria-label="Reveal playback"
-                >
-                  <div className="animation-buttons">
-                    <button
-                      disabled={(!canReveal && !playing) || exporting}
-                      onClick={() => (playing ? pause() : start())}
-                    >
-                      {playing
-                        ? "Pause reveal"
-                        : film && film.time < 1
-                          ? "Resume reveal"
-                          : "Play reveal"}
-                    </button>
-                    <button
-                      disabled={!film && !playing && !exporting && !finished}
-                      onClick={() => (exporting ? cancelExport() : endFilm())}
-                    >
-                      {exporting ? "Cancel export" : "Stop reveal"}
-                    </button>
-                  </div>
-                  <div className="timeline">
-                    <Field
-                      label="Animation progress"
-                      help={gardenHelp.progress}
-                      helpBeforeControl
-                    >
-                      <ProgressSlider
-                        progress={film?.time ?? (finished ? 1 : 0)}
-                        disabled={!source || exporting}
-                        onSeek={seek}
-                      />
-                    </Field>
-                    <p className="note garden-reveal-status" aria-live="off">
-                      {(
-                        (film?.time ?? (finished ? 1 : 0)) *
-                        (durationError ? 0 : reveal.duration)
-                      ).toFixed(1)}{" "}
-                      / {durationError ? "—" : reveal.duration} s
-                      {film && result
-                        ? ` · ${count!.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} circles`
-                        : ""}
-                      {film && !playing && film.time < 1 ? " · Paused" : ""}
-                    </p>
-                  </div>
-                </div>
+                {playbackControls}
                 <fieldset disabled={exporting} className="garden-reveal">
                   <div className="pair">
                     <Field label="Reveal duration" help={gardenHelp.duration}>
@@ -838,7 +914,9 @@ export function GardenPreview({
                           Number.isNaN(reveal.duration) ? "" : reveal.duration
                         }
                         onChange={(e) =>
-                          setReveal({ duration: e.currentTarget.valueAsNumber })
+                          setReveal({
+                            duration: e.currentTarget.valueAsNumber,
+                          })
                         }
                       />
                     </Field>
@@ -884,13 +962,7 @@ export function GardenPreview({
                   </p>
                 )}
                 <h3 className="garden-section">Cutoffs</h3>
-                <Field label="Minimum radius" help={gardenHelp.minRadius}>
-                  <ScalarInput
-                    name="Minimum radius"
-                    value={study.minRadius}
-                    onChange={(v) => edit((s) => ({ ...s, minRadius: v }))}
-                  />
-                </Field>
+                {experiment}
                 <div className="pair">
                   {whole("depth", "Depth", 0, gardenLimits.depth)}
                   {whole("maxCircles", "Circle limit", 4, gardenLimits.circles)}

@@ -1,4 +1,9 @@
 import {
+  OverlayJourneyLayout,
+  type OverlayGuide,
+} from "../OverlayJourneyGuide";
+import { withOverlay } from "../overlay-journeys";
+import {
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -84,8 +89,10 @@ type Film = { time: number; frame?: ShortenContour; frameTime?: number };
 export function ShortenPreview({
   entry,
   onReturn,
+  journey,
 }: {
   entry: ShortenEntry;
+  journey?: OverlayGuide;
   onReturn: (via: "keyboard" | "pointer") => void;
 }) {
   const theme = useTheme(),
@@ -95,8 +102,22 @@ export function ShortenPreview({
   const [study, setStudy] = useState<ShortenStudy>(() =>
     structuredClone(entry.study.shorten ?? defaultShorten),
   );
+  const prepared =
+    journey?.prepared?.kind === "shorten" ? journey.prepared : undefined;
   // The nest shown and the settings it answers.
-  const [shown, setShown] = useState<{ key: string; reply: ShortenReply }>();
+  const [shown, setShown] = useState<
+    { key: string; reply: ShortenReply } | undefined
+  >(
+    () =>
+      prepared && {
+        key: JSON.stringify([
+          JSON.stringify(shortenRequest(study, [])),
+          study.contours,
+          study.spacing,
+        ]),
+        reply: prepared.result,
+      },
+  );
   const [error, setError] = useState<{
     message: string;
     field?: string;
@@ -578,6 +599,111 @@ export function ShortenPreview({
       />
     </Field>
   );
+  const artwork = (
+    <div ref={view} className="garden-view">
+      {props ? (
+        <ShortenDrawing
+          {...props}
+          busy={!ready || (!!film && film.frameTime !== film.time)}
+          progress={time}
+          onCamera={manual}
+        />
+      ) : (
+        <p className="garden-placeholder" role="status">
+          {message || "Smoothing the loop…"}
+        </p>
+      )}
+    </div>
+  );
+  const playbackControls = (
+    <div
+      ref={playback}
+      id="shorten-playback"
+      className={`playback ${film || playing || exporting ? "active" : ""}`}
+      role="group"
+      aria-label="Motion playback"
+    >
+      <div className="animation-buttons">
+        <button
+          disabled={(!canPlay && !playing) || exporting}
+          onClick={() => (playing ? pause() : start())}
+        >
+          {playing
+            ? "Pause motion"
+            : film && film.time < 1 && !finished
+              ? "Resume motion"
+              : "Play motion"}
+        </button>
+        <button
+          disabled={!film && !playing && !exporting && !finished}
+          onClick={() => (exporting ? cancelExport() : endFilm())}
+        >
+          {exporting ? "Cancel export" : "Stop motion"}
+        </button>
+      </div>
+      <div className="timeline">
+        <Field
+          label="Animation progress"
+          help={shortenHelp.progress}
+          helpBeforeControl
+        >
+          <ProgressSlider
+            progress={time}
+            disabled={!ready || exporting}
+            onSeek={seek}
+          />
+        </Field>
+        <p className="note garden-reveal-status" aria-live="off">
+          {(time * (durationError ? 0 : motion.duration)).toFixed(1)} /{" "}
+          {durationError ? "—" : motion.duration} s
+          {frame ? ` · t = ${fmt(frame.t, 3)}` : ""}
+          {film && !playing && !finished && film.time < 1 ? " · Paused" : ""}
+        </p>
+      </div>
+    </div>
+  );
+  const experiment = scalar("depth");
+  if (journey)
+    return (
+      <dialog
+        ref={dialog}
+        className="journey guided-overlay"
+        aria-label={journey.title}
+        onCancel={(e) => {
+          e.preventDefault();
+          onReturn("keyboard");
+        }}
+        onPointerDown={quiet.onPointerDown}
+        onKeyDownCapture={quiet.onKeyDownCapture}
+      >
+        <ScalarStatus.Provider value={scalarStatus}>
+          <FieldErrorContext.Provider value={target}>
+            <OverlayJourneyLayout
+              guide={journey}
+              study={withOverlay(entry.study, "shorten", study)}
+              disabled={!valid || !current || exporting}
+              busy={!ready}
+              error={!claimed ? message : ""}
+              backRef={back}
+              onReturn={onReturn}
+              control={experiment}
+              drawing={artwork}
+              prepared={
+                current && shown
+                  ? { kind: "shorten", result: shown.reply }
+                  : undefined
+              }
+              failure={
+                activeError
+                  ? { message: activeError.message, field: activeError.field }
+                  : undefined
+              }
+              player={playbackControls}
+            />
+          </FieldErrorContext.Provider>
+        </ScalarStatus.Provider>
+      </dialog>
+    );
   return (
     <dialog
       ref={dialog}
@@ -628,20 +754,7 @@ export function ShortenPreview({
           <FieldErrorContext.Provider value={target}>
             <div className="garden-layout">
               <main>
-                <div ref={view} className="garden-view">
-                  {props ? (
-                    <ShortenDrawing
-                      {...props}
-                      busy={!ready || (!!film && film.frameTime !== film.time)}
-                      progress={time}
-                      onCamera={manual}
-                    />
-                  ) : (
-                    <p className="garden-placeholder" role="status">
-                      {message || "Smoothing the loop…"}
-                    </p>
-                  )}
-                </div>
+                {artwork}
                 <p className="note garden-gestures">
                   Drag to pan; scroll or pinch to zoom. Keys: arrows, + / −,
                   Home.{" "}
@@ -726,7 +839,7 @@ export function ShortenPreview({
                   <>
                     <div className="pair">
                       {count("petals", 0, shortenLimits.petals)}
-                      {scalar("depth")}
+                      {experiment}
                     </div>
                     <div className="pair">
                       {count("ruffles", 0, shortenLimits.ruffles[1])}
@@ -805,55 +918,7 @@ export function ShortenPreview({
                     : "Solving…"}
                 </p>
                 <h3 className="garden-section">Motion</h3>
-                <div
-                  ref={playback}
-                  id="shorten-playback"
-                  className={`playback ${film || playing || exporting ? "active" : ""}`}
-                  role="group"
-                  aria-label="Motion playback"
-                >
-                  <div className="animation-buttons">
-                    <button
-                      disabled={(!canPlay && !playing) || exporting}
-                      onClick={() => (playing ? pause() : start())}
-                    >
-                      {playing
-                        ? "Pause motion"
-                        : film && film.time < 1 && !finished
-                          ? "Resume motion"
-                          : "Play motion"}
-                    </button>
-                    <button
-                      disabled={!film && !playing && !exporting && !finished}
-                      onClick={() => (exporting ? cancelExport() : endFilm())}
-                    >
-                      {exporting ? "Cancel export" : "Stop motion"}
-                    </button>
-                  </div>
-                  <div className="timeline">
-                    <Field
-                      label="Animation progress"
-                      help={shortenHelp.progress}
-                      helpBeforeControl
-                    >
-                      <ProgressSlider
-                        progress={time}
-                        disabled={!ready || exporting}
-                        onSeek={seek}
-                      />
-                    </Field>
-                    <p className="note garden-reveal-status" aria-live="off">
-                      {(time * (durationError ? 0 : motion.duration)).toFixed(
-                        1,
-                      )}{" "}
-                      / {durationError ? "—" : motion.duration} s
-                      {frame ? ` · t = ${fmt(frame.t, 3)}` : ""}
-                      {film && !playing && !finished && film.time < 1
-                        ? " · Paused"
-                        : ""}
-                    </p>
-                  </div>
-                </div>
+                {playbackControls}
                 <fieldset disabled={exporting} className="garden-reveal">
                   <div className="pair">
                     <Field label="Duration" help={shortenHelp.duration}>
@@ -866,7 +931,9 @@ export function ShortenPreview({
                           Number.isNaN(motion.duration) ? "" : motion.duration
                         }
                         onChange={(e) =>
-                          setTiming({ duration: e.currentTarget.valueAsNumber })
+                          setTiming({
+                            duration: e.currentTarget.valueAsNumber,
+                          })
                         }
                       />
                     </Field>
@@ -874,7 +941,9 @@ export function ShortenPreview({
                       <select
                         value={motion.repeat}
                         onChange={(e) =>
-                          setTiming({ repeat: e.currentTarget.value as Repeat })
+                          setTiming({
+                            repeat: e.currentTarget.value as Repeat,
+                          })
                         }
                       >
                         {repeatChoices.map((c) => (
