@@ -236,17 +236,19 @@ function Geometry(p: LaceDrawingProps) {
   ]);
 }
 
-function Art(p: LaceDrawingProps & { clip: string }) {
+function Art(p: LaceDrawingProps & { clip?: string }) {
   const palette = plotPalette(p.dark, p.scheme);
   return (
     <>
-      <defs>
-        <clipPath id={p.clip}>
-          <rect width={width} height={height} />
-        </clipPath>
-      </defs>
+      {p.clip && (
+        <defs>
+          <clipPath id={p.clip}>
+            <rect width={width} height={height} />
+          </clipPath>
+        </defs>
+      )}
       <rect width={width} height={height} fill={palette.bg} />
-      <g clipPath={`url(#${p.clip})`}>
+      <g clipPath={p.clip ? `url(#${p.clip})` : undefined}>
         <g transform={`translate(${p.camera.x} ${p.camera.y})`} fill="none">
           <Geometry {...p} />
         </g>
@@ -305,6 +307,8 @@ export function LaceDrawing(
     <svg
       {...gestures}
       id="lace-artwork"
+      overflow="hidden"
+      style={{ background: plotPalette(p.dark, p.scheme).bg }}
       className="garden-drawing"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
@@ -316,7 +320,7 @@ export function LaceDrawing(
       data-presentation={p.presentation}
       data-tiles={p.result.center.length}
     >
-      <Art {...p} clip="lace-live-clip" />
+      <Art {...p} />
     </svg>
   );
 }

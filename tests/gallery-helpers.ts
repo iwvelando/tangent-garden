@@ -18,6 +18,7 @@ export const journeyTitles = [
   "A glimpse of four dimensions",
   "What a shadow leaves out",
   "A thread learns the surface",
+  "Rules that grow a garden",
 ];
 
 export async function settled(page: Page) {

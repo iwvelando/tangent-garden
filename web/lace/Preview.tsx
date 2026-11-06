@@ -1,4 +1,9 @@
 import {
+  OverlayJourneyLayout,
+  type OverlayGuide,
+} from "../OverlayJourneyGuide";
+import { withOverlay } from "../overlay-journeys";
+import {
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -101,8 +106,10 @@ const pathOf = ({ offset, orbits, turns }: LaceStudyMotion) => ({
 export function LacePreview({
   entry,
   onReturn,
+  journey,
 }: {
   entry: LaceEntry;
+  journey?: OverlayGuide;
   onReturn: (via: "keyboard" | "pointer") => void;
 }) {
   const theme = useTheme(),
@@ -112,8 +119,18 @@ export function LacePreview({
   const [study, setStudy] = useState<LaceStudy>(() =>
     structuredClone(entry.study.lace ?? defaultLace),
   );
+  const prepared =
+    journey?.prepared?.kind === "lace" ? journey.prepared : undefined;
   // The result shown and the generation settings it answers.
-  const [shown, setShown] = useState<{ key: string; result: LaceResult }>();
+  const [shown, setShown] = useState<
+    { key: string; result: LaceResult } | undefined
+  >(
+    () =>
+      prepared && {
+        key: JSON.stringify(laceRequest(study)),
+        result: prepared.result,
+      },
+  );
   const [error, setError] = useState<{
     message: string;
     field?: string;
@@ -661,6 +678,124 @@ export function LacePreview({
       help={laceHelp[k]}
     />
   );
+  const artwork = (
+    <div ref={view} className="garden-view" data-motion-time={film?.frameTime}>
+      {props ? (
+        <LaceDrawing
+          {...props}
+          busy={film ? film.frameTime !== film.time : !ready}
+          onCamera={manual}
+          onSelect={select}
+        />
+      ) : (
+        <p className="garden-placeholder" role="status">
+          Reflecting tiles…
+        </p>
+      )}
+    </div>
+  );
+  const playbackControls = (
+    <div
+      ref={playback}
+      id="lace-playback"
+      className={`playback ${film || playing || exporting ? "active" : ""}`}
+      role="group"
+      aria-label="Motion playback"
+    >
+      <div className="animation-buttons">
+        <button
+          disabled={(!canPlay && !playing) || exporting}
+          onClick={() => (playing ? pause() : void start())}
+        >
+          {playing
+            ? "Pause motion"
+            : film && film.time < 1
+              ? "Resume motion"
+              : "Play motion"}
+        </button>
+        <button
+          disabled={!film && !playing && !exporting && !finished}
+          onClick={() => (exporting ? cancelExport() : endFilm())}
+        >
+          {exporting ? "Cancel export" : "Stop motion"}
+        </button>
+      </div>
+      <div className="timeline">
+        <Field
+          label="Animation progress"
+          help={laceHelp.progress}
+          helpBeforeControl
+        >
+          <ProgressSlider
+            progress={time}
+            disabled={!source || exporting || !!motionError}
+            onSeek={seek}
+          />
+        </Field>
+        <p
+          className="note garden-reveal-status lace-motion-status"
+          aria-live="off"
+        >
+          {(time * (durationError ? 0 : motion.duration)).toFixed(1)} /{" "}
+          {durationError ? "—" : motion.duration} s · offset{" "}
+          {drawnIsometry.offset.toFixed(3)}, direction{" "}
+          {drawnIsometry.direction.toFixed(3)}, rotation{" "}
+          {drawnIsometry.rotation.toFixed(3)}
+          {film && !playing && film.time < 1 ? " · Paused" : ""}
+        </p>
+      </div>
+    </div>
+  );
+  const experiment = (
+    <Field label="Star point" help={laceHelp.starPoint}>
+      <ScalarInput
+        name="Star point"
+        value={study.starPoint}
+        onChange={(v) => edit((s) => ({ ...s, starPoint: v }))}
+      />
+    </Field>
+  );
+  if (journey)
+    return (
+      <dialog
+        ref={dialog}
+        className="journey guided-overlay"
+        aria-label={journey.title}
+        onCancel={(e) => {
+          e.preventDefault();
+          onReturn("keyboard");
+        }}
+        onPointerDown={quiet.onPointerDown}
+        onKeyDownCapture={quiet.onKeyDownCapture}
+      >
+        <ScalarStatus.Provider value={scalarStatus}>
+          <FieldErrorContext.Provider value={target}>
+            <OverlayJourneyLayout
+              guide={journey}
+              study={withOverlay(entry.study, "lace", study)}
+              disabled={!valid || !(current || film) || exporting}
+              busy={!ready}
+              error={!claimed ? message : ""}
+              backRef={back}
+              onReturn={onReturn}
+              control={experiment}
+              drawing={artwork}
+              prepared={
+                current && shown
+                  ? { kind: "lace", result: shown.result }
+                  : undefined
+              }
+              failure={
+                activeError
+                  ? { message: activeError.message, field: activeError.field }
+                  : undefined
+              }
+              player={playbackControls}
+            />
+          </FieldErrorContext.Provider>
+        </ScalarStatus.Provider>
+      </dialog>
+    );
   return (
     <dialog
       ref={dialog}
@@ -713,24 +848,7 @@ export function LacePreview({
           <FieldErrorContext.Provider value={target}>
             <div className="garden-layout">
               <main>
-                <div
-                  ref={view}
-                  className="garden-view"
-                  data-motion-time={film?.frameTime}
-                >
-                  {props ? (
-                    <LaceDrawing
-                      {...props}
-                      busy={film ? film.frameTime !== film.time : !ready}
-                      onCamera={manual}
-                      onSelect={select}
-                    />
-                  ) : (
-                    <p className="garden-placeholder" role="status">
-                      Reflecting tiles…
-                    </p>
-                  )}
-                </div>
+                {artwork}
                 <p className="note garden-gestures">
                   Click or tap a tile to select it. Drag to pan; scroll or pinch
                   to zoom, which enlarges the drawing without moving the disk.
@@ -850,7 +968,10 @@ export function LacePreview({
                             disabled={selected < 0 && !study.selected}
                             onClick={() => {
                               setTileDraft(undefined);
-                              setStudy((s) => ({ ...s, selected: undefined }));
+                              setStudy((s) => ({
+                                ...s,
+                                selected: undefined,
+                              }));
                             }}
                           >
                             Clear selection
@@ -941,58 +1062,7 @@ export function LacePreview({
                   {layer("edges", "Tile sides")}
                 </div>
                 <h3 className="garden-section">Motion</h3>
-                <div
-                  ref={playback}
-                  id="lace-playback"
-                  className={`playback ${film || playing || exporting ? "active" : ""}`}
-                  role="group"
-                  aria-label="Motion playback"
-                >
-                  <div className="animation-buttons">
-                    <button
-                      disabled={(!canPlay && !playing) || exporting}
-                      onClick={() => (playing ? pause() : void start())}
-                    >
-                      {playing
-                        ? "Pause motion"
-                        : film && film.time < 1
-                          ? "Resume motion"
-                          : "Play motion"}
-                    </button>
-                    <button
-                      disabled={!film && !playing && !exporting && !finished}
-                      onClick={() => (exporting ? cancelExport() : endFilm())}
-                    >
-                      {exporting ? "Cancel export" : "Stop motion"}
-                    </button>
-                  </div>
-                  <div className="timeline">
-                    <Field
-                      label="Animation progress"
-                      help={laceHelp.progress}
-                      helpBeforeControl
-                    >
-                      <ProgressSlider
-                        progress={time}
-                        disabled={!source || exporting || !!motionError}
-                        onSeek={seek}
-                      />
-                    </Field>
-                    <p
-                      className="note garden-reveal-status lace-motion-status"
-                      aria-live="off"
-                    >
-                      {(time * (durationError ? 0 : motion.duration)).toFixed(
-                        1,
-                      )}{" "}
-                      / {durationError ? "—" : motion.duration} s · offset{" "}
-                      {drawnIsometry.offset.toFixed(3)}, direction{" "}
-                      {drawnIsometry.direction.toFixed(3)}, rotation{" "}
-                      {drawnIsometry.rotation.toFixed(3)}
-                      {film && !playing && film.time < 1 ? " · Paused" : ""}
-                    </p>
-                  </div>
-                </div>
+                {playbackControls}
                 <fieldset disabled={exporting} className="garden-reveal">
                   <Field label="Farthest offset" help={laceHelp.motionOffset}>
                     <ScalarInput
@@ -1016,7 +1086,9 @@ export function LacePreview({
                           Number.isNaN(motion.duration) ? "" : motion.duration
                         }
                         onChange={(e) =>
-                          setTiming({ duration: e.currentTarget.valueAsNumber })
+                          setTiming({
+                            duration: e.currentTarget.valueAsNumber,
+                          })
                         }
                       />
                     </Field>
@@ -1101,13 +1173,7 @@ export function LacePreview({
                   </button>
                 </p>
                 <h3 className="garden-section">Motif</h3>
-                <Field label="Star point" help={laceHelp.starPoint}>
-                  <ScalarInput
-                    name="Star point"
-                    value={study.starPoint}
-                    onChange={(v) => edit((s) => ({ ...s, starPoint: v }))}
-                  />
-                </Field>
+                {experiment}
                 <h3 className="garden-section">Cutoffs</h3>
                 <div className="pair">
                   {whole("depth", "Depth", 0, laceLimits.depth)}

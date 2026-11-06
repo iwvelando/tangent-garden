@@ -44,7 +44,7 @@ function pathOf(x: number[], y: number[], k: number) {
 // group's translation. Physical framing is fixed by the seed, so the nest
 // shrinks on the page; normalized framing rescales each loop about its
 // centroid to the starting area. No text.
-function Art(p: ShortenDrawingProps & { clip: string }) {
+function Art(p: ShortenDrawingProps & { clip?: string }) {
   const palette = plotPalette(p.dark, p.scheme),
     stroke = svgStroke(p.weight);
   const k = pageScale(p.extent) * p.camera.zoom;
@@ -60,13 +60,15 @@ function Art(p: ShortenDrawingProps & { clip: string }) {
   );
   return (
     <>
-      <defs>
-        <clipPath id={p.clip}>
-          <rect width={width} height={height} />
-        </clipPath>
-      </defs>
+      {p.clip && (
+        <defs>
+          <clipPath id={p.clip}>
+            <rect width={width} height={height} />
+          </clipPath>
+        </defs>
+      )}
       <rect width={width} height={height} fill={palette.bg} />
-      <g clipPath={`url(#${p.clip})`}>
+      <g clipPath={p.clip ? `url(#${p.clip})` : undefined}>
         <g
           transform={`translate(${p.camera.x} ${p.camera.y})`}
           fill="none"
@@ -142,6 +144,8 @@ export function ShortenDrawing(
     <svg
       {...gestures}
       id="shorten-artwork"
+      overflow="hidden"
+      style={{ background: plotPalette(p.dark, p.scheme).bg }}
       className="garden-drawing"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
@@ -154,7 +158,7 @@ export function ShortenDrawing(
       data-framing={p.framing}
       data-nest={p.nest}
     >
-      <Art {...p} clip="shorten-live-clip" />
+      <Art {...p} />
     </svg>
   );
 }

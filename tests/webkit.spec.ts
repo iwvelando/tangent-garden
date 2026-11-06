@@ -1,5 +1,10 @@
 import { test, expect, devices, type Page } from "@playwright/test";
 import { checkLoomPortraitPlayer, checkLoomLiveScrub } from "./loom-playback";
+import {
+  overlayViewport,
+  expectWholeOverlayPage,
+  expectZoomUsesWholeViewport,
+} from "./overlay-viewport";
 
 import { readFile } from "node:fs/promises";
 import {
@@ -2474,3 +2479,166 @@ test("24-cell section controls and stills survive scalar click and blur in WebKi
     .poll(async () => (await meta()).config)
     .toMatchObject({ mode: "section", slice: 0.2, cell24: { selected: 4 } });
 });
+
+for (const [width, height] of [
+  [390, 844],
+  [844, 390],
+])
+  test(`overlay journey focus, scalar blur and stable navigation in WebKit at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Browse notebook examples", exact: true })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Notebook examples", exact: true })
+      .getByRole("button", { name: "Rules that grow a garden", exact: true })
+      .click();
+    const d = page.getByRole("dialog", {
+      name: "Rules that grow a garden",
+      exact: true,
+    });
+    const positions: number[] = [];
+    for (const [i, label, value] of [
+      [0, "Circle radius", "1/2"],
+      [1, "Minimum radius", "1/50"],
+      [2, "Star point", "1/10"],
+      [3, "Petal depth", "1/5"],
+    ] as const) {
+      await expect(d.locator(".journey-art")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      await expect(d.getByRole("textbox")).toHaveCount(1);
+      await expect(d.getByRole("combobox")).toHaveCount(0);
+      const field = d.getByLabel(label, { exact: true });
+      await field.fill(value);
+      await d
+        .getByRole("button", { name: `About ${label}`, exact: true })
+        .click();
+      await expect(
+        d.getByRole("button", { name: "Open study", exact: true }),
+      ).toBeEnabled();
+      await expect(d.getByRole("alert")).toHaveCount(0);
+      const nav = d.getByRole("group", { name: "Journey steps", exact: true });
+      positions.push(
+        await nav.evaluate((el) => {
+          const box = el.closest("dialog")!;
+          return (
+            el.getBoundingClientRect().top -
+            box.getBoundingClientRect().top +
+            box.scrollTop
+          );
+        }),
+      );
+      const play = d.getByRole("button", {
+        name: /^Play (traversal|reveal|motion)$/,
+      });
+      await play.scrollIntoViewIfNeeded();
+      await play.click();
+      await d.getByRole("button", { name: /^Pause / }).click();
+      await d.getByRole("button", { name: /^Stop / }).click();
+      if (i < 3)
+        await nav
+          .getByRole("button", { name: "Next step", exact: true })
+          .click();
+    }
+    expect(Math.max(...positions) - Math.min(...positions)).toBeLessThanOrEqual(
+      1,
+    );
+    await d.getByRole("button", { name: "Open study", exact: true }).click();
+    const ordinary = page.getByRole("dialog", {
+      name: "Curves that smooth themselves",
+      exact: true,
+    });
+    await expect(
+      ordinary.getByLabel("Petal depth", { exact: true }),
+    ).toHaveValue("0.2");
+    await ordinary
+      .getByRole("button", { name: "Return to study", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", {
+        name: "Browse notebook examples",
+        exact: true,
+      }),
+    ).toBeFocused();
+  });
+
+for (const [width, height] of [
+  [440, 860],
+  [956, 376],
+])
+  test(`overlay viewport contains the whole page in WebKit at ${width}x${height}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Browse notebook examples", exact: true })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Notebook examples", exact: true })
+      .getByRole("button", { name: "Rules that grow a garden", exact: true })
+      .click();
+    const d = page.getByRole("dialog", {
+      name: "Rules that grow a garden",
+      exact: true,
+    });
+    for (let i = 1; i < 4; i++) {
+      await expect(
+        d.getByRole("button", { name: "Open study", exact: true }),
+      ).toBeEnabled();
+      await d.getByRole("button", { name: "Next step", exact: true }).click();
+      await expect(d.locator(".journey-step")).toHaveText(`Step ${i + 1} of 4`);
+      await expect(d.locator(".journey-art")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      const m = await overlayViewport(d);
+      console.log(JSON.stringify({ width, height, step: i + 1, ...m }));
+      await page.screenshot({ path: testInfo.outputPath(`step-${i + 1}.png`) });
+      expectWholeOverlayPage(m);
+      expect(m.borders).toEqual([{ element: "journey-art", width: 1 }]);
+    }
+  });
+
+for (const [width, height] of [
+  [440, 860],
+  [956, 376],
+])
+  test(`zoomed overlays paint the whole WebKit viewport at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Color scheme", exact: true })
+      .click();
+    await page.getByText("Cobalt & rose", { exact: true }).click();
+    await page
+      .getByRole("button", { name: "Browse notebook examples", exact: true })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Notebook examples", exact: true })
+      .getByRole("button", { name: "Rules that grow a garden", exact: true })
+      .click();
+    const d = page.getByRole("dialog", {
+      name: "Rules that grow a garden",
+      exact: true,
+    });
+    for (let i = 1; i < 4; i++) {
+      await expect(
+        d.getByRole("button", { name: "Open study", exact: true }),
+      ).toBeEnabled();
+      await d.getByRole("button", { name: "Next step", exact: true }).click();
+      await expect(d.locator(".journey-step")).toHaveText(`Step ${i + 1} of 4`);
+      await expect(
+        d.getByRole("button", { name: "Open study", exact: true }),
+      ).toBeEnabled();
+      await expectZoomUsesWholeViewport(d);
+    }
+  });

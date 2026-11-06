@@ -98,17 +98,19 @@ function Circles(p: GardenDrawingProps) {
   ]);
 }
 
-function Art(p: GardenDrawingProps & { clip: string }) {
+function Art(p: GardenDrawingProps & { clip?: string }) {
   const palette = plotPalette(p.dark, p.scheme);
   return (
     <>
-      <defs>
-        <clipPath id={p.clip}>
-          <rect width={width} height={height} />
-        </clipPath>
-      </defs>
+      {p.clip && (
+        <defs>
+          <clipPath id={p.clip}>
+            <rect width={width} height={height} />
+          </clipPath>
+        </defs>
+      )}
       <rect width={width} height={height} fill={palette.bg} />
-      <g clipPath={`url(#${p.clip})`}>
+      <g clipPath={p.clip ? `url(#${p.clip})` : undefined}>
         <g transform={`translate(${p.camera.x} ${p.camera.y})`} fill="none">
           <Circles {...p} />
         </g>
@@ -173,6 +175,8 @@ export function GardenDrawing(
     <svg
       {...gestures}
       id="garden-artwork"
+      overflow="hidden"
+      style={{ background: plotPalette(p.dark, p.scheme).bg }}
       className="garden-drawing"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
@@ -184,7 +188,7 @@ export function GardenDrawing(
       data-presentation={p.presentation}
       data-count={p.count}
     >
-      <Art {...p} clip="garden-live-clip" />
+      <Art {...p} />
     </svg>
   );
 }
