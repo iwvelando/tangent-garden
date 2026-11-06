@@ -62,6 +62,11 @@ async function excursion(page: Page, title: string, step = 0) {
     await dialog
       .getByRole("button", { name: "Next step", exact: true })
       .click();
+  // A pending step leaves the previous one, possibly settled, on show, so
+  // wait for the requested step before its drawing settles.
+  await expect(dialog.locator(".journey-step")).toHaveText(
+    new RegExp(`^Step ${step + 1} of \\d+$`),
+  );
   await expect(dialog.locator(".journey-art")).toHaveAttribute(
     "aria-busy",
     "false",
