@@ -1347,6 +1347,9 @@ assert.ok(pole.discontinuities.length > 100);
 for (const { x, y } of pole.discontinuities)
   assert.ok(Math.abs(Math.hypot(x, y) - 1) < 1e-12);
 assert.match(cassini({ f: "x+t" }).error, /F\(x, y\) cannot use t/);
+// The bridge carries whether F reads the shape parameter a; atan does not.
+assert.equal(pole.usesA, true);
+assert.equal(cassini({ f: "atan(y/x)-x^2" }).contours.usesA, false);
 // The reference Clifford study, (a, b, c, d) = (−1.4, 1.6, 1, 0.7) from
 // (0.1, 0.1): every accumulated iterate is counted in its fitted window,
 // which stays within 1 + |c| by 1 + |d|, and the same request gives the same

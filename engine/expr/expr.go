@@ -56,14 +56,23 @@ func ParseWithParameter(s string, a float64) (Expr, error) {
 // ParseField parses an expression in x, y and t, binding the shape
 // parameter a numerically. timed reports whether the text reads t at all.
 func ParseField(s string, a float64) (f Field, timed bool, err error) {
+	f, uses, err := ParseFieldUses(s, a)
+	return f, uses.T, err
+}
+
+// Uses reports which of the names t and a an expression's text reads.
+type Uses struct{ T, A bool }
+
+// ParseFieldUses is ParseField, reporting whether the text reads a as well.
+func ParseFieldUses(s string, a float64) (Field, Uses, error) {
 	if math.IsNaN(a) || math.IsInf(a, 0) {
-		return nil, false, fmt.Errorf("shape parameter a must be finite")
+		return nil, Uses{}, fmt.Errorf("shape parameter a must be finite")
 	}
 	p, e, err := parse(s, fieldVariables, &a)
 	if err != nil {
-		return nil, false, err
+		return nil, Uses{}, err
 	}
-	return func(x, y, t float64) float64 { return e.eval(x, y, t, 0) }, p.used["t"], nil
+	return func(x, y, t float64) float64 { return e.eval(x, y, t, 0) }, Uses{T: p.used["t"], A: p.used["a"]}, nil
 }
 
 // ParseSpatialField parses an expression in x, y, z and t, binding the shape
@@ -204,6 +213,7 @@ func (p *parser) expression(min int) (*tree, error) {
 			if p.parameter == nil {
 				return nil, fmt.Errorf("a is only allowed in curve expressions")
 			}
+			p.used["a"] = true
 			left = constant(*p.parameter)
 		case "pi":
 			left = constant(math.Pi)

@@ -37,7 +37,7 @@ import { FourierFitContext, type FourierFitRequest } from "./FourierFitContext";
 import { fitEntryHelp } from "./fourier-fit";
 import { AtlasPreview } from "./AtlasPreview";
 import { AtlasContext, type AtlasRequest } from "./AtlasContext";
-import { atlasBudget, atlasEntryHelp } from "./atlas";
+import { atlasBudget, atlasEntryHelp, atlasFacts } from "./atlas";
 import { useQuietFocus } from "./quiet-focus";
 import { JourneyPreview } from "./JourneyPreview";
 import { OverlayJourneyPreview } from "./OverlayJourneyPreview";
@@ -1548,7 +1548,8 @@ function App({
     } else if (atlasWaiting && !busy) {
       setAtlasWaiting(null);
       // The study may have changed since the request; admit what settled.
-      const refusal = atlasBudget(config).error;
+      const facts = atlasFacts(frame, config);
+      const refusal = atlasBudget(config, 3, facts).error;
       if (error)
         setAtlasNotice(
           "Correct the highlighted input before starting the atlas.",
@@ -1558,6 +1559,7 @@ function App({
         setAtlasNotice("");
         atlasOwner.begin({
           study: structuredClone(snapshot()),
+          facts,
           via: atlasWaiting,
           restoreFocus: (via) => {
             if (via === "pointer") atlasQuiet.onPointerDown();
@@ -1792,7 +1794,7 @@ function App({
                       !frame ||
                       busy ||
                       !!error ||
-                      !!atlasBudget(config).error
+                      !!atlasBudget(config, 3, atlasFacts(frame, config)).error
                     }
                     aria-describedby={atlasHelp.open ? atlasHelp.id : undefined}
                     onClick={(e) => {
