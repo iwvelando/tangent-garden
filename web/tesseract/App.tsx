@@ -48,7 +48,7 @@ import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { StudyPlot } from "./Plot";
 import { exportBaseSize, type ExportLayout } from "../export-quality";
 import { drawnInks, inks, movingInk, sectionInk } from "./Drawing";
-import { pairedOrder } from "./Composition";
+import { paneCaptions } from "./Composition";
 import { LegendEntries } from "../Legend";
 import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
@@ -1331,15 +1331,9 @@ export default function TesseractApp({
           >
             {frame?.result.companion && (
               <div className="paired-view-labels" data-layout={liveLayout}>
-                {pairedOrder(objects[frame.config.object]).map(
-                  (mode, index) => (
-                    <span key={mode}>
-                      {`${index + 1} / ${objects[frame.config.object].panelLabels?.[mode] ?? modeLabel(frame.config.object, mode)} (${
-                        liveLayout === "rows"
-                          ? ["top", "bottom"][index]
-                          : ["left", "right"][index]
-                      })`}
-                    </span>
+                {paneCaptions(frame.config.object, liveLayout).map(
+                  (caption, index) => (
+                    <span key={index}>{caption}</span>
                   ),
                 )}
               </div>

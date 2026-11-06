@@ -21,6 +21,24 @@ import { presets } from "../web/presets";
 import { decodePng } from "./png";
 import { decodeVideo, probe as videoProbe } from "./video";
 import { deflateRawSync } from "node:zlib";
+import * as composition from "../web/tesseract/Composition";
+
+test("paired pane captions preserve descriptor order, labels and layout positions", () => {
+  for (const [object, labels] of [
+    ["weave", ["Base sphere S²", "Fibers in space"]],
+    ["bypass", ["XYZ shadow", "Coordinate diagram"]],
+    ["root", ["Source z · value w", "The path in 4D"]],
+  ] as const)
+    for (const layout of ["columns", "rows"] as const) {
+      const positions =
+        layout === "rows" ? ["top", "bottom"] : ["left", "right"];
+      expect(composition.paneCaptions(object, layout)).toEqual(
+        labels.map(
+          (label, index) => `${index + 1} / ${label} (${positions[index]})`,
+        ),
+      );
+    }
+});
 
 const journey = (page: Page) =>
   page.getByRole("dialog", { name: "Light finding a cusp", exact: true });
@@ -50,6 +68,44 @@ async function excursion(page: Page, title: string, step = 0) {
   );
   return dialog;
 }
+
+for (const width of [1280, 390])
+  test(`notebook and journey render identical paired captions at width ${width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/?study=4d");
+    await choosePreset(page, { label: "The second time around" });
+    await settled(page);
+    const notebook = page.locator(".tesseract-stage .paired-view-labels");
+    const captions = await notebook.locator("span").allTextContents();
+    expect(captions).toHaveLength(2);
+    expect(captions.every((caption) => caption.length > 0)).toBe(true);
+    const layout = width <= 700 ? "rows" : "columns";
+    await expect(notebook).toHaveAttribute("data-layout", layout);
+    const dialog = await excursion(page, journeyTitles[4]);
+    const preview = dialog.locator(".paired-view-labels");
+    // A single-pane step still reserves the two hidden, empty caption slots.
+    await expect(preview).toHaveAttribute("aria-hidden", "true");
+    await expect(preview.locator("span")).toHaveText(["", ""]);
+    for (let step = 0; step < 2; step++)
+      await dialog
+        .getByRole("button", { name: "Next step", exact: true })
+        .click();
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(preview).toHaveAttribute("data-layout", layout);
+    await expect(preview).not.toHaveAttribute("aria-hidden", "true");
+    await expect(preview.locator("span")).toHaveText(captions);
+    await expect(
+      dialog.locator(".journey-art text, .journey-art foreignObject"),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(notebook.locator("span")).toHaveText(captions);
+  });
 
 for (const [title, names, controls] of [
   [

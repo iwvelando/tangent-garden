@@ -9,8 +9,7 @@ import { cycles, progressAt } from "../timing";
 import type { TesseractStudy } from "./link";
 import { sample } from "./types";
 import { StudyPlot } from "./Plot";
-import { pairedOrder } from "./Composition";
-import { modeLabel, objects } from "./objects";
+import { paneCaptions } from "./Composition";
 import { useMediaQuery } from "../useMediaQuery";
 import { Sampler } from "./sampler";
 import "./style.css";
@@ -155,14 +154,10 @@ export default function JourneyDrawing(p: {
         aria-hidden={!shown?.result.companion || undefined}
       >
         {(shown?.result.companion
-          ? pairedOrder(objects[shown.config.object])
+          ? paneCaptions(shown.config.object, narrow ? "rows" : "columns")
           : [undefined, undefined]
-        ).map((mode, index) => (
-          <span key={index}>
-            {mode && shown
-              ? `${index + 1} / ${objects[shown.config.object].panelLabels?.[mode] ?? modeLabel(shown.config.object, mode)} (${(narrow ? ["top", "bottom"] : ["left", "right"])[index]})`
-              : null}
-          </span>
+        ).map((caption, index) => (
+          <span key={index}>{caption}</span>
         ))}
       </div>
       <div className="journey-art" aria-busy={p.pending}>
