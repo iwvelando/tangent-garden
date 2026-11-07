@@ -178,7 +178,6 @@ Refinements first built for the 3D notebook are shared where they apply to the 2
 
 Vite generates a static bundle with relative paths. There is no hosting provider integration; the output can be served by an ordinary static host. Dependencies are recorded in `package-lock.json`.
 
-
 ## Adding a 2D construction
 
 1. Define the mathematical convention and independent analytic expectations.
