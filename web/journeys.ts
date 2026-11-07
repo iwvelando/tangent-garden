@@ -89,7 +89,10 @@ export type JourneyAdoption = {
     custom: boolean;
   };
 }[keyof JourneyStudies];
-export type AdoptedJourney = JourneyAdoption & { id: number };
+// edit: an atlas adoption changes two fields of the study rather than
+// replacing it, so controls keep their raw text and Reset view keeps
+// returning where it did, as after any edit.
+export type AdoptedJourney = JourneyAdoption & { id: number; edit?: true };
 
 export function journeyStudy<S extends JourneyStep>(
   step: S,
