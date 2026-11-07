@@ -45,14 +45,46 @@ import {
   type Slot,
 } from "./atlas-paint";
 import type { SpatialStudy } from "./link";
-import type { SpatialConfig } from "./types";
+import type { Frame, SpatialConfig } from "./types";
+import { implicitNote } from "./implicit";
 
 const short = (value: number) => Number(value.toPrecision(5)).toString();
 const count = (n: number) => n.toLocaleString("en-US");
 function quality(config: SpatialConfig) {
+  if (config.format === "implicit")
+    return (
+      count(config.implicit.cells) +
+      " cells along the longest box side, " +
+      config.implicit.refine +
+      " refinement levels, " +
+      config.implicit.sections.count +
+      " sections"
+    );
   if (config.format === "surface")
     return `${count(config.surface.uSamples)} × ${count(config.surface.vSamples)} grid cells`;
   return `${count(config.samples)} samples, ${config.lines} rulings, refinement ${config.adaptive ? "on" : "off"}`;
+}
+
+// Reuse the notebook's diagnostics outside the geometry-only images.
+function MeshDetails({
+  frame,
+  preview = false,
+}: {
+  frame: Frame;
+  preview?: boolean;
+}) {
+  const mesh = frame.result.implicit;
+  if (!mesh) return null;
+  return (
+    <details className="atlas-mesh-details">
+      <summary>{preview ? "Preview mesh details" : "Mesh details"}</summary>
+      {implicitNote(mesh, { genus: false }).map((note, i) => (
+        <p className="note" key={i}>
+          {note}
+        </p>
+      ))}
+    </details>
+  );
 }
 
 export default function SpatialAtlasPreview({
@@ -65,6 +97,7 @@ export default function SpatialAtlasPreview({
   onAdopt: (study: SpatialStudy, via: JourneyVia) => void;
 }) {
   const study = request.study;
+  const facts = request.facts;
   const theme = useTheme();
   const dialog = useRef<HTMLDialogElement>(null);
   const back = useRef<HTMLButtonElement>(null);
@@ -72,7 +105,7 @@ export default function SpatialAtlasPreview({
   const title = useId();
   const quiet = useQuietFocus(dialog);
   const via = useRef(request.via);
-  const pairs = useMemo(() => spatialAtlasPairs(study.config), [study]);
+  const pairs = useMemo(() => spatialAtlasPairs(study.config, facts), [study]);
   const [pair, setPair] = useState<SpatialPairId>(
     () => pairs[0]?.id ?? "windings",
   );
@@ -93,9 +126,50 @@ export default function SpatialAtlasPreview({
   });
   const scheduler = useRef<SpatialAtlas | null>(null);
   const tabs = useAtlasTabs(dialog, state.selection !== null, quiet);
-  const scalars = useAtlasRanges(() => scheduler.current?.cancel());
+  const numerical = useRef<{
+    engine: EngineClient;
+    atlas: SpatialAtlas;
+    working: number;
+  } | null>(null);
+  const startEngine = () => {
+    const engine = new EngineClient();
+    let slot: NonNullable<typeof numerical.current>;
+    const atlas = new SpatialAtlas(
+      {
+        dispose: () => engine.dispose(),
+        computeSpatial: async (config) => {
+          slot.working++;
+          try {
+            return await engine.computeSpatial(config);
+          } finally {
+            slot.working--;
+          }
+        },
+      },
+      (next) => {
+        if (numerical.current === slot) setState(next);
+      },
+    );
+    slot = { engine, atlas, working: 0 };
+    numerical.current = slot;
+    scheduler.current = atlas;
+    scalars.client.current = engine;
+    return atlas;
+  };
+  const scalars = useAtlasRanges(() => {
+    const slot = numerical.current;
+    slot?.atlas.cancel();
+    // Synchronous Go cannot service scalars while meshing. Stop the old
+    // worker before ScalarInput queues its evaluation; later endpoint
+    // edits share the fresh parser so their pending evaluations survive.
+    if (slot?.working && !slot.atlas.state.failed) {
+      numerical.current = null;
+      slot.engine.dispose();
+      startEngine();
+    }
+  });
   const rangeError = spatialAtlasRangeError(ranges, pair, size);
-  const budget = spatialAtlasBudget(study.config, size);
+  const budget = spatialAtlasBudget(study.config, size, facts);
   // Once the atlas's worker has failed, its range errors are that failure.
   const failure = state.failed
     ? null
@@ -125,10 +199,7 @@ export default function SpatialAtlasPreview({
     });
   };
   useEffect(() => {
-    const engine = new EngineClient();
-    scalars.client.current = engine;
-    const atlas = new SpatialAtlas(engine, setState);
-    scheduler.current = atlas;
+    const atlas = startEngine();
     const paint = new AtlasPainter((slot, painted) =>
       setImages((previous) => ({ ...previous, [slot]: painted })),
     );
@@ -136,11 +207,14 @@ export default function SpatialAtlasPreview({
     atlas.generate(study, spatialAtlasDefaults(study.config, pair), {
       pair,
       size,
+      facts,
     });
     return () => {
       scalars.generation.current++;
-      atlas.cancel();
-      engine.dispose();
+      const slot = numerical.current;
+      numerical.current = null;
+      slot?.atlas.cancel();
+      slot?.engine.dispose();
       paint.dispose();
     };
   }, []);
@@ -334,7 +408,11 @@ export default function SpatialAtlasPreview({
                 type="button"
                 disabled={blocked}
                 onClick={() =>
-                  scheduler.current?.generate(study, ranges, { pair, size })
+                  scheduler.current?.generate(study, ranges, {
+                    pair,
+                    size,
+                    facts,
+                  })
                 }
               >
                 Generate atlas
@@ -364,7 +442,9 @@ export default function SpatialAtlasPreview({
                 Preview quality: {quality(preview)}.{" "}
                 {capped &&
                   "A coarser grid can blur focal-sheet folds near umbilics. "}
-                Inspect at original quality before adoption.
+                {study.config.format === "implicit"
+                  ? "Inspect at original quality before adoption; coarse meshes can miss pieces, join gaps or smooth a singularity, and no mesh certifies topology."
+                  : "Inspect at original quality before adoption."}
               </p>
               <p className="note">Original quality: {quality(study.config)}.</p>
               <details>
@@ -377,7 +457,11 @@ export default function SpatialAtlasPreview({
                   up to 1,000,000 curve points, ellipsoids 1,000,000 sheet cells
                   and 2,000,000 geodesic points. Retained geometry is limited to
                   four million numbers, and images to the previews and one
-                  inspection.
+                  inspection. Implicit previews use at most 24 cells along the
+                  longest box side (16 for 5 × 5), with no refinement, keeping
+                  sections. Across previews plus an original-quality inspection,
+                  they reserve at most 400,000 base grid cells and 2,000,000
+                  section cells, not all field evaluations.
                 </p>
               </details>
             </div>
@@ -442,6 +526,9 @@ export default function SpatialAtlasPreview({
                       {cell.error && (
                         <p className="field-error">{cell.error}</p>
                       )}
+                      {cell.frame?.result.implicit && (
+                        <MeshDetails frame={cell.frame} preview />
+                      )}
                       {cell.frame && image?.status === "failed" && (
                         <p className="field-error">{image.message}</p>
                       )}
@@ -493,6 +580,9 @@ export default function SpatialAtlasPreview({
                   Adopt variant
                 </button>
               </div>
+              {selected.frame?.result.implicit && (
+                <MeshDetails frame={selected.frame} />
+              )}
               {selected.frame && inspection?.status === "ready" ? (
                 <div className="atlas-inspected-art">
                   <img

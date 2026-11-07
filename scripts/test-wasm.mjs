@@ -3704,6 +3704,10 @@ const spatialImplicit = (implicit) => {
   if (result.implicit) assert.equal(meshSize(result.mesh), 0);
   return result;
 };
+assert.equal(spatialImplicit({}).implicit.usesA, true);
+assert.equal(spatialImplicit({ f: "atan(x)+y+z" }).implicit.usesA, false);
+assert.equal(spatialImplicit({ f: "x^2+y^2+z^2-1+0*a" }).implicit.usesA, true);
+
 {
   // The unit sphere: every vertex on it, its normal outward, one closed
   // piece of Euler characteristic 2, and circles of latitude.

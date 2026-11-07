@@ -46,7 +46,11 @@ import {
 import { AtlasContext } from "../AtlasContext";
 import { useQuietFocus } from "../quiet-focus";
 import type { JourneyVia } from "../JourneyContext";
-import { spatialAtlasBudget, spatialAtlasEntryHelp } from "./atlas";
+import {
+  spatialAtlasBudget,
+  spatialAtlasEntryHelp,
+  spatialAtlasFacts,
+} from "./atlas";
 import { EngineClient, EngineError } from "../engine-client";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import { useMediaQuery } from "../useMediaQuery";
@@ -1938,6 +1942,12 @@ export default function SpatialApp({
     reset,
   );
   const ready = !!frame && !busy && !failure && !renderError;
+  const atlasRefusal =
+    ready &&
+    config.format === "implicit" &&
+    spatialAtlasFacts(frame, config).usesA
+      ? spatialAtlasBudget(config, 3, spatialAtlasFacts(frame, config)).error
+      : undefined;
   // The atlas opens on the study as it settles: refused with the reason
   // beside its button when the settled study cannot open it.
   useEffect(() => {
@@ -1947,7 +1957,11 @@ export default function SpatialApp({
     } else if (atlasWaiting && !busy) {
       const via = atlasWaiting;
       setAtlasWaiting(null);
-      const refusal = spatialAtlasBudget(config, 3).error;
+      const refusal = spatialAtlasBudget(
+        config,
+        3,
+        spatialAtlasFacts(frame, config),
+      ).error;
       if (failure || !frame)
         setAtlasNotice(
           "Correct the highlighted input before starting the atlas.",
@@ -1956,6 +1970,7 @@ export default function SpatialApp({
       else {
         setAtlasNotice("");
         atlasOwner.beginSpatial({
+          facts: spatialAtlasFacts(frame, config),
           study: structuredClone(snapshot()),
           via,
           restoreFocus: (returnVia) => {
@@ -3197,7 +3212,11 @@ export default function SpatialApp({
                   !frame ||
                   busy ||
                   !!failure ||
-                  !!spatialAtlasBudget(config, 3).error
+                  !!spatialAtlasBudget(
+                    config,
+                    3,
+                    spatialAtlasFacts(frame, config),
+                  ).error
                 }
                 aria-describedby={atlasHelp.open ? atlasHelp.id : undefined}
                 onClick={(e) => {
@@ -3210,9 +3229,9 @@ export default function SpatialApp({
               <HelpToggle topic="parameter atlas" help={atlasHelp} />
             </div>
             <HelpText help={atlasHelp}>{spatialAtlasEntryHelp}</HelpText>
-            {atlasNotice && (
+            {(atlasNotice || atlasRefusal) && (
               <p className="note" role="status">
-                {atlasNotice}
+                {atlasNotice || atlasRefusal}
               </p>
             )}
           </div>

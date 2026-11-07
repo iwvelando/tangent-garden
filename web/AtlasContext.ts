@@ -2,6 +2,7 @@ import { createContext } from "react";
 import type { PlanarStudy } from "./planar-link";
 import type { JourneyVia } from "./JourneyContext";
 import type { AtlasFacts } from "./atlas";
+import type { SpatialAtlasFacts } from "./spatial/atlas";
 import type { SpatialStudy } from "./spatial/link";
 
 export type AtlasRequest = {
@@ -15,6 +16,7 @@ export type AtlasRequest = {
 // The 3D notebook's atlas (spatial/atlas.ts).
 export type SpatialAtlasRequest = {
   study: SpatialStudy;
+  facts: SpatialAtlasFacts;
   via: JourneyVia;
   restoreFocus: (via: JourneyVia) => void;
 };
