@@ -1,3 +1,4 @@
+import { spatialAtlasEntryHelp } from "../web/spatial/atlas";
 import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
 import { helpText, isTiered, withMore, type Help } from "../web/help";
@@ -207,6 +208,7 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("atlas ranges", atlasRangeHelp, true);
   add("atlas whole-number ranges", atlasWholeRangeHelp, true);
   add("atlas entry", atlasEntryHelp);
+  add("spatial atlas entry", spatialAtlasEntryHelp);
   add("drawn Fourier terms", fitTermsHelp);
   add("drawn Fourier entry", fitEntryHelp);
   table("family motion", familyMotionHelp);

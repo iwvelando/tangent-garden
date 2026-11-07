@@ -2744,3 +2744,68 @@ for (const [width, height] of [
       "",
     );
   });
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+])
+  test(
+    "implicit atlas entry, scalar blur, inspection and return in WebKit " +
+      viewport.width,
+    async ({ page }) => {
+      const { presetStudy } = await import("../web/spatial/link");
+      const source = presetStudy(
+        spatialPresets.findIndex((p) => p.name === "Two drops meeting"),
+      );
+      source.config.implicit.cells = 32;
+      await page.setViewportSize(viewport);
+      const token = deflateRawSync(
+        JSON.stringify({ v: 1, notebook: "3d", study: source }),
+      ).toString("base64url");
+      await page.goto("/?study=3d#s=" + token);
+      await expect(page).not.toHaveURL(/#s=/);
+      await expect(page.locator(".spatial-stage")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      await page.getByLabel("Normal x", { exact: true }).fill("7/10");
+      await page
+        .getByRole("button", { name: "Explore parameter atlas", exact: true })
+        .click();
+      const atlas = page.getByRole("dialog", {
+        name: "A field of possible forms",
+        exact: true,
+      });
+      await expect(atlas).toBeVisible();
+      await expect(atlas).toHaveAttribute("data-quiet", "");
+      await atlas.getByLabel("Level c to", { exact: true }).fill("pi/2");
+      await atlas.getByText("Original quality:", { exact: false }).click();
+      await atlas
+        .getByRole("button", { name: "Generate atlas", exact: true })
+        .click();
+      await expect(
+        atlas.locator('.atlas-cell[data-state="valid"]'),
+      ).toHaveCount(9);
+      const last = atlas.getByRole("button", {
+        name: "Inspect row 3, column 3",
+        exact: true,
+      });
+      await last.click();
+      const adopt = atlas.getByRole("button", {
+        name: "Adopt variant",
+        exact: true,
+      });
+      await expect(adopt).toBeEnabled();
+      await expect(adopt).toBeInViewport({ ratio: 1 });
+      await atlas
+        .getByRole("button", { name: "Cancel atlas", exact: true })
+        .click();
+      await expect(atlas).toBeHidden();
+      await expect(page.getByLabel("Normal x", { exact: true })).toHaveValue(
+        "7/10",
+      );
+      await expect(page.getByLabel("Level c", { exact: true })).toHaveValue(
+        "0.9",
+      );
+    },
+  );

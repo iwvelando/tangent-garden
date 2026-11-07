@@ -78,14 +78,21 @@ func ParseFieldUses(s string, a float64) (Field, Uses, error) {
 // ParseSpatialField parses an expression in x, y, z and t, binding the shape
 // parameter a numerically. timed reports whether the text reads t at all.
 func ParseSpatialField(s string, a float64) (f SpatialField, timed bool, err error) {
+	f, uses, err := ParseSpatialFieldUses(s, a)
+	return f, uses.T, err
+}
+
+// ParseSpatialFieldUses is ParseSpatialField, reporting parsed reads of a
+// before constant folding, as ParseFieldUses does for planar fields.
+func ParseSpatialFieldUses(s string, a float64) (SpatialField, Uses, error) {
 	if math.IsNaN(a) || math.IsInf(a, 0) {
-		return nil, false, fmt.Errorf("shape parameter a must be finite")
+		return nil, Uses{}, fmt.Errorf("shape parameter a must be finite")
 	}
 	p, e, err := parse(s, spatialVariables, &a)
 	if err != nil {
-		return nil, false, err
+		return nil, Uses{}, err
 	}
-	return SpatialField(e.eval), p.used["t"], nil
+	return SpatialField(e.eval), Uses{T: p.used["t"], A: p.used["a"]}, nil
 }
 
 // curve parses an expression in its one variable, written t or x.

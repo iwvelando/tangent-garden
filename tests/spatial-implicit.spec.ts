@@ -609,6 +609,7 @@ function study(): SpatialResult {
     cones: 0,
     crossingsUnresolved: 0,
     crossingsExhausted: false,
+    usesA: false,
     sectionDiscontinuities: 0,
     sectionsSkipped: 0,
     truncated: false,

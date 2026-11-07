@@ -783,3 +783,45 @@ func TestImplicitPresetRevealRange(t *testing.T) {
 		})
 	}
 }
+
+// Applicability is a parsed fact, including a read eliminated by constant
+// folding; function names containing an "a" do not establish that fact.
+func TestImplicitUsesA(t *testing.T) {
+	for _, tc := range []struct {
+		f    string
+		want bool
+	}{
+		{"x^2+y^2+z^2-a", true},
+		{"x^2+y^2+z^2-1+0*a", true},
+		{"x^2+y^2+z^2-A", true},
+		{"atan(x)+tan(y)+z", false},
+		{"x^2+y^2+z^2-1", false},
+	} {
+		q := implicitStudy(tc.f, 0, cube(2), 8)
+		q.A = 1
+		r, err := Compute(Request{Format: "implicit", Implicit: q})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(r.Implicit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(data, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := fields["usesA"].(bool); !ok || got != tc.want {
+			t.Errorf("%q: usesA = %v, want %v", tc.f, fields["usesA"], tc.want)
+		}
+	}
+	// Publishing the fact must not alter the old sphere's drawing.
+	q := implicitStudy("x^2+y^2+z^2-a", 0, cube(2), 12)
+	q.A = 1
+	a := levelSet(t, q)
+	q.F = "x^2+y^2+z^2-1"
+	b := levelSet(t, q)
+	if !slices.Equal(a.Positions, b.Positions) || !slices.Equal(a.Normals, b.Normals) || !slices.Equal(a.Triangles, b.Triangles) {
+		t.Fatal("reporting the parsed parameter changed sphere geometry")
+	}
+}

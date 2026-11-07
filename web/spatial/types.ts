@@ -1154,6 +1154,8 @@ export type ImplicitSection = {
   skipped: boolean;
 };
 export type ImplicitResult = {
+  // Parsed read of a, before constant folding; used by atlas applicability.
+  usesA: boolean;
   box: ImplicitBox;
   grid: [number, number, number];
   positions: Float64Array;

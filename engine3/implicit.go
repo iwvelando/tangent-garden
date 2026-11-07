@@ -99,6 +99,8 @@ type ImplicitComponent struct {
 // left out; CrossingsExhausted is set when the crossings would need more
 // than their budget of tetrahedra and none were meshed as crossings.
 type ImplicitResult struct {
+	// Whether F reads the shape parameter, before constant folding.
+	UsesA                  bool                `json:"usesA"`
 	Box                    Box                 `json:"box"`
 	Grid                   [3]int              `json:"grid"`
 	Positions              []float64           `json:"positions"`
@@ -221,6 +223,7 @@ func (q ImplicitRequest) validate() error {
 
 // field is F − c sampled on the box's grid.
 type field struct {
+	usesA      bool
 	f          func(Vec3) float64
 	c          float64
 	box        Box
@@ -820,14 +823,14 @@ func sample(q ImplicitRequest) (*field, error) {
 	if err := q.validate(); err != nil {
 		return nil, err
 	}
-	f, timed, err := expr.ParseSpatialField(q.F, q.A)
+	f, uses, err := expr.ParseSpatialFieldUses(q.F, q.A)
 	if err != nil {
 		return nil, named("implicit.f", fmt.Errorf("F(x, y, z): %w", err))
 	}
-	if timed {
+	if uses.T {
 		return nil, fieldErr("implicit.f", "F(x, y, z) cannot use t; animate a or the level instead")
 	}
-	s := &field{f: func(p Vec3) float64 { return f(p.X, p.Y, p.Z, 0) }, c: q.Level, box: q.Box, n: q.Box.shape(q.Cells),
+	s := &field{usesA: uses.A, f: func(p Vec3) float64 { return f(p.X, p.Y, p.Z, 0) }, c: q.Level, box: q.Box, n: q.Box.shape(q.Cells),
 		vertices: map[int]int32{}, rejected: map[int]Vec3{}, positions: []float64{}, normals: []float64{}, triangles: []int32{}}
 	sides := q.Box.sides()
 	for k := range 3 {
@@ -935,7 +938,7 @@ func implicit(q ImplicitRequest) (Result, error) {
 	x.split()
 	x.meet()
 	x.sheets()
-	out := &ImplicitResult{Box: q.Box, Grid: s.n, Positions: s.positions, Normals: s.normals, Triangles: s.triangles,
+	out := &ImplicitResult{UsesA: s.usesA, Box: q.Box, Grid: s.n, Positions: s.positions, Normals: s.normals, Triangles: s.triangles,
 		Cut: []int32{}, Open: []int32{}, Crossings: []int32{}, Twins: []int32{}, OnCrossing: []int32{}, Components: []ImplicitComponent{}, Sections: []ImplicitSection{}, Marks: marks,
 		Nonfinite: s.nonfinite, Discontinuities: discontinuities, Ambiguous: s.ambiguous(), Singular: s.singular, Refinement: refinement,
 		Cones: x.cones, CrossingsUnresolved: x.unresolved, CrossingsExhausted: x.exhausted}

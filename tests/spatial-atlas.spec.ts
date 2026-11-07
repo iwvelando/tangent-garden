@@ -420,6 +420,11 @@ async function generate(atlas: any) {
   });
   await expect(button).toBeEnabled();
   await button.click();
+  // Editing may have terminated the previous generation's worker so Go
+  // can resolve range expressions immediately. Observe the current one.
+  atlasWorker = await atlas
+    .page()
+    .evaluate(() => ((window as any).atlasWorkers?.length ?? 0) - 1);
 }
 const outcomes = (atlas: any, size: number) =>
   expect(
@@ -1009,7 +1014,9 @@ test("spatial atlas entry follows the study's pair and admission", async ({
   await expect(entry).toBeDisabled();
   await page.getByRole("button", { name: "About parameter atlas" }).click();
   await expect(
-    page.getByText("Compare nearby torus knots or ellipsoids, then adopt one."),
+    page.getByText(
+      "Compare nearby knots, ellipsoids or implicit level surfaces, then adopt one.",
+    ),
   ).toBeVisible();
 });
 
@@ -1101,3 +1108,505 @@ test("spatial atlas counts a mesh's typed arrays toward its retained-geometry li
   );
   expect(state.cells[2].error).toMatch(/geometry limit/);
 });
+
+// ---- Implicit level / shape, admitted after the measured research ----
+const dropsTitle = "Two drops meeting";
+test("implicit spatial atlas: parsed facts match the current F, and only active a admits the pair", async () => {
+  const { spatialAtlasEntryHelp } = await import("../web/spatial/atlas");
+  const { helpText } = await import("../web/help");
+  expect(helpText(spatialAtlasEntryHelp)).toContain("F reads a");
+  expect(helpText(spatialAtlasEntryHelp)).toContain("400,000 base cells");
+  expect(helpText(spatialAtlasEntryHelp)).toContain("2,000,000 section cells");
+  const { spatialAtlasFacts, spatialAtlasPairs, spatialAtlasPair } =
+    await import("../web/spatial/atlas");
+  const c = config(dropsTitle);
+  const frame = { config: c, result: { implicit: { usesA: true } } } as any;
+  expect(spatialAtlasFacts(frame, c)).toEqual({ usesA: true });
+  expect(spatialAtlasFacts(null, c)).toEqual({ usesA: false });
+  expect(
+    spatialAtlasFacts(frame, { ...c, implicit: { ...c.implicit, f: "x+y+z" } }),
+  ).toEqual({ usesA: false });
+  expect(
+    spatialAtlasFacts({ ...frame, config: { ...c, format: "torus" } }, c),
+  ).toEqual({ usesA: false });
+  expect(spatialAtlasPairs(c)).toEqual([]);
+  expect(spatialAtlasPairs(c, { usesA: false })).toEqual([]);
+  expect(spatialAtlasPairs(c, { usesA: true }).map((p) => p.id)).toEqual([
+    "level",
+  ]);
+  expect(
+    spatialAtlasPairs(config(trefoil), { usesA: true }).map((p) => p.id),
+  ).toEqual(["windings"]);
+  expect(spatialAtlasPair("level").axes.map((a) => a.path)).toEqual([
+    ["implicit", "level"],
+    ["implicit", "a"],
+  ]);
+});
+
+test("implicit spatial atlas: defaults and cloned quality preserve the source's non-axis settings", async () => {
+  const { spatialAtlasDefaults, spatialPreviewConfig } =
+    await import("../web/spatial/atlas");
+  const c = config(dropsTitle);
+  c.implicit.refine = 3;
+  const original = structuredClone(c);
+  expect(spatialAtlasDefaults(c, "level")).toEqual({
+    level: [0.65, 1.15],
+    a: [0.75, 1.25],
+  });
+  for (const size of [3, 5] as const) {
+    const expected = structuredClone(c);
+    expected.implicit.cells = size === 3 ? 24 : 16;
+    expected.implicit.refine = 0;
+    expect(spatialPreviewConfig(c, size)).toEqual(expected);
+  }
+  expect(c).toEqual(original);
+  c.implicit.cells = 8;
+  expect(spatialPreviewConfig(c, 5).implicit.cells).toBe(8);
+  c.implicit.level = 1.15;
+  expect(spatialAtlasDefaults(c, "level").level).toEqual([0.8625, 1.4375]);
+});
+
+test("implicit spatial atlas: anisotropic and section reservations include the original inspection", async () => {
+  const { spatialAtlasBudget } = await import("../web/spatial/atlas");
+  const c = config(dropsTitle);
+  c.implicit.box = {
+    xMin: -2,
+    xMax: 2,
+    yMin: -1,
+    yMax: 1,
+    zMin: -0.5,
+    zMax: 0.5,
+  };
+  c.implicit.cells = 64;
+  c.implicit.sections.count = 7;
+  expect(spatialAtlasBudget(c, 3, { usesA: true })).toMatchObject({
+    grid: 9 * 24 * 12 * 6 + 64 * 32 * 16,
+    sections: 9 * 7 * 96 ** 2 + 7 * 256 ** 2,
+    points: 0,
+    cells: 0,
+    geodesic: 0,
+  });
+  expect(spatialAtlasBudget(c, 3, { usesA: true }).error).toBeUndefined();
+  expect(spatialAtlasBudget(c, 3).error).toContain("no curated");
+  c.implicit.sections.count = 24;
+  expect(spatialAtlasBudget(c, 3, { usesA: true }).error).toContain("section");
+  expect(spatialAtlasBudget(c, 5, { usesA: true }).sections).toBe(
+    25 * 24 * 64 ** 2 + 24 * 256 ** 2,
+  );
+  // Twelve sections fit 3 × 3 (148,480 each) but not 5 × 5 (167,936 each),
+  // so the 5 × 5 refusal offers the smaller grid, as knots and ellipsoids do.
+  c.implicit.sections.count = 12;
+  expect(spatialAtlasBudget(c, 3, { usesA: true }).error).toBeUndefined();
+  expect(spatialAtlasBudget(c, 5, { usesA: true }).error).toBe(
+    "The 5 × 5 atlas reserves more than 2,000,000 section cells. Choose 3 × 3, or reduce the section count or source grid.",
+  );
+  c.implicit.sections.count = 24;
+  expect(spatialAtlasBudget(c, 5, { usesA: true }).error).toBe(
+    "The atlas reserves more than 2,000,000 section cells. Reduce the section count or source grid.",
+  );
+});
+
+test("implicit spatial atlas browser: quality readouts count sections and refinement levels", async ({
+  page,
+}) => {
+  const source = await study("Villarceau circles");
+  source.config.implicit.refine = 1;
+  expect(source.config.implicit.sections.count).toBe(1);
+  await openStudy(page, source);
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator(".atlas-quality")).toContainText(
+    "Preview quality: 24 cells along the longest box side, 0 refinement levels, 1 section.",
+  );
+  await expect(atlas.getByText(/^Original quality:/)).toHaveText(
+    "Original quality: 64 cells along the longest box side, 1 refinement level, 1 section.",
+  );
+});
+
+test("implicit spatial atlas: the production queue inspects at source quality and changes only the pair", async () => {
+  const { SpatialAtlas } = await import("../web/spatial/atlas");
+  const source = await study(dropsTitle);
+  const before = structuredClone(source);
+  const calls: any[] = [];
+  const atlas = new SpatialAtlas(
+    {
+      computeSpatial: async (config) => {
+        calls.push(config);
+        return { config, result: {} } as any;
+      },
+    },
+    () => {},
+  );
+  atlas.generate(
+    source,
+    { level: [0.6, 1.4], a: [0.8, 1.2] },
+    { pair: "level", size: 3, facts: { usesA: true } },
+  );
+  await expect
+    .poll(() => atlas.state.cells.filter((c) => c.frame).length)
+    .toBe(9);
+  expect(calls[0]).toEqual({
+    ...before.config,
+    implicit: {
+      ...before.config.implicit,
+      cells: 24,
+      refine: 0,
+      level: 0.6,
+      a: 0.8,
+    },
+  });
+  atlas.inspect(0);
+  await expect.poll(() => !!atlas.candidate()).toBe(true);
+  expect(atlas.candidate()).toEqual({
+    ...before,
+    config: {
+      ...before.config,
+      implicit: { ...before.config.implicit, level: 0.6, a: 0.8 },
+    },
+  });
+  expect(calls.at(-1)).toEqual({
+    ...before.config,
+    implicit: { ...before.config.implicit, level: 0.6, a: 0.8 },
+  });
+  expect(source).toEqual(before);
+});
+
+for (const size of [3, 5] as const)
+  test(
+    "implicit spatial atlas browser: ordinary entry, every sphere request and full inspection " +
+      size,
+    async ({ page }) => {
+      const source = await study(dropsTitle);
+      Object.assign(source.config.implicit, {
+        f: "x^2+y^2+z^2-a",
+        cells: 40,
+        refine: 1,
+        box: { xMin: -2, xMax: 2, yMin: -2, yMax: 2, zMin: -2, zMax: 2 },
+      });
+      await observeWorkers(page);
+      await openStudy(page, source);
+      const atlas = await openAtlas(page);
+      await atlas
+        .getByLabel("Grid size", { exact: true })
+        .selectOption(String(size));
+      await setRange(atlas, "Level c", [-0.5, 1.5]);
+      await setRange(atlas, "Shape parameter a", [-0.5, 1.5]);
+      await generate(atlas);
+      await outcomes(atlas, size);
+      await expect(atlas.locator(".atlas-quality")).toContainText(
+        (size === 3 ? "24" : "16") + " cells",
+      );
+      await expect(atlas.locator(".atlas-quality")).toContainText("topology");
+      const log = await atlasLog(page);
+      const requests = log.requests.slice(-(size ** 2));
+      requests.forEach((q: any, i: number) => {
+        const expected = structuredClone(source.config);
+        expected.implicit.cells = size === 3 ? 24 : 16;
+        expected.implicit.refine = 0;
+        expected.implicit.level = -0.5 + (2 * (i % size)) / (size - 1);
+        expected.implicit.a = -0.5 + (2 * Math.floor(i / size)) / (size - 1);
+        expect(q.spatial).toEqual(expected);
+      });
+      const observations = await page.evaluate(
+        async ({ index, url }) => {
+          const log = (window as any).atlasWorkers[index];
+          const ordinary = new Worker(url);
+          (window as any).atlasWorkers.pop();
+          const differ = (a: any, b: any): boolean => {
+            if (Object.is(a, b)) return false;
+            if (!a || !b || typeof a !== "object" || typeof b !== "object")
+              return true;
+            const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+            keys.delete("id");
+            return [...keys].some((k) => differ(a[k], b[k]));
+          };
+          let vertices = 0,
+            empty = 0,
+            residual = 0;
+          for (const request of log.requests.slice(
+            -(
+              Number(
+                document
+                  .querySelector(".atlas-grid")!
+                  .getAttribute("data-size"),
+              ) ** 2
+            ),
+          )) {
+            const direct: any = await new Promise((resolve) => {
+              ordinary.onmessage = (e) => resolve(e.data);
+              ordinary.postMessage({ ...request, id: 1e6 + request.id });
+            });
+            const reply = log.replies.find((r: any) => r.id === request.id);
+            if (differ(reply, direct))
+              throw new Error("Direct worker mismatch");
+            // Mesh positions are already typed in the real worker reply.
+            const p = reply.result.implicit.positions;
+            if (!p.length) empty++;
+            for (let k = 0; k < p.length; k += 3) {
+              vertices++;
+              residual = Math.max(
+                residual,
+                Math.abs(
+                  p[k] ** 2 +
+                    p[k + 1] ** 2 +
+                    p[k + 2] ** 2 -
+                    request.spatial.implicit.a -
+                    request.spatial.implicit.level,
+                ),
+              );
+            }
+          }
+          ordinary.terminate();
+          return { vertices, empty, residual };
+        },
+        { index: atlasWorker, url: log.url },
+      );
+      expect(observations.vertices).toBeGreaterThan(100);
+      expect(observations.empty).toBeGreaterThan(0);
+      expect(observations.residual).toBeLessThan(1e-8);
+      await atlas
+        .getByRole("button", {
+          name: "Inspect row " + size + ", column " + size,
+          exact: true,
+        })
+        .click();
+      await expect(
+        atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+      ).toBeEnabled();
+      const inspected = (await atlasLog(page)).requests.at(-1).spatial;
+      expect(inspected.implicit.cells).toBe(40);
+      expect(inspected.implicit.refine).toBe(1);
+      expect(inspected).toEqual({
+        ...source.config,
+        implicit: { ...source.config.implicit, level: 1.5, a: 1.5 },
+      });
+      expect(
+        await page.evaluate(async (index) => {
+          const log = (window as any).atlasWorkers[index],
+            q = log.requests.at(-1);
+          const worker = new Worker(log.url);
+          (window as any).atlasWorkers.pop();
+          const direct: any = await new Promise((resolve) => {
+            worker.onmessage = (e) => resolve(e.data);
+            worker.postMessage({ ...q, id: 99999 });
+          });
+          worker.terminate();
+          const actual = log.replies.find((r: any) => r.id === q.id);
+          const equal = (a: any, b: any): boolean =>
+            Object.is(a, b) ||
+            (!!a &&
+              !!b &&
+              typeof a === "object" &&
+              typeof b === "object" &&
+              [...new Set([...Object.keys(a), ...Object.keys(b)])]
+                .filter((k) => k !== "id")
+                .every((k) => equal(a[k], b[k])));
+          return (
+            equal(actual, direct) && actual.result.implicit.positions.length > 0
+          );
+        }, atlasWorker),
+      ).toBe(true);
+    },
+  );
+
+test("implicit spatial atlas browser: a dormant or superseded F cannot enter", async ({
+  page,
+}) => {
+  const source = await study(dropsTitle);
+  source.config.implicit.f = "atan(x)+y+z";
+  await openStudy(page, source);
+  await expect(
+    page.getByRole("button", { name: "Explore parameter atlas", exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("F(x, y, z)", { exact: true }).fill("x^2+y^2+z^2-a");
+  await expect(
+    page.getByRole("button", { name: "Explore parameter atlas", exact: true }),
+  ).toBeEnabled();
+  await page.getByLabel("F(x, y, z)", { exact: true }).fill("x^2+y^2+z^2-1");
+  await settled(page);
+  await expect(
+    page.getByRole("button", { name: "Explore parameter atlas", exact: true }),
+  ).toBeDisabled();
+});
+
+test("spatial atlas range edits interrupt in-flight work before scalar parsing", async ({
+  page,
+}) => {
+  await observeWorkers(page, 1500);
+  await openStudy(page, await study(trefoil));
+  const atlas = await openAtlas(page);
+  const old = atlasWorker;
+  await atlas.getByLabel("Windings around p from", { exact: true }).fill("1+0");
+  await expect
+    .poll(() =>
+      page.evaluate((i) => (window as any).atlasWorkers[i].terminated, old),
+    )
+    .toBe(true);
+  // Delay only the old generation whose cancellation is under test.
+  await page.evaluate(() => {
+    (window as any).atlasDelay = 0;
+  });
+  await expect(
+    atlas.getByRole("button", { name: "Generate atlas", exact: true }),
+  ).toBeEnabled();
+  await atlas
+    .getByRole("button", { name: "Generate atlas", exact: true })
+    .click();
+  await outcomes(atlas, 3);
+  await expect(
+    atlas.getByLabel("Windings around p from", { exact: true }),
+  ).toHaveValue("1+0");
+  await expect(atlas.getByRole("alert")).toHaveCount(0);
+});
+
+test("implicit spatial atlas browser: cancel and edit adoption preserve raw drafts, camera home and full study", async ({
+  page,
+}) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const source = await study(dropsTitle);
+  source.view = { ...source.view, zoom: 1.3, panX: 0.1, panY: -0.2 };
+  source.animation = {
+    ...source.animation,
+    mode: "parameters",
+    camera: "current",
+    duration: 2,
+    tracks: [{ target: "level", from: "0.6", to: "1.4" }],
+  };
+  await openStudy(page, source);
+  await page.getByLabel("Normal x", { exact: true }).fill("7/10");
+  await page.getByLabel("x from", { exact: true }).fill("-8/5");
+  await settled(page);
+  const before = (await copiedStudy(page)).study;
+  let atlas = await openAtlas(page);
+  await atlas
+    .getByRole("button", { name: "Cancel atlas", exact: true })
+    .click();
+  await expect(page.getByLabel("Normal x", { exact: true })).toHaveValue(
+    "7/10",
+  );
+  await expect(page.getByLabel("x from", { exact: true })).toHaveValue("-8/5");
+  expect((await copiedStudy(page)).study).toEqual(before);
+  atlas = await openAtlas(page);
+  await outcomes(atlas, 3);
+  await atlas
+    .getByRole("button", { name: "Inspect row 3, column 3", exact: true })
+    .click();
+  await expect(
+    atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+  ).toBeEnabled();
+  await atlas
+    .getByRole("button", { name: "Adopt variant", exact: true })
+    .click();
+  await settled(page);
+  await expect(page.getByLabel("Normal x", { exact: true })).toHaveValue(
+    "7/10",
+  );
+  await expect(page.getByLabel("x from", { exact: true })).toHaveValue("-8/5");
+  const after = (await copiedStudy(page)).study;
+  expect(after).toEqual({
+    ...before,
+    config: {
+      ...before.config,
+      implicit: { ...before.config.implicit, level: 1.15, a: 1.25 },
+    },
+  });
+  await page.getByRole("button", { name: "Reset view", exact: true }).click();
+  await expect
+    .poll(async () => {
+      const v = JSON.parse(
+        (await page.locator("#spatial-artwork").getAttribute("data-view"))!,
+      );
+      return [v.zoom, v.panX, v.panY];
+    })
+    // A link's Home is the default; its held manual view above is separate.
+    .toEqual([1, 0, 0]);
+  await page.getByRole("button", { name: "Export image", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("menuitem", { name: "SVG · embedded 3D image", exact: true })
+    .click();
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const desc = JSON.parse(
+    svg
+      .match(/<desc>(.*?)<\/desc>/s)![1]
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&"),
+  );
+  expect(desc.config.implicit).toEqual(after.config.implicit);
+  const png = svg.match(/data:image\/png;base64,[^"]+/)![0];
+  const decoded = await page.evaluate(async (src) => {
+    const image = new Image();
+    image.src = src;
+    await image.decode();
+    return [image.naturalWidth, image.naturalHeight];
+  }, png);
+  expect(decoded[0]).toBeGreaterThanOrEqual(1000);
+  expect(decoded[1]).toBeGreaterThanOrEqual(760);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Back to study", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Level c = 1.40000", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Back to study", exact: true })
+    .click();
+  await settled(page);
+  await expect(page.getByLabel("Level c", { exact: true })).toHaveValue("1.15");
+});
+
+test("implicit spatial atlas browser: entry explains a valid source's section reservation refusal", async ({
+  page,
+}) => {
+  const source = await study(dropsTitle);
+  source.config.implicit.cells = 32;
+  source.config.implicit.sections.count = 24;
+  await openStudy(page, source);
+  await expect(
+    page.getByRole("button", { name: "Explore parameter atlas", exact: true }),
+  ).toBeDisabled();
+  await expect(page.locator(".atlas-entry .note[role=status]")).toContainText(
+    "Reduce the section count or source grid",
+  );
+});
+
+for (const [f, expected] of [
+  ["sqrt(x-a)+y^2+z^2", "not finite"],
+  ["1/(x-a)+y^2+z^2", "pole or a jump"],
+  ["x^2+y^2+z^2-a", "No surface"],
+] as const)
+  test(
+    "implicit spatial atlas browser: mesh diagnostics remain inspectable for " +
+      f,
+    async ({ page }) => {
+      const source = await study(dropsTitle);
+      source.config.implicit.f = f;
+      source.config.implicit.cells = 24;
+      source.config.implicit.sections.count = 0;
+      if (expected === "No surface") {
+        source.config.implicit.a = -10;
+        source.config.implicit.level = -10;
+      }
+      await openStudy(page, source);
+      const atlas = await openAtlas(page);
+      await outcomes(atlas, 3);
+      const first = atlas.locator(".atlas-cell").first();
+      await first.getByText("Preview mesh details", { exact: true }).click();
+      await expect(first.locator(".atlas-mesh-details")).toContainText(
+        expected,
+      );
+      await first
+        .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+        .click();
+      await expect(
+        atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+      ).toBeEnabled();
+      await atlas.getByText("Mesh details", { exact: true }).click();
+      await expect(
+        atlas.locator(".atlas-inspection .atlas-mesh-details"),
+      ).toContainText(expected);
+    },
+  );
