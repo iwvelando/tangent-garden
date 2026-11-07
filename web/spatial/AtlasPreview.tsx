@@ -47,6 +47,9 @@ import {
 import type { SpatialStudy } from "./link";
 import type { Frame, SpatialConfig } from "./types";
 import { implicitNote } from "./implicit";
+import { AtlasSheetExport } from "../AtlasSheetExport";
+import { spatialSheetPainter } from "./atlas-sheet";
+import { spatialSheetDefinition } from "./atlas-definition";
 
 const short = (value: number) => Number(value.toPrecision(5)).toString();
 const count = (n: number) => n.toLocaleString("en-US");
@@ -448,6 +451,20 @@ export default function SpatialAtlasPreview({
                   : "Inspect at original quality before adoption."}
               </p>
               <p className="note">Original quality: {quality(study.config)}.</p>
+              <AtlasSheetExport
+                cells={state.cells}
+                size={size}
+                disabled={blocked}
+                notebook="3d"
+                source={study}
+                preview={preview}
+                axes={descriptor.axes}
+                framing={framing}
+                dark={theme.dark}
+                scheme={theme.scheme}
+                definition={(format) => spatialSheetDefinition(preview, format)}
+                painter={() => spatialSheetPainter(style, shared)}
+              />
               <details>
                 <summary>Atlas limits</summary>
                 <p className="note">

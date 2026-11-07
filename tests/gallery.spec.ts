@@ -1746,7 +1746,7 @@ test("atlas Generate spacing is independent of paired-field margins on first por
   const atlas = await openAtlas(page);
   const gap = () =>
     atlas.evaluate((root) => {
-      const input = [...root.querySelectorAll(".atlas-controls input")]
+      const input = [...root.querySelectorAll(".atlas-ranges input")]
         .at(-1)!
         .getBoundingClientRect();
       const button = [...root.querySelectorAll("button")]

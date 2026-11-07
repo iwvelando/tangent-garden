@@ -109,6 +109,9 @@
 .atlas-controls > button {
   display: block;
 }
+.atlas-controls > .atlas-sheet-export {
+  margin-bottom: 16px;
+}
 .atlas-grid-scroll {
   min-width: 0;
   overflow-x: auto;
