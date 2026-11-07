@@ -51,15 +51,16 @@ import { implicitNote } from "./implicit";
 const short = (value: number) => Number(value.toPrecision(5)).toString();
 const count = (n: number) => n.toLocaleString("en-US");
 function quality(config: SpatialConfig) {
-  if (config.format === "implicit")
-    return (
-      count(config.implicit.cells) +
-      " cells along the longest box side, " +
-      config.implicit.refine +
-      " refinement levels, " +
-      config.implicit.sections.count +
-      " sections"
-    );
+  if (config.format === "implicit") {
+    const { cells, refine, sections } = config.implicit;
+    const plural = (n: number, one: string, many: string) =>
+      `${count(n)} ${n === 1 ? one : many}`;
+    return [
+      `${count(cells)} cells along the longest box side`,
+      plural(refine, "refinement level", "refinement levels"),
+      plural(sections.count, "section", "sections"),
+    ].join(", ");
+  }
   if (config.format === "surface")
     return `${count(config.surface.uSamples)} × ${count(config.surface.vSamples)} grid cells`;
   return `${count(config.samples)} samples, ${config.lines} rulings, refinement ${config.adaptive ? "on" : "off"}`;

@@ -283,18 +283,25 @@ export function spatialAtlasBudget(
     totals.points > limits.points ||
     totals.cells > limits.cells ||
     totals.geodesic > limits.geodesic;
+  const exceeds = (total: number, limit: number) =>
+    !Number.isFinite(total) || total > limit;
+  // A 5 × 5 refusal offers 3 × 3 when the smaller grid would be admitted.
+  const smaller = () =>
+    size === 5 && !spatialAtlasBudget(config, 3, facts).error;
+  const implicit = config.format === "implicit";
   const error = !spatialAtlasPairs(config, facts).length
     ? "This study has no curated parameter pair. Your study is kept."
-    : config.format === "implicit" &&
-        (!Number.isFinite(totals.grid) || totals.grid > limits.grid)
-      ? "The atlas reserves more than 400,000 base grid cells. Reduce the source grid."
-      : config.format === "implicit" &&
-          (!Number.isFinite(totals.sections) ||
-            totals.sections > limits.sections)
-        ? "The atlas reserves more than 2,000,000 section cells. Reduce the section count or source grid."
+    : implicit && exceeds(totals.grid, limits.grid)
+      ? smaller()
+        ? "The 5 × 5 atlas reserves more than 400,000 base grid cells. Choose 3 × 3, or reduce the source grid."
+        : "The atlas reserves more than 400,000 base grid cells. Reduce the source grid."
+      : implicit && exceeds(totals.sections, limits.sections)
+        ? smaller()
+          ? "The 5 × 5 atlas reserves more than 2,000,000 section cells. Choose 3 × 3, or reduce the section count or source grid."
+          : "The atlas reserves more than 2,000,000 section cells. Reduce the section count or source grid."
         : !over
           ? undefined
-          : size === 5 && !spatialAtlasBudget(config, 3, facts).error
+          : smaller()
             ? "This study exceeds the 5 × 5 atlas work limit. Choose 3 × 3, or reduce samples, family members or the geodesic fan in your study."
             : "This study exceeds the atlas work limit. Reduce samples, family members or the geodesic fan in your study, then try again.";
   return { ...totals, error };

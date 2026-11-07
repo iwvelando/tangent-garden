@@ -1193,6 +1193,33 @@ test("implicit spatial atlas: anisotropic and section reservations include the o
   expect(spatialAtlasBudget(c, 5, { usesA: true }).sections).toBe(
     25 * 24 * 64 ** 2 + 24 * 256 ** 2,
   );
+  // Twelve sections fit 3 × 3 (148,480 each) but not 5 × 5 (167,936 each),
+  // so the 5 × 5 refusal offers the smaller grid, as knots and ellipsoids do.
+  c.implicit.sections.count = 12;
+  expect(spatialAtlasBudget(c, 3, { usesA: true }).error).toBeUndefined();
+  expect(spatialAtlasBudget(c, 5, { usesA: true }).error).toBe(
+    "The 5 × 5 atlas reserves more than 2,000,000 section cells. Choose 3 × 3, or reduce the section count or source grid.",
+  );
+  c.implicit.sections.count = 24;
+  expect(spatialAtlasBudget(c, 5, { usesA: true }).error).toBe(
+    "The atlas reserves more than 2,000,000 section cells. Reduce the section count or source grid.",
+  );
+});
+
+test("implicit spatial atlas browser: quality readouts count sections and refinement levels", async ({
+  page,
+}) => {
+  const source = await study("Villarceau circles");
+  source.config.implicit.refine = 1;
+  expect(source.config.implicit.sections.count).toBe(1);
+  await openStudy(page, source);
+  const atlas = await openAtlas(page);
+  await expect(atlas.locator(".atlas-quality")).toContainText(
+    "Preview quality: 24 cells along the longest box side, 0 refinement levels, 1 section.",
+  );
+  await expect(atlas.getByText(/^Original quality:/)).toHaveText(
+    "Original quality: 64 cells along the longest box side, 1 refinement level, 1 section.",
+  );
 });
 
 test("implicit spatial atlas: the production queue inspects at source quality and changes only the pair", async () => {
