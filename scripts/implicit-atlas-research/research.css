@@ -1,0 +1,114 @@
+.implicit-research {
+  display: block;
+  padding: 24px;
+  min-height: 100dvh;
+  height: auto;
+  overflow: visible;
+}
+.research-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.implicit-research h1 {
+  font-size: 26px;
+  margin: 6px 0 16px;
+}
+.research-layout {
+  display: grid;
+  grid-template-columns: 310px minmax(0, 1fr);
+  gap: 24px;
+}
+.research-controls {
+  min-width: 0;
+}
+.research-controls .atlas-ranges {
+  padding: 16px 0;
+}
+.research-controls .pair:has(> .field) {
+  padding: 0;
+}
+.research-controls > .field {
+  margin: 0;
+  padding: 0 0 16px;
+}
+.research-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.research-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+.research-grid[data-size="5"] {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.research-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.research-cell > button {
+  width: 100%;
+  padding: 0;
+  white-space: normal;
+}
+.research-cell > button > span {
+  display: block;
+  padding: 8px;
+}
+.research-art {
+  aspect-ratio: 1000 / 760;
+  background: var(--paper);
+  display: grid;
+  place-items: center;
+}
+.research-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.research-cell .note {
+  font-size: 11px;
+  margin: 5px 0 12px;
+}
+.inspection {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.inspection img {
+  display: block;
+  width: min(100%, 900px);
+  aspect-ratio: 1000 / 760;
+  object-fit: contain;
+}
+.implicit-research a {
+  color: var(--section);
+}
+@media (max-width: 800px) {
+  .implicit-research {
+    display: block;
+    padding: 16px;
+  }
+  .research-heading {
+    align-items: flex-start;
+  }
+  .research-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .research-grid {
+    gap: 8px;
+  }
+  .research-grid[data-size="5"] {
+    min-width: 600px;
+  }
+  .research-layout {
+    overflow-x: auto;
+  }
+}
