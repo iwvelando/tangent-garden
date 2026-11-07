@@ -1,3 +1,4 @@
+import { tesseractAtlasEntryHelp } from "../web/tesseract/atlas";
 import { spatialAtlasEntryHelp } from "../web/spatial/atlas";
 import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
@@ -209,6 +210,7 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("atlas whole-number ranges", atlasWholeRangeHelp, true);
   add("atlas entry", atlasEntryHelp);
   add("spatial atlas entry", spatialAtlasEntryHelp);
+  add("4D atlas entry", tesseractAtlasEntryHelp);
   add("drawn Fourier terms", fitTermsHelp);
   add("drawn Fourier entry", fitEntryHelp);
   table("family motion", familyMotionHelp);

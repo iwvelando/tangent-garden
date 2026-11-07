@@ -348,3 +348,27 @@ Every tolerance in `engine4` is absolute plus relative to the study's own scale.
 δ is the relative distance from the threshold that is coalesced. The absolute floor 10⁻¹² dominates the curved and bypass bands at small radii, so their bands widen from about 10⁻¹² to 10⁻⁹ across the supported range; both stay inside the budget. The shell's b − a ≥ 0.001 is a validation limit, not a tolerance, and is also absolute, so a thin shell can become invalid when scaled down.
 
 **Checks.** `engine4/scale_test.go` covers the ball and tube tangent slices at supports 0.001–100, the radial shell touching H = b and the embedded route on the slab boundary H = ε at scales 1/16–8, and a thread tangent to the missing ball at missing radii 0.06–7.5. Making the curved, bypass or lift-membership tolerances purely absolute fails these tests, as does offsetting the missing radius by 10⁻⁹. The lift line-event tolerance is inert: replacing it with 10³ passes the whole suite.
+
+## A field of possible worlds
+
+**Explore parameter atlas**, beside the examples, compares the active study in a 3 × 3 or 5 × 5 grid. Choose a pair, enter increasing constant-expression ranges, and generate. The first axis runs across columns, the second down rows. A cell with invalid parameters stays visibly unavailable; the atlas never repairs its geometry or substitutes another object.
+
+The object owns its pairs:
+
+| Study | Admitted pairs |
+| --- | --- |
+| Paired Hopf flower | Central latitude α / flower amplitude A; xw / yw rotations; xw / projection window radius |
+| Paired Hopf latitude | Latitude α / xw rotation; xw / yw rotations; xw / projection window radius |
+| Spherical ring weave | xw / yw rotations; xw / projection window radius |
+| Tesseract projections | xw / yw rotations; additionally xw / eye distance in perspective, or xw / window radius in stereographic view |
+| Orthographic 24-cell; paired square-root journey | xw / yw rotations |
+
+Sections, curved sections, localized lifts and bypasses do not offer pairs. Dormant fields never enable one. Angles remain within ±1,000,000 radians, the stereographic window within 2–12 and the tesseract eye distance within 2.05–20. Hopf α stays within [0, π/2], with A ≥ 0 and α ± A in that interval. Pole touches retain the ordinary coincident-fiber identities and selection; clipped arcs retain their ordinary open ends.
+
+Each paired cell shows the complete composition, stacked with its panel labels outside the artwork. Both manual cameras, layers and selected correspondence survive. **Fit each variant** uses each returned panel's ordinary framing radius. **Use one common scale** waits until every cell finishes or is unavailable, then uses the largest radius separately for each panel. The base sphere therefore retains its useful scale even when a bouquet needs a large window. Ready cells can be inspected before shared artwork appears.
+
+Inspection recalculates the chosen cell at the source's original quality, ordinary framing and both manual cameras. **Adopt variant** changes only the two parameter values. The ordinary study then supplies editing, gestures, playback, sharing and SVG/PNG/motion export. Unrelated raw expressions and all motion settings remain intact. Cancel keeps the source and restores focus to the entry. Grid size is a local preference; no atlas state is saved in study links, whose existing defaults are unchanged.
+
+Previews cap arc samples at 64 for 3 × 3, or 32 for 5 × 5; square-root intervals instead cap at 256/128, and cube face grid lines at 4/2. Fiber and latitude counts are unchanged, so preview sampling cannot renumber a selected correspondence. A nonconstant flower still uses the engine's minimum of 16 base segments per petal. A coarse preview is a comparison, not a topology certificate.
+
+The atlas reserves at most 1,000,000 returned points across all previews plus one original-quality inspection. It retains at most 4,000,000 numeric geometry entries, including paired panels, parameter provenance and diagnostics, with at most 25 preview images and one inspection. One numerical request runs at a time, with at most 25 unsent grid requests; inspection has priority. Edits discard old output and stop a busy worker before evaluating new ranges. These limits bound work and retained output, not measured responsiveness or process memory.

@@ -1,3 +1,14 @@
+import {
+  rotationPair,
+  windowPair,
+  eyePair,
+  flowerPair,
+  latitudePair,
+  cubeAtlasPoints,
+  weaveAtlasPoints,
+  rootAtlasPoints,
+  type TesseractAtlasPair,
+} from "./atlas-pairs";
 import { tiered, withMore, type Help } from "../help";
 import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import { cellOf } from "./polytope";
@@ -91,6 +102,12 @@ export type LegendItem = {
   roles?: Result["paths"][number]["role"][];
 };
 export type ObjectDescriptor = {
+  atlas?: {
+    pairs: readonly TesseractAtlasPair[];
+    samples: Record<3 | 5, number>;
+    grid?: Record<3 | 5, number>;
+    points: (c: Config) => number;
+  };
   name: string;
   noun: string;
   modes: readonly Config["mode"][];
@@ -329,6 +346,12 @@ function correspondenceReadouts(c: Correspondence) {
 }
 export const objects: Record<Object4, ObjectDescriptor> = {
   tesseract: {
+    atlas: {
+      pairs: [rotationPair, windowPair, eyePair],
+      samples: { 3: 64, 5: 32 },
+      grid: { 3: 4, 5: 2 },
+      points: cubeAtlasPoints,
+    },
     name: "Tesseract",
     noun: "tesseract",
     modes: ["perspective", "orthographic", "stereo", "section"],
@@ -782,6 +805,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     ],
   },
   weave: {
+    atlas: {
+      pairs: [flowerPair, latitudePair, rotationPair, windowPair],
+      samples: { 3: 64, 5: 32 },
+      points: weaveAtlasPoints,
+    },
     name: "Spherical ring weave",
     noun: "spherical ring weave",
     controls: "weave",
@@ -1124,6 +1152,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         : weaveMotions,
   },
   cell24: {
+    atlas: {
+      pairs: [rotationPair],
+      samples: { 3: 64, 5: 32 },
+      points: () => 4096,
+    },
     name: "24-cell and its dual",
     noun: "24-cell",
     controls: "polytope",
@@ -1329,6 +1362,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     motion: "double",
   },
   root: {
+    atlas: {
+      pairs: [rotationPair],
+      samples: { 3: 256, 5: 128 },
+      points: rootAtlasPoints,
+    },
     name: "Square-root journey",
     noun: "square-root journey",
     controls: "root",

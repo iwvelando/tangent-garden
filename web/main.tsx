@@ -40,6 +40,7 @@ import {
   AtlasContext,
   type AtlasRequest,
   type SpatialAtlasRequest,
+  type TesseractAtlasRequest,
 } from "./AtlasContext";
 import { atlasBudget, atlasEntryHelp, atlasFacts } from "./atlas";
 import { useQuietFocus } from "./quiet-focus";
@@ -3086,6 +3087,7 @@ const ShortenPreview = lazy(() =>
 );
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const SpatialAtlasPreview = lazy(() => import("./spatial/AtlasPreview"));
+const TesseractAtlasPreview = lazy(() => import("./tesseract/AtlasPreview"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
 const canonicalOrigin = "https://tangent-garden.isaacvelando.com";
@@ -3105,6 +3107,8 @@ function Notebook() {
   const [spatialAtlas, setSpatialAtlas] = useState<SpatialAtlasRequest | null>(
     null,
   );
+  const [tesseractAtlas, setTesseractAtlas] =
+    useState<TesseractAtlasRequest | null>(null);
   const [fit, setFit] = useState<FourierFitRequest | null>(null);
   const [loom, setLoom] = useState<LoomEntry | null>(null);
   const [garden, setGarden] = useState<GardenEntry | null>(null);
@@ -3115,6 +3119,7 @@ function Notebook() {
     !!excursion ||
     !!atlas ||
     !!spatialAtlas ||
+    !!tesseractAtlas ||
     !!fit ||
     !!loom ||
     !!garden ||
@@ -3131,7 +3136,17 @@ function Notebook() {
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion, atlas, spatialAtlas, fit, loom, garden, lace, shorten]);
+  }, [
+    excursion,
+    atlas,
+    spatialAtlas,
+    tesseractAtlas,
+    fit,
+    loom,
+    garden,
+    lace,
+    shorten,
+  ]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -3147,6 +3162,7 @@ function Notebook() {
     if (next === mode) return;
     setAtlas(null);
     setSpatialAtlas(null);
+    setTesseractAtlas(null);
     setFit(null);
     setLoom(null);
     setGarden(null);
@@ -3176,6 +3192,7 @@ function Notebook() {
       setExcursion(null);
       setAtlas(null);
       setSpatialAtlas(null);
+      setTesseractAtlas(null);
       setFit(null);
       setLoom(null);
       setGarden(null);
@@ -3200,6 +3217,7 @@ function Notebook() {
       setExcursion(null);
       setAtlas(null);
       setSpatialAtlas(null);
+      setTesseractAtlas(null);
       setFit(null);
       setLoom(null);
       setGarden(null);
@@ -3239,7 +3257,11 @@ function Notebook() {
     <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
       <FourierFitContext.Provider value={{ begin: setFit }}>
         <AtlasContext.Provider
-          value={{ begin: setAtlas, beginSpatial: setSpatialAtlas }}
+          value={{
+            begin: setAtlas,
+            beginSpatial: setSpatialAtlas,
+            beginTesseract: setTesseractAtlas,
+          }}
         >
           <JourneyContext.Provider
             value={{
@@ -3442,6 +3464,47 @@ function Notebook() {
                       restoreFocus.current = () =>
                         spatialAtlas.restoreFocus(via);
                       setSpatialAtlas(null);
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {tesseractAtlas && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening the parameter atlas…
+                    </div>
+                  }
+                >
+                  <TesseractAtlasPreview
+                    request={tesseractAtlas}
+                    onReturn={(via) => {
+                      restoreFocus.current = () =>
+                        tesseractAtlas.restoreFocus(via);
+                      setTesseractAtlas(null);
+                    }}
+                    onAdopt={(study, via) => {
+                      links.current++;
+                      setShared((s) => ({ ...s, "4d": undefined }));
+                      setAdoptions((a) => ({
+                        ...a,
+                        "4d": {
+                          notebook: "4d",
+                          study,
+                          custom: true,
+                          preset: 0,
+                          edit: true,
+                          id: ++adoptionId.current,
+                        },
+                      }));
+                      restoreFocus.current = () =>
+                        tesseractAtlas.restoreFocus(via);
+                      setTesseractAtlas(null);
                     }}
                   />
                 </Suspense>
