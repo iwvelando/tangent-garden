@@ -2809,3 +2809,62 @@ for (const viewport of [
       );
     },
   );
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+])
+  test(`4D atlas scalar blur, paired inspection and quiet return in WebKit ${viewport.width}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/?study=4d");
+    await choosePreset(page, { label: "A flower below, a bouquet above" });
+    await expect(page.locator(".tesseract-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const entry = page.getByRole("button", {
+      name: "Explore parameter atlas",
+      exact: true,
+    });
+    await entry.click();
+    const atlas = page.getByRole("dialog", {
+      name: "A field of possible worlds",
+      exact: true,
+    });
+    await expect(atlas).toBeVisible();
+    await expect(atlas).toHaveAttribute("data-quiet", "");
+    await atlas
+      .getByLabel("Central latitude α from", { exact: true })
+      .fill("pi/5");
+    await atlas.getByText("Original quality:", { exact: false }).click();
+    await atlas
+      .getByRole("button", { name: "Generate atlas", exact: true })
+      .click();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    await atlas
+      .getByRole("button", { name: "Inspect row 2, column 2", exact: true })
+      .click();
+    await expect(atlas.locator(".atlas-inspected-art img")).toHaveCount(1);
+    const image = atlas.locator(".atlas-inspected-art img");
+    await expect
+      .poll(() => image.evaluate((e) => (e as HTMLImageElement).naturalWidth))
+      .toBeGreaterThan(0);
+    await expect(
+      atlas.getByRole("button", { name: "Adopt variant", exact: true }),
+    ).toBeEnabled();
+    await atlas
+      .getByRole("button", { name: "Cancel atlas", exact: true })
+      .click();
+    await expect(entry).toBeFocused();
+    await expect(page.locator(".tesseract-app .atlas-entry")).toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+    await expect(
+      page.locator("#tesseract-artwork svg[data-representation]"),
+    ).toHaveCount(2);
+  });

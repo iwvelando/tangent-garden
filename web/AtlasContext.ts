@@ -4,6 +4,7 @@ import type { JourneyVia } from "./JourneyContext";
 import type { AtlasFacts } from "./atlas";
 import type { SpatialAtlasFacts } from "./spatial/atlas";
 import type { SpatialStudy } from "./spatial/link";
+import type { TesseractStudy } from "./tesseract/link";
 
 export type AtlasRequest = {
   study: PlanarStudy;
@@ -20,8 +21,14 @@ export type SpatialAtlasRequest = {
   via: JourneyVia;
   restoreFocus: (via: JourneyVia) => void;
 };
-// The Notebook owns both notebooks' atlases.
+export type TesseractAtlasRequest = {
+  study: TesseractStudy;
+  via: JourneyVia;
+  restoreFocus: (via: JourneyVia) => void;
+};
+// The Notebook owns the three notebooks' atlases.
 export const AtlasContext = createContext<{
   begin: (request: AtlasRequest) => void;
   beginSpatial: (request: SpatialAtlasRequest) => void;
-}>({ begin: () => {}, beginSpatial: () => {} });
+  beginTesseract: (request: TesseractAtlasRequest) => void;
+}>({ begin: () => {}, beginSpatial: () => {}, beginTesseract: () => {} });

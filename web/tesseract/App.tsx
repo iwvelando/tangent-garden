@@ -1,5 +1,10 @@
+import { AtlasContext } from "../AtlasContext";
+import type { JourneyVia } from "../JourneyContext";
+import { useQuietFocus } from "../quiet-focus";
+import { tesseractAtlasBudget, tesseractAtlasEntryHelp } from "./atlas";
 import {
   cloneElement,
+  useContext,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -20,6 +25,9 @@ import { useTheme } from "../useTheme";
 import { useMediaQuery } from "../useMediaQuery";
 import {
   Field,
+  HelpText,
+  HelpToggle,
+  useHelp,
   FieldErrorContext,
   StudyError,
   type FieldErrorTarget,
@@ -444,6 +452,15 @@ export default function TesseractApp({
     }
   }, [shared?.id]);
   const journey = useJourneyEntry(active, busy, scalarError ?? error);
+  const atlasOwner = useContext(AtlasContext);
+  const [atlasWaiting, setAtlasWaiting] = useState<JourneyVia | null>(null);
+  const [atlasNotice, setAtlasNotice] = useState("");
+  const atlasEntry = useRef<HTMLDivElement>(null);
+  const atlasButton = useRef<HTMLButtonElement>(null);
+  const atlasQuiet = useQuietFocus(atlasEntry);
+  const atlasHelp = useHelp();
+  const atlasRequested = atlasWaiting !== null;
+
   // Still images use the custom export callback below, independently of
   // motion export. Native PNG encoding cannot be aborted, but entry must
   // discard its eventual file and any error before returning to the study.
@@ -453,17 +470,19 @@ export default function TesseractApp({
     return () => {
       imageGeneration.current++;
     };
-  }, [journey.requested]);
+  }, [journey.requested, atlasRequested]);
   useEffect(() => {
     if (adoption?.notebook === "4d")
-      openStudy(adoption.study, adoption.custom ? null : adoption.preset);
+      adoption.edit
+        ? update(() => structuredClone(adoption.study.config))
+        : openStudy(adoption.study, adoption.custom ? null : adoption.preset);
   }, [adoption?.id]);
   useEffect(() => {
-    if (journey.requested) {
+    if (journey.requested || atlasRequested) {
       resetMotion();
       setSpinning(false);
     }
-  }, [journey.requested]);
+  }, [journey.requested, atlasRequested]);
   const snapshot = (): TesseractStudy => ({
     config,
     layers,
@@ -474,6 +493,34 @@ export default function TesseractApp({
     repeat,
     pace,
   });
+  useEffect(() => {
+    if (!active) {
+      setAtlasWaiting(null);
+      setAtlasNotice("");
+    } else if (atlasWaiting && !busy && !preview) {
+      const via = atlasWaiting;
+      setAtlasWaiting(null);
+      const refusal = tesseractAtlasBudget(config).error;
+      if (scalarError || error || !frame)
+        setAtlasNotice(
+          "Correct the highlighted input before starting the atlas.",
+        );
+      else if (refusal) setAtlasNotice(refusal);
+      else {
+        setAtlasNotice("");
+        atlasOwner.beginTesseract({
+          study: structuredClone(snapshot()),
+          via,
+          restoreFocus: (returnVia) => {
+            if (returnVia === "pointer") atlasQuiet.onPointerDown();
+            else atlasQuiet.onKeyDownCapture();
+            atlasQuiet.quiet();
+            atlasButton.current?.focus({ preventScroll: true });
+          },
+        });
+      }
+    }
+  }, [active, atlasWaiting, busy, preview, scalarError, error]);
   const play = async () => {
     setLoopError("");
     // A loop joins the end to the start, so they must be the same drawing.
@@ -782,7 +829,7 @@ export default function TesseractApp({
         />
         <AnimationButton section="shape-animation-section" />
         <ExportImageMenu
-          revision={journey.requested}
+          revision={`${journey.requested}:${atlasRequested}`}
           menuId="tesseract-export-image"
           kind="tesseract"
           disabled={busy || !!error || !!scalarError || playing || !!exporting}
@@ -861,6 +908,46 @@ export default function TesseractApp({
                     {journey.notice}
                   </p>
                 )}
+                <div
+                  className="atlas-entry"
+                  ref={atlasEntry}
+                  onPointerDown={atlasQuiet.onPointerDown}
+                  onKeyDownCapture={atlasQuiet.onKeyDownCapture}
+                >
+                  <div className="atlas-entry-actions">
+                    <button
+                      ref={atlasButton}
+                      type="button"
+                      disabled={
+                        !frame ||
+                        !!error ||
+                        !!scalarError ||
+                        (!busy && !!tesseractAtlasBudget(config).error)
+                      }
+                      aria-describedby={
+                        atlasHelp.open ? atlasHelp.id : undefined
+                      }
+                      onClick={(e) => {
+                        setAtlasWaiting(
+                          e.detail === 0 ? "keyboard" : "pointer",
+                        );
+                        setAtlasNotice("Waiting for your study’s inputs…");
+                      }}
+                    >
+                      Explore parameter atlas
+                    </button>
+                    <HelpToggle topic="parameter atlas" help={atlasHelp} />
+                  </div>
+                  <HelpText help={atlasHelp}>
+                    {tesseractAtlasEntryHelp}
+                  </HelpText>
+                  {(atlasNotice ||
+                    (!busy && tesseractAtlasBudget(config).error)) && (
+                    <p className="note" role="status">
+                      {atlasNotice || tesseractAtlasBudget(config).error}
+                    </p>
+                  )}
+                </div>
                 <Field label={labels.object}>
                   <select
                     value={config.object}
