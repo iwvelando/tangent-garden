@@ -7,6 +7,14 @@ import {
   useState,
 } from "react";
 import {
+  AtlasRangeFields,
+  AtlasTabs,
+  atlasCellKeyDown,
+  useAtlasModal,
+  useAtlasRanges,
+  useAtlasTabs,
+} from "./atlas-dialog";
+import {
   ParameterAtlas,
   atlasBudget,
   atlasGridSize,
@@ -18,20 +26,17 @@ import {
   type AtlasPairId,
   atlasDefaults,
   atlasRangeError,
-  atlasRangeHelp,
-  atlasWholeRangeHelp,
   atlasControlHelp,
   type AtlasRanges,
   type AtlasState,
 } from "./atlas";
 import type { AtlasRequest } from "./AtlasContext";
 import { EngineClient } from "./engine-client";
-import { Field, FieldErrorContext } from "./Field";
+import { Field } from "./Field";
 import { NotebookMode } from "./NotebookMode";
 import { Plot, fitFrame, viewRect } from "./Plot";
 import type { PlanarStudy } from "./planar-link";
 import { probeSample, sampleProbe } from "./planar-probe";
-import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { useQuietFocus } from "./quiet-focus";
 import { useTheme } from "./useTheme";
 import { refinesBetweenSamples, type Frame } from "./types";
@@ -39,7 +44,6 @@ import type { JourneyVia } from "./JourneyContext";
 import "./atlas.css";
 import { atlasSharedFrame } from "./atlas-framing";
 
-type AtlasTab = "grid" | "variant";
 const short = (value: number) => Number(value.toPrecision(5)).toString();
 function inspectedFraming(frame: Frame, study: PlanarStudy) {
   const fit = fitFrame(frame.result, frame.config);
@@ -66,14 +70,7 @@ export function AtlasPreview({
   const theme = useTheme();
   const dialog = useRef<HTMLDialogElement>(null);
   const back = useRef<HTMLButtonElement>(null);
-  const tabButtons = useRef<
-    Partial<Record<AtlasTab, HTMLButtonElement | null>>
-  >({});
-  const gridScroll = useRef(0);
-  const [tab, setTab] = useState<AtlasTab>("grid");
   const tabsId = useId();
-  const [editing, setEditing] = useState(false);
-  const editTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const quiet = useQuietFocus(dialog);
   const via = useRef(request.via);
   const title = useId();
@@ -106,26 +103,10 @@ export function AtlasPreview({
     queued: 0,
   });
   const scheduler = useRef<ParameterAtlas | null>(null);
-  const client = useRef<EngineClient | null>(null);
-  const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
-  const generation = useRef(0);
-  const status = useMemo(
-    () => ({
-      client,
-      generation,
-      track: () => {},
-      report: (id: string, value: ScalarState | null) =>
-        setScalars((previous) => {
-          const next = { ...previous };
-          if (value) next[id] = value;
-          else delete next[id];
-          return next;
-        }),
-    }),
-    [],
-  );
-  const pending = Object.values(scalars).some((s) => s.pending);
-  const invalid = Object.values(scalars).find((s) => s.error);
+  const tabs = useAtlasTabs(dialog, state.selection !== null, quiet);
+  const { tab } = tabs;
+  const scalars = useAtlasRanges(() => scheduler.current?.cancel());
+  const { client, generation, pending, invalid, editing } = scalars;
   const rangeError = atlasRangeError(ranges, pair, size);
   const budget = atlasBudget(study.config, size, facts);
   // Range expressions are evaluated by the atlas's own worker. Once it has
@@ -137,13 +118,6 @@ export function AtlasPreview({
       : rangeError;
   const blocked =
     editing || pending || !!failure || !!budget.error || !!state.failed;
-  useEffect(() => () => clearTimeout(editTimer.current), []);
-  const editRanges = () => {
-    scheduler.current?.cancel();
-    setEditing(true);
-    clearTimeout(editTimer.current);
-    editTimer.current = setTimeout(() => setEditing(false), 300);
-  };
   useEffect(() => {
     const engine = new EngineClient();
     client.current = engine;
@@ -160,66 +134,7 @@ export function AtlasPreview({
       engine.dispose();
     };
   }, []);
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    const { scrollX: x, scrollY: y } = window;
-    root.classList.add("atlas-open");
-    return () => {
-      root.classList.remove("atlas-open");
-      if (window.scrollX !== x || window.scrollY !== y) window.scrollTo(x, y);
-    };
-  }, []);
-  useEffect(() => {
-    if (request.via === "pointer") quiet.onPointerDown();
-    dialog.current!.showModal();
-    quiet.quiet();
-    back.current!.focus();
-  }, []);
-  // Fit the modal above iOS's keyboard and scroll only its own contents.
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    const box = dialog.current!;
-    if (!viewport) return;
-    const phone = matchMedia("(max-width: 700px)");
-    let focused = -Infinity;
-    let timer = 0;
-    const fit = () => {
-      if (phone.matches && Math.abs(viewport.scale - 1) < 0.01) {
-        box.style.top = `${Math.max(0, viewport.offsetTop)}px`;
-        box.style.height = box.style.maxHeight = `${viewport.height}px`;
-      } else box.style.top = box.style.height = box.style.maxHeight = "";
-      if (performance.now() - focused > 1000) return;
-      clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const active = document.activeElement;
-        if (!(active instanceof HTMLElement) || !box.contains(active)) return;
-        const target = (
-          active.closest(".field") ?? active
-        ).getBoundingClientRect();
-        const frame = box.getBoundingClientRect();
-        if (target.top < frame.top + 8)
-          box.scrollTop += target.top - frame.top - 8;
-        else if (target.bottom > frame.bottom - 8)
-          box.scrollTop += target.bottom - frame.bottom + 8;
-      }, 150);
-    };
-    const focus = () => {
-      focused = performance.now();
-      fit();
-    };
-    fit();
-    viewport.addEventListener("resize", fit);
-    viewport.addEventListener("scroll", fit);
-    phone.addEventListener("change", fit);
-    box.addEventListener("focusin", focus);
-    return () => {
-      clearTimeout(timer);
-      viewport.removeEventListener("resize", fit);
-      viewport.removeEventListener("scroll", fit);
-      phone.removeEventListener("change", fit);
-      box.removeEventListener("focusin", focus);
-    };
-  }, []);
+  useAtlasModal(dialog, back, request.via, quiet);
   const ending = useRef(false);
   const finish = (action = () => onReturn(via.current)) => {
     if (ending.current) return;
@@ -240,8 +155,7 @@ export function AtlasPreview({
         ? index
         : null;
     scheduler.current?.inspect(index);
-    gridScroll.current = dialog.current?.scrollTop ?? 0;
-    setTab("variant");
+    tabs.showVariant();
   };
   useLayoutEffect(() => {
     const selected = state.selection;
@@ -269,23 +183,6 @@ export function AtlasPreview({
   const frame =
     focusStage.current === selected?.index ? undefined : selected?.frame;
   const cell = selected && state.cells[selected.index];
-  const activateTab = (next: AtlasTab) => {
-    if (next === tab || (next === "variant" && !selected)) return;
-    if (tab === "grid") gridScroll.current = dialog.current?.scrollTop ?? 0;
-    setTab(next);
-  };
-  useLayoutEffect(() => {
-    if (tab === "variant" && !selected) {
-      gridScroll.current = 0;
-      setTab("grid");
-    }
-  }, [tab, selected !== null]);
-  useLayoutEffect(() => {
-    quiet.quiet();
-    tabButtons.current[tab]?.focus({ preventScroll: true });
-    if (dialog.current)
-      dialog.current.scrollTop = tab === "grid" ? gridScroll.current : 0;
-  }, [tab]);
   return (
     <dialog
       ref={dialog}
@@ -322,45 +219,13 @@ export function AtlasPreview({
           {descriptor.axes[0].label} runs across columns;{" "}
           {descriptor.axes[1].label.toLowerCase()} runs down rows.
         </p>
-        <div className="atlas-tabs" role="tablist" aria-label="Atlas views">
-          {(["grid", "variant"] as const).map((key) => (
-            <button
-              key={key}
-              ref={(button) => {
-                tabButtons.current[key] = button;
-              }}
-              type="button"
-              role="tab"
-              id={`${tabsId}-${key}-tab`}
-              aria-controls={`${tabsId}-${key}-panel`}
-              aria-selected={tab === key}
-              tabIndex={tab === key ? 0 : -1}
-              disabled={key === "variant" && !selected}
-              onClick={() => activateTab(key)}
-              onKeyDown={(event) => {
-                const keys: AtlasTab[] = selected
-                  ? ["grid", "variant"]
-                  : ["grid"];
-                const index = keys.indexOf(key);
-                const target =
-                  event.key === "Home"
-                    ? 0
-                    : event.key === "End"
-                      ? keys.length - 1
-                      : event.key === "ArrowRight"
-                        ? (index + 1) % keys.length
-                        : event.key === "ArrowLeft"
-                          ? (index + keys.length - 1) % keys.length
-                          : null;
-                if (target === null) return;
-                event.preventDefault();
-                activateTab(keys[target]);
-              }}
-            >
-              {key === "grid" ? "Atlas grid" : "Selected variant"}
-            </button>
-          ))}
-        </div>
+        <AtlasTabs
+          id={tabsId}
+          tab={tab}
+          selected={!!selected}
+          buttons={tabs.buttons}
+          activate={tabs.activate}
+        />
         <div
           role="tabpanel"
           id={`${tabsId}-grid-panel`}
@@ -375,9 +240,8 @@ export function AtlasPreview({
                   onChange={(event) => {
                     const next = event.target.value as AtlasPairId;
                     if (next === pair) return;
-                    generation.current++;
-                    editRanges();
-                    setScalars({});
+                    scalars.forget();
+                    scalars.edit();
                     setPair(next);
                     setRanges(atlasDefaults(study.config, next));
                   }}
@@ -396,7 +260,7 @@ export function AtlasPreview({
                     onChange={(event) => {
                       const next = Number(event.target.value) as AtlasSize;
                       if (next === size) return;
-                      editRanges();
+                      scalars.edit();
                       rememberAtlasGridSize(next);
                       setSize(next);
                     }}
@@ -415,58 +279,14 @@ export function AtlasPreview({
                   </select>
                 </Field>
               </div>
-              <ScalarStatus.Provider value={status}>
-                <FieldErrorContext.Provider
-                  value={{
-                    ...failure,
-                    message: failure?.message ?? "",
-                    claim: () => {},
-                    touch: () => {},
-                  }}
-                >
-                  <div
-                    className="atlas-ranges"
-                    key={pair}
-                    onChangeCapture={editRanges}
-                  >
-                    {descriptor.axes.map(({ key, label, integer }) => (
-                      <div className="pair" key={key}>
-                        {([0, 1] as const).map((index) => {
-                          const name = `${label} ${index === 0 ? "from" : "to"}`;
-                          return (
-                            <Field
-                              key={index}
-                              label={name}
-                              help={
-                                index !== 0
-                                  ? undefined
-                                  : integer
-                                    ? atlasWholeRangeHelp
-                                    : atlasRangeHelp
-                              }
-                            >
-                              <ScalarInput
-                                name={name}
-                                value={ranges[key][index]}
-                                onChange={(value) =>
-                                  setRanges((previous) => {
-                                    const pair = [...previous[key]] as [
-                                      number,
-                                      number,
-                                    ];
-                                    pair[index] = value;
-                                    return { ...previous, [key]: pair };
-                                  })
-                                }
-                              />
-                            </Field>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </FieldErrorContext.Provider>
-              </ScalarStatus.Provider>
+              <AtlasRangeFields
+                pairKey={pair}
+                axes={descriptor.axes}
+                ranges={ranges}
+                setRanges={setRanges}
+                failure={failure}
+                scalars={scalars}
+              />
               <button
                 type="button"
                 disabled={blocked}
@@ -544,45 +364,9 @@ export function AtlasPreview({
                       aria-pressed={selected?.index === index}
                       aria-label={`Inspect row ${Math.floor(index / size) + 1}, column ${(index % size) + 1}`}
                       onClick={() => select(index)}
-                      onKeyDown={(event) => {
-                        const step =
-                          event.key === "ArrowRight"
-                            ? 1
-                            : event.key === "ArrowLeft"
-                              ? -1
-                              : event.key === "ArrowDown"
-                                ? size
-                                : event.key === "ArrowUp"
-                                  ? -size
-                                  : 0;
-                        if (
-                          !step &&
-                          event.key !== "Home" &&
-                          event.key !== "End"
-                        )
-                          return;
-                        event.preventDefault();
-                        const buttons = event.currentTarget
-                          .closest(".atlas-grid")!
-                          .querySelectorAll<HTMLButtonElement>(
-                            ".atlas-cell > button",
-                          );
-                        let target =
-                          event.key === "Home"
-                            ? 0
-                            : event.key === "End"
-                              ? buttons.length - 1
-                              : index + step;
-                        const direction =
-                          step || (event.key === "Home" ? 1 : -1);
-                        while (target >= 0 && target < buttons.length) {
-                          if (!buttons[target].disabled) {
-                            buttons[target].focus();
-                            break;
-                          }
-                          target += direction;
-                        }
-                      }}
+                      onKeyDown={(event) =>
+                        atlasCellKeyDown(event, index, size)
+                      }
                     >
                       {cell.frame && !waitingForSharedFrame ? (
                         <div className="atlas-art" inert>

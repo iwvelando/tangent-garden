@@ -36,12 +36,17 @@ import {
 } from "./geodesics";
 import {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { AtlasContext } from "../AtlasContext";
+import { useQuietFocus } from "../quiet-focus";
+import type { JourneyVia } from "../JourneyContext";
+import { spatialAtlasBudget, spatialAtlasEntryHelp } from "./atlas";
 import { EngineClient, EngineError } from "../engine-client";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
 import { useMediaQuery } from "../useMediaQuery";
@@ -276,6 +281,21 @@ const atLevel = (c: SpatialConfig, level: number): SpatialConfig => ({
   implicit: { ...c.implicit, level },
 });
 
+// The knot-winding choices: six curated pairs, and the study's own when an
+// atlas or a link chose another, so the control always shows what is drawn.
+const curatedWindings = [
+  [2, 3],
+  [2, 5],
+  [3, 4],
+  [3, 5],
+  [4, 5],
+  [5, 7],
+] as const;
+export const windingChoices = (p: number, q: number) =>
+  curatedWindings.some(([a, b]) => a === p && b === q)
+    ? curatedWindings
+    : [...curatedWindings, [p, q] as const];
+
 export default function SpatialApp({
   active = true,
   shared,
@@ -290,6 +310,9 @@ export default function SpatialApp({
     expressions = useDisclosure("expressions");
   const client = useRef<EngineClient | null>(null),
     generation = useRef(0),
+    // Remounts the controls, dropping their raw text, when a study replaces
+    // this one.
+    controls = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
   const [config, setConfig] = useState<SpatialConfig>(spatialPresets[0].config);
   const [customOpened, setCustomOpened] = useState(false);
@@ -407,11 +430,21 @@ export default function SpatialApp({
     scalarError?.error ?? error.message,
   );
   const receiverPending = receiverView && busy;
+  // The atlas, entered from the study's settled frame; asking for it ends
+  // playback and exports, as entering a journey does.
+  const atlasOwner = useContext(AtlasContext);
+  const [atlasWaiting, setAtlasWaiting] = useState<JourneyVia | null>(null);
+  const [atlasNotice, setAtlasNotice] = useState("");
+  const atlasEntry = useRef<HTMLDivElement>(null);
+  const atlasButton = useRef<HTMLButtonElement>(null);
+  const atlasQuiet = useQuietFocus(atlasEntry);
+  const atlasHelp = useHelp();
   const revision = JSON.stringify([
     key,
     states,
     active,
     journey.requested,
+    atlasWaiting,
     generation.current,
     eventSelection,
   ]);
@@ -512,8 +545,17 @@ export default function SpatialApp({
     id: number;
     settings: SpatialAnimation;
   } | null>(null);
-  const openStudy = (id: number, study: SpatialStudy, preset = "") => {
+  // edit: an atlas adoption, which changes two fields of this study rather
+  // than replacing it, so its controls stay mounted with their raw text and
+  // Reset view keeps returning where it did.
+  const openStudy = (
+    id: number,
+    study: SpatialStudy,
+    preset = "",
+    edit = false,
+  ) => {
     generation.current++;
+    if (!edit) controls.current++;
     touched.current = null;
     setStates({});
     setPreset(preset);
@@ -526,7 +568,7 @@ export default function SpatialApp({
     setSight(study.sight);
     setLensing(study.projection);
     setLensAngle(study.lensAngle);
-    setHome(null);
+    if (!edit) setHome(null);
     setRestoredView({ reset: reset + 1, view: study.view });
     setReset(reset + 1);
     setRestoredAnimation({ id, settings: study.animation });
@@ -549,7 +591,9 @@ export default function SpatialApp({
       -++presetAnimations.current,
       adoption.study,
       adoption.custom ? "" : String(adoption.preset),
+      adoption.edit,
     );
+    if (adoption.edit) return;
     const view = spatialPresets[adoption.preset].view;
     setHome(view ? { ...view } : null);
   }, [adoption?.id]);
@@ -1894,6 +1938,36 @@ export default function SpatialApp({
     reset,
   );
   const ready = !!frame && !busy && !failure && !renderError;
+  // The atlas opens on the study as it settles: refused with the reason
+  // beside its button when the settled study cannot open it.
+  useEffect(() => {
+    if (!active) {
+      setAtlasWaiting(null);
+      setAtlasNotice("");
+    } else if (atlasWaiting && !busy) {
+      const via = atlasWaiting;
+      setAtlasWaiting(null);
+      const refusal = spatialAtlasBudget(config, 3).error;
+      if (failure || !frame)
+        setAtlasNotice(
+          "Correct the highlighted input before starting the atlas.",
+        );
+      else if (refusal) setAtlasNotice(refusal);
+      else {
+        setAtlasNotice("");
+        atlasOwner.beginSpatial({
+          study: structuredClone(snapshot()),
+          via,
+          restoreFocus: (returnVia) => {
+            if (returnVia === "pointer") atlasQuiet.onPointerDown();
+            else atlasQuiet.onKeyDownCapture();
+            atlasQuiet.quiet();
+            atlasButton.current?.focus({ preventScroll: true });
+          },
+        });
+      }
+    }
+  }, [active, atlasWaiting, busy, failure]);
   // The event strip, while the study has a story: its context now, its
   // previews, and choosing a state.
   const event = useMemo(() => storyContext(config, story), [key, story]);
@@ -3109,9 +3183,42 @@ export default function SpatialApp({
               {journey.notice}
             </p>
           )}
+          <div
+            className="atlas-entry"
+            ref={atlasEntry}
+            onPointerDown={atlasQuiet.onPointerDown}
+            onKeyDownCapture={atlasQuiet.onKeyDownCapture}
+          >
+            <div className="atlas-entry-actions">
+              <button
+                ref={atlasButton}
+                type="button"
+                disabled={
+                  !frame ||
+                  busy ||
+                  !!failure ||
+                  !!spatialAtlasBudget(config, 3).error
+                }
+                aria-describedby={atlasHelp.open ? atlasHelp.id : undefined}
+                onClick={(e) => {
+                  setAtlasWaiting(e.detail === 0 ? "keyboard" : "pointer");
+                  setAtlasNotice("Waiting for your study’s inputs…");
+                }}
+              >
+                Explore parameter atlas
+              </button>
+              <HelpToggle topic="parameter atlas" help={atlasHelp} />
+            </div>
+            <HelpText help={atlasHelp}>{spatialAtlasEntryHelp}</HelpText>
+            {atlasNotice && (
+              <p className="note" role="status">
+                {atlasNotice}
+              </p>
+            )}
+          </div>
           <ScalarStatus.Provider value={scalarStatus}>
             <FieldErrorContext.Provider value={fieldError}>
-              <div key={generation.current}>
+              <div key={controls.current}>
                 <Field label="Spatial definition">
                   <select
                     value={config.format}
@@ -3183,14 +3290,7 @@ export default function SpatialApp({
                           update((c) => ({ ...c, p, q }));
                         }}
                       >
-                        {[
-                          [2, 3],
-                          [2, 5],
-                          [3, 4],
-                          [3, 5],
-                          [4, 5],
-                          [5, 7],
-                        ].map(([p, q]) => (
+                        {windingChoices(config.p, config.q).map(([p, q]) => (
                           <option key={`${p},${q}`} value={`${p},${q}`}>
                             {p} around · {q} through
                           </option>

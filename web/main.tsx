@@ -36,7 +36,11 @@ import { FourierFitPreview } from "./FourierFitPreview";
 import { FourierFitContext, type FourierFitRequest } from "./FourierFitContext";
 import { fitEntryHelp } from "./fourier-fit";
 import { AtlasPreview } from "./AtlasPreview";
-import { AtlasContext, type AtlasRequest } from "./AtlasContext";
+import {
+  AtlasContext,
+  type AtlasRequest,
+  type SpatialAtlasRequest,
+} from "./AtlasContext";
 import { atlasBudget, atlasEntryHelp, atlasFacts } from "./atlas";
 import { useQuietFocus } from "./quiet-focus";
 import { JourneyPreview } from "./JourneyPreview";
@@ -3081,6 +3085,7 @@ const ShortenPreview = lazy(() =>
   import("./shorten/Preview").then((m) => ({ default: m.ShortenPreview })),
 );
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
+const SpatialAtlasPreview = lazy(() => import("./spatial/AtlasPreview"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
 const canonicalOrigin = "https://tangent-garden.isaacvelando.com";
@@ -3097,6 +3102,9 @@ function Notebook() {
   const planarContainer = useRef<HTMLDivElement>(null);
   const planarQuiet = useQuietFocus(planarContainer);
   const [atlas, setAtlas] = useState<AtlasRequest | null>(null);
+  const [spatialAtlas, setSpatialAtlas] = useState<SpatialAtlasRequest | null>(
+    null,
+  );
   const [fit, setFit] = useState<FourierFitRequest | null>(null);
   const [loom, setLoom] = useState<LoomEntry | null>(null);
   const [garden, setGarden] = useState<GardenEntry | null>(null);
@@ -3106,6 +3114,7 @@ function Notebook() {
   const overlay =
     !!excursion ||
     !!atlas ||
+    !!spatialAtlas ||
     !!fit ||
     !!loom ||
     !!garden ||
@@ -3122,7 +3131,7 @@ function Notebook() {
       restoreFocus.current = null;
       focus();
     }
-  }, [excursion, atlas, fit, loom, garden, lace, shorten]);
+  }, [excursion, atlas, spatialAtlas, fit, loom, garden, lace, shorten]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
   const [seen, setSeen] = useState({
@@ -3137,6 +3146,7 @@ function Notebook() {
   const choose = (next: NotebookKind, via: "keyboard" | "pointer") => {
     if (next === mode) return;
     setAtlas(null);
+    setSpatialAtlas(null);
     setFit(null);
     setLoom(null);
     setGarden(null);
@@ -3165,6 +3175,7 @@ function Notebook() {
     const pop = () => {
       setExcursion(null);
       setAtlas(null);
+      setSpatialAtlas(null);
       setFit(null);
       setLoom(null);
       setGarden(null);
@@ -3188,6 +3199,7 @@ function Notebook() {
       if (token === null) return;
       setExcursion(null);
       setAtlas(null);
+      setSpatialAtlas(null);
       setFit(null);
       setLoom(null);
       setGarden(null);
@@ -3226,7 +3238,9 @@ function Notebook() {
   return (
     <NotebookContext.Provider value={{ mode, choose, focusRequest }}>
       <FourierFitContext.Provider value={{ begin: setFit }}>
-        <AtlasContext.Provider value={{ begin: setAtlas }}>
+        <AtlasContext.Provider
+          value={{ begin: setAtlas, beginSpatial: setSpatialAtlas }}
+        >
           <JourneyContext.Provider
             value={{
               active: overlay,
@@ -3390,6 +3404,47 @@ function Notebook() {
                     setFit(null);
                   }}
                 />
+              </div>
+            )}
+            {spatialAtlas && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening the parameter atlas…
+                    </div>
+                  }
+                >
+                  <SpatialAtlasPreview
+                    request={spatialAtlas}
+                    onReturn={(via) => {
+                      restoreFocus.current = () =>
+                        spatialAtlas.restoreFocus(via);
+                      setSpatialAtlas(null);
+                    }}
+                    onAdopt={(study, via) => {
+                      links.current++;
+                      setShared((s) => ({ ...s, "3d": undefined }));
+                      setAdoptions((a) => ({
+                        ...a,
+                        "3d": {
+                          notebook: "3d",
+                          study,
+                          custom: true,
+                          preset: 0,
+                          edit: true,
+                          id: ++adoptionId.current,
+                        },
+                      }));
+                      restoreFocus.current = () =>
+                        spatialAtlas.restoreFocus(via);
+                      setSpatialAtlas(null);
+                    }}
+                  />
+                </Suspense>
               </div>
             )}
             {excursion && (

@@ -1,5 +1,16 @@
 import { availableTargets, subscript, termLabels } from "./animation";
-import { EngineError, type EngineClient } from "./engine-client";
+import type { EngineClient } from "./engine-client";
+import {
+  AtlasQueue,
+  axisRangeError,
+  roundedRange,
+  whole,
+  type AtlasAxis,
+  type AtlasCell as QueueCell,
+  type AtlasRanges,
+  type AtlasSize,
+  type AtlasState as QueueState,
+} from "./atlas-queue";
 import type { PlanarStudy } from "./planar-link";
 import { refineBudget } from "./refinement";
 import {
@@ -13,7 +24,12 @@ import {
 import { parameterAt } from "./planar-probe";
 import { tiered } from "./help";
 
-export type AtlasSize = 3 | 5;
+export {
+  roundedGenerated,
+  type AtlasAxis,
+  type AtlasRanges,
+  type AtlasSize,
+} from "./atlas-queue";
 const atlasSizeKey = "tangent-garden.atlas-size";
 let sizeMemory: AtlasSize = 3;
 let sizeLoaded = false;
@@ -47,7 +63,6 @@ export type AtlasPairId =
   | "light"
   | "clifford"
   | "dejong";
-export type AtlasRanges = Record<string, [number, number]>;
 // What a settled source frame reports about its study, which the config alone
 // cannot show: whether an implicit F reads the shape parameter a.
 export type AtlasFacts = { usesA?: boolean };
@@ -55,16 +70,6 @@ export type AtlasOptions = {
   pair?: AtlasPairId;
   size?: AtlasSize;
   facts?: AtlasFacts;
-};
-// A whole-number axis takes exactly evenly spaced whole numbers, never
-// continuous values rounded; its endpoints must differ by a multiple of the
-// grid's steps.
-export type AtlasAxis = {
-  key: string;
-  label: string;
-  symbol: string;
-  path: readonly (string | number)[];
-  integer?: boolean;
 };
 export type AtlasPair = {
   id: AtlasPairId;
@@ -112,7 +117,6 @@ const wholeBeside = (v: number): [number, number] =>
     : v < 0
       ? [Math.min(-1, v + 2) - 4, Math.min(-1, v + 2)]
       : wholeAround(v);
-const whole = (v: number) => Number.isSafeInteger(v);
 const catalog: readonly AtlasPair[] = [
   {
     id: "roulette",
@@ -306,47 +310,8 @@ export const atlasEntryHelp = tiered(
   "Compare nearby parameter choices for supported definitions.",
   "Supported: roulette radius and arm; whole Lissajous frequencies; a Fourier term's whole frequency and radius; implicit level and a, when F uses a; active pedal pole or Cartesian point light; Clifford or De Jong coefficients. Curves allow 8,000 samples and 256 lines; refinement, families and integration have work limits. Previews cap quality; inspection restores it.",
 );
-export type AtlasCell = {
-  values: [number, number];
-  frame?: Frame;
-  error?: string;
-};
-export type AtlasState = {
-  cells: AtlasCell[];
-  selection: { index: number; frame?: Frame; error?: string } | null;
-  queued: number;
-  error?: string;
-  failed?: string;
-};
-// Remove only rounding-sized tails in generated values. Carry the operand
-// scale: cancellation in 1.15 - 1 leaves more uncertainty than epsilon times
-// its small result. Interpolation uses its endpoint scale for the same reason.
-// Never apply this to the source, copied/entered endpoints, or raw scalar text.
-export function roundedGenerated(value: number, scale: number) {
-  if (!Number.isFinite(value) || value === 0) return value;
-  for (let digits = 1; digits <= 16; digits++) {
-    const short = Number(value.toPrecision(digits));
-    if (
-      Number.isFinite(short) &&
-      Math.abs(short - value) <=
-        Number.EPSILON * Math.max(Math.abs(value), scale)
-    )
-      return short;
-  }
-  return value;
-}
-function roundedRange(
-  from: number,
-  to: number,
-  scale: number,
-): [number, number] {
-  const cleaned: [number, number] = [
-    roundedGenerated(from, scale),
-    roundedGenerated(to, scale),
-  ];
-  // Do not collapse distinct subnormal endpoints or repair an invalid range.
-  return cleaned[0] < cleaned[1] ? cleaned : [from, to];
-}
+export type AtlasCell = QueueCell<Frame>;
+export type AtlasState = QueueState<Frame>;
 export function atlasDefaults(
   config: Config,
   pair: AtlasPairId = atlasPairs(config)[0]?.id ?? "roulette",
@@ -502,138 +467,23 @@ export function atlasRangeError(
   pair: AtlasPairId = "roulette",
   size: AtlasSize = 3,
 ) {
-  for (const { key, label: name, integer } of atlasPair(pair).axes) {
-    const [from, to] = ranges[key] ?? [NaN, NaN];
-    const lower = name.toLowerCase();
-    if (integer) {
-      if (!whole(from))
-        return {
-          label: `${name} from`,
-          message: `${name} from must be a whole number.`,
-        };
-      if (!whole(to) || to <= from)
-        return {
-          label: `${name} to`,
-          message: `${name} to must be a whole number greater than ${lower} from.`,
-        };
-      // Exact: the difference of safe integers can exceed 2^53.
-      if ((BigInt(to) - BigInt(from)) % BigInt(size - 1))
-        return {
-          label: `${name} to`,
-          message: `${name} to must exceed ${lower} from by a multiple of ${size - 1}, so every grid value is a whole number.`,
-        };
-      continue;
-    }
-    if (!Number.isFinite(from))
-      return {
-        label: `${name} from`,
-        message: `${name} from must be a finite constant.`,
-      };
-    if (!Number.isFinite(to) || to <= from)
-      return {
-        label: `${name} to`,
-        message: `${name} to must be finite and greater than ${name.toLowerCase()} from.`,
-      };
-  }
-  return null;
-}
-function field(config: Config, axis: AtlasAxis): number {
-  return axis.path.reduce<any>((v, key) => v[key], config);
-}
-function setField(config: Config, axis: AtlasAxis, value: number) {
-  const owner = axis.path.slice(0, -1).reduce<any>((v, key) => v[key], config);
-  owner[axis.path.at(-1)!] = value;
-}
-// Inclusive interpolation avoids overflow in b-a. Only the center snaps to
-// the frozen value within rounding at the scale of it and the endpoints.
-// Endpoint arithmetic matters for a small pole coordinate between ±1: using
-// only the coordinate's magnitude loses an otherwise symmetric center.
-function axis(
-  [a, b]: [number, number],
-  current: number,
-  size: AtlasSize,
-  integer?: boolean,
-) {
-  // Validated whole endpoints whose difference divides: exact, in integer
-  // arithmetic, since b − a and its multiples can exceed 2^53. Every value
-  // lies between the safe endpoints, so it converts back exactly.
-  if (integer)
-    return Array.from({ length: size }, (_, i) =>
-      Number(
-        BigInt(a) + (BigInt(i) * (BigInt(b) - BigInt(a))) / BigInt(size - 1),
-      ),
-    );
-  return Array.from({ length: size }, (_, i) => {
-    if (i === 0) return a;
-    if (i === size - 1) return b;
-    const p = i / (size - 1);
-    const value = (1 - p) * a + p * b;
-    return i === (size - 1) / 2 &&
-      Math.abs(value - current) <=
-        Number.EPSILON * Math.max(Math.abs(current), Math.abs(a), Math.abs(b))
-      ? current
-      : roundedGenerated(value, Math.max(Math.abs(a), Math.abs(b)));
-  });
-}
-const maxNumbers = 4000000;
-// Bound delivered geometry as well as the preflight reservation: a result
-// includes diagnostics, representative circles and refinement breaks too.
-function numbers(value: unknown): number {
-  if (typeof value === "number") return 1;
-  if (!value || typeof value !== "object") return 0;
-  return Object.values(value).reduce<number>((n, v) => n + numbers(v), 0);
+  return axisRangeError(ranges, atlasPair(pair).axes, size);
 }
 
-/** One caller-owned worker, one numerical request, at most twenty-five grid outcomes and one
- * inspection. A generation invalidates delivery, not just what is painted.
- * A selection has priority over unsent cells; repeated selections coalesce.
- */
-export class ParameterAtlas {
-  state: AtlasState = { cells: [], selection: null, queued: 0 };
-  private source: PlanarStudy | null = null;
-  private pair: AtlasPair = atlasPair("roulette");
-  private size: AtlasSize = 3;
-  private generation = 0;
-  private choice = 0;
-  private working = false;
-  private failed?: string;
-  private remaining: number[] = [];
-  private wanted: { index: number; choice: number; view?: ViewRect } | null =
-    null;
-  private retained = new Map<number, number>();
+/** The planar atlas: the shared queue (atlas-queue.ts) over PlanarStudy. */
+export class ParameterAtlas extends AtlasQueue<PlanarStudy, Frame, ViewRect> {
   constructor(
     private engine: Pick<EngineClient, "compute"> &
       Partial<Pick<EngineClient, "dispose">>,
-    private changed: (state: AtlasState) => void,
-  ) {}
-  private emit() {
-    this.state = {
-      ...this.state,
-      queued: this.remaining.length + (this.wanted ? 1 : 0),
-    };
-    this.changed(this.state);
-  }
-  cancel() {
-    this.generation++;
-    this.choice++;
-    this.remaining = [];
-    this.wanted = null;
-    this.source = null;
-    this.retained.clear();
-    this.state = {
-      cells: [],
-      selection: null,
-      queued: 0,
-      ...(this.failed && { error: this.failed, failed: this.failed }),
-    };
-    this.emit();
+    changed: (state: AtlasState) => void,
+  ) {
+    super(engine, changed);
   }
   generate(
     study: PlanarStudy,
     ranges: AtlasRanges,
     options: AtlasOptions = {},
   ) {
-    this.cancel();
     const pair =
       options.pair ??
       atlasPairs(study.config, options.facts)[0]?.id ??
@@ -641,161 +491,45 @@ export class ParameterAtlas {
     const descriptor = atlasPair(pair);
     const size = options.size ?? 3;
     const facts = options.facts ?? {};
-    const error =
-      this.failed ??
-      atlasBudget(study.config, size, facts).error ??
-      (!descriptor?.supports(study.config, facts)
-        ? "This study has no curated parameter pair for that choice."
-        : undefined) ??
-      atlasRangeError(ranges, pair, size)?.message;
-    if (error) {
-      this.state = { ...this.state, error };
-      this.emit();
-      return;
-    }
-    this.source = structuredClone(study);
-    this.pair = descriptor;
-    this.size = size;
-    this.state = {
-      cells: axis(
-        ranges[descriptor.axes[1].key],
-        field(study.config, descriptor.axes[1]),
-        size,
-        descriptor.axes[1].integer,
-      ).flatMap((y) =>
-        axis(
-          ranges[descriptor.axes[0].key],
-          field(study.config, descriptor.axes[0]),
-          size,
-          descriptor.axes[0].integer,
-        ).map((x) => ({ values: [x, y] as [number, number] })),
-      ),
-      selection: null,
-      queued: 0,
-    };
-    this.remaining = this.state.cells.map((_, i) => i);
-    this.emit();
-    this.pump();
-  }
-  inspect(index: number, view?: ViewRect) {
-    const cell = this.state.cells[index];
-    if (!cell?.frame || !this.source) return;
-    this.wanted = { index, choice: ++this.choice, view };
-    this.state = { ...this.state, selection: { index } };
-    this.retained.delete(-1);
-    this.emit();
-    this.pump();
-  }
-  candidate(): PlanarStudy | null {
-    const selection = this.state.selection;
-    if (!selection?.frame || !this.source) return null;
-    return this.variant(selection.index);
-  }
-  private variant(index: number) {
-    const study = structuredClone(this.source!);
-    this.pair.axes.forEach((axis, i) =>
-      setField(study.config, axis, this.state.cells[index].values[i]),
+    this.begin(
+      study,
+      descriptor.axes,
+      ranges,
+      size,
+      () =>
+        atlasBudget(study.config, size, facts).error ??
+        (!descriptor?.supports(study.config, facts)
+          ? "This study has no curated parameter pair for that choice."
+          : undefined) ??
+        atlasRangeError(ranges, pair, size)?.message,
     );
-    return study;
   }
-  private pump() {
-    if (this.working || !this.source) return;
-    const selection = this.wanted;
-    const index = selection?.index ?? this.remaining.shift();
-    if (index === undefined) return;
-    this.wanted = null;
-    const generation = this.generation;
-    const study = this.variant(index);
+  protected geometry(frame: Frame) {
+    return frame.result;
+  }
+  protected request(
+    study: PlanarStudy,
+    index: number,
+    selection: { view?: ViewRect } | null,
+  ) {
     const resolved = this.state.cells[index].frame?.config ?? study.config;
     const config = selection
       ? study.config
       : atlasPreviewConfig(study.config, this.size);
-    this.working = true;
-    this.emit();
-    const current = () =>
-      generation === this.generation &&
-      (!selection || selection.choice === this.choice);
-    const refuse = (message: string) => {
-      if (selection)
-        this.state = { ...this.state, selection: { index, error: message } };
-      else
-        this.state = {
-          ...this.state,
-          cells: this.state.cells.map((cell, i) =>
-            i === index ? { ...cell, error: message } : cell,
-          ),
-        };
-    };
-    void this.engine
-      .compute(config, study.bounds, {
-        diagnostics: study.probe.enabled,
-        ...(selection &&
-          study.probe.enabled &&
-          study.probe.between && {
-            probe: {
-              t: parameterAt(
-                resolved.curve.min,
-                resolved.curve.max,
-                study.probe.position,
-              ),
-            },
-          }),
-        ...(selection?.view && { view: selection.view }),
-      })
-      .then(
-        (frame) => {
-          if (!current()) return;
-          const count = numbers(frame.result);
-          const total =
-            [...this.retained.values()].reduce((a, b) => a + b, 0) + count;
-          if (total > maxNumbers) {
-            refuse(
-              "The atlas geometry limit was reached. Reduce the study’s quality and try again.",
-            );
-            return;
-          }
-          this.retained.set(selection ? -1 : index, count);
-          // Ownership crosses this boundary once; no result or caller-supplied
-          // config can mutate another candidate or the frozen source.
-          const own = structuredClone(frame);
-          if (selection)
-            this.state = { ...this.state, selection: { index, frame: own } };
-          else
-            this.state = {
-              ...this.state,
-              cells: this.state.cells.map((cell, i) =>
-                i === index ? { ...cell, frame: own } : cell,
-              ),
-            };
-        },
-        (error: Error) => {
-          // Go refuses a cell with an EngineError. Anything else is the worker
-          // failing: a request deadline does not stop synchronous Go work, so
-          // never send another cell behind that computation, even after
-          // regeneration.
-          if (!(error instanceof EngineError)) {
-            this.failed = `The atlas’s numerical engine stopped: ${error.message} Close the atlas and reopen it to continue.`;
-            this.remaining = [];
-            this.wanted = null;
-            this.source = null;
-            // Reported even when an edit already canceled this generation.
-            this.state = {
-              ...this.state,
-              selection: null,
-              error: this.failed,
-              failed: this.failed,
-            };
-            this.emit();
-            this.engine.dispose?.();
-            return;
-          }
-          if (current()) refuse(error.message);
-        },
-      )
-      .finally(() => {
-        this.working = false;
-        if (current()) this.emit();
-        this.pump();
-      });
+    return this.engine.compute(config, study.bounds, {
+      diagnostics: study.probe.enabled,
+      ...(selection &&
+        study.probe.enabled &&
+        study.probe.between && {
+          probe: {
+            t: parameterAt(
+              resolved.curve.min,
+              resolved.curve.max,
+              study.probe.position,
+            ),
+          },
+        }),
+      ...(selection?.view && { view: selection.view }),
+    });
   }
 }
