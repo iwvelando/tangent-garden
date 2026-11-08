@@ -86,6 +86,12 @@ function decode(page: Page, bytes: Buffer) {
       new Blob([new Uint8Array(input)], { type: "video/mp4" }),
     );
     const video = document.createElement("video");
+    // Hold the video for the whole decode (#429). It is not in the document,
+    // and this function's suspended state is reachable only through the
+    // video's own listeners and frame callback. Chromium can collect a paused,
+    // loaded video after "seeked" and before the seek's frame is presented,
+    // and then this wait never settles.
+    (globalThis as any).decodingVideo = video;
     video.muted = true;
     video.preload = "auto";
     const event = (name: string) =>
@@ -229,6 +235,20 @@ export async function presentFirstFrameEarly(context: BrowserContext) {
         options,
       );
     } as typeof HTMLMediaElement.prototype.addEventListener;
+  });
+}
+
+// The condition behind CI's later decoder hangs (#429), made likely: every
+// page this context opens from now on collects garbage over and over until it
+// closes. Chromium only.
+export function collectGarbageContinually(context: BrowserContext) {
+  context.on("page", async (page) => {
+    try {
+      const session = await context.newCDPSession(page);
+      for (;;) await session.send("HeapProfiler.collectGarbage");
+    } catch {
+      // The page has closed.
+    }
   });
 }
 
