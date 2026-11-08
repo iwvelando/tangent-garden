@@ -157,12 +157,14 @@ export class EngineClient {
   async fitFourier(
     count: number,
     points?: import("./types").Vec[],
+    source?: Pick<import("./planar-link").PlanarStudy, "config" | "bounds">,
   ): Promise<import("./fourier-fit").FourierFitResult> {
     return (
       await this.request({
         action: "fourier-fit",
         count,
         ...(points && { points, closed: true }),
+        ...(source && { source }),
       })
     ).fit;
   }

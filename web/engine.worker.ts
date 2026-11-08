@@ -103,6 +103,7 @@ self.onmessage = async ({
   shorten?: import("./shorten/model").ShortenRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
+  source?: Pick<import("./planar-link").PlanarStudy, "config" | "bounds">;
   closed?: boolean;
   count?: number;
   tesseract?: import("./tesseract/types").Config;
@@ -318,11 +319,31 @@ self.onmessage = async ({
           ))
       )
         throw new Error("Use at most 4096 points with finite coordinates.");
+      let source;
+      if (data.source) {
+        const { config, bounds } = structuredClone(data.source);
+        const values = JSON.parse(
+          tangentGardenScalars(JSON.stringify([bounds.min, bounds.max])),
+        );
+        if (values.error) throw new Error(values.error);
+        [config.curve.min, config.curve.max] = values.values;
+        // Reject nonfinite values before JSON can silently replace them with null.
+        const check = (v: unknown): boolean =>
+          typeof v === "number"
+            ? Number.isFinite(v)
+            : v !== null && typeof v === "object"
+              ? Object.values(v).every(check)
+              : true;
+        if (!check(config.curve))
+          throw new Error("Source parameters must be finite.");
+        source = { curve: config.curve, input: config.input };
+      }
       const fit = JSON.parse(
         tangentGardenFit(
           JSON.stringify({
             count: data.count,
             ...(data.points && { points: data.points, closed: data.closed }),
+            ...(source && { source }),
           }),
         ),
       );

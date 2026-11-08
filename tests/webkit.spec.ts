@@ -109,6 +109,8 @@ import {
   checkFitMouseAndReturn,
   checkFitPlaybackLayout,
   checkFitAdoptionVisibility,
+  checkFitActionHelpLayout,
+  checkCurrentCurveReturn,
   leafFit,
 } from "./fourier-fit-checks";
 
@@ -2946,3 +2948,15 @@ for (const viewport of [
       page.locator("#tesseract-artwork svg[data-representation]"),
     ).toHaveCount(2);
   });
+
+test("current-curve import preserves focus, labels and scroll ownership in WebKit", async ({
+  page,
+}) => {
+  await checkCurrentCurveReturn(page);
+});
+
+test("fitting action help stays centered and immediately below its button across layouts", async ({
+  page,
+}) => {
+  await checkFitActionHelpLayout(page);
+});

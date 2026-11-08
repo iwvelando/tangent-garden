@@ -1,7 +1,8 @@
-import { expect, type Page } from "@playwright/test";
+import { choosePreset } from "./helpers";
+import { expect, test, type Page, type Locator } from "@playwright/test";
 
 export const fitDialog = (page: Page) =>
-  page.getByRole("dialog", { name: "Your leaf, made of circles" });
+  page.getByRole("dialog", { name: /^Your (leaf|curve), made of circles$/ });
 export async function openFit(page: Page) {
   await page.getByRole("button", { name: "Draw a loop", exact: true }).click();
   await expect(fitDialog(page)).toBeVisible();
@@ -300,4 +301,172 @@ export async function checkFitMouseAndReturn(page: Page) {
   await page.keyboard.press("Escape");
   await expect(entry).toBeFocused();
   await expect(entryBox).not.toHaveAttribute("data-quiet", "");
+}
+
+export async function checkCurrentCurveReturn(page: Page) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entry = page.getByRole("button", { name: "Draw a loop", exact: true });
+  let d = await openFit(page);
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await expect(
+    d.getByRole("heading", { name: "1. Original curve", exact: true }),
+  ).toBeVisible();
+  const art = d.getByTestId("stroke-reference");
+  expect(await art.evaluate((e) => getComputedStyle(e).touchAction)).toBe(
+    "pan-y pinch-zoom",
+  );
+  await d
+    .getByLabel("Show original outline in preview", { exact: true })
+    .check();
+  await d.getByLabel("Preview position", { exact: true }).fill("0.5");
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await d.evaluate((e) => {
+      e.scrollTop = 0;
+    });
+    await d.screenshot({
+      path: test.info().outputPath(`current-curve-${colorScheme}.png`),
+    });
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await d
+    .getByRole("button", { name: "About current curve", exact: true })
+    .click();
+  await d.getByRole("button", { name: "Show more", exact: true }).click();
+  await expect(d.getByText(/32,768 evaluations/)).toBeVisible();
+  await d
+    .getByLabel("Show original outline in preview", { exact: true })
+    .check();
+  await expect(d.getByTestId("fit-reference")).toBeVisible();
+  await d.getByRole("button", { name: "Cancel drawing", exact: true }).click();
+  await expect(entry).toBeFocused();
+  await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
+    "roulette",
+  );
+  await entry.press("Enter");
+  d = fitDialog(page);
+  await expect(
+    d.getByRole("button", { name: "Cancel drawing", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(entry).toBeFocused();
+}
+
+// Info belongs to its action, including when a narrow input column stacks
+// choices. Opening help must leave the neighboring desktop action in place.
+export async function checkFitActionHelpLayout(page: Page) {
+  // Playwright scrolls the dialog to reveal the info button on a phone.
+  // Compare content positions so that scroll is not mistaken for reflow.
+  const box = (locator: Locator) =>
+    locator.evaluate((e) => {
+      const r = e.getBoundingClientRect();
+      return {
+        x: r.x,
+        y: r.y + e.closest("dialog")!.scrollTop,
+        width: r.width,
+        height: r.height,
+      };
+    });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const dialog = await openFit(page);
+  const current = dialog.getByRole("button", {
+    name: "Use current curve",
+    exact: true,
+  });
+  const info = dialog.getByRole("button", {
+    name: "About current curve",
+    exact: true,
+  });
+  const example = dialog.getByRole("button", {
+    name: "Use example leaf",
+    exact: true,
+  });
+  const reset = dialog.getByRole("button", {
+    name: "Reset outline",
+    exact: true,
+  });
+  const close = dialog.getByRole("button", {
+    name: "Close outline",
+    exact: true,
+  });
+  const help = dialog.locator(`#${await info.getAttribute("aria-controls")}`);
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+    { width: 568, height: 320 },
+  ]) {
+    await page.setViewportSize(size);
+    const button = await box(current),
+      icon = await box(info);
+    expect
+      .soft(
+        Math.abs(button.y + button.height / 2 - icon.y - icon.height / 2),
+        "info icon centered on its button",
+      )
+      .toBeLessThan(1);
+    expect(icon.x - button.x - button.width).toBeGreaterThanOrEqual(8);
+    const neighbor = await box(example);
+    // At 844px the dialog has two narrow columns; at 568px it has one
+    // wider column, which can keep the two input choices side by side.
+    const narrow = size.width === 390 || size.width === 844;
+    if (narrow) {
+      expect(neighbor.y).toBeGreaterThanOrEqual(button.y + button.height + 8);
+      expect(Math.abs(neighbor.x - button.x)).toBeLessThan(1);
+      expect(
+        Math.abs(neighbor.x + neighbor.width - icon.x - icon.width),
+      ).toBeLessThan(1);
+    } else expect(Math.abs(neighbor.y - button.y)).toBeLessThan(1);
+    await info.click();
+    await expect(help).toBeVisible();
+    const brief = await box(help);
+    expect(
+      brief.y - button.y - button.height,
+      "help directly below current curve",
+    ).toBeGreaterThanOrEqual(8);
+    expect(brief.y - button.y - button.height).toBeLessThanOrEqual(12);
+    expect(Math.abs(brief.x - button.x)).toBeLessThan(1);
+    if (narrow)
+      expect((await box(example)).y).toBeGreaterThanOrEqual(
+        brief.y + brief.height + 8,
+      );
+    else expect((await box(example)).y).toBe(neighbor.y);
+    await help.getByRole("button", { name: "Show more", exact: true }).click();
+    const expanded = await box(help);
+    if (narrow)
+      expect((await box(example)).y).toBeGreaterThanOrEqual(
+        expanded.y + expanded.height + 8,
+      );
+    else expect((await box(example)).y).toBe(neighbor.y);
+    const a = await box(reset),
+      b = await box(close);
+    expect(Math.abs(a.y - b.y)).toBeLessThan(1);
+    expect(Math.abs(a.width - b.width)).toBeLessThan(1);
+    expect(Math.abs(a.x - button.x)).toBeLessThan(1);
+    expect(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
+      true,
+    );
+    await dialog
+      .locator(".fit-actions")
+      .screenshot({
+        path: test.info().outputPath(`fit-actions-${size.width}.png`),
+      });
+    await info.click();
+  }
 }

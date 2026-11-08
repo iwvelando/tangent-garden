@@ -6,12 +6,15 @@ import {
   useRef,
   useState,
   type PointerEvent,
+  type CSSProperties,
 } from "react";
 import { EngineClient } from "./engine-client";
 import {
   FourierFitSession,
+  curveFitUnavailable,
   fittedStudy,
   fitTermsHelp,
+  fitSourceHelp,
   maxStrokePoints,
   sampleLeaf,
   strokeWindow,
@@ -23,7 +26,7 @@ import { useQuietFocus } from "./quiet-focus";
 import { useTheme } from "./useTheme";
 import { Plot } from "./Plot";
 import { reveal } from "./animation";
-import { Field } from "./Field";
+import { Field, HelpToggle, HelpText, useHelp } from "./Field";
 import type { PlanarStudy } from "./planar-link";
 import type { Vec } from "./types";
 import "./fourier-fit.css";
@@ -39,6 +42,7 @@ export function FourierFitPreview({
 }) {
   const theme = useTheme(),
     title = useId();
+  const sourceHelp = useHelp();
   const dialog = useRef<HTMLDialogElement>(null),
     back = useRef<HTMLButtonElement>(null);
   const quiet = useQuietFocus(dialog),
@@ -51,6 +55,7 @@ export function FourierFitPreview({
   const [drawing, setDrawing] = useState(false),
     [notice, setNotice] = useState("");
   const [reference, setReference] = useState(false);
+  const [imported, setImported] = useState(false);
   const [state, setState] = useState<FitState>({ count: 8, pending: false });
   const [progress, setProgress] = useState(1),
     [playing, setPlaying] = useState(false);
@@ -91,6 +96,7 @@ export function FourierFitPreview({
     setPlaying(false);
     setProgress(1);
     setNotice("");
+    setImported(false);
   }
   function model(e: PointerEvent<SVGSVGElement>): Vec {
     const box = e.currentTarget.getBoundingClientRect();
@@ -144,6 +150,23 @@ export function FourierFitPreview({
     else onReturn(via.current);
   }
   const frame = state.frame;
+  const unavailable = curveFitUnavailable(request.study);
+  const visiblePoints = imported ? (state.outline?.points ?? []) : points;
+  const isClosed = imported ? !!state.outline : closed;
+  // Keep imported coordinates untouched. One frame includes the entire
+  // source and all 16 ranked circles, independent of selection/playback.
+  const framing = useMemo(() => {
+    if (!imported || !state.outline)
+      return { cx: 0, cy: 0, scale: 1000 / 6, span: 6 };
+    const r = Math.max(
+      state.outline.previewRadius,
+      ...state.outline.points.map((p) =>
+        Math.max(Math.abs(p.x), Math.abs(p.y)),
+      ),
+    );
+    return { cx: 0, cy: 0, scale: 760 / (2.2 * r), span: 2.2 * r };
+  }, [imported, state.outline]);
+  const viewBox = `${framing.cx - 500 / framing.scale} ${-framing.cy - 380 / framing.scale} ${1000 / framing.scale} ${760 / framing.scale}`;
   const layers = useMemo(
     () => (state.fit ? fittedStudy(state.fit.terms).layers : undefined),
     [state.fit],
@@ -153,19 +176,33 @@ export function FourierFitPreview({
     (progress < 1
       ? { ...frame, result: reveal(frame.result, progress) }
       : frame);
-  const path = points.map((p) => `${p.x},${-p.y}`).join(" ");
+  const path = visiblePoints.map((p) => `${p.x},${-p.y}`).join(" ");
   const outline = (preview = false) => (
     <svg
-      viewBox="-3 -2.28 6 4.56"
+      viewBox={viewBox}
       aria-hidden={preview || undefined}
       role={preview ? undefined : "img"}
-      aria-label={preview ? undefined : "Draw one outline"}
+      aria-label={
+        preview
+          ? undefined
+          : imported
+            ? "Current curve outline"
+            : "Draw one outline"
+      }
       className={preview ? "fit-reference" : "fit-capture"}
       data-testid={preview ? "fit-reference" : "stroke-reference"}
-      data-closed={String(closed)}
-      data-point-count={points.length}
+      data-closed={String(isClosed)}
+      data-point-count={visiblePoints.length}
+      data-source={imported ? "curve" : "drawing"}
+      style={
+        {
+          "--outline-unit": `${(0.015 * (1000 / 6)) / framing.scale}px`,
+          cursor: imported ? "default" : undefined,
+          touchAction: imported ? "pan-y pinch-zoom" : undefined,
+        } as CSSProperties
+      }
       onPointerDown={
-        preview
+        preview || imported
           ? undefined
           : (e) => {
               if (!e.isPrimary || e.button !== 0 || pointer.current !== null)
@@ -179,7 +216,7 @@ export function FourierFitPreview({
             }
       }
       onPointerMove={
-        preview
+        preview || imported
           ? undefined
           : (e) => {
               if (pointer.current === e.pointerId) {
@@ -188,11 +225,15 @@ export function FourierFitPreview({
               }
             }
       }
-      onPointerUp={preview ? undefined : (e) => finishPointer(e)}
-      onPointerCancel={preview ? undefined : (e) => finishPointer(e, true)}
-      onLostPointerCapture={preview ? undefined : (e) => finishPointer(e, true)}
+      onPointerUp={preview || imported ? undefined : (e) => finishPointer(e)}
+      onPointerCancel={
+        preview || imported ? undefined : (e) => finishPointer(e, true)
+      }
+      onLostPointerCapture={
+        preview || imported ? undefined : (e) => finishPointer(e, true)
+      }
     >
-      {closed ? <polygon points={path} /> : <polyline points={path} />}
+      {isClosed ? <polygon points={path} /> : <polyline points={path} />}
     </svg>
   );
   return (
@@ -216,7 +257,11 @@ export function FourierFitPreview({
       <div className="fit-heading">
         <div>
           <div className="eyebrow">DRAW A LOOP · FOURIER</div>
-          <h2 id={title}>Your leaf, made of circles</h2>
+          <h2 id={title}>
+            {imported
+              ? "Your curve, made of circles"
+              : "Your leaf, made of circles"}
+          </h2>
         </div>
         <button ref={back} type="button" onClick={() => finish()}>
           Cancel drawing
@@ -224,16 +269,44 @@ export function FourierFitPreview({
       </div>
       <p className="note">
         Draw your own outline or start with the example leaf, then close it. A
-        new stroke replaces this draft; your original study stays here until
-        adoption.
+        new stroke replaces this draft. Or use your current closed base curve;
+        your original study stays here until adoption.
       </p>
       <div className="fit-layout">
         <section className="fit-draft" aria-label="Outline input">
-          <h3>1. Draw or try an example</h3>
+          <h3>
+            {imported ? "1. Original curve" : "1. Draw or try an example"}
+          </h3>
           {outline()}
           <div className="fit-actions">
+            <div className="fit-source-action">
+              <div className="fit-source-action-row">
+                <button
+                  type="button"
+                  disabled={drawing || !!unavailable}
+                  aria-describedby={
+                    unavailable ? `${title}-source-note` : undefined
+                  }
+                  onClick={() => {
+                    reset();
+                    setImported(true);
+                    engine.current?.useCurve(request.study);
+                  }}
+                >
+                  Use current curve
+                </button>
+                <HelpToggle topic="current curve" help={sourceHelp} />
+              </div>
+              <HelpText help={sourceHelp}>{fitSourceHelp}</HelpText>
+              {unavailable && (
+                <p className="note" id={`${title}-source-note`}>
+                  {unavailable}
+                </p>
+              )}
+            </div>
             <button
               type="button"
+              className="fit-example-action"
               disabled={drawing}
               onClick={() => reset(structuredClone(sampleLeaf))}
             >
@@ -241,14 +314,14 @@ export function FourierFitPreview({
             </button>
             <button
               type="button"
-              disabled={drawing || !points.length}
+              disabled={drawing || (!points.length && !imported)}
               onClick={() => reset()}
             >
               Reset outline
             </button>
             <button
               type="button"
-              disabled={drawing || closed || !points.length}
+              disabled={drawing || imported || closed || !points.length}
               onClick={() => {
                 setClosed(true);
                 setNotice("");
@@ -261,9 +334,25 @@ export function FourierFitPreview({
             </button>
           </div>
           <p className="note">
-            {points.length.toLocaleString("en-US")} / 4,096 points ·{" "}
-            {closed ? "Closed by a straight segment" : "Open outline"}
+            {visiblePoints.length.toLocaleString("en-US")} / 4,096 points ·{" "}
+            {imported
+              ? isClosed
+                ? "Closed source · original model units"
+                : state.pending
+                  ? "Checking source closure and sampling"
+                  : "Source not admitted"
+              : closed
+                ? "Closed by a straight segment"
+                : "Open outline"}
           </p>
+          {state.outline && (
+            <p className="note" data-testid="source-sampling">
+              Sampled chord tolerance {state.outline.tolerance.toPrecision(4)}{" "}
+              model units · {state.outline.evaluations.toLocaleString("en-US")}{" "}
+              evaluations. Arc-length fitting reparameterizes the source;
+              sampling is an approximation, separate from the fit residuals.
+            </p>
+          )}
         </section>
         <section
           className="fit-result"
@@ -283,10 +372,10 @@ export function FourierFitPreview({
                   scheme={theme.scheme}
                   length={0.8}
                   reset={0}
-                  framing={{ cx: 0, cy: 0, scale: 1000 / 6, span: 6 }}
+                  framing={framing}
                 />
               )}
-              {reference && closed && outline(true)}
+              {reference && isClosed && outline(true)}
             </div>
             <div
               className="fit-playback"

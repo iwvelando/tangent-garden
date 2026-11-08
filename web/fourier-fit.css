@@ -63,7 +63,7 @@
 .fit-reference polygon {
   fill: none;
   stroke: var(--base-ink);
-  stroke-width: 0.015;
+  stroke-width: var(--outline-unit, 0.015);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -109,14 +109,43 @@
 }
 .fit-reference polygon {
   stroke: var(--derived-ink);
-  stroke-dasharray: 0.04 0.035;
+  stroke-dasharray: calc(var(--outline-unit, 0.015) * 2.67)
+    calc(var(--outline-unit, 0.015) * 2.33);
   opacity: 0.7;
 }
+.fit-draft {
+  container-type: inline-size;
+}
 .fit-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 8px;
   padding-top: 12px;
+}
+.fit-source-action {
+  min-width: 0;
+}
+.fit-source-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.fit-source-action-row > button:not(.help-toggle) {
+  flex: 1;
+  min-width: 0;
+}
+.fit-source-action > .hint,
+.fit-source-action > .note {
+  margin: 8px 0 0;
+}
+/* Stack the two input choices whenever their actual column is narrow,
+   including the two-column dialog on a phone held sideways. */
+@container (max-width: 420px) {
+  .fit-source-action,
+  .fit-example-action {
+    grid-column: 1 / -1;
+  }
 }
 .fit-reference-choice {
   display: flex;

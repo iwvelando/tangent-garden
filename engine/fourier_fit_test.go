@@ -7,6 +7,135 @@ import (
 	"testing"
 )
 
+func TestFourierCurveOutlineCircle(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		c := Curve{Format: "parametric", X: "20+3*cos(t)", Y: "-8+3*sin(t)", Min: .3, Max: .3 + 2*math.Pi}
+		if reverse {
+			c.Min, c.Max = c.Max, c.Min
+		}
+		o, err := FourierCurveOutline(c, "curve")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(o.Points) > FourierFitMaxPoints || o.Evaluations > FourierOutlineMaxEvaluations || o.Tolerance <= 0 {
+			t.Fatalf("unbounded outline: %+v", o)
+		}
+		first := Vec{20 + 3*math.Cos(c.Min), -8 + 3*math.Sin(c.Min)}
+		if o.Points[0].Sub(first).Norm() > 1e-14 || o.Points[len(o.Points)-1] != o.Points[0] {
+			t.Fatal("phase origin/closure lost")
+		}
+		f, err := FitFourier(o.Points, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := f.Select(2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		k := 1.0
+		if reverse {
+			k = -1
+		}
+		if r.Terms[1].Frequency != k || math.Abs(r.Terms[1].Radius-3) > 2*o.Tolerance || r.MaxResidual > 2*o.Tolerance {
+			t.Fatalf("circle recovery: %+v", r)
+		}
+		for j, p := range f.samples {
+			u := c.Min + k*2*math.Pi*float64(j)/1024
+			want := Vec{20 + 3*math.Cos(u), -8 + 3*math.Sin(u)}
+			if p.Sub(want).Norm() > 2*o.Tolerance {
+				t.Fatalf("arc-length phase/direction sample %d: %v != %v", j, p, want)
+			}
+		}
+	}
+}
+
+func TestFourierCurveOutlineFamiliesAndCorners(t *testing.T) {
+	cases := []Curve{
+		{Format: "polar", R: "2+cos(3*t)", Max: 2 * math.Pi},
+		{Format: "roulette", Roulette: Roulette{Roll: "inside", FixedRadius: 5, Radius: 1, Arm: 1.4}, Max: 2 * math.Pi},
+		{Format: "lissajous", Lissajous: Lissajous{AmplitudeX: 2, AmplitudeY: 1, FrequencyX: 1, FrequencyY: 2, Phase: math.Pi / 2}, Max: 2 * math.Pi},
+		{Format: "fourier", Terms: []Term{{0, 10, .2}, {1, 2, 0}, {-3, .6, .3}}, Max: 2 * math.Pi},
+		// A square's corners and repeated returns to the start are continuous.
+		{Format: "parametric", X: "abs(cos(t))*cos(t)", Y: "abs(sin(t))*sin(t)", Max: 4 * math.Pi},
+	}
+	for _, c := range cases {
+		t.Run(c.Format, func(t *testing.T) {
+			o, err := FourierCurveOutline(c, "curve")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(o.Points) < 4 || len(o.Points) > 4096 || o.Evaluations > FourierOutlineMaxEvaluations {
+				t.Fatalf("outline bounds: %d/%d", len(o.Points), o.Evaluations)
+			}
+			f, err := FitFourier(o.Points, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a, _ := f.Select(8)
+			b, err := f.Select(16)
+			if err != nil || b.RMS > a.RMS+1e-10 || !reflect.DeepEqual(a.Terms, b.Terms[:8]) {
+				t.Fatalf("unstable fit: %v", err)
+			}
+			// Independent dense observations of the original evaluator must lie
+			// near the admitted polyline, including self-crossings and corners.
+			at, _ := compile(c)
+			for j := 0; j < 5003; j++ {
+				p := at(c.Min + (c.Max-c.Min)*float64(j)/5003)
+				d := math.Inf(1)
+				for i := 1; i < len(o.Points); i++ {
+					d = math.Min(d, plane.Distance(p, o.Points[i-1], o.Points[i]))
+				}
+				if d > 2*o.Tolerance {
+					t.Fatalf("unresolved source: %g > %g", d, o.Tolerance)
+				}
+			}
+		})
+	}
+}
+
+func TestFourierCurveOutlineRefusals(t *testing.T) {
+	base := Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)", Max: 2 * math.Pi}
+	cases := []struct {
+		name          string
+		c             Curve
+		input, reason string
+	}{
+		{"open", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)", Max: 2*math.Pi - .001}, "curve", "open"},
+		{"gap", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+0*sqrt(cos(t))", Max: 2 * math.Pi}, "curve", "gap"},
+		{"jump", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+cos(t-.1)/abs(cos(t-.1))", Max: 2 * math.Pi}, "curve", "resolved"},
+		{"point", Curve{Format: "parametric", X: "1", Y: "2", Max: 2 * math.Pi}, "curve", "length"},
+		{"tiny", Curve{Format: "parametric", X: "1e-9*cos(t)", Y: "1e-9*sin(t)", Max: 2 * math.Pi}, "curve", "length"},
+		{"magnitude", Curve{Format: "parametric", X: "100001*cos(t)", Y: "sin(t)", Max: 2 * math.Pi}, "curve", "100000"},
+		{"work", Curve{Format: "parametric", X: "cos(999*t)", Y: "sin(999*t)", Max: 2 * math.Pi}, "curve", "resolved"},
+		{"derived", base, "evolute", "base"},
+	}
+	for _, format := range []string{"implicit", "field", "pursuit", "attractor", "cartesian"} {
+		c := base
+		c.Format = format
+		cases = append(cases, struct {
+			name          string
+			c             Curve
+			input, reason string
+		}{format, c, "curve", "parametric"})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := FourierCurveOutline(tc.c, tc.input); err == nil || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("want %q refusal, got %v", tc.reason, err)
+			}
+		})
+	}
+	// Closure slack is rounding-sized, not an approximation-sized chord.
+	for _, delta := range []float64{1e-8, 1e-6} {
+		c := base
+		c.X = "80000+cos(t)"
+		c.Max -= delta
+		if _, err := FourierCurveOutline(c, "curve"); err == nil {
+			t.Fatal("closed an open translated curve")
+		}
+	}
+}
+
 func TestFourierFitKernelSignedCoefficients(t *testing.T) {
 	// Independent Cartesian expansion of 3-2i + 2 exp(i(3t+.4))
 	// + .7 exp(i(-5t-.8)); these samples are uniform in t, not arc length.
@@ -208,5 +337,60 @@ func TestFourierFitDeterministicTies(t *testing.T) {
 		if term.Frequency != want[j] {
 			t.Fatalf("ties: %+v", terms)
 		}
+	}
+}
+
+func TestFourierCurveOutlineUniformArcDiamond(t *testing.T) {
+	c := Curve{Format: "parametric", X: "abs(cos(t))*cos(t)", Y: "abs(sin(t))*sin(t)", Max: 2 * math.Pi}
+	o, err := FourierCurveOutline(c, "curve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := FitFourier(o.Points, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vertices := []Vec{{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 0}}
+	for j, p := range f.samples {
+		edge := j / 256
+		u := float64(j%256) / 256
+		want := vertices[edge].Mul(1 - u).Add(vertices[edge+1].Mul(u))
+		if p.Sub(want).Norm() > 1e-12 {
+			t.Fatalf("uniform arc sample %d: %v want %v", j, p, want)
+		}
+	}
+	if math.Abs(f.length-4*math.Sqrt2) > 1e-12 {
+		t.Fatalf("diamond length %g", f.length)
+	}
+}
+
+func TestFourierCurveOutlineAuditAliasing(t *testing.T) {
+	// Dyadic seed/refinement probes alone can alias these loops into a circle.
+	c := Curve{Format: "parametric", X: "cos(t)+.2*sin(8192*t)", Y: "sin(t)", Max: 2 * math.Pi}
+	if _, err := FourierCurveOutline(c, "curve"); err == nil {
+		t.Fatal("accepted an aliased unresolved outline")
+	}
+}
+
+func TestFourierCurveOutlineLengthUsesTraversal(t *testing.T) {
+	c := Curve{Format: "parametric", X: "5e-8*cos(4*t)", Y: "5e-8*sin(4*t)", Max: 2 * math.Pi}
+	o, err := FourierCurveOutline(c, "curve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := FitFourier(o.Points, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.length < 1e-6 {
+		t.Fatalf("wrong length %g", f.length)
+	}
+}
+
+func TestFourierCurveOutlineProbeGap(t *testing.T) {
+	// Seed positions are finite, but a quarter probe enters this narrow gap.
+	c := Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+0*sqrt((t-.006)^2-.000001)", Max: 2 * math.Pi}
+	if _, err := FourierCurveOutline(c, "curve"); err == nil || !strings.Contains(err.Error(), "gap") {
+		t.Fatalf("lost between-seed gap: %v", err)
 	}
 }

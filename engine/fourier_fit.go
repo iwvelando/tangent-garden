@@ -26,6 +26,16 @@ type FourierFitResult struct {
 	Length      float64 `json:"length"`
 }
 
+// PreviewRadius bounds every prefix's rotating circles about the origin,
+// including the DC circle, without changing the frame when terms change.
+func (f *FourierFit) PreviewRadius() float64 {
+	var r float64
+	for _, t := range f.terms[:maxTerms] {
+		r += t.Radius
+	}
+	return r
+}
+
 // FitFourier closes a bounded polyline only with the caller's explicit consent.
 // It preserves the first point and traversal, including the straight closing
 // edge, and removes consecutive duplicates before arc-length resampling.

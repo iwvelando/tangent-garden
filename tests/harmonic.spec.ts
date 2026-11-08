@@ -12,12 +12,18 @@ import { fitFrame } from "../web/Plot";
 import { presets } from "../web/presets";
 import type { Result, Vec } from "../web/types";
 import { exportImage, openAnimation, choosePreset } from "./helpers";
-import { FourierFitSession, fittedStudy } from "../web/fourier-fit";
+import {
+  FourierFitSession,
+  fittedStudy,
+  curveFitUnavailable,
+} from "../web/fourier-fit";
 import type { Frame } from "../web/types";
 import {
   checkFitMouseAndReturn,
   checkFitPlaybackLayout,
   checkFitAdoptionVisibility,
+  checkFitActionHelpLayout,
+  checkCurrentCurveReturn,
   fitDialog,
   leafFit,
   openFit,
@@ -118,175 +124,201 @@ test("drawing presents an example leaf without mathematical-sounding capture lab
   );
 });
 
-test("adopted drawing links, stills and decoded reveal match an equivalent ordinary Fourier study", async ({
-  page,
-  context,
-}) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.goto("/");
-  await settled(page);
-  await page.getByLabel("Line weight", { exact: true }).selectOption("bold");
-  await page.getByLabel("Duration (seconds)", { exact: true }).fill("7");
-  const dialog = await leafFit(page);
-  await expect(
-    dialog.getByText(/A short offset is ready to show/),
-  ).toBeVisible();
-  await dialog
-    .getByLabel("Show original outline in preview", { exact: true })
-    .check();
-  const terms = JSON.parse(
-    (await dialog.locator("#fit-artwork desc").textContent())!,
-  ).curve.terms;
-  await dialog.getByRole("button", { name: "Adopt fitted study" }).click();
-  await expect
-    .poll(async () => (await definition(page)).curve.format)
-    .toBe("fourier");
-  await settled(page);
-  await expect(page.getByLabel("Line weight", { exact: true })).toHaveValue(
-    "regular",
-  );
-  await expect(
-    page.getByLabel("Duration (seconds)", { exact: true }),
-  ).toHaveValue("10");
-  await page.getByRole("button", { name: "Copy link", exact: true }).click();
-  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
-  const url = await page.evaluate(() => navigator.clipboard.readText());
-  const linked = await readStudyLink(url.split("#s=")[1]);
-  const expected = fittedStudy(terms);
-  expect(linked).toEqual({ notebook: "2d", study: expected });
-  expect(JSON.stringify(linked)).not.toMatch(/stroke|residual|rawPoints/);
-  await page.mouse.click(1, 1);
-  // Existing controls now operate on the fit's ordinary evaluator.
-  await page.getByRole("button", { name: "inversion", exact: true }).click();
-  await page
-    .getByRole("checkbox", { name: "Derived curve", exact: true })
-    .check();
-  await settled(page);
-  const config = await definition(page);
-  expect(config.kind).toBe("inversion");
-  expect(config.curve.terms).toEqual(terms);
-  const ordinary = {
-    ...expected,
-    config,
-    layers: { ...expected.layers, derived: true },
-  };
-  const ordinaryURL = `/#s=${await writeStudyLink("2d", ordinary)}`;
-  const still = async (kind: "SVG" | "PNG") => {
-    const save = page.waitForEvent("download");
-    await exportImage(page, kind);
-    return readFile((await (await save).path())!);
-  };
-  const movie = async () => {
-    await openExportSettings(page);
-    await page.getByLabel("Duration (seconds)", { exact: true }).fill(".4");
-    await page
-      .getByLabel("Export frame rate", { exact: true })
-      .selectOption("15");
-    await page.getByLabel("Export resolution", { exact: true }).fill("0.5");
-    await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
-    const save = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export MP4 video" }).click();
-    const path = (await (await save).path())!;
-    const independent = probeMovie(path);
-    if (independent) {
-      expect(independent.frames).toBe(6);
-      expect(independent.durations.reduce((a, b) => a + b, 0)).toBe(400);
+for (const input of ["drawing", "current curve"] as const) {
+  test(`adopted ${input} links, stills and decoded reveal match an equivalent ordinary Fourier study`, async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.goto("/");
+    await settled(page);
+    await page.getByLabel("Line weight", { exact: true }).selectOption("bold");
+    await page.getByLabel("Duration (seconds)", { exact: true }).fill("7");
+    let dialog;
+    if (input === "drawing") dialog = await leafFit(page);
+    else {
+      await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+      await settled(page);
+      dialog = await openFit(page);
+      await dialog
+        .getByRole("button", { name: "Use current curve", exact: true })
+        .click();
+      await expect(
+        dialog.getByRole("button", { name: "Adopt fitted study" }),
+      ).toBeEnabled();
     }
-    return decodeVideo(page, await readFile(path));
-  };
-  const svg = await still("SVG"),
-    png = decodePng(await still("PNG")),
-    video = await movie();
-  expect(svg.toString()).not.toContain("<text");
-  expect(svg.toString()).not.toContain("stroke-reference");
-  expect(video.duration).toBeCloseTo(0.4, 3);
-  expect(video.first.hash).not.toBe(video.last.hash);
-  await page.goto(ordinaryURL);
-  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
-  await settled(page);
-  expect(
-    (await still("SVG")).toString().replace(/<desc>.*?<\/desc>/s, ""),
-  ).toBe(svg.toString().replace(/<desc>.*?<\/desc>/s, ""));
-  const normalPNG = decodePng(await still("PNG"));
-  expect([normalPNG.width, normalPNG.height]).toEqual([png.width, png.height]);
-  expect(Buffer.from(normalPNG.rgba)).toEqual(Buffer.from(png.rgba));
-  const normalVideo = await movie();
-  expect(normalVideo).toEqual(video);
-  await choosePreset(page, 0);
-  await settled(page);
-  expect((await definition(page)).curve.format).toBe("parametric");
-});
-
-test("delayed drawing work is disposed on reset, cancel and a replacement link", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const Original = Worker;
-    (window as any).fitWorkers = [];
-    (window as any).releaseFits = [];
-    window.Worker = class extends Original {
-      tracked: any;
-      postMessage(data: any, ...rest: any[]) {
-        if (data.action === "fourier-fit") {
-          this.tracked ??= { terminated: false };
-          (window as any).fitWorkers.push(this.tracked);
-          (window as any).releaseFits.push(() =>
-            super.postMessage(data, ...rest),
-          );
-        } else super.postMessage(data, ...rest);
-      }
-      terminate() {
-        if (this.tracked) this.tracked.terminated = true;
-        super.terminate();
-      }
-    };
-  });
-  await page.goto("/");
-  await settled(page);
-  const dialog = await openFit(page);
-  const begin = async () => {
+    await expect(
+      dialog.getByText(/A short offset is ready to show/),
+    ).toBeVisible();
     await dialog
-      .getByRole("button", { name: "Use example leaf", exact: true })
-      .click();
-    await dialog.getByRole("button", { name: "Close outline" }).click();
-    await expect(dialog.locator(".fit-result")).toHaveAttribute(
-      "aria-busy",
-      "true",
+      .getByLabel("Show original outline in preview", { exact: true })
+      .check();
+    const terms = JSON.parse(
+      (await dialog.locator("#fit-artwork desc").textContent())!,
+    ).curve.terms;
+    await dialog.getByRole("button", { name: "Adopt fitted study" }).click();
+    await expect
+      .poll(async () => (await definition(page)).curve.format)
+      .toBe("fourier");
+    await settled(page);
+    await expect(page.getByLabel("Line weight", { exact: true })).toHaveValue(
+      "regular",
     );
-  };
-  await begin();
-  await dialog.getByRole("button", { name: "Reset outline" }).click();
-  expect(
-    await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
-  ).toBe(true);
-  await begin();
-  await dialog.getByRole("button", { name: "Cancel drawing" }).click();
-  expect(
-    await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
-  ).toBe(true);
-  await openFit(page);
-  await begin();
-  const replacement = fittedStudy([
-    { frequency: 0, radius: 0, phase: 0 },
-    { frequency: 1, radius: 2, phase: 0 },
-  ]);
-  await page.goto(`/#s=${await writeStudyLink("2d", replacement)}`);
-  await expect(dialog).toBeHidden();
-  await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
-  expect(
-    await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
-  ).toBe(true);
-  await expect
-    .poll(async () => (await definition(page)).curve.terms)
-    .toEqual(replacement.config.curve.terms);
-  await page.evaluate(() => {
-    for (const release of (window as any).releaseFits) release();
+    await expect(
+      page.getByLabel("Duration (seconds)", { exact: true }),
+    ).toHaveValue("10");
+    await page.getByRole("button", { name: "Copy link", exact: true }).click();
+    await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+    const url = await page.evaluate(() => navigator.clipboard.readText());
+    const linked = await readStudyLink(url.split("#s=")[1]);
+    const expected = fittedStudy(terms);
+    expect(linked).toEqual({ notebook: "2d", study: expected });
+    expect(JSON.stringify(linked)).not.toMatch(/stroke|residual|rawPoints/);
+    await page.mouse.click(1, 1);
+    // Existing controls now operate on the fit's ordinary evaluator.
+    await page.getByRole("button", { name: "inversion", exact: true }).click();
+    await page
+      .getByRole("checkbox", { name: "Derived curve", exact: true })
+      .check();
+    await settled(page);
+    const config = await definition(page);
+    expect(config.kind).toBe("inversion");
+    expect(config.curve.terms).toEqual(terms);
+    const ordinary = {
+      ...expected,
+      config,
+      layers: { ...expected.layers, derived: true },
+    };
+    const ordinaryURL = `/#s=${await writeStudyLink("2d", ordinary)}`;
+    const still = async (kind: "SVG" | "PNG") => {
+      const save = page.waitForEvent("download");
+      await exportImage(page, kind);
+      return readFile((await (await save).path())!);
+    };
+    const movie = async () => {
+      await openExportSettings(page);
+      await page.getByLabel("Duration (seconds)", { exact: true }).fill(".4");
+      await page
+        .getByLabel("Export frame rate", { exact: true })
+        .selectOption("15");
+      await page.getByLabel("Export resolution", { exact: true }).fill("0.5");
+      await page
+        .getByLabel("Export format", { exact: true })
+        .selectOption("mp4");
+      const save = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Export MP4 video" }).click();
+      const path = (await (await save).path())!;
+      const independent = probeMovie(path);
+      if (independent) {
+        expect(independent.frames).toBe(6);
+        expect(independent.durations.reduce((a, b) => a + b, 0)).toBe(400);
+      }
+      return decodeVideo(page, await readFile(path));
+    };
+    const svg = await still("SVG"),
+      png = decodePng(await still("PNG")),
+      video = await movie();
+    expect(svg.toString()).not.toContain("<text");
+    expect(svg.toString()).not.toContain("stroke-reference");
+    expect(video.duration).toBeCloseTo(0.4, 3);
+    expect(video.first.hash).not.toBe(video.last.hash);
+    await page.goto(ordinaryURL);
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+    await settled(page);
+    expect(
+      (await still("SVG")).toString().replace(/<desc>.*?<\/desc>/s, ""),
+    ).toBe(svg.toString().replace(/<desc>.*?<\/desc>/s, ""));
+    const normalPNG = decodePng(await still("PNG"));
+    expect([normalPNG.width, normalPNG.height]).toEqual([
+      png.width,
+      png.height,
+    ]);
+    expect(Buffer.from(normalPNG.rgba)).toEqual(Buffer.from(png.rgba));
+    const normalVideo = await movie();
+    expect(normalVideo).toEqual(video);
+    await choosePreset(page, 0);
+    await settled(page);
+    expect((await definition(page)).curve.format).toBe("parametric");
   });
-  await expect(dialog).toBeHidden();
-  await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
-    "fourier",
-  );
-});
+}
+
+for (const input of ["drawing", "current curve"] as const) {
+  test(`delayed ${input} work is disposed on reset, cancel and a replacement link`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const Original = Worker;
+      (window as any).fitWorkers = [];
+      (window as any).releaseFits = [];
+      window.Worker = class extends Original {
+        tracked: any;
+        postMessage(data: any, ...rest: any[]) {
+          if (data.action === "fourier-fit") {
+            this.tracked ??= { terminated: false };
+            (window as any).fitWorkers.push(this.tracked);
+            (window as any).releaseFits.push(() =>
+              super.postMessage(data, ...rest),
+            );
+          } else super.postMessage(data, ...rest);
+        }
+        terminate() {
+          if (this.tracked) this.tracked.terminated = true;
+          super.terminate();
+        }
+      };
+    });
+    await page.goto("/");
+    await settled(page);
+    const dialog = await openFit(page);
+    const begin = async () => {
+      if (input === "drawing") {
+        await dialog
+          .getByRole("button", { name: "Use example leaf", exact: true })
+          .click();
+        await dialog.getByRole("button", { name: "Close outline" }).click();
+      } else
+        await dialog
+          .getByRole("button", { name: "Use current curve", exact: true })
+          .click();
+      await expect(dialog.locator(".fit-result")).toHaveAttribute(
+        "aria-busy",
+        "true",
+      );
+    };
+    await begin();
+    await dialog.getByRole("button", { name: "Reset outline" }).click();
+    expect(
+      await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
+    ).toBe(true);
+    await begin();
+    await dialog.getByRole("button", { name: "Cancel drawing" }).click();
+    expect(
+      await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
+    ).toBe(true);
+    await openFit(page);
+    await begin();
+    const replacement = fittedStudy([
+      { frequency: 0, radius: 0, phase: 0 },
+      { frequency: 1, radius: 2, phase: 0 },
+    ]);
+    await page.goto(`/#s=${await writeStudyLink("2d", replacement)}`);
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => page.evaluate(() => location.hash)).toBe("");
+    expect(
+      await page.evaluate(() => (window as any).fitWorkers.at(-1).terminated),
+    ).toBe(true);
+    await expect
+      .poll(async () => (await definition(page)).curve.terms)
+      .toEqual(replacement.config.curve.terms);
+    await page.evaluate(() => {
+      for (const release of (window as any).releaseFits) release();
+    });
+    await expect(dialog).toBeHidden();
+    await expect(page.getByLabel("Definition", { exact: true })).toHaveValue(
+      "fourier",
+    );
+  });
+}
 
 test("drawing captures a real mouse stroke, preserves geometry on resize and returns raw drafts and camera", async ({
   page,
@@ -1497,3 +1529,269 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+test("current-curve import preserves model units, restores the source, and adopts ordinary linked/exported terms", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const source = fittedStudy([
+    { frequency: 0, radius: 40, phase: 0 },
+    { frequency: 1, radius: 12, phase: 0 },
+  ]);
+  source.config.curve.format = "roulette";
+  source.config.curve.roulette = {
+    roll: "inside",
+    fixedRadius: 25,
+    radius: 5,
+    arm: 7,
+    phase: 0.2,
+  };
+
+  await page.goto(`/#s=${await writeStudyLink("2d", source)}`);
+  await settled(page);
+  await page.getByLabel("Rolling radius r", { exact: true }).fill("10/2");
+  await page.getByLabel("Rolling radius r", { exact: true }).blur();
+  await settled(page);
+  await page.locator("#artwork").focus();
+  await page.keyboard.press("+");
+  const original = await page.locator("#artwork").innerHTML();
+  let d = await openFit(page);
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await expect(d.getByTestId("source-sampling")).toContainText("model units");
+  await expect(d.getByTestId("stroke-reference")).toHaveAttribute(
+    "data-source",
+    "curve",
+  );
+  await expect(d.getByRole("button", { name: "Close outline" })).toBeDisabled();
+  const coordinates = await d
+    .getByTestId("stroke-reference")
+    .locator("polygon")
+    .getAttribute("points");
+  expect(
+    Math.max(
+      ...coordinates!.split(" ").map((p) => Math.abs(Number(p.split(",")[0]))),
+    ),
+  ).toBeGreaterThan(20);
+  const before = await d
+    .locator("#fit-artwork")
+    .getAttribute("data-camera-scale");
+  await d
+    .getByLabel("Show original outline in preview", { exact: true })
+    .check();
+  expect(await d.getByTestId("fit-reference").getAttribute("viewBox")).toBe(
+    await d.getByTestId("stroke-reference").getAttribute("viewBox"),
+  );
+  for (const size of [
+    { width: 1440, height: 700 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+  ]) {
+    await page.setViewportSize(size);
+    expect(await d.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+    await expect(
+      d.getByRole("button", { name: "Adopt fitted study" }),
+    ).toBeInViewport({ ratio: 1 });
+  }
+  await d.getByRole("button", { name: "Play circles", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Pause circles", exact: true }),
+  ).toBeVisible();
+  await d.getByRole("button", { name: "Pause circles", exact: true }).click();
+  await d.getByLabel("Preview position", { exact: true }).fill("0.5");
+  await expect(d.getByTestId("epicycles")).toBeVisible();
+  await d.getByLabel("Total terms", { exact: true }).selectOption("16");
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  expect(
+    await d.locator("#fit-artwork").getAttribute("data-camera-scale"),
+  ).toBe(before);
+  await page.keyboard.press("Escape");
+  await expect(
+    page.getByLabel("Rolling radius r", { exact: true }),
+  ).toHaveValue("10/2");
+  expect(await page.locator("#artwork").innerHTML()).toBe(original);
+  d = await openFit(page);
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  const terms = JSON.parse(
+    (await d.locator("#fit-artwork desc").textContent())!,
+  ).curve.terms;
+  await d.getByRole("button", { name: "Adopt fitted study" }).click();
+  await settled(page);
+  await expect
+    .poll(async () => (await definition(page)).curve.terms)
+    .toEqual(terms);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(await readStudyLink(link.split("#s=")[1])).toEqual({
+    notebook: "2d",
+    study: fittedStudy(terms),
+  });
+  await page.mouse.click(1, 1);
+  const save = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await save).path())!, "utf8");
+  expect(svg).not.toContain("<text");
+  expect(svg).not.toContain("fit-reference");
+  expect(svg).toContain('data-testid="epicycle"');
+  expect(JSON.parse(svg.match(/<desc>(.*?)<\/desc>/s)![1]).curve.terms).toEqual(
+    terms,
+  );
+});
+
+test("current-curve import refuses open sources and explains unsupported inputs without closing them", async ({
+  page,
+}) => {
+  const open = fittedStudy([{ frequency: 1, radius: 1, phase: 0 }]);
+  open.bounds.max = "6";
+  await page.goto(`/#s=${await writeStudyLink("2d", open)}`);
+  await settled(page);
+  const d = await openFit(page);
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(d.getByRole("status")).toContainText("open");
+  await expect(
+    d.getByText("Source not admitted", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeDisabled();
+  await expect(d.getByRole("button", { name: "Close outline" })).toBeDisabled();
+  await d.getByLabel("Total terms", { exact: true }).selectOption("12");
+  await expect(d.getByRole("status")).toContainText("open");
+  await d
+    .getByRole("button", { name: "Use example leaf", exact: true })
+    .click();
+  await d.getByRole("button", { name: "Close outline" }).click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+});
+
+test("current-curve sessions freeze requests and reject sampling and fit replies from replaced sources", async () => {
+  const jobs: { source: any; resolve: (v: any) => void }[] = [];
+  let disposed = 0;
+  const states: any[] = [];
+  const s = new FourierFitSession(
+    () => ({
+      fitFourier: (_n: number, _points?: Vec[], source?: any) =>
+        new Promise<any>((resolve) => jobs.push({ source, resolve })),
+      compute: async () =>
+        ({ config: fittedStudy([]).config, result: {} }) as Frame,
+      dispose: () => {
+        disposed++;
+      },
+    }),
+    (v) => states.push(v),
+  );
+  const source = fittedStudy([{ frequency: 1, radius: 2, phase: 0 }]);
+  s.useCurve(source);
+  source.config.curve.terms[0].radius = 99;
+  expect(jobs[0].source.config.curve.terms[0].radius).toBe(2);
+  s.useCurve(source);
+  expect(disposed).toBe(1);
+  const result = {
+    terms: [
+      { frequency: 0, radius: 0, phase: 0 },
+      { frequency: 1, radius: 2, phase: 0 },
+    ],
+    rms: 0,
+    maxResidual: 0,
+    sampleCount: 1024,
+    length: 12,
+    outline: {
+      points: [
+        { x: 2, y: 0 },
+        { x: 0, y: 2 },
+        { x: 2, y: 0 },
+      ],
+      tolerance: 0.001,
+      evaluations: 100,
+      closureTolerance: 1e-14,
+    },
+  };
+  const n = states.length;
+  jobs[0].resolve(result);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(states).toHaveLength(n);
+  expect(s.candidate()).toBeNull();
+  jobs[1].resolve(result);
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(s.candidate()?.config.curve.terms).toEqual(result.terms);
+  expect(states.at(-1).outline).toEqual(result.outline);
+  s.cancel();
+});
+
+test("current-curve controls preserve focus and scroll ownership on return", async ({
+  page,
+}) => {
+  await checkCurrentCurveReturn(page);
+});
+
+test("current-curve availability follows the base definition, including derived and generated refusals", () => {
+  const study = fittedStudy([{ frequency: 1, radius: 1, phase: 0 }]);
+  for (const format of [
+    "parametric",
+    "polar",
+    "roulette",
+    "lissajous",
+    "fourier",
+  ] as const) {
+    study.config.curve.format = format;
+    expect(curveFitUnavailable(study)).toBeUndefined();
+  }
+  for (const format of [
+    "cartesian",
+    "implicit",
+    "field",
+    "pursuit",
+    "attractor",
+  ] as const) {
+    study.config.curve.format = format;
+    expect(curveFitUnavailable(study)).toContain("unavailable");
+  }
+  study.config.curve.format = "parametric";
+  study.config.input = "evolute";
+  expect(curveFitUnavailable(study)).toContain("not a derived input");
+});
+
+test("current-curve unavailable source has a reachable explanation and still permits drawing", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Cassini ovals & the lemniscate" });
+  await settled(page);
+  const d = await openFit(page);
+  const button = d.getByRole("button", {
+    name: "Use current curve",
+    exact: true,
+  });
+  await expect(button).toBeDisabled();
+  await expect(d.getByText(/This source is unavailable/)).toBeVisible();
+  await d
+    .getByRole("button", { name: "Use example leaf", exact: true })
+    .click();
+  await d.getByRole("button", { name: "Close outline", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+});
+
+test("fitting action help stays centered and immediately below its button across layouts", async ({
+  page,
+}) => {
+  await checkFitActionHelpLayout(page);
+});

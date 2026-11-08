@@ -10,7 +10,12 @@ import { tiered } from "./help";
 
 export const fitEntryHelp = tiered(
   "Draw any shape as one outline, then turn it into an editable study.",
-  "Close the outline explicitly, then compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or draw with a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your original study; adoption replaces it. Links preserve fitted terms, not the raw stroke.",
+  "Close a drawn outline explicitly, or use your current closed base curve. Compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your study; adoption replaces it. Links preserve fitted terms, not the outline.",
+);
+
+export const fitSourceHelp = tiered(
+  "Import a closed base curve without changing its model coordinates.",
+  "Parametric, polar, roulette, Lissajous and Fourier curves only. Sampling permits 4,096 points and 32,768 evaluations, within ±100,000 coordinates. Open endpoints, gaps, lengths below 0.000001 and unresolved approximations are refused. Sampled chord tolerance differs from fit residuals. Arc-length parameterization preserves start and direction, but generally changes existing Fourier coefficients.",
 );
 
 export const fitTermsHelp = tiered(
@@ -59,7 +64,26 @@ export type FourierFitResult = {
   maxResidual: number;
   sampleCount: number;
   length: number;
+  outline?: FourierOutline;
 };
+export type FourierOutline = {
+  points: Vec[];
+  tolerance: number;
+  evaluations: number;
+  closureTolerance: number;
+  previewRadius: number;
+};
+
+export function curveFitUnavailable(study: PlanarStudy): string | undefined {
+  if (study.config.input !== "curve")
+    return "Use a direct base curve, not a derived input.";
+  if (
+    !["parametric", "polar", "roulette", "lissajous", "fourier"].includes(
+      study.config.curve.format,
+    )
+  )
+    return "Current-curve fitting accepts direct parametric, polar, roulette, Lissajous and Fourier curves. This source is unavailable; you can still draw an outline.";
+}
 
 // A complete ordinary study, independent of the source's controls, camera,
 // family, probe and animation. A short normal offset is hidden on opening;
@@ -99,6 +123,7 @@ export type FitState = {
   fit?: FourierFitResult;
   frame?: Frame;
   error?: string;
+  outline?: FourierOutline;
 };
 type FitEngine = Pick<EngineClient, "fitFourier" | "compute" | "dispose">;
 
@@ -109,6 +134,8 @@ export class FourierFitSession {
   private generation = 0;
   private client: FitEngine | null = null;
   private stroke?: Vec[];
+  private source?: Pick<PlanarStudy, "config" | "bounds">;
+  private outline?: FourierOutline;
   private wanted = 8;
   private state: FitState = { count: 8, pending: false };
   private running = false;
@@ -120,6 +147,17 @@ export class FourierFitSession {
     this.cancel();
     this.client = this.factory();
     this.stroke = points;
+    this.state = { count: this.wanted, pending: true };
+    this.publish(this.state);
+    void this.run();
+  }
+  useCurve(study: PlanarStudy) {
+    this.cancel();
+    this.client = this.factory();
+    this.source = structuredClone({
+      config: study.config,
+      bounds: study.bounds,
+    });
     this.state = { count: this.wanted, pending: true };
     this.publish(this.state);
     void this.run();
@@ -147,15 +185,23 @@ export class FourierFitSession {
       while (generation === this.generation) {
         const count = this.wanted;
         try {
-          const fit = await client.fitFourier(count, this.stroke);
+          const fit = await client.fitFourier(count, this.stroke, this.source);
           if (generation !== this.generation) return;
           this.stroke = undefined;
+          this.source = undefined;
+          this.outline ??= fit.outline;
           if (count !== this.wanted) continue;
           const study = fittedStudy(fit.terms);
           const frame = await client.compute(study.config, study.bounds);
           if (generation !== this.generation) return;
           if (count !== this.wanted) continue;
-          this.state = { count, pending: false, fit, frame };
+          this.state = {
+            count,
+            pending: false,
+            fit,
+            frame,
+            outline: this.outline,
+          };
           this.publish(this.state);
           return;
         } catch (error) {
@@ -187,6 +233,8 @@ export class FourierFitSession {
     this.client?.dispose();
     this.client = null;
     this.stroke = undefined;
+    this.source = undefined;
+    this.outline = undefined;
     this.running = false;
     this.state = { count: this.wanted, pending: false };
     this.publish(this.state);
