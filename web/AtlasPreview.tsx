@@ -43,6 +43,10 @@ import { refinesBetweenSamples, type Frame } from "./types";
 import type { JourneyVia } from "./JourneyContext";
 import "./atlas.css";
 import { atlasSharedFrame } from "./atlas-framing";
+import { AtlasSheetExport } from "./AtlasSheetExport";
+import { sheetSvg } from "./atlas-sheet";
+import { renderToStaticMarkup } from "react-dom/server";
+import { planarSheetDefinition } from "./planar-sheet-definition";
 
 const short = (value: number) => Number(value.toPrecision(5)).toString();
 function inspectedFraming(frame: Frame, study: PlanarStudy) {
@@ -329,6 +333,42 @@ export function AtlasPreview({
                 Inspect at original quality before adoption.
               </p>
               <p className="note">Original quality: {quality(study.config)}.</p>
+              <AtlasSheetExport
+                cells={state.cells}
+                size={size}
+                disabled={blocked}
+                notebook="2d"
+                source={study}
+                preview={preview}
+                axes={descriptor.axes}
+                framing={framing}
+                dark={theme.dark}
+                scheme={theme.scheme}
+                definition={(format) => planarSheetDefinition(preview, format)}
+                painter={() => ({
+                  draw: async (frame, page, signal, index) => {
+                    signal.throwIfAborted();
+                    return sheetSvg(
+                      renderToStaticMarkup(
+                        <Plot
+                          id={`atlas-sheet-${index}`}
+                          framing={sharedFrame}
+                          {...frame}
+                          layers={study.layers}
+                          weight={study.weight}
+                          dark={theme.dark}
+                          scheme={theme.scheme}
+                          length={study.length}
+                          stop={study.stop}
+                          reset={0}
+                        />,
+                      ),
+                      page,
+                    );
+                  },
+                  dispose() {},
+                })}
+              />
               <details>
                 <summary>Atlas limits</summary>
                 <p className="note">

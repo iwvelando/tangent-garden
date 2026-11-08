@@ -38,6 +38,13 @@ import {
   type TesseractPairId,
 } from "./atlas";
 import "../atlas.css";
+import { AtlasSheetExport } from "../AtlasSheetExport";
+import { sheetSvg } from "../atlas-sheet";
+import { renderToStaticMarkup } from "react-dom/server";
+import { Composition } from "./Composition";
+import { frameAtlasResult } from "./atlas-art";
+import { exportBaseSize } from "../export-quality";
+import { tesseractSheetDefinition } from "./atlas-definition";
 
 const short = (n: number) =>
   Number(n.toPrecision(6)).toString().replace("-", "−");
@@ -327,6 +334,49 @@ export default function TesseractAtlasPreview({
                   : ""}
                 .
               </p>
+              {descriptor && (
+                <AtlasSheetExport
+                  cells={state.cells}
+                  size={size}
+                  paired={paired}
+                  disabled={blocked}
+                  notebook="4d"
+                  source={study}
+                  preview={preview}
+                  axes={descriptor.axes}
+                  framing={framing}
+                  dark={theme.dark}
+                  scheme={theme.scheme}
+                  definition={(format) =>
+                    tesseractSheetDefinition(preview, format)
+                  }
+                  painter={() => ({
+                    draw: async (frame, page, signal) => {
+                      signal.throwIfAborted();
+                      const base = exportBaseSize(paired ? "rows" : undefined);
+                      return sheetSvg(
+                        renderToStaticMarkup(
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox={`0 0 ${base.width} ${base.height}`}
+                          >
+                            <Composition
+                              {...study}
+                              config={frame.config}
+                              result={frameAtlasResult(frame.result, shared)}
+                              dark={theme.dark}
+                              scheme={theme.scheme}
+                              layout="rows"
+                            />
+                          </svg>,
+                        ),
+                        page,
+                      );
+                    },
+                    dispose() {},
+                  })}
+                />
+              )}
               <details>
                 <summary>Atlas limits and projection</summary>
                 {samplingNote && <p className="note">{samplingNote}</p>}

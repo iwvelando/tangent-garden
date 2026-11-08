@@ -1,4 +1,82 @@
 import { test, expect, devices, type Page } from "@playwright/test";
+import { decodePng } from "./png";
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+]) {
+  test(`atlas sheet export and return at ${viewport.width} × ${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+    const entry = page.getByRole("button", {
+      name: "Explore parameter atlas",
+      exact: true,
+    });
+    await entry.click();
+    const atlas = page.getByRole("dialog", {
+      name: "A field of possible flowers",
+      exact: true,
+    });
+    await expect(atlas.locator(".atlas-cell")).toHaveCount(9);
+    await expect(atlas.locator(".atlas-cell[data-state=pending]")).toHaveCount(
+      0,
+    );
+    const disclosureGap = await atlas
+      .locator(".atlas-sheet-export")
+      .evaluate((sheet) => {
+        const first = sheet.querySelector("summary")!.getBoundingClientRect();
+        const next = sheet
+          .nextElementSibling!.querySelector("summary")!
+          .getBoundingClientRect();
+        return {
+          actual: next.top - first.bottom,
+          reference: parseFloat(
+            getComputedStyle(
+              sheet.closest(".atlas-controls")!.querySelector(".atlas-ranges")!,
+            ).rowGap,
+          ),
+        };
+      });
+    expect(disclosureGap.actual).toBeCloseTo(disclosureGap.reference, 1);
+    await atlas.getByText("Export atlas sheet", { exact: true }).click();
+    await expect(atlas.getByLabel("Sheet format", { exact: true })).toHaveValue(
+      "png",
+    );
+    const labels = atlas.getByRole("checkbox", {
+      name: "Include definitions and parameters",
+      exact: true,
+    });
+    await expect(labels).not.toBeChecked();
+    await labels.check();
+    const download = page.waitForEvent("download");
+    const button = atlas.getByRole("button", {
+      name: "Export preview sheet",
+      exact: true,
+    });
+    await button.click();
+    const saved = await download;
+    expect(saved.suggestedFilename()).toBe("atlas-2d-preview.png");
+    const image = decodePng(await readFile((await saved.path())!));
+    expect(image.width).toBe(2400);
+    expect(image.height).toBeGreaterThan(1842);
+    expect(image.height).toBeLessThanOrEqual(6144);
+    await button.focus();
+    await expect(button).toBeFocused();
+    const box = await button.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+    await atlas
+      .getByRole("button", { name: "Cancel atlas", exact: true })
+      .click();
+    await expect(atlas).not.toBeVisible();
+    await expect(entry).toBeFocused();
+  });
+}
 import { checkLoomPortraitPlayer, checkLoomLiveScrub } from "./loom-playback";
 import {
   overlayViewport,
@@ -1710,7 +1788,7 @@ test("atlas portrait Generate clearance survives first open and landscape rotati
   await expect(atlas).toBeVisible();
   const spacing = () =>
     atlas.evaluate((root) => {
-      const inputs = [...root.querySelectorAll(".atlas-controls input")];
+      const inputs = [...root.querySelectorAll(".atlas-ranges input")];
       const input = inputs.at(-1)!.getBoundingClientRect();
       const generate = [...root.querySelectorAll("button")]
         .find((b) => b.textContent?.trim() === "Generate atlas")!
