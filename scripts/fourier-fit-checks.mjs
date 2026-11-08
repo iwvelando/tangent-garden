@@ -61,6 +61,45 @@ export function checkFourierFit() {
   );
   assert.match(fit({ count: 8 }).error, /outline/i);
   assert.match(fit({ source, points, closed: true, count: 8 }).error, /one/);
+  const corrected = fit({
+    points,
+    closed: true,
+    count: 8,
+    correction: { index: 0, target: { x: 5.5, y: -1 }, reach: 0.1 },
+  });
+  assert.ok(corrected.editedPoints, JSON.stringify(corrected));
+  assert.deepEqual(corrected.editedPoints[0], { x: 5.5, y: -1 });
+  assert.deepEqual(corrected.editedPoints[64], points[64]);
+  assert.ok(
+    corrected.previewRadius >=
+      corrected.terms.reduce((s, t) => s + t.radius, 0),
+  );
+  const direct = fit({
+    points: corrected.editedPoints,
+    closed: true,
+    count: 8,
+  });
+  assert.deepEqual(corrected.terms, direct.terms);
+  assert.equal(corrected.rms, direct.rms);
+  assert.equal(corrected.maxResidual, direct.maxResidual);
+  assert.deepEqual(fit({ count: 2 }).terms, corrected.terms.slice(0, 2));
+  assert.match(
+    fit({
+      points,
+      closed: true,
+      count: 8,
+      correction: { index: 0, target: { x: 100001, y: 0 }, reach: 0.1 },
+    }).error,
+    /coordinates/,
+  );
+  assert.match(fit({ count: 8 }).error, /outline/);
+  assert.match(
+    fit({
+      count: 8,
+      correction: { index: 0, target: { x: 1, y: 0 }, reach: 0.1 },
+    }).error,
+    /outline/,
+  );
   console.log(
     "Fourier fit: real WASM projection, prefix, closure, bounds and cache invalidation passed",
   );

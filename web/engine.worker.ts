@@ -106,6 +106,7 @@ self.onmessage = async ({
   source?: Pick<import("./planar-link").PlanarStudy, "config" | "bounds">;
   closed?: boolean;
   count?: number;
+  correction?: import("./fourier-fit").FourierCorrection;
   tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
   // Asks Go for the base curve's diagnostics (see engine.Diagnostics and
@@ -319,6 +320,16 @@ self.onmessage = async ({
           ))
       )
         throw new Error("Use at most 4096 points with finite coordinates.");
+      if (
+        data.correction &&
+        (!Number.isFinite(data.correction.target?.x) ||
+          !Number.isFinite(data.correction.target?.y) ||
+          !Number.isInteger(data.correction.index) ||
+          !Number.isFinite(data.correction.reach))
+      )
+        throw new Error(
+          "Correction coordinates, point and reach must be finite.",
+        );
       let source;
       if (data.source) {
         const { config, bounds } = structuredClone(data.source);
@@ -344,6 +355,7 @@ self.onmessage = async ({
             count: data.count,
             ...(data.points && { points: data.points, closed: data.closed }),
             ...(source && { source }),
+            ...(data.correction && { correction: data.correction }),
           }),
         ),
       );

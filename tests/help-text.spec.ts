@@ -21,7 +21,13 @@ import {
   atlasEntryHelp,
   atlasControlHelp,
 } from "../web/atlas";
-import { fitEntryHelp, fitTermsHelp, fitSourceHelp } from "../web/fourier-fit";
+import {
+  fitEntryHelp,
+  fitTermsHelp,
+  fitSourceHelp,
+  fitCorrectionHelp,
+  fitOutlineViewHelp,
+} from "../web/fourier-fit";
 import {
   betweenHelp as planarBetweenHelp,
   betweenMotionHelp,
@@ -214,6 +220,8 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("drawn Fourier terms", fitTermsHelp);
   add("drawn Fourier entry", fitEntryHelp);
   add("current-curve Fourier input", fitSourceHelp);
+  add("Fourier outline correction", fitCorrectionHelp);
+  add("Fourier outline view", fitOutlineViewHelp);
   table("family motion", familyMotionHelp);
   add("phrase mode", phraseHelp);
   add("phrase pace", phrasePaceHelp, true);

@@ -239,3 +239,73 @@ html.fourier-fit-open body {
     flex: 0 0 100px;
   }
 }
+
+.fit-correction {
+  padding-top: 16px;
+}
+.fit-correction > .hint,
+.fit-correction > .note {
+  margin: 8px 0 0;
+}
+.fit-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+}
+.fit-history button {
+  flex: 1 1 120px;
+}
+.fit-capture .fit-original {
+  stroke: var(--derived-ink);
+  stroke-dasharray: calc(var(--outline-unit) * 3) calc(var(--outline-unit) * 2);
+  opacity: 0.65;
+  pointer-events: none;
+}
+.fit-edit-handle {
+  fill: var(--paper);
+  stroke: var(--base-ink);
+  stroke-width: var(--outline-unit);
+}
+.fit-edit-vector {
+  stroke: var(--derived-ink);
+  stroke-width: var(--outline-unit);
+}
+.fit-correction button[aria-pressed="true"] {
+  border-color: var(--base-ink);
+  box-shadow: inset 0 0 0 1px var(--base-ink);
+}
+
+/* Recomputing keeps the established action visually steady; it remains
+   disabled until its current fit is ready. Initial unavailable fits stay dim. */
+.fit-footer button[aria-busy="true"] {
+  opacity: 1;
+  cursor: progress;
+}
+
+.fit-footer button[aria-busy="true"]:hover {
+  filter: brightness(0.95);
+}
+.fit-outline-navigation {
+  padding-top: 12px;
+}
+.fit-outline-zoom {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.fit-outline-zoom button {
+  min-height: 44px;
+}
+.fit-outline-view-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.fit-outline-view-note .note {
+  margin: 0;
+}
+.fit-outline-navigation > .hint {
+  margin: 8px 0 0;
+}
