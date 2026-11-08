@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"strings"
@@ -102,11 +103,11 @@ func TestFourierCurveOutlineRefusals(t *testing.T) {
 	}{
 		{"open", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)", Max: 2*math.Pi - .001}, "curve", "open"},
 		{"gap", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+0*sqrt(cos(t))", Max: 2 * math.Pi}, "curve", "gap"},
-		{"jump", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+cos(t-.1)/abs(cos(t-.1))", Max: 2 * math.Pi}, "curve", "resolved"},
+		{"jump", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+cos(t-.1)/abs(cos(t-.1))", Max: 2 * math.Pi}, "curve", "discontinuity"},
 		{"point", Curve{Format: "parametric", X: "1", Y: "2", Max: 2 * math.Pi}, "curve", "length"},
 		{"tiny", Curve{Format: "parametric", X: "1e-9*cos(t)", Y: "1e-9*sin(t)", Max: 2 * math.Pi}, "curve", "length"},
 		{"magnitude", Curve{Format: "parametric", X: "100001*cos(t)", Y: "sin(t)", Max: 2 * math.Pi}, "curve", "100000"},
-		{"work", Curve{Format: "parametric", X: "cos(999*t)", Y: "sin(999*t)", Max: 2 * math.Pi}, "curve", "resolved"},
+		{"work", Curve{Format: "parametric", X: "cos(999*t)", Y: "sin(999*t)", Max: 2 * math.Pi}, "curve", "4096 outline points"},
 		{"derived", base, "evolute", "base"},
 	}
 	for _, format := range []string{"implicit", "field", "pursuit", "attractor", "cartesian"} {
@@ -392,5 +393,68 @@ func TestFourierCurveOutlineProbeGap(t *testing.T) {
 	c := Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+0*sqrt((t-.006)^2-.000001)", Max: 2 * math.Pi}
 	if _, err := FourierCurveOutline(c, "curve"); err == nil || !strings.Contains(err.Error(), "gap") {
 		t.Fatalf("lost between-seed gap: %v", err)
+	}
+}
+
+// Probes either side of a jump lie on its chord, so neither refinement's
+// deviation test nor the off-grid audit sees one shorter than the chord limit.
+func TestFourierCurveOutlineRefusesJumpsDeviationCannotSee(t *testing.T) {
+	step := "abs(cos(t-.1))/cos(t-.1)"
+	curve := func(k, h float64, reverse bool) Curve {
+		c := Curve{
+			Format: "parametric",
+			X:      fmt.Sprintf("%g*cos(t)", k),
+			Y:      fmt.Sprintf("%g*(sin(t)+%g*%s)", k, h, step),
+			Max:    2 * math.Pi,
+		}
+		if reverse {
+			c.Min, c.Max = c.Max, c.Min
+		}
+		return c
+	}
+	// The diagonal is about 2.83k, so the sampled tolerance is 2.83e-4k and the
+	// chord limit 0.088k; each jump is 2h·k. All three lie between those two.
+	for _, k := range []float64{1e-3, 1, 1000} {
+		for _, h := range []float64{.04, .005, .001} {
+			for _, reverse := range []bool{false, true} {
+				if _, err := FourierCurveOutline(curve(k, h, reverse), "curve"); err == nil || !strings.Contains(err.Error(), "discontinuity") {
+					t.Errorf("k=%g h=%g reverse=%v: joined a jump: %v", k, h, reverse, err)
+				}
+			}
+		}
+	}
+	// Below the sampled tolerance a step is indistinguishable from the polyline
+	// the source is admitted as; the documented approximation covers it.
+	if _, err := FourierCurveOutline(curve(1, 1e-4, false), "curve"); err != nil {
+		t.Errorf("step within the sampled tolerance: %v", err)
+	}
+	// Steep continuous sources are not jumps, including motion along a chord,
+	// which deviation alone never splits, and a resolved narrow bump.
+	for _, c := range []Curve{
+		{Format: "parametric", X: "cos(t)", Y: "sin(t)+.04*exp(-((t-1.2345)/.001)^2)", Max: 2 * math.Pi},
+		{Format: "parametric", X: "cos(t)^51", Y: "0*t", Max: 2 * math.Pi},
+		{Format: "parametric", X: "cos(t)^51", Y: "sin(t)^51", Max: 2 * math.Pi},
+		{Format: "parametric", X: "cos(t)+.04*tanh((sin(t)-.3)/.001)", Y: "sin(t)", Max: 2 * math.Pi},
+	} {
+		if _, err := FourierCurveOutline(c, "curve"); err != nil {
+			t.Errorf("refused continuous x=%s y=%s: %v", c.X, c.Y, err)
+		}
+	}
+}
+
+// Each coordinate may be in range while a fitted radius is not; the refusal
+// must say so in terms of the outline, which has no term fields to correct.
+func TestFourierFitNamesRadiusLimitForOutline(t *testing.T) {
+	o, err := FourierCurveOutline(Curve{Format: "parametric", X: "90000+cos(t)", Y: "90000+sin(t)", Max: 2 * math.Pi}, "curve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := FitFourier(o.Points, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.Select(8)
+	if err == nil || !strings.Contains(err.Error(), "fitted radius") || !strings.Contains(err.Error(), "100000") || strings.Contains(err.Error(), "term 1") {
+		t.Fatalf("got %v", err)
 	}
 }

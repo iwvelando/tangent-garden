@@ -1741,6 +1741,134 @@ test("current-curve controls preserve focus and scroll ownership on return", asy
   await checkCurrentCurveReturn(page);
 });
 
+test("only a small current curve shortens the fitted offset, so its normals never dwarf it", async () => {
+  const outline = (d: number) => ({
+    points: [
+      { x: 0, y: 0 },
+      { x: 0.6 * d, y: 0.8 * d },
+      { x: 0.6 * d, y: 0 },
+      { x: 0, y: 0 },
+    ],
+    tolerance: 1e-4 * d,
+    evaluations: 100,
+    closureTolerance: 1e-14,
+    previewRadius: d,
+  });
+  const terms = [
+    { frequency: 0, radius: 0, phase: 0 },
+    { frequency: 1, radius: 1, phase: 0 },
+  ];
+  const run = async (start: (s: FourierFitSession) => void, d?: number) => {
+    const computed: number[] = [];
+    const s = new FourierFitSession(
+      () => ({
+        fitFourier: async () => ({
+          terms,
+          rms: 0,
+          maxResidual: 0,
+          sampleCount: 1024,
+          length: 1,
+          ...(d !== undefined && { outline: outline(d) }),
+        }),
+        compute: async (config: any) => {
+          computed.push(config.distance);
+          return { config, result: {} } as Frame;
+        },
+        dispose: () => {},
+      }),
+      () => {},
+    );
+    start(s);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(computed).toHaveLength(1);
+    expect(s.candidate()?.config.distance).toBe(computed[0]);
+    return computed[0];
+  };
+  const source = fittedStudy(terms);
+  // At a size the fixed offset already suits, adoption stays the ordinary one.
+  for (const d of [2.4, 5, 2000])
+    expect(await run((s) => s.useCurve(source), d)).toBe(0.15);
+  // Below that it keeps the same proportion, as a short editable value.
+  expect(await run((s) => s.useCurve(source), 1.6)).toBe(0.1);
+  expect(await run((s) => s.useCurve(source), 0.05)).toBe(0.0031);
+  expect(await run((s) => s.useCurve(source), 1.1e-5)).toBe(6.9e-7);
+  // A small drawing keeps its existing default.
+  expect(
+    await run((s) =>
+      s.close([
+        { x: 0, y: 0 },
+        { x: 0.01, y: 0 },
+        { x: 0, y: 0.01 },
+      ]),
+    ),
+  ).toBe(0.15);
+});
+
+for (const k of [0.001, 0.00001]) {
+  test(`a current curve of size ${k * 11} still fills its preview and adopted study`, async ({
+    page,
+  }) => {
+    const source = fittedStudy([{ frequency: 1, radius: 1, phase: 0 }]);
+    source.config.curve.format = "parametric";
+    source.config.curve.x = `${k}*(4*cos(t)+1.4*cos(4*t))`;
+    source.config.curve.y = `${k}*(4*sin(t)-1.4*sin(4*t))`;
+    await page.goto(`/#s=${await writeStudyLink("2d", source)}`);
+    await settled(page);
+    const d = await openFit(page);
+    await d
+      .getByRole("button", { name: "Use current curve", exact: true })
+      .click();
+    const adopt = d.getByRole("button", { name: "Adopt fitted study" });
+    await expect(adopt).toBeEnabled();
+    // Every representative normal stays short against the curve it marks.
+    const segments = (root: ReturnType<Page["locator"]>) =>
+      root.locator("line").evaluateAll((all) =>
+        all
+          .filter((e) => !e.closest('[data-testid="epicycles"]'))
+          .map((e) => {
+            const l = e as SVGLineElement;
+            return Math.hypot(
+              l.x2.baseVal.value - l.x1.baseVal.value,
+              l.y2.baseVal.value - l.y1.baseVal.value,
+            );
+          }),
+      );
+    const longest = async (root: ReturnType<Page["locator"]>) =>
+      Math.max(...(await segments(root)));
+    const box = (root: ReturnType<Page["locator"]>) =>
+      root.locator('[data-testid="base-curve"]').evaluate((e) => {
+        const b = (e as SVGGraphicsElement).getBBox();
+        return Math.hypot(b.width, b.height);
+      });
+    const art = d.locator("#fit-artwork");
+    expect(await longest(art)).toBeLessThan((await box(art)) / 8);
+    await adopt.click();
+    await expect
+      .poll(async () => (await definition(page)).curve.format)
+      .toBe("fourier");
+    await settled(page);
+    const main = page.locator("#artwork");
+    expect(await longest(main)).toBeLessThan((await box(main)) / 8);
+    // The adopted curve, rather than its hidden offset, sets the opening frame.
+    const plot = (await main.boundingBox())!;
+    const shown = await main
+      .locator('[data-testid="base-curve"]')
+      .evaluate((e) => {
+        const r = e.getBoundingClientRect();
+        return Math.max(r.width, r.height);
+      });
+    expect(shown).toBeGreaterThan(0.4 * Math.min(plot.width, plot.height));
+    // The generated distance is an ordinary, accepted, editable value.
+    await page.getByRole("button", { name: "offset", exact: true }).click();
+    await page
+      .getByRole("checkbox", { name: "Derived curve", exact: true })
+      .check();
+    await settled(page);
+    await expect(page.locator(".field-error")).toHaveCount(0);
+    expect((await definition(page)).distance).toBeLessThan(11 * k);
+  });
+}
+
 test("current-curve availability follows the base definition, including derived and generated refusals", () => {
   const study = fittedStudy([{ frequency: 1, radius: 1, phase: 0 }]);
   for (const format of [

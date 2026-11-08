@@ -11,6 +11,17 @@ import (
 // bounds. No construction derivatives or integrated solvers run on this path.
 const FourierOutlineMaxEvaluations = 32768
 
+const (
+	// fourierOutlineSweep is the number of uniform parameter steps of the
+	// continuity sweep.
+	fourierOutlineSweep = 8192
+	// fourierOutlineBisections is how far the sweep bisects a long step before
+	// calling it a jump: past any steep but continuous change it can resolve.
+	fourierOutlineBisections = 16
+)
+
+const fourierOutlineDiscontinuity = "source has a discontinuity or detail too fine to resolve; no discontinuity was joined"
+
 // FourierOutline is a transient approximation in original model units, in
 // traversal order. Tolerance describes sampled chord deviation, not a certified
 // continuous bound and not the fit's separate 1024-point sample residual.
@@ -43,6 +54,8 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 	if err != nil {
 		return out, err
 	}
+	// Preserve both exact entered endpoints, including descending traversal.
+	param := func(u float64) float64 { return start*(1-u) + end*u }
 	var failure error
 	eval := func(t float64) *Vec {
 		if failure != nil {
@@ -69,10 +82,7 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 	var low, high Vec
 	magnitude := 0.0
 	for j := range points {
-		u := float64(j) / intervals
-		// Preserve both exact entered endpoints, including descending traversal.
-		t := start*(1-u) + end*u
-		p := eval(t)
+		p := eval(param(float64(j) / intervals))
 		if failure != nil {
 			return out, failure
 		}
@@ -114,8 +124,51 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 	if failure != nil {
 		return out, failure
 	}
-	if path.Exhausted || path.Unresolved > 0 || path.Breaks > 0 {
+	if path.Exhausted {
 		return out, fmt.Errorf("source approximation could not be resolved within 4096 outline points; simplify the curve or shorten its domain")
+	}
+	if path.Unresolved > 0 || path.Breaks > 0 {
+		return out, fmt.Errorf(fourierOutlineDiscontinuity)
+	}
+	length := 0.0
+	for j := 1; j < len(path.Points); j++ {
+		a, b := path.Points[j-1], path.Points[j]
+		if a == nil || b == nil {
+			return out, fmt.Errorf("source contains a gap; no discontinuity was joined")
+		}
+		length += b.Sub(*a).Norm()
+	}
+	// Probes either side of a jump lie on its chord, so deviation from a chord,
+	// here and in the audit below, cannot see one. A step of this sweep is about
+	// length/sweep where the curve is continuous and moves evenly. Bisecting a
+	// long one follows its longer half: a continuous step soon halves, while a
+	// jump stays in it. A jump near or below the step of the sweep can pass.
+	long := math.Max(out.Tolerance, 2*length/fourierOutlineSweep)
+	previous := points[0]
+	for j := 1; j <= fourierOutlineSweep; j++ {
+		lo, hi := param(float64(j-1)/fourierOutlineSweep), param(float64(j)/fourierOutlineSweep)
+		next := eval(hi)
+		if failure != nil {
+			return out, failure
+		}
+		a, b := previous, next
+		step := b.Sub(*a).Norm()
+		for level := 0; step > long && b.Sub(*a).Norm() > step/2; level++ {
+			if level == fourierOutlineBisections {
+				return out, fmt.Errorf(fourierOutlineDiscontinuity)
+			}
+			mid := (lo + hi) / 2
+			m := eval(mid)
+			if failure != nil {
+				return out, failure
+			}
+			if m.Sub(*a).Norm() >= b.Sub(*m).Norm() {
+				hi, b = mid, m
+			} else {
+				lo, a = mid, m
+			}
+		}
+		previous = next
 	}
 	// Audit off the refiner's dyadic grid, against each probe's own parameter
 	// interval rather than the nearest arbitrary edge of a self-crossing path.
@@ -126,22 +179,15 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 		for edge+1 < len(path.At)-1 && path.At[edge+1] < u*intervals {
 			edge++
 		}
-		p := eval(start*(1-u) + end*u)
+		p := eval(param(u))
 		if failure != nil {
 			return out, failure
 		}
-		a, b := path.Points[edge], path.Points[edge+1]
-		if a == nil || b == nil {
-			return out, fmt.Errorf("source contains a gap; no discontinuity was joined")
-		}
-		if plane.Distance(*p, *a, *b) > out.Tolerance {
+		if plane.Distance(*p, *path.Points[edge], *path.Points[edge+1]) > out.Tolerance {
 			return out, fmt.Errorf("source approximation could not be resolved by the off-grid sampling audit")
 		}
 	}
 	for _, p := range path.Points {
-		if p == nil {
-			return out, fmt.Errorf("source contains a gap; no discontinuity was joined")
-		}
 		out.Points = append(out.Points, *p)
 	}
 	if len(out.Points) > FourierFitMaxPoints {
@@ -149,10 +195,6 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 	}
 	// Only rounding-sized endpoint disagreement is snapped, retaining the start.
 	out.Points[len(out.Points)-1] = out.Points[0]
-	var length float64
-	for j := 1; j < len(out.Points); j++ {
-		length += out.Points[j].Sub(out.Points[j-1]).Norm()
-	}
 	if length < 1e-6 {
 		return out, fmt.Errorf("source total length must be at least 0.000001")
 	}

@@ -162,8 +162,11 @@ func (f *FourierFit) Select(count int) (FourierFitResult, error) {
 		return FourierFitResult{}, fmt.Errorf("choose 2–16 total terms, including translation")
 	}
 	terms := append([]Term(nil), f.terms[:count]...)
+	// A coefficient comes from the outline, not from a term the reader entered:
+	// only its radius can leave an ordinary term's limits, here for an outline
+	// whose coordinates are in range but whose center or size is not.
 	if err := validateTerms(terms); err != nil {
-		return FourierFitResult{}, err
+		return FourierFitResult{}, fmt.Errorf("a fitted radius exceeds 100000; move the outline nearer the origin or make it smaller")
 	}
 	if terms[1].Radius <= 1e-12*f.scale {
 		return FourierFitResult{}, fmt.Errorf("the fitted outline has no usable moving term within frequencies ±64")

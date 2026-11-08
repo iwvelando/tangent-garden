@@ -15,7 +15,7 @@ export const fitEntryHelp = tiered(
 
 export const fitSourceHelp = tiered(
   "Import a closed base curve without changing its model coordinates.",
-  "Parametric, polar, roulette, Lissajous and Fourier curves only. Sampling permits 4,096 points and 32,768 evaluations, within ±100,000 coordinates. Open endpoints, gaps, lengths below 0.000001 and unresolved approximations are refused. Sampled chord tolerance differs from fit residuals. Arc-length parameterization preserves start and direction, but generally changes existing Fourier coefficients.",
+  "Parametric, polar, roulette, Lissajous and Fourier curves only. Sampling permits 4,096 points and 32,768 evaluations, coordinates within ±100,000 and fitted radii up to 100,000. Open endpoints, gaps, jumps, lengths below 0.000001 and unresolved approximations are refused. Sampled chord tolerance differs from fit residuals. Arc-length parameterization preserves start and direction, but generally changes existing Fourier coefficients.",
 );
 
 export const fitTermsHelp = tiered(
@@ -74,6 +74,8 @@ export type FourierOutline = {
   previewRadius: number;
 };
 
+const fittedOffset = 0.15;
+
 export function curveFitUnavailable(study: PlanarStudy): string | undefined {
   if (study.config.input !== "curve")
     return "Use a direct base curve, not a derived input.";
@@ -85,15 +87,32 @@ export function curveFitUnavailable(study: PlanarStudy): string | undefined {
     return "Current-curve fitting accepts direct parametric, polar, roulette, Lissajous and Fourier curves. This source is unavailable; you can still draw an outline.";
 }
 
+// The fixed offset suits the drawing window and anything larger. An imported
+// curve can be far smaller, where its normals would dwarf it, so below 2.4
+// across it keeps the proportion a curve of that size has, as a short value.
+function outlineOffset(outline?: FourierOutline) {
+  if (!outline) return fittedOffset;
+  const xs = outline.points.map((p) => p.x),
+    ys = outline.points.map((p) => p.y);
+  const across = Math.hypot(
+    Math.max(...xs) - Math.min(...xs),
+    Math.max(...ys) - Math.min(...ys),
+  );
+  return Math.min(fittedOffset, Number((across / 16).toPrecision(2)));
+}
+
 // A complete ordinary study, independent of the source's controls, camera,
 // family, probe and animation. A short normal offset is hidden on opening;
 // the base and its rotating circles lead. Motion remains explicitly opt-in.
-export function fittedStudy(terms: Term[]): PlanarStudy {
+export function fittedStudy(
+  terms: Term[],
+  distance = fittedOffset,
+): PlanarStudy {
   const study = presetStudy(0);
   study.config = {
     ...study.config,
     kind: "offset",
-    distance: 0.15,
+    distance,
     stack: { ...study.config.stack, enabled: false },
     circles: false,
     input: "curve",
@@ -191,7 +210,7 @@ export class FourierFitSession {
           this.source = undefined;
           this.outline ??= fit.outline;
           if (count !== this.wanted) continue;
-          const study = fittedStudy(fit.terms);
+          const study = fittedStudy(fit.terms, outlineOffset(this.outline));
           const frame = await client.compute(study.config, study.bounds);
           if (generation !== this.generation) return;
           if (count !== this.wanted) continue;
@@ -225,7 +244,7 @@ export class FourierFitSession {
       this.state.frame &&
       this.state.fit &&
       !this.state.error
-      ? fittedStudy(this.state.fit.terms)
+      ? fittedStudy(this.state.fit.terms, outlineOffset(this.outline))
       : null;
   }
   cancel() {

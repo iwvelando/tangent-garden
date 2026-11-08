@@ -465,8 +465,8 @@ export function FourierFitPreview({
           when played.
         </p>
         <p className="note">
-          Links and exports preserve the fitted study, never the raw stroke. The
-          reference is discarded on adoption.
+          Links and exports preserve the fitted study, never the raw outline.
+          The reference is discarded on adoption.
         </p>
       </div>
       <footer className="fit-footer" aria-label="Use the fitted study">
