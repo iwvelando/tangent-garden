@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openExportSettings, choosePreset } from "./helpers";
 import {
+  collectGarbageContinually,
   decodeVideo,
   presentFirstFrameEarly,
   probe,
@@ -290,6 +291,24 @@ test("a 60 fps MP4 has exact frame timing and decodes", async ({ page }) => {
   // presented when it starts seeking (#334).
   await presentFirstFrameEarly(page.context());
   expect(await decodeVideo(page, bytes)).toEqual(decoded);
+});
+
+test("the decoder's video survives garbage collection until it has finished (#429)", async ({
+  page,
+}) => {
+  await ready(page);
+  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill(".2");
+  const download = page.waitForEvent("download");
+  await exportMP4(page).click();
+  const path = (await (await download).path())!;
+  const bytes = await (await import("node:fs/promises")).readFile(path);
+  const decoded = await decodeVideo(page, bytes);
+  expect(decoded.first.hash).not.toBe(decoded.last.hash);
+  collectGarbageContinually(page.context());
+  // A collection only matters between a seek's "seeked" and its frame, a
+  // window that ordering sometimes closes, so give it several chances.
+  for (let attempt = 0; attempt < 5; attempt++)
+    expect(await decodeVideo(page, bytes)).toEqual(decoded);
 });
 
 test("without canvas WebP, as on iOS, MP4 is the only format and exports", async ({
