@@ -29,6 +29,38 @@ export function checkFourierFit() {
   assert.match(globalThis.tangentGardenFit(" ".repeat(524289)), /large/);
   assert.match(globalThis.tangentGardenFit("{"), /error/);
   assert.match(fit({ count: 8 }).error, /outline/i);
+  const source = {
+    input: "curve",
+    curve: {
+      format: "parametric",
+      x: "20+3*cos(t)",
+      y: "-8+3*sin(t)",
+      min: 0,
+      max: 2 * Math.PI,
+    },
+  };
+  const imported = fit({ source, count: 8 });
+  assert.ok(imported.outline?.points.length > 256, JSON.stringify(imported));
+  assert.ok(imported.outline.points.length <= 4096);
+  assert.ok(imported.outline.evaluations <= 32768);
+  assert.ok(
+    imported.outline.previewRadius >=
+      imported.terms.reduce((s, t) => s + t.radius, 0),
+  );
+  assert.equal(
+    imported.outline.previewRadius,
+    fit({ count: 16 }).terms.reduce((s, t) => s + t.radius, 0),
+  );
+  assert.equal(imported.terms[1].frequency, 1);
+  assert.ok(Math.abs(imported.terms[1].radius - 3) < 0.001);
+  assert.deepEqual(fit({ count: 2 }).terms, imported.terms.slice(0, 2));
+  assert.match(
+    fit({ source: { ...source, curve: { ...source.curve, max: 6 } }, count: 8 })
+      .error,
+    /open/,
+  );
+  assert.match(fit({ count: 8 }).error, /outline/i);
+  assert.match(fit({ source, points, closed: true, count: 8 }).error, /one/);
   console.log(
     "Fourier fit: real WASM projection, prefix, closure, bounds and cache invalidation passed",
   );

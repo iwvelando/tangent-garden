@@ -1587,6 +1587,7 @@ function App({
       else {
         setFitNotice("");
         fitOwner.begin({
+          study: structuredClone(snapshot()),
           via: fitWaiting,
           restoreFocus: (via) => {
             if (via === "pointer") fitQuiet.onPointerDown();

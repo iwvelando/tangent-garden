@@ -23,12 +23,33 @@ func registerFourierFit() {
 			Points json.RawMessage `json:"points"`
 			Closed bool            `json:"closed"`
 			Count  int             `json:"count"`
+			Source *struct {
+				Curve engine.Curve `json:"curve"`
+				Input string       `json:"input"`
+			} `json:"source"`
 		}
 		if err := json.Unmarshal([]byte(args[0].String()), &q); err != nil {
 			current = nil
 			return refusal(err)
 		}
-		if q.Points != nil {
+		var outline *engine.FourierOutline
+		if q.Source != nil && q.Points != nil {
+			current = nil
+			return refusal(fmt.Errorf("choose one source outline"))
+		}
+		if q.Source != nil {
+			current = nil
+			o, err := engine.FourierCurveOutline(q.Source.Curve, q.Source.Input)
+			if err != nil {
+				return refusal(err)
+			}
+			current, err = engine.FitFourier(o.Points, true)
+			if err != nil {
+				return refusal(err)
+			}
+			outline = &o
+			outline.PreviewRadius = current.PreviewRadius()
+		} else if q.Points != nil {
 			current = nil
 			var points [engine.FourierFitMaxPoints]engine.Vec
 			d := json.NewDecoder(bytes.NewReader(q.Points))
@@ -58,7 +79,10 @@ func registerFourierFit() {
 		if err != nil {
 			return refusal(err)
 		}
-		b, err := json.Marshal(r)
+		b, err := json.Marshal(struct {
+			engine.FourierFitResult
+			Outline *engine.FourierOutline `json:"outline,omitempty"`
+		}{r, outline})
 		if err != nil {
 			return refusal(err)
 		}
