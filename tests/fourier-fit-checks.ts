@@ -462,11 +462,9 @@ export async function checkFitActionHelpLayout(page: Page) {
     expect(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
       true,
     );
-    await dialog
-      .locator(".fit-actions")
-      .screenshot({
-        path: test.info().outputPath(`fit-actions-${size.width}.png`),
-      });
+    await dialog.locator(".fit-actions").screenshot({
+      path: test.info().outputPath(`fit-actions-${size.width}.png`),
+    });
     await info.click();
   }
 }
