@@ -24,6 +24,10 @@ import {
   checkFitAdoptionVisibility,
   checkFitActionHelpLayout,
   checkCurrentCurveReturn,
+  checkOutlineCorrection,
+  checkOutlineZoom,
+  checkOutlineOpenSpacePan,
+  checkCorrectionStability,
   fitDialog,
   leafFit,
   openFit,
@@ -124,7 +128,12 @@ test("drawing presents an example leaf without mathematical-sounding capture lab
   );
 });
 
-for (const input of ["drawing", "current curve"] as const) {
+for (const input of [
+  "drawing",
+  "current curve",
+  "corrected drawing",
+  "corrected current curve",
+] as const) {
   test(`adopted ${input} links, stills and decoded reveal match an equivalent ordinary Fourier study`, async ({
     page,
     context,
@@ -135,7 +144,7 @@ for (const input of ["drawing", "current curve"] as const) {
     await page.getByLabel("Line weight", { exact: true }).selectOption("bold");
     await page.getByLabel("Duration (seconds)", { exact: true }).fill("7");
     let dialog;
-    if (input === "drawing") dialog = await leafFit(page);
+    if (input.endsWith("drawing")) dialog = await leafFit(page);
     else {
       await choosePreset(page, { label: "Hypotrochoid & its evolute" });
       await settled(page);
@@ -147,11 +156,26 @@ for (const input of ["drawing", "current curve"] as const) {
         dialog.getByRole("button", { name: "Adopt fitted study" }),
       ).toBeEnabled();
     }
+    if (input.startsWith("corrected")) {
+      await dialog
+        .getByRole("button", { name: "Correct outline", exact: true })
+        .click();
+      const capture = dialog.getByTestId("stroke-reference");
+      await capture.focus();
+      await capture.press("ArrowRight");
+      await expect(dialog.locator(".fit-result")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      await expect(dialog.getByTestId("fit-residuals")).toContainText(
+        "edited outline",
+      );
+    }
     await expect(
       dialog.getByText(/A short offset is ready to show/),
     ).toBeVisible();
     await dialog
-      .getByLabel("Show original outline in preview", { exact: true })
+      .getByLabel("Show target outline in preview", { exact: true })
       .check();
     const terms = JSON.parse(
       (await dialog.locator("#fit-artwork desc").textContent())!,
@@ -173,7 +197,9 @@ for (const input of ["drawing", "current curve"] as const) {
     const linked = await readStudyLink(url.split("#s=")[1]);
     const expected = fittedStudy(terms);
     expect(linked).toEqual({ notebook: "2d", study: expected });
-    expect(JSON.stringify(linked)).not.toMatch(/stroke|residual|rawPoints/);
+    expect(JSON.stringify(linked)).not.toMatch(
+      /stroke|residual|rawPoints|editedPoints|original|history|outline/,
+    );
     await page.mouse.click(1, 1);
     // Existing controls now operate on the fit's ordinary evaluator.
     await page.getByRole("button", { name: "inversion", exact: true }).click();
@@ -549,7 +575,7 @@ for (const dark of [false, true])
     const rgb = inks.ink.match(/[a-f\d]{2}/gi)!.map((n) => parseInt(n, 16));
     expect(inks.stroke).toBe(`rgb(${rgb.join(", ")})`);
     await dialog
-      .getByLabel("Show original outline in preview", { exact: true })
+      .getByLabel("Show target outline in preview", { exact: true })
       .check();
     await expect(dialog.getByTestId("fit-reference")).toBeVisible();
     await dialog.getByLabel("Preview position", { exact: true }).fill("0.5");
@@ -573,7 +599,7 @@ test("drawn Fourier term edits retain geometry and residual layout while fitting
   await page.goto("/");
   const d = await leafFit(page);
   const residual = d.getByTestId("fit-residuals"),
-    checkbox = d.getByLabel("Show original outline in preview", {
+    checkbox = d.getByLabel("Show target outline in preview", {
       exact: true,
     });
   const text = await residual.textContent(),
@@ -1581,9 +1607,7 @@ test("current-curve import preserves model units, restores the source, and adopt
   const before = await d
     .locator("#fit-artwork")
     .getAttribute("data-camera-scale");
-  await d
-    .getByLabel("Show original outline in preview", { exact: true })
-    .check();
+  await d.getByLabel("Show target outline in preview", { exact: true }).check();
   expect(await d.getByTestId("fit-reference").getAttribute("viewBox")).toBe(
     await d.getByTestId("stroke-reference").getAttribute("viewBox"),
   );
@@ -1922,4 +1946,631 @@ test("fitting action help stays centered and immediately below its button across
   page,
 }) => {
   await checkFitActionHelpLayout(page);
+});
+
+test("outline corrections own bounded history, exact coordinates and stale replies", async () => {
+  const jobs: {
+    points?: Vec[];
+    correction?: any;
+    resolve: (v: any) => void;
+  }[] = [];
+  const states: any[] = [];
+  let disposed = 0;
+  const s = new FourierFitSession(
+    () => ({
+      fitFourier: (
+        _n: number,
+        points?: Vec[],
+        _source?: any,
+        correction?: any,
+      ) =>
+        new Promise<any>((resolve) =>
+          jobs.push({ points, correction, resolve }),
+        ),
+      compute: async (config: any) => ({ config, result: {} }) as Frame,
+      dispose: () => {
+        disposed++;
+      },
+    }),
+    (v) => states.push(v),
+  );
+  const original = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+  ];
+  const frozen = structuredClone(original);
+  const reply = (points?: Vec[]) => ({
+    terms: [
+      { frequency: 0, radius: 0, phase: 0 },
+      { frequency: 1, radius: 1, phase: 0 },
+    ],
+    rms: 0.1,
+    maxResidual: 0.2,
+    sampleCount: 1024,
+    length: 3,
+    previewRadius: 2,
+    ...(points && { editedPoints: points }),
+  });
+  const flush = async () => {
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+  };
+  s.close(original);
+  original[0].x = 999;
+  expect(jobs[0].points).toEqual(frozen);
+  jobs.shift()!.resolve(reply());
+  await flush();
+  expect(states.at(-1).editing.points).toEqual(frozen);
+  const first = [
+    { x: 0, y: 0 },
+    { x: 2, y: 0 },
+    { x: 0, y: 1 },
+  ];
+  s.correct({ index: 1, target: { x: 2, y: 0 }, reach: 0.1 });
+  expect(s.candidate()).toBeNull();
+  expect(jobs[0].points).toEqual(frozen);
+  expect(jobs[0].correction.target.x).toBe(2);
+  const obsolete = jobs.shift()!;
+  s.undo(); // Cancel a pending correction, retaining the last accepted outline.
+  obsolete.resolve(reply(first));
+  await flush();
+  expect(states.at(-1).editing.points).toEqual(frozen);
+  jobs.shift()!.resolve(reply());
+  await flush();
+  expect(s.candidate()).not.toBeNull();
+  s.correct({ index: 1, target: { x: 2, y: 0 }, reach: 0.1 });
+  jobs.shift()!.resolve(reply(first));
+  await flush();
+  const delivered = states.at(-1);
+  expect(delivered.editing.original).toEqual(frozen);
+  expect(delivered.editing.points).toEqual(first);
+  delivered.editing.points[1].x = 700;
+  delivered.editing.original[0].x = 700;
+  s.undo();
+  expect(jobs[0].points).toEqual(frozen);
+  jobs.shift()!.resolve(reply());
+  await flush();
+  s.redo();
+  expect(jobs[0].points).toEqual(first);
+  jobs.shift()!.resolve(reply());
+  await flush();
+  s.restoreOriginal();
+  jobs.shift()!.resolve(reply());
+  await flush();
+  expect(states.at(-1).editing.points).toEqual(frozen);
+  s.undo();
+  jobs.shift()!.resolve(reply());
+  await flush();
+  expect(states.at(-1).editing.points).toEqual(first);
+  // A branch discards redo and history never exceeds original + 32 edits.
+  for (let i = 0; i < 40; i++) {
+    s.correct({ index: 1, target: { x: 3 + i, y: 0 }, reach: 0.1 });
+    jobs.shift()!.resolve(
+      reply([
+        { x: 0, y: 0 },
+        { x: 3 + i, y: 0 },
+        { x: 0, y: 1 },
+      ]),
+    );
+    await flush();
+  }
+  expect(states.at(-1).editing.retained).toBe(33);
+  expect(states.at(-1).editing.canRedo).toBe(false);
+  s.restoreOriginal();
+  jobs.shift()!.resolve(reply());
+  await flush();
+  expect(states.at(-1).editing.original).toEqual(frozen);
+  expect(states.at(-1).editing.points).toEqual(frozen);
+  expect(disposed).toBeGreaterThan(40);
+  s.cancel();
+  expect(states.at(-1).editing).toBeUndefined();
+});
+
+test("outline correction edits, compares and restores a drawing across desktop and phone layouts", async ({
+  page,
+}) => {
+  await checkOutlineCorrection(page);
+});
+
+test("pending corrections keep keyboard scroll stable and undo rejects the canceled reply", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const NativeWorker = Worker;
+    (window as any).heldCorrections = [];
+    (window as any).holdCorrection = false;
+    window.Worker = class extends NativeWorker {
+      postMessage(q: any, ...rest: any[]) {
+        if (
+          q.action === "fourier-fit" &&
+          q.correction &&
+          (window as any).holdCorrection
+        )
+          (window as any).heldCorrections.push(() =>
+            super.postMessage(q, ...rest),
+          );
+        else super.postMessage(q, ...rest);
+      }
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  const d = await leafFit(page),
+    capture = d.getByTestId("stroke-reference");
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  const original = await capture
+    .locator("polygon")
+    .first()
+    .getAttribute("points");
+  await capture.focus();
+  await page.evaluate(() => ((window as any).holdCorrection = true));
+  await capture.press("ArrowRight");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "true");
+  const top = await d.evaluate((e) => e.scrollTop);
+  await capture.press("ArrowDown");
+  // Read on a later animation frame, when native arrow scrolling has applied.
+  const after = await d.evaluate(
+    (e) =>
+      new Promise<number>((resolve) =>
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => resolve(e.scrollTop)),
+        ),
+      ),
+  );
+  expect(after).toBe(top);
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeDisabled();
+  await d.getByRole("button", { name: "Undo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  await page.evaluate(() => {
+    for (const release of (window as any).heldCorrections) release();
+  });
+  await expect(
+    d.getByRole("button", { name: "Redo correction", exact: true }),
+  ).toBeDisabled();
+  expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  await capture.focus();
+  await capture.press("ArrowRight");
+  await d.getByRole("button", { name: "Reset outline", exact: true }).click();
+  await page.evaluate(() => {
+    for (const release of (window as any).heldCorrections) release();
+  });
+  await expect(
+    d.getByRole("button", { name: "Correct outline", exact: true }),
+  ).toBeDisabled();
+  await expect(capture).toHaveAttribute("data-point-count", "0");
+});
+
+test("a refused imported correction retains original coordinates, provenance and exact recovery", async ({
+  page,
+}) => {
+  const source = fittedStudy([
+    { frequency: 0, radius: 99999, phase: 0 },
+    { frequency: 1, radius: 1, phase: 0 },
+  ]);
+  await page.goto(`/#s=${await writeStudyLink("2d", source)}`);
+  await settled(page);
+  const d = await openFit(page);
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeEnabled();
+  const capture = d.getByTestId("stroke-reference");
+  const original = await capture
+    .locator("polygon")
+    .first()
+    .getAttribute("points");
+  const metadata = await d.getByTestId("source-sampling").textContent();
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await capture.focus();
+  await capture.press("ArrowRight");
+  await expect(d.getByRole("status")).toContainText("correction coordinates");
+  expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(await d.getByTestId("source-sampling").textContent()).toBe(metadata);
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeDisabled();
+  await d.getByRole("button", { name: "Undo correction", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeEnabled();
+  expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+});
+
+test("a large imported outline keeps its original through correction and palette-aware comparison", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("tangent-garden.color-scheme", "forest");
+    const Native = Worker;
+    (window as any).fitObservations = [];
+    window.Worker = class extends Native {
+      started = new Map<number, number>();
+      constructor(url: any, options?: any) {
+        super(url, options);
+        this.addEventListener("message", ({ data }) => {
+          const start = this.started.get(data.id);
+          if (start !== undefined) {
+            (window as any).fitObservations.push({
+              ms: performance.now() - start,
+              points:
+                data.fit?.editedPoints?.length ??
+                data.fit?.outline?.points?.length,
+            });
+            this.started.delete(data.id);
+          }
+        });
+      }
+      postMessage(q: any, ...rest: any[]) {
+        if (q.correction && (window as any).holdLargeCorrection) {
+          (window as any).largePendingWorker = this;
+          return;
+        }
+        if (q.action === "fourier-fit")
+          this.started.set(q.id, performance.now());
+        super.postMessage(q, ...rest);
+      }
+      terminate() {
+        if ((window as any).largePendingWorker === this)
+          (window as any).largeCorrectionTerminated = true;
+        super.terminate();
+      }
+    };
+  });
+  const source = fittedStudy([]);
+  source.config.curve = {
+    ...source.config.curve,
+    format: "parametric",
+    x: "cos(t)+0.1465*cos(31*t)",
+    y: "sin(t)+0.1465*sin(31*t)",
+  };
+  await page.goto(`/#s=${await writeStudyLink("2d", source)}`);
+  await settled(page);
+  const d = await openFit(page);
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeEnabled();
+  const surface = d.getByTestId("stroke-reference");
+  const n = Number(await surface.getAttribute("data-point-count"));
+  expect(n).toBeGreaterThan(3500);
+  expect(n).toBeLessThanOrEqual(4096);
+  const original = await surface
+    .locator("polygon")
+    .first()
+    .getAttribute("points");
+  const terms = JSON.parse(
+    (await d.locator("#fit-artwork desc").textContent())!,
+  ).curve.terms;
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  const ready = [];
+  for (const reach of ["0.05", "0.1", "0.2"]) {
+    await d.getByLabel("Correction reach", { exact: true }).selectOption(reach);
+    const start = Date.now();
+    await surface.focus();
+    await surface.press("Shift+ArrowUp");
+    await expect(d.locator(".fit-result")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    ready.push(Date.now() - start);
+    await expect(surface).toHaveAttribute("data-point-count", String(n));
+    await expect(d.getByTestId("fit-residuals")).toContainText(
+      "edited outline",
+    );
+  }
+  await d.getByLabel("Show target outline in preview", { exact: true }).check();
+  expect(
+    await d
+      .getByTestId("fit-reference")
+      .locator("polygon")
+      .getAttribute("points"),
+  ).toBe(await surface.locator("polygon").first().getAttribute("points"));
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await d.evaluate((e) => (e.scrollTop = 0));
+    await d.screenshot({
+      path: test.info().outputPath(`corrected-outline-${colorScheme}.png`),
+    });
+    const colors = await d.locator(".fit-edit-handle").evaluate((e) => ({
+      stroke: getComputedStyle(e).stroke,
+      paper: getComputedStyle(e).fill,
+    }));
+    expect(colors.stroke).not.toBe(colors.paper);
+    expect(await d.locator("svg text").count()).toBe(0);
+  }
+  console.log(
+    "Outline correction observations (automated Chromium, not device FPS):",
+    JSON.stringify({
+      points: n,
+      worker: await page.evaluate(() => (window as any).fitObservations),
+      keyToReadyMs: ready,
+    }),
+  );
+  await d
+    .getByRole("button", { name: "Restore original outline", exact: true })
+    .click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await surface.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(
+    JSON.parse((await d.locator("#fit-artwork desc").textContent())!).curve
+      .terms,
+  ).toEqual(terms);
+  await page.evaluate(() => ((window as any).holdLargeCorrection = true));
+  await surface.focus();
+  await surface.press("Shift+ArrowUp");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "true");
+  const cancelStart = Date.now();
+  await d.getByRole("button", { name: "Cancel drawing", exact: true }).click();
+  await expect(d).toBeHidden();
+  const cancelMs = Date.now() - cancelStart;
+  expect(
+    await page.evaluate(() => (window as any).largeCorrectionTerminated),
+  ).toBe(true);
+  expect((await definition(page)).curve.x).toBe(source.config.curve.x);
+  console.log(
+    "Controlled pending large-outline correction cancellation to restored notebook:",
+    cancelMs,
+    "ms",
+  );
+});
+
+test("correction recomputation keeps controls, artwork, residuals and status steady", async ({
+  page,
+}) => {
+  await checkCorrectionStability(page);
+});
+
+test("the preview outline follows the corrected fitting target while retaining the true original", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const d = await leafFit(page),
+    capture = d.getByTestId("stroke-reference");
+  const original = await capture
+    .locator("polygon")
+    .first()
+    .getAttribute("points");
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await capture.focus();
+  await capture.press("Shift+ArrowRight");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  const corrected = await capture
+    .locator("polygon")
+    .first()
+    .getAttribute("points");
+  expect(corrected).not.toBe(original);
+  await d.locator(".fit-reference-choice input").check();
+  expect(
+    await d
+      .getByTestId("fit-reference")
+      .locator("polygon")
+      .getAttribute("points"),
+  ).toBe(corrected);
+  expect(await capture.locator(".fit-original").getAttribute("points")).toBe(
+    original,
+  );
+  await expect(
+    d.getByLabel("Show target outline in preview", { exact: true }),
+  ).toBeChecked();
+  await d.getByRole("button", { name: "Undo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(
+    await d
+      .getByTestId("fit-reference")
+      .locator("polygon")
+      .getAttribute("points"),
+  ).toBe(original);
+  await d.getByRole("button", { name: "Redo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(
+    await d
+      .getByTestId("fit-reference")
+      .locator("polygon")
+      .getAttribute("points"),
+  ).toBe(corrected);
+});
+
+test("outline close-up zoom preserves geometry and separates multitouch from correction", async ({
+  page,
+}) => {
+  await checkOutlineZoom(page);
+});
+
+test("native touch pinch anchors the outline and makes an equal pixel correction finer", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await settled(page);
+  const d = await leafFit(page),
+    svg = d.getByTestId("stroke-reference");
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await svg.scrollIntoViewIfNeeded();
+  const original = await svg.locator("polygon").first().getAttribute("points");
+  const first = () =>
+    svg
+      .locator("polygon")
+      .first()
+      .getAttribute("points")
+      .then((s) => s!.split(" ")[0].split(",").map(Number));
+  const p0 = await first();
+  const handle = async () => {
+    // History buttons scroll below the artwork on a phone. Native touch
+    // coordinates must target the visible SVG before starting a new gesture.
+    await svg.scrollIntoViewIfNeeded();
+    const r = (await svg.locator(".fit-edit-handle").boundingBox())!;
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  };
+  const cdp = await context.newCDPSession(page);
+  const touch = (type: string, touchPoints: any[]) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+  const drag = async () => {
+    const p = await handle();
+    await touch("touchStart", [{ ...p, id: 21 }]);
+    await touch("touchMove", [{ x: p.x + 8, y: p.y, id: 21 }]);
+    await touch("touchEnd", []);
+    await expect(d.locator(".fit-result")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    return (await first())[0] - p0[0];
+  };
+  const coarse = await drag();
+  expect(coarse).toBeGreaterThan(0);
+  await d.getByRole("button", { name: "Undo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  const handleWidth = (await svg.locator(".fit-edit-handle").boundingBox())!
+    .width;
+  const center = await handle(),
+    view = await svg.getAttribute("viewBox");
+  const left = { x: center.x - 8, y: center.y, id: 11 },
+    right = { x: center.x + 8, y: center.y, id: 12 };
+  await touch("touchStart", [left]);
+  await touch("touchStart", [left, right]);
+  await touch("touchMove", [
+    { ...left, x: center.x - 16 },
+    { ...right, x: center.x + 16 },
+  ]);
+  expect(await svg.getAttribute("viewBox")).not.toBe(view);
+  const projected = await handle();
+  expect(
+    Math.hypot(projected.x - center.x, projected.y - center.y),
+  ).toBeLessThan(1.5);
+  expect(
+    Math.abs(
+      (await svg.locator(".fit-edit-handle").boundingBox())!.width -
+        handleWidth,
+    ),
+  ).toBeLessThan(0.2);
+  await touch("touchMove", [
+    { ...left, x: center.x - 10, y: center.y - 4 },
+    { ...right, x: center.x + 22, y: center.y - 4 },
+  ]);
+  const panned = await handle();
+  expect(
+    Math.hypot(panned.x - center.x - 6, panned.y - center.y + 4),
+  ).toBeLessThan(1.5);
+  const pinched = await svg.getAttribute("viewBox");
+  await touch("touchEnd", [{ ...left, x: center.x - 10, y: center.y - 4 }]);
+  await touch("touchMove", [{ ...left, x: center.x - 6, y: center.y - 4 }]);
+  await touch("touchEnd", []);
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  await d.screenshot({
+    path: test.info().outputPath("outline-touch-close-up.png"),
+  });
+  const fine = await drag();
+  expect(fine / coarse).toBeCloseTo(0.5, 1);
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  await d.getByRole("button", { name: "Undo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  const p = await handle();
+  await touch("touchStart", [{ ...p, id: 31 }]);
+  await touch("touchMove", [{ x: p.x + 8, y: p.y, id: 31 }]);
+  await touch("touchCancel", []);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+});
+
+test("outline drags pan open space and reserve nearby strokes for correction", async ({
+  page,
+}) => {
+  await checkOutlineOpenSpacePan(page);
+});
+
+test("native one-finger open-space pan switches safely into pinch navigation", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await settled(page);
+  const d = await openFit(page),
+    svg = d.getByTestId("stroke-reference");
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeEnabled();
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await svg.scrollIntoViewIfNeeded();
+  const original = await svg.locator("polygon").first().getAttribute("points");
+  const preview = await d.locator("#fit-artwork").innerHTML();
+  const firstView = await svg.getAttribute("viewBox");
+  const box = (await svg.boundingBox())!,
+    x = box.x + box.width / 2,
+    y = box.y + box.height / 2;
+  const cdp = await context.newCDPSession(page);
+  const touch = (type: string, touchPoints: any[]) =>
+    cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+  await touch("touchStart", [{ x, y, id: 11 }]);
+  await touch("touchMove", [{ x: x + 24, y: y + 8, id: 11 }]);
+  expect(await svg.getAttribute("viewBox")).not.toBe(firstView);
+  await touch("touchStart", [
+    { x: x + 24, y: y + 8, id: 11 },
+    { x: x + 64, y: y + 8, id: 12 },
+  ]);
+  await touch("touchMove", [
+    { x: x + 14, y: y + 8, id: 11 },
+    { x: x + 74, y: y + 8, id: 12 },
+  ]);
+  // CDP dispatches pointer events before React necessarily paints the final
+  // two-contact update. Observe the complete 40px -> 60px span change first.
+  await expect
+    .poll(async () =>
+      Number((await svg.getAttribute("viewBox"))!.split(" ")[2]),
+    )
+    .toBeCloseTo(Number(firstView!.split(" ")[2]) / 1.5, 8);
+  const pinched = await svg.getAttribute("viewBox");
+  await touch("touchEnd", [{ x: x + 14, y: y + 8, id: 11 }]);
+  await touch("touchMove", [{ x: x + 36, y: y + 8, id: 11 }]);
+  await touch("touchEnd", []);
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(await d.locator("#fit-artwork").innerHTML()).toBe(preview);
+  await expect(d.getByLabel("Outline point", { exact: true })).toHaveValue("0");
+  await expect(
+    d.getByRole("button", { name: "Undo correction", exact: true }),
+  ).toBeDisabled();
+  await d.getByRole("button", { name: "Fit outline", exact: true }).click();
+  expect(await svg.getAttribute("viewBox")).toBe(firstView);
+  await svg.scrollIntoViewIfNeeded();
+  const fresh = (await svg.boundingBox())!,
+    sx = fresh.x + fresh.width / 2,
+    sy = fresh.y + fresh.height / 2;
+  await touch("touchStart", [{ x: sx, y: sy, id: 21 }]);
+  await touch("touchMove", [{ x: sx + 10, y: sy, id: 21 }]);
+  await touch("touchCancel", []);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  await expect(
+    d.getByRole("button", { name: "Undo correction", exact: true }),
+  ).toBeDisabled();
 });

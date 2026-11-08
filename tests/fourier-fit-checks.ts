@@ -326,9 +326,7 @@ export async function checkCurrentCurveReturn(page: Page) {
   expect(await art.evaluate((e) => getComputedStyle(e).touchAction)).toBe(
     "pan-y pinch-zoom",
   );
-  await d
-    .getByLabel("Show original outline in preview", { exact: true })
-    .check();
+  await d.getByLabel("Show target outline in preview", { exact: true }).check();
   await d.getByLabel("Preview position", { exact: true }).fill("0.5");
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
@@ -346,9 +344,7 @@ export async function checkCurrentCurveReturn(page: Page) {
     .click();
   await d.getByRole("button", { name: "Show more", exact: true }).click();
   await expect(d.getByText(/32,768 evaluations/)).toBeVisible();
-  await d
-    .getByLabel("Show original outline in preview", { exact: true })
-    .check();
+  await d.getByLabel("Show target outline in preview", { exact: true }).check();
   await expect(d.getByTestId("fit-reference")).toBeVisible();
   await d.getByRole("button", { name: "Cancel drawing", exact: true }).click();
   await expect(entry).toBeFocused();
@@ -467,4 +463,473 @@ export async function checkFitActionHelpLayout(page: Page) {
     });
     await info.click();
   }
+}
+
+export async function checkOutlineCorrection(page: Page) {
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const raw = page.getByLabel("Shape parameter a", { exact: true });
+  await raw.fill("2*pi");
+  await raw.blur();
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const before = await page.locator("#artwork").innerHTML();
+  const d = await leafFit(page);
+  const capture = d.getByTestId("stroke-reference");
+  const original = await capture
+    .locator("polygon")
+    .first()
+    .getAttribute("points");
+  const art = await d.locator("#fit-artwork").innerHTML();
+  const residual = await d.getByTestId("fit-residuals").textContent();
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Correct outline", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await capture.focus();
+  await capture.press("ArrowRight");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByTestId("fit-residuals")).toContainText("edited outline");
+  await expect(
+    d.getByRole("heading", { name: "1. Edited outline", exact: true }),
+  ).toBeVisible();
+  const changed = await capture
+    .locator("polygon")
+    .first()
+    .getAttribute("points");
+  expect(changed).not.toBe(original);
+  expect(changed!.split(" ")).toHaveLength(original!.split(" ").length);
+  expect(await d.getByTestId("fit-residuals").textContent()).not.toBe(residual);
+  expect(await d.locator("#fit-artwork").innerHTML()).not.toBe(art);
+  await d.getByLabel("Show target outline in preview", { exact: true }).check();
+  expect(
+    await d
+      .getByTestId("fit-reference")
+      .locator("polygon")
+      .getAttribute("points"),
+  ).toBe(changed);
+  await d.getByRole("button", { name: "Undo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(await d.locator("#fit-artwork").innerHTML()).toBe(art);
+  await d.getByRole("button", { name: "Redo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
+    changed,
+  );
+  // Reachability and equal scale through rotations, with real pointer capture.
+  for (const size of [
+    { width: 1000, height: 650 },
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+  ]) {
+    await page.setViewportSize(size);
+    await capture.scrollIntoViewIfNeeded();
+    expect(await capture.evaluate((e) => getComputedStyle(e).touchAction)).toBe(
+      "none",
+    );
+    const handle = capture.locator(".fit-edit-handle");
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(
+      box.x + box.width / 2 + 12,
+      box.y + box.height / 2 - 8,
+      { steps: 3 },
+    );
+    await page.mouse.up();
+    await expect(d.locator(".fit-result")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(
+      d.getByRole("button", { name: "Undo correction", exact: true }),
+    ).toBeEnabled();
+    await expect(
+      d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+    ).toBeInViewport({ ratio: 1 });
+    expect(await d.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
+  }
+  await d
+    .getByRole("button", { name: "Restore original outline", exact: true })
+    .click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  await d.getByRole("button", { name: "Cancel drawing", exact: true }).click();
+  expect(await page.locator("#artwork").innerHTML()).toBe(before);
+  await expect(raw).toHaveValue("2*pi");
+  await openFit(page);
+  await expect(
+    d.getByRole("button", { name: "Correct outline", exact: true }),
+  ).toBeDisabled();
+}
+
+export async function checkCorrectionStability(page: Page) {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    (window as any).holdFit = false;
+    (window as any).releaseFit = () => {};
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "fourier-fit" && q.correction && (window as any).holdFit)
+        (window as any).releaseFit = () => send.call(this, q, ...rest);
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const d = await leafFit(page),
+    capture = d.getByTestId("stroke-reference");
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await capture.focus();
+  await capture.press("ArrowRight");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  const status = await d.getByRole("status").textContent();
+  const residual = await d.getByTestId("fit-residuals").textContent();
+  const artwork = await d.locator("#fit-artwork").innerHTML();
+  const position = d.getByLabel("Outline point", { exact: true });
+  const play = d.getByRole("button", { name: "Play circles", exact: true });
+  const restore = d.getByRole("button", {
+    name: "Restore original outline",
+    exact: true,
+  });
+  const adopt = d.getByRole("button", {
+    name: "Adopt fitted study",
+    exact: true,
+  });
+  await adopt.hover();
+  const opacity = await adopt.evaluate((e) => getComputedStyle(e).opacity);
+  const hoverFilter = await adopt.evaluate((e) => getComputedStyle(e).filter);
+  await page.evaluate(() => ((window as any).holdFit = true));
+  await capture.focus();
+  await capture.press("ArrowUp");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "true");
+  await expect(adopt).toBeDisabled();
+  expect(await adopt.evaluate((e) => getComputedStyle(e).opacity)).toBe(
+    opacity,
+  );
+  expect(await adopt.evaluate((e) => getComputedStyle(e).filter)).toBe(
+    hoverFilter,
+  );
+  await expect(position).toBeEnabled();
+  await expect(play).toBeEnabled();
+  await expect(restore).toBeEnabled();
+  expect(await d.getByRole("status").textContent()).toBe(status);
+  expect(await d.getByTestId("fit-residuals").textContent()).toBe(residual);
+  expect(await d.locator("#fit-artwork").innerHTML()).toBe(artwork);
+  await position.fill("3");
+  await d.getByLabel("Correction reach", { exact: true }).selectOption("0.2");
+  await page.evaluate(() => (window as any).releaseFit());
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  await expect(position).toHaveValue("3");
+  expect(await d.getByRole("status").textContent()).toBe(status);
+  expect(await d.getByTestId("fit-residuals").textContent()).not.toBe(residual);
+  // Keep Shift down across successive repeat-like micro adjustments.
+  await page.keyboard.down("Shift");
+  for (let i = 0; i < 3; i++) {
+    await capture.focus();
+    await capture.press("ArrowRight");
+    await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "true");
+    expect(await adopt.evaluate((e) => getComputedStyle(e).opacity)).toBe(
+      opacity,
+    );
+    expect(await adopt.evaluate((e) => getComputedStyle(e).filter)).toBe(
+      hoverFilter,
+    );
+    await expect(position).toBeEnabled();
+    await expect(restore).toBeEnabled();
+    expect(await d.getByRole("status").textContent()).toBe(status);
+    await page.evaluate(() => (window as any).releaseFit());
+    await expect(d.locator(".fit-result")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  }
+  await page.keyboard.up("Shift");
+  // Restore must also work while another correction is outstanding.
+  await capture.focus();
+  await capture.press("ArrowUp");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "true");
+  await restore.click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByTestId("fit-residuals")).not.toContainText(
+    "edited outline",
+  );
+  await page.evaluate(() => (window as any).releaseFit());
+  await expect(
+    d.getByRole("button", { name: "Redo correction", exact: true }),
+  ).toBeDisabled();
+}
+
+export async function checkOutlineZoom(page: Page) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const d = await leafFit(page),
+    svg = d.getByTestId("stroke-reference");
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  const original = await svg.locator("polygon").first().getAttribute("points");
+  const preview = await d.locator("#fit-artwork").innerHTML();
+  const view = await svg.getAttribute("viewBox");
+  const zoomIn = d.getByRole("button", {
+    name: "Zoom in on outline",
+    exact: true,
+  });
+  await zoomIn.click();
+  expect(await svg.getAttribute("viewBox")).not.toBe(view);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(await d.locator("#fit-artwork").innerHTML()).toBe(preview);
+  await expect(
+    d.getByRole("button", { name: "Undo correction", exact: true }),
+  ).toBeDisabled();
+  await d.getByRole("button", { name: "Fit outline", exact: true }).click();
+  expect(await svg.getAttribute("viewBox")).toBe(view);
+  // Programmatic pointer events exercise WebKit's multi-contact transition;
+  // real browser touch dispatch is checked separately in Chromium.
+  await svg.evaluate((e) => {
+    const box = e.getBoundingClientRect(),
+      x = box.x + box.width / 2,
+      y = box.y + box.height / 2;
+    // Synthetic events have no native capture. The event sequence still runs
+    // the production gesture handlers and their coordinate transformations.
+    e.setPointerCapture = () => {};
+    (window as any).outlineTouch = (
+      type: string,
+      id: number,
+      dx: number,
+      dy = 0,
+    ) =>
+      e.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          pointerId: id,
+          pointerType: "touch",
+          isPrimary: id === 11,
+          button: 0,
+          clientX: x + dx,
+          clientY: y + dy,
+        }),
+      );
+    (window as any).outlineTouch("pointerdown", 11, -30);
+    (window as any).outlineTouch("pointermove", 11, -32);
+    (window as any).outlineTouch("pointerdown", 12, 30);
+    (window as any).outlineTouch("pointermove", 11, -65);
+    (window as any).outlineTouch("pointermove", 12, 65);
+  });
+  expect(await svg.getAttribute("viewBox")).not.toBe(view);
+  const pinched = await svg.getAttribute("viewBox");
+  await svg.evaluate(() => {
+    const t = (window as any).outlineTouch;
+    t("pointerdown", 13, 0, -30);
+    t("pointermove", 13, 80, -30);
+    t("pointerup", 13, 80, -30);
+  });
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  await svg.evaluate(() => {
+    const t = (window as any).outlineTouch;
+    t("pointerup", 12, 65);
+    t("pointermove", 11, -80);
+    t("pointerup", 11, -80);
+  });
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(await d.locator("#fit-artwork").innerHTML()).toBe(preview);
+  await expect(
+    d.getByRole("button", { name: "Undo correction", exact: true }),
+  ).toBeDisabled();
+  await expect(d.getByLabel("Outline point", { exact: true })).toHaveValue("0");
+  await expect(svg.locator(".fit-edit-vector")).toHaveCount(0);
+  await d.getByLabel("Total terms", { exact: true }).selectOption("12");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  // A fresh one-finger correction works after navigation; keyboard nudges
+  // also use the close-up span, and history does not reset that view.
+  await svg.focus();
+  await svg.press("Shift+ArrowRight");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await svg.locator("polygon").first().getAttribute("points")).not.toBe(
+    original,
+  );
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  await d.getByRole("button", { name: "Undo correction", exact: true }).click();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await svg.getAttribute("viewBox")).toBe(pinched);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  for (let i = 0; i < 20 && (await zoomIn.isEnabled()); i++)
+    await zoomIn.click();
+  await expect(zoomIn).toBeDisabled();
+  await d.getByRole("button", { name: "Fit outline", exact: true }).click();
+  expect(await svg.getAttribute("viewBox")).toBe(view);
+  await expect(
+    d.getByRole("button", { name: "Zoom out of outline", exact: true }),
+  ).toBeDisabled();
+  await zoomIn.click();
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  expect(await svg.getAttribute("viewBox")).toBe(view);
+}
+
+export async function checkOutlineOpenSpacePan(page: Page) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const d = await openFit(page),
+    svg = d.getByTestId("stroke-reference");
+  await d
+    .getByRole("button", { name: "Use current curve", exact: true })
+    .click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeEnabled();
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await svg.scrollIntoViewIfNeeded();
+  const original = await svg.locator("polygon").first().getAttribute("points");
+  const preview = await d.locator("#fit-artwork").innerHTML();
+  const residual = await d.getByTestId("fit-residuals").textContent();
+  const view = await svg.getAttribute("viewBox");
+  const box = (await svg.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box.x + box.width / 2 + 100,
+    box.y + box.height / 2 + 12,
+    { steps: 5 },
+  );
+  await page.mouse.up();
+  expect(await svg.getAttribute("viewBox")).not.toBe(view);
+  expect(await svg.locator("polygon").first().getAttribute("points")).toBe(
+    original,
+  );
+  expect(await d.locator("#fit-artwork").innerHTML()).toBe(preview);
+  expect(await d.getByTestId("fit-residuals").textContent()).toBe(residual);
+  await expect(d.getByLabel("Outline point", { exact: true })).toHaveValue("0");
+  await expect(
+    d.getByRole("button", { name: "Undo correction", exact: true }),
+  ).toBeDisabled();
+  await d.getByRole("button", { name: "Fit outline", exact: true }).click();
+  expect(await svg.getAttribute("viewBox")).toBe(view);
+  // At the ellipse's rightmost point, 14 CSS pixels is inside the touch
+  // allowance and outside the mouse/pen allowance at either magnification.
+  for (const zoomed of [false, true]) {
+    if (zoomed)
+      await d
+        .getByRole("button", { name: "Zoom in on outline", exact: true })
+        .click();
+    for (const type of ["mouse", "pen", "touch"]) {
+      await svg.scrollIntoViewIfNeeded();
+      const before = await svg.getAttribute("viewBox");
+      await svg.evaluate((e, type) => {
+        const root = e as SVGSVGElement,
+          p = root.querySelector("polygon")!.points.getItem(0);
+        const at = new DOMPoint(p.x, p.y).matrixTransform(root.getScreenCTM()!);
+        root.setPointerCapture = () => {};
+        for (const [event, dx] of [
+          ["pointerdown", 14],
+          ["pointermove", 22],
+          ["pointerup", 22],
+        ] as const)
+          root.dispatchEvent(
+            new PointerEvent(event, {
+              bubbles: true,
+              pointerId: 41,
+              isPrimary: true,
+              pointerType: type,
+              button: 0,
+              clientX: at.x + dx,
+              clientY: at.y,
+            }),
+          );
+      }, type);
+      await expect(d.locator(".fit-result")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      if (type === "touch") {
+        expect(await svg.getAttribute("viewBox")).toBe(before);
+        expect(
+          await svg.locator("polygon").first().getAttribute("points"),
+        ).not.toBe(original);
+        await d
+          .getByRole("button", { name: "Undo correction", exact: true })
+          .click();
+        await expect(d.locator(".fit-result")).toHaveAttribute(
+          "aria-busy",
+          "false",
+        );
+      } else {
+        expect(await svg.getAttribute("viewBox")).not.toBe(before);
+        expect(
+          await svg.locator("polygon").first().getAttribute("points"),
+        ).toBe(original);
+      }
+      await d.getByRole("button", { name: "Fit outline", exact: true }).click();
+      if (zoomed)
+        await d
+          .getByRole("button", { name: "Zoom in on outline", exact: true })
+          .click();
+    }
+    await d.getByRole("button", { name: "Fit outline", exact: true }).click();
+  }
+  // The sparse leaf's closing edge is still editable between vertices.
+  await d
+    .getByRole("button", { name: "Use example leaf", exact: true })
+    .click();
+  await d.getByRole("button", { name: "Close outline", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study", exact: true }),
+  ).toBeEnabled();
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await svg.scrollIntoViewIfNeeded();
+  const leaf = await svg.locator("polygon").first().getAttribute("points");
+  const leafView = await svg.getAttribute("viewBox");
+  const closing = await svg.evaluate((e) => {
+    const root = e as SVGSVGElement,
+      poly = root.querySelector("polygon")!;
+    const m = root.getScreenCTM()!;
+    const points = Array.from(poly.points, (p) =>
+      new DOMPoint(p.x, p.y).matrixTransform(m),
+    );
+    const first = points[0],
+      last = points.at(-1)!;
+    const x = (first.x + last.x) / 2,
+      y = (first.y + last.y) / 2;
+    return {
+      x,
+      y,
+      nearest: Math.min(...points.map((p) => Math.hypot(p.x - x, p.y - y))),
+    };
+  });
+  expect(closing.nearest).toBeGreaterThan(10);
+  await page.mouse.move(closing.x, closing.y);
+  await page.mouse.down();
+  await page.mouse.move(closing.x + 8, closing.y, { steps: 3 });
+  await page.mouse.up();
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await svg.getAttribute("viewBox")).toBe(leafView);
+  expect(await svg.locator("polygon").first().getAttribute("points")).not.toBe(
+    leaf,
+  );
 }

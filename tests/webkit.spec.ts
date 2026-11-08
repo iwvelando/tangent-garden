@@ -111,6 +111,10 @@ import {
   checkFitAdoptionVisibility,
   checkFitActionHelpLayout,
   checkCurrentCurveReturn,
+  checkOutlineCorrection,
+  checkOutlineZoom,
+  checkOutlineOpenSpacePan,
+  checkCorrectionStability,
   leafFit,
 } from "./fourier-fit-checks";
 
@@ -210,7 +214,7 @@ test("drawn Fourier controls fit, play, scrub and adopt from label clicks in Web
   );
   const dialog = await leafFit(page, 16);
   await dialog
-    .getByLabel("Show original outline in preview", { exact: true })
+    .getByLabel("Show target outline in preview", { exact: true })
     .check();
   await expect(dialog.getByTestId("fit-reference")).toBeVisible();
   await dialog
@@ -2959,4 +2963,28 @@ test("fitting action help stays centered and immediately below its button across
   page,
 }) => {
   await checkFitActionHelpLayout(page);
+});
+
+test("outline correction handles pointer, keyboard, history and rotations in WebKit", async ({
+  page,
+}) => {
+  await checkOutlineCorrection(page);
+});
+
+test("correction recomputation keeps controls and measurements steady in WebKit", async ({
+  page,
+}) => {
+  await checkCorrectionStability(page);
+});
+
+test("outline close-up zoom preserves geometry and separates multitouch from correction", async ({
+  page,
+}) => {
+  await checkOutlineZoom(page);
+});
+
+test("outline drags pan open space and reserve nearby strokes for correction", async ({
+  page,
+}) => {
+  await checkOutlineOpenSpacePan(page);
 });

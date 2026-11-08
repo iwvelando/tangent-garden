@@ -20,10 +20,11 @@ func registerFourierFit() {
 			return `{"error":"outline request is too large"}`
 		}
 		var q struct {
-			Points json.RawMessage `json:"points"`
-			Closed bool            `json:"closed"`
-			Count  int             `json:"count"`
-			Source *struct {
+			Points     json.RawMessage           `json:"points"`
+			Closed     bool                      `json:"closed"`
+			Count      int                       `json:"count"`
+			Correction *engine.FourierCorrection `json:"correction"`
+			Source     *struct {
 				Curve engine.Curve `json:"curve"`
 				Input string       `json:"input"`
 			} `json:"source"`
@@ -33,6 +34,11 @@ func registerFourierFit() {
 			return refusal(err)
 		}
 		var outline *engine.FourierOutline
+		var edited []engine.Vec
+		if q.Correction != nil && (q.Points == nil || q.Source != nil || !q.Closed) {
+			current = nil
+			return refusal(fmt.Errorf("correction needs one explicitly closed outline"))
+		}
 		if q.Source != nil && q.Points != nil {
 			current = nil
 			return refusal(fmt.Errorf("choose one source outline"))
@@ -67,7 +73,15 @@ func registerFourierFit() {
 				n++
 			}
 			var err error
-			current, err = engine.FitFourier(points[:n], q.Closed)
+			input := points[:n]
+			if q.Correction != nil {
+				edited, err = engine.CorrectFourierOutline(input, *q.Correction)
+				if err != nil {
+					return refusal(err)
+				}
+				input = edited
+			}
+			current, err = engine.FitFourier(input, q.Closed)
 			if err != nil {
 				return refusal(err)
 			}
@@ -81,8 +95,10 @@ func registerFourierFit() {
 		}
 		b, err := json.Marshal(struct {
 			engine.FourierFitResult
-			Outline *engine.FourierOutline `json:"outline,omitempty"`
-		}{r, outline})
+			Outline       *engine.FourierOutline `json:"outline,omitempty"`
+			EditedPoints  []engine.Vec           `json:"editedPoints,omitempty"`
+			PreviewRadius float64                `json:"previewRadius"`
+		}{r, outline, edited, current.PreviewRadius()})
 		if err != nil {
 			return refusal(err)
 		}

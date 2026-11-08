@@ -23,6 +23,16 @@ export const fitTermsHelp = tiered(
   "More terms recover finer detail. The first point fixes the phase origin; drawing direction is preserved. Samples are evenly spaced along the closed outline, so drawing slowly does not add weight.",
 );
 
+export const fitCorrectionHelp = tiered(
+  "Move a point and its nearby arc, then refit the edited outline.",
+  "Drag a point or select it. Arrows move 1% of the frame span; Shift moves 0.1%. Reach: 5%, 10% or 20% per direction. Keep 3–4,096 points (three distinct), length ≥0.000001, coordinates within ±100,000 and fitted radii ≤100,000. Undo retains the original and 32 edits, dropping oldest intermediate edits. Reference and history disappear on leaving.",
+);
+
+export const fitOutlineViewHelp = tiered(
+  "Zoom for precise corrections; drag open space or use two fingers to pan.",
+  "Drag open space to pan; pinch or Zoom in/out magnifies 1–32×. Two fingers pan anywhere; a second finger cancels the tentative edit. Lift both before correcting again. Plus/minus zoom; Home or Fit outline resets. The close-up stays through refits and undo. Model coordinates and the fitted preview stay intact.",
+);
+
 export const maxStrokePoints = 4096;
 // Equal scale in the 1000 × 760 input rectangle; x right, y up.
 export const strokeWindow = { width: 6, height: 4.56 };
@@ -65,6 +75,8 @@ export type FourierFitResult = {
   sampleCount: number;
   length: number;
   outline?: FourierOutline;
+  editedPoints?: Vec[];
+  previewRadius?: number;
 };
 export type FourierOutline = {
   points: Vec[];
@@ -136,6 +148,16 @@ export function fittedStudy(
   return study;
 }
 
+export type FourierCorrection = { index: number; target: Vec; reach: number };
+export const maxOutlineEdits = 32;
+export type OutlineEditing = {
+  points: Vec[];
+  original: Vec[];
+  canUndo: boolean;
+  canRedo: boolean;
+  retained: number;
+  changed: boolean;
+};
 export type FitState = {
   count: number;
   pending: boolean;
@@ -143,6 +165,9 @@ export type FitState = {
   frame?: Frame;
   error?: string;
   outline?: FourierOutline;
+  editing?: OutlineEditing;
+  fitEdited?: boolean;
+  fitPoints?: Vec[];
 };
 type FitEngine = Pick<EngineClient, "fitFourier" | "compute" | "dispose">;
 
@@ -155,6 +180,9 @@ export class FourierFitSession {
   private stroke?: Vec[];
   private source?: Pick<PlanarStudy, "config" | "bounds">;
   private outline?: FourierOutline;
+  private history: Vec[][] = [];
+  private cursor = 0;
+  private correction?: FourierCorrection;
   private wanted = 8;
   private state: FitState = { count: 8, pending: false };
   private running = false;
@@ -165,7 +193,7 @@ export class FourierFitSession {
   close(points: Vec[]) {
     this.cancel();
     this.client = this.factory();
-    this.stroke = points;
+    this.stroke = structuredClone(points);
     this.state = { count: this.wanted, pending: true };
     this.publish(this.state);
     void this.run();
@@ -180,6 +208,70 @@ export class FourierFitSession {
     this.state = { count: this.wanted, pending: true };
     this.publish(this.state);
     void this.run();
+  }
+  private changed() {
+    const points = this.history[this.cursor],
+      original = this.history[0];
+    return (
+      !!points &&
+      (points.length !== original.length ||
+        points.some((p, i) => p.x !== original[i].x || p.y !== original[i].y))
+    );
+  }
+  private editing(): OutlineEditing | undefined {
+    if (!this.history.length) return;
+    return {
+      points: structuredClone(this.history[this.cursor]),
+      original: structuredClone(this.history[0]),
+      canUndo: this.cursor > 0 || !!this.correction,
+      canRedo: this.cursor < this.history.length - 1,
+      retained: this.history.length,
+      changed: this.changed(),
+    };
+  }
+  private remember(points: Vec[]) {
+    this.history = this.history.slice(0, this.cursor + 1);
+    this.history.push(structuredClone(points));
+    // Pin the original; discard the oldest intermediate edit at the cap.
+    if (this.history.length > maxOutlineEdits + 1) this.history.splice(1, 1);
+    this.cursor = this.history.length - 1;
+  }
+  private refit(points: Vec[], correction?: FourierCorrection) {
+    this.generation++;
+    this.client?.dispose();
+    this.client = this.factory();
+    this.running = false;
+    this.source = undefined;
+    this.stroke = structuredClone(points);
+    this.correction = correction && structuredClone(correction);
+    this.state = {
+      ...this.state,
+      count: this.wanted,
+      pending: true,
+      error: undefined,
+      outline: this.outline,
+      editing: this.editing(),
+    };
+    this.publish(this.state);
+    void this.run();
+  }
+  correct(correction: FourierCorrection) {
+    if (!this.history.length || this.state.pending) return;
+    this.refit(this.history[this.cursor], correction);
+  }
+  undo() {
+    if (!this.history.length) return;
+    if (!this.correction && this.cursor > 0) this.cursor--;
+    this.refit(this.history[this.cursor]);
+  }
+  redo() {
+    if (this.cursor >= this.history.length - 1) return;
+    this.refit(this.history[++this.cursor]);
+  }
+  restoreOriginal() {
+    if (!this.history.length) return;
+    this.remember(this.history[0]);
+    this.refit(this.history[this.cursor]);
   }
   select(count: number) {
     if (!Number.isInteger(count) || count < 2 || count > 16) return;
@@ -204,8 +296,21 @@ export class FourierFitSession {
       while (generation === this.generation) {
         const count = this.wanted;
         try {
-          const fit = await client.fitFourier(count, this.stroke, this.source);
+          const input = this.stroke;
+          const correction = this.correction;
+          const fit = await client.fitFourier(
+            count,
+            input,
+            this.source,
+            correction,
+          );
           if (generation !== this.generation) return;
+          if (!this.history.length && (fit.outline?.points || input)) {
+            this.history = [structuredClone(fit.outline?.points ?? input!)];
+            this.cursor = 0;
+          }
+          if (correction && fit.editedPoints) this.remember(fit.editedPoints);
+          this.correction = undefined;
           this.stroke = undefined;
           this.source = undefined;
           this.outline ??= fit.outline;
@@ -220,6 +325,11 @@ export class FourierFitSession {
             fit,
             frame,
             outline: this.outline,
+            editing: this.editing(),
+            fitEdited: this.changed(),
+            fitPoints: this.history.length
+              ? structuredClone(this.history[this.cursor])
+              : undefined,
           };
           this.publish(this.state);
           return;
@@ -227,9 +337,12 @@ export class FourierFitSession {
           if (generation !== this.generation) return;
           if (count !== this.wanted) continue;
           this.state = {
+            ...this.state,
             count,
             pending: false,
             error: (error as Error).message,
+            outline: this.outline,
+            editing: this.editing(),
           };
           this.publish(this.state);
           return;
@@ -254,6 +367,9 @@ export class FourierFitSession {
     this.stroke = undefined;
     this.source = undefined;
     this.outline = undefined;
+    this.history = [];
+    this.cursor = 0;
+    this.correction = undefined;
     this.running = false;
     this.state = { count: this.wanted, pending: false };
     this.publish(this.state);

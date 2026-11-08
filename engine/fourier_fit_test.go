@@ -458,3 +458,165 @@ func TestFourierFitNamesRadiusLimitForOutline(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestFourierOutlineCorrection(t *testing.T) {
+	// An equal-edge octagon makes the cyclic arc weights independent of the
+	// implementation. Moving vertex zero reaches only its two neighbors.
+	points := make([]Vec, 9)
+	for i := 0; i < 8; i++ {
+		a := float64(i) * math.Pi / 4
+		points[i] = Vec{math.Cos(a), math.Sin(a)}
+	}
+	points[8] = points[0]
+	before := append([]Vec(nil), points...)
+	edit := FourierCorrection{Index: 0, Target: Vec{1.4, -0.2}, Reach: 0.2}
+	got, err := CorrectFourierOutline(points, edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(points, before) {
+		t.Fatal("correction mutated source")
+	}
+	if len(got) != len(points) || got[0] != edit.Target || got[8] != got[0] {
+		t.Fatalf("lost target, count or seam: %v", got)
+	}
+	weight := (1 + math.Cos(5*math.Pi/8)) / 2
+	for i := 1; i < 8; i++ {
+		want := points[i]
+		if i == 1 || i == 7 {
+			want = want.Add(Vec{0.4, -0.2}.Mul(weight))
+		}
+		if got[i].Sub(want).Norm() > 1e-14 {
+			t.Fatalf("point %d: got %v want %v", i, got[i], want)
+		}
+	}
+	// Open storage is still an explicitly closed fit polygon; no repeated
+	// endpoint is added, and selecting the repeated endpoint aliases zero.
+	open, err := CorrectFourierOutline(points[:8], edit)
+	if err != nil || !reflect.DeepEqual(open, got[:8]) {
+		t.Fatalf("open storage: %v %v", open, err)
+	}
+	edit.Index = 8
+	seam, err := CorrectFourierOutline(points, edit)
+	if err != nil || !reflect.DeepEqual(seam, got) {
+		t.Fatal("seam alias differs", err)
+	}
+	for _, scale := range []float64{1e-4, 1, 1000} {
+		mapped := make([]Vec, len(points))
+		for i, p := range points {
+			mapped[len(points)-1-i] = p.Mul(scale).Add(Vec{20, -7})
+		}
+		q := FourierCorrection{Index: 0, Target: edit.Target.Mul(scale).Add(Vec{20, -7}), Reach: .2}
+		other, err := CorrectFourierOutline(mapped, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, p := range other {
+			want := got[len(got)-1-i].Mul(scale).Add(Vec{20, -7})
+			if p.Sub(want).Norm() > 1e-10 {
+				t.Fatalf("similarity/reversal %g: %v vs %v", scale, p, want)
+			}
+		}
+	}
+}
+
+func TestFourierOutlineCorrectionRefusals(t *testing.T) {
+	points := []Vec{{0, 0}, {1, 0}, {0, 1}}
+	valid := FourierCorrection{Index: 1, Target: Vec{2, 0}, Reach: .1}
+	for _, edit := range []FourierCorrection{
+		{Index: -1, Target: Vec{2, 0}, Reach: .1},
+		{Index: 3, Target: Vec{2, 0}, Reach: .1},
+		{Index: 1, Target: Vec{math.NaN(), 0}, Reach: .1},
+		{Index: 1, Target: Vec{100001, 0}, Reach: .1},
+		{Index: 1, Target: Vec{2, 0}, Reach: 0},
+		{Index: 1, Target: Vec{2, 0}, Reach: .3},
+	} {
+		if _, err := CorrectFourierOutline(points, edit); err == nil {
+			t.Fatalf("accepted invalid edit %+v", edit)
+		}
+	}
+	for _, p := range [][]Vec{nil, {{0, 0}, {0, 0}, {0, 0}}, {{0, 0}, {1e-8, 0}, {0, 1e-8}}, {{0, 0}, {math.Inf(1), 0}, {0, 1}}, make([]Vec, 4097)} {
+		if _, err := CorrectFourierOutline(p, valid); err == nil {
+			t.Fatalf("accepted invalid outline of %d points", len(p))
+		}
+	}
+}
+
+func TestFourierOutlineCorrectionHelpsFlawedDrawing(t *testing.T) {
+	// One accidental outward point in a densely drawn circular loop. A local
+	// correction must recover the intended round shape without a global fit.
+	points := make([]Vec, 128)
+	for i := range points {
+		a := 2 * math.Pi * float64(i) / 128
+		points[i] = Vec{math.Cos(a), math.Sin(a)}
+	}
+	points[0].X = 1.6
+	corrected, err := CorrectFourierOutline(points, FourierCorrection{Index: 0, Target: Vec{1, 0}, Reach: .05})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fit := func(p []Vec) FourierFitResult {
+		f, err := FitFourier(p, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := f.Select(8)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	a, b := fit(points), fit(corrected)
+	// Observe the actual returned Fourier geometry against the intended unit
+	// circle, independently of the fitting residual against its edited target.
+	radialError := func(r FourierFitResult) float64 {
+		var total float64
+		for i := 0; i < 256; i++ {
+			u := 2 * math.Pi * float64(i) / 256
+			var p Vec
+			for _, term := range r.Terms {
+				angle := term.Frequency*u + term.Phase
+				p = p.Add(Vec{term.Radius * math.Cos(angle), term.Radius * math.Sin(angle)})
+			}
+			total += math.Pow(p.Norm()-1, 2)
+		}
+		return math.Sqrt(total / 256)
+	}
+	if radialError(b) >= radialError(a)*.6 {
+		t.Fatalf("correction did not help: %g -> %g", radialError(a), radialError(b))
+	}
+	if a.RMS == b.RMS || a.Length == b.Length {
+		t.Fatal("residual/length did not follow edited target")
+	}
+}
+
+func TestFourierOutlineCorrectionAtPointCap(t *testing.T) {
+	points := make([]Vec, FourierFitMaxPoints)
+	for i := range points {
+		a := 2 * math.Pi * float64(i) / float64(len(points))
+		points[i] = Vec{math.Cos(a), math.Sin(a)}
+	}
+	for _, reach := range []float64{.05, .1, .2} {
+		out, err := CorrectFourierOutline(points, FourierCorrection{Index: 2048, Target: Vec{-1.2, -.1}, Reach: reach})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(out) != FourierFitMaxPoints || out[0] != points[0] || out[2048] != (Vec{-1.2, -.1}) {
+			t.Fatal("lost cap, locality or exact target")
+		}
+		f, err := FitFourier(out, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := f.Select(16)
+		if err != nil || len(r.Terms) != 16 || r.RMS <= 0 {
+			t.Fatalf("invalid corrected fit: %+v %v", r, err)
+		}
+	}
+	// The target is legal, but a neighboring point's weighted displacement
+	// would leave the admitted coordinate window. Refuse, never clamp it.
+	near := []Vec{{99999, 0}, {100000, 0}, {100000, 1}, {99999, 1}, {0, 1}, {0, 0}}
+	if _, err := CorrectFourierOutline(near, FourierCorrection{Index: 0, Target: Vec{100000, 0}, Reach: .2}); err == nil {
+		t.Fatal("accepted out-of-range displaced neighbor")
+	}
+}
