@@ -15,9 +15,10 @@ import { exportImage, openAnimation, choosePreset } from "./helpers";
 import {
   FourierFitSession,
   fittedStudy,
-  curveFitUnavailable,
+  curveFitAvailable,
 } from "../web/fourier-fit";
 import type { Frame } from "../web/types";
+import type { FitState } from "../web/fourier-fit";
 import {
   checkFitMouseAndReturn,
   checkFitPlaybackLayout,
@@ -27,6 +28,14 @@ import {
   checkOutlineCorrection,
   checkOutlineZoom,
   checkOutlineOpenSpacePan,
+  checkDrawnClosingSegment,
+  checkKeyboardPointStepping,
+  checkOpenCurveImport,
+  checkFitErrorsBesideActions,
+  checkOutlineTrackpad,
+  checkCorrectionToggleKeepsControls,
+  checkDisablingKeepsFocus,
+  checkCorrectionDragThreshold,
   checkCorrectionStability,
   fitDialog,
   leafFit,
@@ -1675,18 +1684,23 @@ test("current-curve import preserves model units, restores the source, and adopt
   );
 });
 
-test("current-curve import refuses open sources and explains unsupported inputs without closing them", async ({
+test("a current curve with a gap is refused and recovers through an example", async ({
   page,
 }) => {
-  const open = fittedStudy([{ frequency: 1, radius: 1, phase: 0 }]);
-  open.bounds.max = "6";
-  await page.goto(`/#s=${await writeStudyLink("2d", open)}`);
+  const gap = fittedStudy([{ frequency: 1, radius: 1, phase: 0 }]);
+  gap.config.curve = {
+    ...gap.config.curve,
+    format: "parametric",
+    x: "cos(t)",
+    y: "sin(t)+0*sqrt(cos(t))",
+  };
+  await page.goto(`/#s=${await writeStudyLink("2d", gap)}`);
   await settled(page);
   const d = await openFit(page);
   await d
     .getByRole("button", { name: "Use current curve", exact: true })
     .click();
-  await expect(d.getByRole("status")).toContainText("open");
+  await expect(d.getByRole("alert")).toContainText("gap");
   await expect(
     d.getByText("Source not admitted", { exact: false }),
   ).toBeVisible();
@@ -1695,7 +1709,7 @@ test("current-curve import refuses open sources and explains unsupported inputs 
   ).toBeDisabled();
   await expect(d.getByRole("button", { name: "Close outline" })).toBeDisabled();
   await d.getByLabel("Total terms", { exact: true }).selectOption("12");
-  await expect(d.getByRole("status")).toContainText("open");
+  await expect(d.getByRole("alert")).toContainText("gap");
   await d
     .getByRole("button", { name: "Use example leaf", exact: true })
     .click();
@@ -1703,6 +1717,185 @@ test("current-curve import refuses open sources and explains unsupported inputs 
   await expect(
     d.getByRole("button", { name: "Adopt fitted study" }),
   ).toBeEnabled();
+});
+
+test("an open source publishes its outline without a fit until explicitly closed", async () => {
+  const requests: {
+    points?: Vec[];
+    source?: unknown;
+    closing?: boolean;
+    count: number;
+  }[] = [];
+  const created: number[] = [];
+  let disposed = 0;
+  const states: FitState[] = [];
+  const points = [
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+  ];
+  const divided = [...points, { x: 0, y: 0 }];
+  const outline = {
+    points,
+    tolerance: 0.001,
+    evaluations: 300,
+    closureTolerance: 1e-12,
+    open: true,
+  };
+  const terms = [
+    { frequency: 0, radius: 0, phase: 0 },
+    { frequency: 1, radius: 1, phase: 0 },
+  ];
+  const s = new FourierFitSession(
+    () => {
+      created.push(1);
+      return {
+        fitFourier: async (
+          count: number,
+          sent?: Vec[],
+          source?: unknown,
+          _correction?: unknown,
+          closing?: boolean,
+        ) => {
+          requests.push({ points: sent, source, closing, count });
+          return source
+            ? ({ outline } as any)
+            : {
+                terms,
+                rms: 0,
+                maxResidual: 0,
+                sampleCount: 1024,
+                length: 5,
+                previewRadius: 1,
+                ...(closing && { closedPoints: divided }),
+              };
+        },
+        compute: async () =>
+          ({ config: fittedStudy([]).config, result: {} }) as Frame,
+        dispose: () => {
+          disposed++;
+        },
+      };
+    },
+    (v) => states.push(v),
+  );
+  s.useCurve(fittedStudy(terms));
+  await expect.poll(() => states.at(-1)?.pending).toBe(false);
+  const parked = states.at(-1)!;
+  expect(parked.outline?.open).toBe(true);
+  expect(parked.fit).toBeUndefined();
+  expect(parked.frame).toBeUndefined();
+  expect(parked.error).toBeUndefined();
+  expect(parked.editing).toBeUndefined();
+  expect(s.candidate()).toBeNull();
+  expect(disposed).toBe(1);
+  // A term choice has nothing to refit, and no refusal to report.
+  s.select(12);
+  expect(states.at(-1)).toMatchObject({ count: 12, pending: false });
+  expect(states.at(-1)!.outline?.open).toBe(true);
+  expect(requests).toHaveLength(1);
+  // Correction waits for the close; there is no outline history yet.
+  s.correct({ index: 0, target: { x: 2, y: 0 }, reach: 0.1 });
+  expect(requests).toHaveLength(1);
+  s.closeSource();
+  expect(states.at(-1)).toMatchObject({ pending: true, count: 12 });
+  await expect.poll(() => states.at(-1)?.pending).toBe(false);
+  expect(requests[1]).toMatchObject({
+    points,
+    source: undefined,
+    closing: true,
+    count: 12,
+  });
+  const closed = states.at(-1)!;
+  expect(closed.outline).toMatchObject({ open: false, joined: true });
+  expect(closed.outline?.tolerance).toBe(0.001);
+  // The divided polygon is the original that history restores.
+  expect(closed.editing?.original).toEqual(divided);
+  expect(closed.fitPoints).toEqual(divided);
+  expect(s.candidate()).not.toBeNull();
+  s.closeSource();
+  expect(requests).toHaveLength(2);
+  // Later requests fit stored points as they are, and never divide again.
+  s.correct({ index: 0, target: { x: 2, y: 0 }, reach: 0.1 });
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2]).toMatchObject({ points: divided });
+  expect(requests[2].closing).toBeFalsy();
+  // A drawn close asks the same, and a refused one asks again on a term change.
+  await expect.poll(() => states.at(-1)?.pending).toBe(false);
+  s.close(points);
+  await expect.poll(() => states.at(-1)?.pending).toBe(false);
+  expect(requests[3]).toMatchObject({ points, closing: true });
+});
+
+test("a refusal names the action that caused it", async () => {
+  const states: FitState[] = [];
+  let fail: string | null = "refused";
+  const s = new FourierFitSession(
+    () => ({
+      fitFourier: async () => {
+        if (fail) throw new Error(fail);
+        return {
+          terms: [
+            { frequency: 0, radius: 0, phase: 0 },
+            { frequency: 1, radius: 1, phase: 0 },
+          ],
+          rms: 0,
+          maxResidual: 0,
+          sampleCount: 1024,
+          length: 5,
+          editedPoints: [
+            { x: 2, y: 0 },
+            { x: 0, y: 1 },
+            { x: -1, y: 0 },
+          ],
+        };
+      },
+      compute: async () =>
+        ({ config: fittedStudy([]).config, result: {} }) as Frame,
+      dispose: () => {},
+    }),
+    (v) => states.push(v),
+  );
+  const settled = () => expect.poll(() => states.at(-1)?.pending).toBe(false);
+  const points = [
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+  ];
+  s.useCurve(fittedStudy([]));
+  await settled();
+  expect(states.at(-1)).toMatchObject({
+    error: "refused",
+    errorFrom: "source",
+  });
+  s.close(points);
+  await settled();
+  expect(states.at(-1)).toMatchObject({ error: "refused", errorFrom: "close" });
+  fail = null;
+  s.select(9);
+  await settled();
+  expect(states.at(-1)!.error).toBeUndefined();
+  expect(states.at(-1)!.errorFrom).toBeUndefined();
+  fail = "refused";
+  s.correct({ index: 0, target: { x: 2, y: 0 }, reach: 0.1 });
+  await settled();
+  expect(states.at(-1)).toMatchObject({
+    error: "refused",
+    errorFrom: "correction",
+  });
+  s.undo();
+  await settled();
+  expect(states.at(-1)).toMatchObject({
+    error: "refused",
+    errorFrom: "correction",
+  });
+  fail = null;
+  s.undo();
+  await settled();
+  fail = "refused";
+  s.select(10);
+  await settled();
+  expect(states.at(-1)).toMatchObject({ error: "refused", errorFrom: "terms" });
 });
 
 test("current-curve sessions freeze requests and reject sampling and fit replies from replaced sources", async () => {
@@ -1903,7 +2096,7 @@ test("current-curve availability follows the base definition, including derived 
     "fourier",
   ] as const) {
     study.config.curve.format = format;
-    expect(curveFitUnavailable(study)).toBeUndefined();
+    expect(curveFitAvailable(study)).toBe(true);
   }
   for (const format of [
     "cartesian",
@@ -1913,11 +2106,11 @@ test("current-curve availability follows the base definition, including derived 
     "attractor",
   ] as const) {
     study.config.curve.format = format;
-    expect(curveFitUnavailable(study)).toContain("unavailable");
+    expect(curveFitAvailable(study)).toBe(false);
   }
   study.config.curve.format = "parametric";
   study.config.input = "evolute";
-  expect(curveFitUnavailable(study)).toContain("not a derived input");
+  expect(curveFitAvailable(study)).toBe(false);
 });
 
 test("current-curve unavailable source has a reachable explanation and still permits drawing", async ({
@@ -1932,7 +2125,7 @@ test("current-curve unavailable source has a reachable explanation and still per
     exact: true,
   });
   await expect(button).toBeDisabled();
-  await expect(d.getByText(/This source is unavailable/)).toBeVisible();
+  await expect(d.locator(".fit-source-action .field-error")).toHaveCount(0);
   await d
     .getByRole("button", { name: "Use example leaf", exact: true })
     .click();
@@ -2172,7 +2365,9 @@ test("a refused imported correction retains original coordinates, provenance and
   await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await capture.focus();
   await capture.press("ArrowRight");
-  await expect(d.getByRole("status")).toContainText("correction coordinates");
+  await expect(d.locator(".fit-correction").getByRole("alert")).toContainText(
+    /correction coordinates/i,
+  );
   expect(await capture.locator("polygon").first().getAttribute("points")).toBe(
     original,
   );
@@ -2394,6 +2589,77 @@ test("outline close-up zoom preserves geometry and separates multitouch from cor
   await checkOutlineZoom(page);
 });
 
+test("an open current curve waits for Close outline, then behaves as any outline", async ({
+  page,
+}) => {
+  await checkOpenCurveImport(page);
+});
+
+test("fit refusals read as errors beside the action that caused them", async ({
+  page,
+}) => {
+  await checkFitErrorsBesideActions(page);
+});
+
+test("a trackpad pinches and pans the outline view as fingers do", async ({
+  page,
+}) => {
+  await checkOutlineTrackpad(page);
+});
+
+test("turning correction on moves no button", async ({ page }) => {
+  await checkCorrectionToggleKeepsControls(page);
+});
+
+test("a button its own press disables keeps keyboard focus", async ({
+  page,
+}) => {
+  await checkDisablingKeepsFocus(page);
+});
+
+test("a press near the outline selects; only a deliberate drag corrects", async ({
+  page,
+}) => {
+  await checkCorrectionDragThreshold(page);
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true, isMobile: true });
+  test("the outline view's hint speaks of fingers, not a scroll wheel", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await settled(page);
+    const d = await leafFit(page);
+    await d
+      .getByRole("button", { name: "Correct outline", exact: true })
+      .click();
+    const hint = d.locator(".fit-outline-view-note .note");
+    await expect(hint).toContainText("Pinch to zoom · two fingers to pan");
+    await expect(hint).not.toContainText("scroll");
+  });
+});
+
+test("the outline view's hint names a scroll wheel with a fine pointer", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const d = await leafFit(page);
+  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
+  await expect(d.locator(".fit-outline-view-note .note")).toContainText(
+    "Pinch or Ctrl+scroll to zoom · scroll to pan",
+  );
+});
+
+test("a drawn stroke's closing segment can be corrected", async ({ page }) => {
+  await checkDrawnClosingSegment(page);
+});
+
+test("the keyboard steps through outline points", async ({ page }) => {
+  await checkKeyboardPointStepping(page);
+});
+
 test("native touch pinch anchors the outline and makes an equal pixel correction finer", async ({
   page,
   context,
@@ -2554,7 +2820,7 @@ test("native one-finger open-space pan switches safely into pinch navigation", a
     original,
   );
   expect(await d.locator("#fit-artwork").innerHTML()).toBe(preview);
-  await expect(d.getByLabel("Outline point", { exact: true })).toHaveValue("0");
+  await expect(svg).toHaveAttribute("data-selected-point", "0");
   await expect(
     d.getByRole("button", { name: "Undo correction", exact: true }),
   ).toBeDisabled();

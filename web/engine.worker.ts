@@ -107,6 +107,7 @@ self.onmessage = async ({
   closed?: boolean;
   count?: number;
   correction?: import("./fourier-fit").FourierCorrection;
+  close?: boolean;
   tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
   // Asks Go for the base curve's diagnostics (see engine.Diagnostics and
@@ -356,6 +357,7 @@ self.onmessage = async ({
             ...(data.points && { points: data.points, closed: data.closed }),
             ...(source && { source }),
             ...(data.correction && { correction: data.correction }),
+            ...(data.close && { close: data.close }),
           }),
         ),
       );

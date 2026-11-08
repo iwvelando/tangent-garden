@@ -22,6 +22,7 @@ func registerFourierFit() {
 		var q struct {
 			Points     json.RawMessage           `json:"points"`
 			Closed     bool                      `json:"closed"`
+			Close      bool                      `json:"close"`
 			Count      int                       `json:"count"`
 			Correction *engine.FourierCorrection `json:"correction"`
 			Source     *struct {
@@ -34,7 +35,11 @@ func registerFourierFit() {
 			return refusal(err)
 		}
 		var outline *engine.FourierOutline
-		var edited []engine.Vec
+		var edited, closed []engine.Vec
+		if q.Close && (q.Points == nil || q.Source != nil || !q.Closed || q.Correction != nil) {
+			current = nil
+			return refusal(fmt.Errorf("close needs one explicitly closed outline"))
+		}
 		if q.Correction != nil && (q.Points == nil || q.Source != nil || !q.Closed) {
 			current = nil
 			return refusal(fmt.Errorf("correction needs one explicitly closed outline"))
@@ -48,6 +53,17 @@ func registerFourierFit() {
 			o, err := engine.FourierCurveOutline(q.Source.Curve, q.Source.Input)
 			if err != nil {
 				return refusal(err)
+			}
+			// An open source waits for an explicit close: only its outline
+			// returns, with no fit cached for a later term selection.
+			if o.Open {
+				b, err := json.Marshal(struct {
+					Outline engine.FourierOutline `json:"outline"`
+				}{o})
+				if err != nil {
+					return refusal(err)
+				}
+				return string(b)
 			}
 			current, err = engine.FitFourier(o.Points, true)
 			if err != nil {
@@ -81,6 +97,10 @@ func registerFourierFit() {
 				}
 				input = edited
 			}
+			if q.Close {
+				closed = engine.CloseFourierOutline(input)
+				input = closed
+			}
 			current, err = engine.FitFourier(input, q.Closed)
 			if err != nil {
 				return refusal(err)
@@ -97,8 +117,9 @@ func registerFourierFit() {
 			engine.FourierFitResult
 			Outline       *engine.FourierOutline `json:"outline,omitempty"`
 			EditedPoints  []engine.Vec           `json:"editedPoints,omitempty"`
+			ClosedPoints  []engine.Vec           `json:"closedPoints,omitempty"`
 			PreviewRadius float64                `json:"previewRadius"`
-		}{r, outline, edited, current.PreviewRadius()})
+		}{r, outline, edited, closed, current.PreviewRadius()})
 		if err != nil {
 			return refusal(err)
 		}

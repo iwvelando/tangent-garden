@@ -136,8 +136,15 @@
   min-width: 0;
 }
 .fit-source-action > .hint,
-.fit-source-action > .note {
+.fit-source-action > .note,
+.fit-source-action > .field-error {
   margin: 8px 0 0;
+}
+/* Beside Close outline: what it would do, or why it could not. */
+.fit-actions > .note,
+.fit-actions > .field-error {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 /* Stack the two input choices whenever their actual column is narrow,
    including the two-column dialog on a phone held sideways. */
@@ -241,20 +248,22 @@ html.fourier-fit-open body {
 }
 
 .fit-correction {
-  padding-top: 16px;
+  padding-top: 8px;
 }
 .fit-correction > .hint,
-.fit-correction > .note {
+.fit-correction > .note,
+.fit-correction > .field-error {
   margin: 8px 0 0;
 }
 .fit-history {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding-top: 12px;
 }
+/* Sized to their labels: where all three only fit by wrapping a label, one
+   takes a new row instead, keeping every button one line tall. */
 .fit-history button {
-  flex: 1 1 120px;
+  flex: 1 1 auto;
 }
 .fit-capture .fit-original {
   stroke: var(--derived-ink);
@@ -286,16 +295,26 @@ html.fourier-fit-open body {
 .fit-footer button[aria-busy="true"]:hover {
   filter: brightness(0.95);
 }
-.fit-outline-navigation {
+/* One row directly under the input, its view track reserved whether or not
+   correction is on, so turning correction on moves no button. */
+.fit-canvas-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px;
+  align-items: center;
+  gap: 8px;
   padding-top: 12px;
 }
 .fit-outline-zoom {
+  grid-column: 2;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(3, 40px);
+  gap: 6px;
 }
 .fit-outline-zoom button {
-  min-height: 44px;
+  padding-inline: 0;
+}
+.fit-draft > .hint {
+  margin: 8px 0 0;
 }
 .fit-outline-view-note {
   display: flex;
@@ -306,6 +325,8 @@ html.fourier-fit-open body {
 .fit-outline-view-note .note {
   margin: 0;
 }
-.fit-outline-navigation > .hint {
-  margin: 8px 0 0;
+/* Unavailable but still focusable: dimmed exactly as a disabled button. */
+.fourier-fit button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
 }

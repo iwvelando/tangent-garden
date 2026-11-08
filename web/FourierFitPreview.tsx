@@ -5,13 +5,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type ButtonHTMLAttributes,
   type PointerEvent,
   type CSSProperties,
 } from "react";
 import { EngineClient } from "./engine-client";
 import {
   FourierFitSession,
-  curveFitUnavailable,
+  curveFitAvailable,
   fittedStudy,
   fitTermsHelp,
   fitSourceHelp,
@@ -34,6 +35,60 @@ import type { PlanarStudy } from "./planar-link";
 import type { Vec } from "./types";
 import "./fourier-fit.css";
 
+// A press that makes its own button unavailable must not drop the keyboard's
+// place, as `disabled` would: this one stays focusable, dimmed and inert.
+function SteadyButton({
+  unavailable,
+  onClick,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { unavailable: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-disabled={unavailable || undefined}
+      onClick={unavailable ? undefined : onClick}
+      {...rest}
+    />
+  );
+}
+
+// A refusal beside the action that caused it, brought into view on a phone.
+function FitError({ message }: { message: string }) {
+  const box = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    box.current?.scrollIntoView({ block: "nearest" });
+  }, [message]);
+  return (
+    <p className="field-error" role="alert" ref={box}>
+      {message.charAt(0).toUpperCase() + message.slice(1)}
+    </p>
+  );
+}
+
+// How far a press moves before it is a drag, in CSS pixels: wider for a finger.
+const dragSlop = { touch: 8, other: 4 };
+// A pinch reaches the wheel as small deltas with ctrlKey; a held Ctrl and a
+// mouse wheel send far larger ones, kept here to one modest step.
+const pinchRate = 0.01,
+  pinchStep = 25;
+const outlineZoomRange = [1, 32] as const;
+
+// A client point in the outline's 1000 × 760 page, from its middle, as the SVG
+// actually draws it: its border and rounded box sizes would otherwise make a
+// pan fall short of the pointer and a zoom drift from its anchor. The result
+// does not depend on the camera, so events within one frame can share it.
+function outlinePage(svg: SVGSVGElement, x: number, y: number) {
+  const m = svg.getScreenCTM()!,
+    view = svg.viewBox.baseVal,
+    ratio = 1000 / (view.width * m.a);
+  return {
+    ratio,
+    height: 760 / ratio,
+    u: (x - m.a * (view.x + view.width / 2) - m.e) * ratio,
+    v: (y - m.d * (view.y + view.height / 2) - m.f) * ratio,
+  };
+}
+
 export function FourierFitPreview({
   request,
   onReturn,
@@ -49,7 +104,8 @@ export function FourierFitPreview({
     correctionHelp = useHelp(),
     outlineViewHelp = useHelp();
   const dialog = useRef<HTMLDialogElement>(null),
-    back = useRef<HTMLButtonElement>(null);
+    back = useRef<HTMLButtonElement>(null),
+    capture = useRef<SVGSVGElement>(null);
   const quiet = useQuietFocus(dialog),
     via = useRef(request.via);
   const engine = useRef<FourierFitSession | null>(null);
@@ -75,6 +131,9 @@ export function FourierFitPreview({
     previousIndex: number;
     start: Vec;
     target: Vec;
+    client: { x: number; y: number };
+    slop: number;
+    moved: boolean;
   } | null>(null);
   const [ghost, setGhost] = useState<Vec | null>(null);
   const [state, setState] = useState<FitState>({ count: 8, pending: false });
@@ -115,6 +174,59 @@ export function FourierFitPreview({
     setPlaying(false);
     setProgress(1);
   }, [state.frame]);
+  // A trackpad acts as fingers do on a phone. Held pointers own the view: iOS
+  // also sends gesture events during a touch pinch they already handle.
+  useEffect(() => {
+    const svg = capture.current;
+    if (!svg || !correcting) return;
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (gesture.current.count) return;
+      const { ratio, height, u, v } = outlinePage(svg, e.clientX, e.clientY);
+      if (e.ctrlKey) {
+        const step = Math.max(-pinchStep, Math.min(pinchStep, e.deltaY));
+        setOutlineCamera((c) =>
+          zoomAbout(c, Math.exp(-step * pinchRate), outlineZoomRange, u, v),
+        );
+        return;
+      }
+      const unit =
+        e.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? height
+            : 1;
+      setOutlineCamera((c) => ({
+        ...c,
+        x: c.x - e.deltaX * unit * ratio,
+        y: c.y - e.deltaY * unit * ratio,
+      }));
+    };
+    // Safari's own events for a trackpad pinch: scale runs from the start.
+    type Pinch = Event & { scale: number; clientX: number; clientY: number };
+    let last = 1;
+    const pinchStart = (e: Event) => {
+      e.preventDefault();
+      last = 1;
+    };
+    const pinchChange = (event: Event) => {
+      const e = event as Pinch;
+      e.preventDefault();
+      if (gesture.current.count) return;
+      const k = e.scale / last,
+        { u, v } = outlinePage(svg, e.clientX, e.clientY);
+      last = e.scale;
+      setOutlineCamera((c) => zoomAbout(c, k, outlineZoomRange, u, v));
+    };
+    svg.addEventListener("wheel", wheel, { passive: false });
+    svg.addEventListener("gesturestart", pinchStart);
+    svg.addEventListener("gesturechange", pinchChange);
+    return () => {
+      svg.removeEventListener("wheel", wheel);
+      svg.removeEventListener("gesturestart", pinchStart);
+      svg.removeEventListener("gesturechange", pinchChange);
+    };
+  }, [correcting]);
   function reset(next: Vec[] = []) {
     engine.current?.cancel();
     stroke.current = next;
@@ -184,8 +296,15 @@ export function FourierFitPreview({
     if (study) onAdopt(study, via.current);
     else onReturn(via.current);
   }
+  const viewHint = useMemo(
+    () =>
+      matchMedia("(pointer: coarse)").matches
+        ? "Pinch to zoom · two fingers to pan"
+        : "Pinch or Ctrl+scroll to zoom · scroll to pan",
+    [],
+  );
   const frame = state.frame;
-  const unavailable = curveFitUnavailable(request.study);
+  const sourceAvailable = curveFitAvailable(request.study);
   const visiblePoints =
     state.editing?.points ??
     (imported ? (state.outline?.points ?? []) : points);
@@ -200,17 +319,18 @@ export function FourierFitPreview({
   const pointIndex = Math.min(selected, Math.max(0, uniqueCount - 1));
   const chosen = visiblePoints[pointIndex];
   const heldFraming = useRef({ cx: 0, cy: 0, scale: 1000 / 6, span: 6 });
-  const isClosed = imported ? !!state.outline : closed;
+  const openSource = imported && !!state.outline?.open;
+  const isClosed = imported ? !!state.outline && !openSource : closed;
   // Keep imported coordinates untouched. One frame includes the entire
   // source and all 16 ranked circles, independent of selection/playback.
   const framing = useMemo(() => {
     if (!imported && !state.editing?.changed) {
       heldFraming.current = { cx: 0, cy: 0, scale: 1000 / 6, span: 6 };
-    } else if (!state.pending && state.fit) {
+    } else if (!state.pending && (state.fit || openSource)) {
       const r = Math.max(
         imported ? 0 : 3,
         state.outline?.previewRadius ?? 0,
-        state.fit.previewRadius ?? 0,
+        state.fit?.previewRadius ?? 0,
         ...originalPoints.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y))),
         ...visiblePoints.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y))),
       );
@@ -292,13 +412,19 @@ export function FourierFitPreview({
     setGhost(null);
     if (e.currentTarget.hasPointerCapture(e.pointerId))
       e.currentTarget.releasePointerCapture(e.pointerId);
-    if (!canceled && (d.start.x !== d.target.x || d.start.y !== d.target.y))
+    const source = visiblePoints[d.index];
+    if (
+      !canceled &&
+      d.moved &&
+      (source.x !== d.target.x || source.y !== d.target.y)
+    )
       commitCorrection(d.index, d.target);
   }
   const path = (points: Vec[]) => points.map((p) => `${p.x},${-p.y}`).join(" ");
   const targetPoints = state.fitPoints ?? visiblePoints;
   const outline = (preview = false) => (
     <svg
+      ref={preview ? undefined : capture}
       viewBox={preview ? viewBox : inputViewBox}
       tabIndex={!preview && correcting ? 0 : undefined}
       aria-describedby={
@@ -313,12 +439,32 @@ export function FourierFitPreview({
                 ArrowUp: { x: 0, y: 1 },
                 ArrowDown: { x: 0, y: -1 },
               };
+              // Step through the closed outline, about 1% at a time; Shift is
+              // finer, as with the arrows, down to a single point.
+              const stepping = (
+                { "[": -1, "]": 1, "{": -1, "}": 1 } as Record<string, number>
+              )[e.key];
+              if (stepping) {
+                e.preventDefault();
+                const step =
+                  e.shiftKey || "{}".includes(e.key)
+                    ? 1
+                    : Math.max(1, Math.round(uniqueCount / 100));
+                setSelected(
+                  (pointIndex + stepping * step + uniqueCount) % uniqueCount,
+                );
+                return;
+              }
               if (["+", "=", "-", "Home"].includes(e.key)) {
                 e.preventDefault();
                 if (e.key === "Home") fitOutlineView();
                 else
                   setOutlineCamera((c) =>
-                    zoomAbout(c, e.key === "-" ? 1 / 1.6 : 1.6, [1, 32]),
+                    zoomAbout(
+                      c,
+                      e.key === "-" ? 1 / 1.6 : 1.6,
+                      outlineZoomRange,
+                    ),
                   );
                 return;
               }
@@ -339,16 +485,18 @@ export function FourierFitPreview({
       aria-label={
         preview
           ? undefined
-          : state.editing?.changed
-            ? "Edited outline"
-            : imported
-              ? "Current curve outline"
-              : "Draw one outline"
+          : (state.editing?.changed
+              ? "Edited outline"
+              : imported
+                ? "Current curve outline"
+                : "Draw one outline") +
+            (correcting ? `, point ${pointIndex + 1} of ${uniqueCount}` : "")
       }
       className={preview ? "fit-reference" : "fit-capture"}
       data-testid={preview ? "fit-reference" : "stroke-reference"}
       data-closed={String(isClosed)}
       data-point-count={visiblePoints.length}
+      data-selected-point={pointIndex}
       data-source={imported ? "curve" : "drawing"}
       style={
         {
@@ -438,6 +586,10 @@ export function FourierFitPreview({
                   previousIndex: pointIndex,
                   start: target,
                   target,
+                  client: { x: e.clientX, y: e.clientY },
+                  slop:
+                    e.pointerType === "touch" ? dragSlop.touch : dragSlop.other,
+                  moved: false,
                 };
                 e.currentTarget.setPointerCapture(e.pointerId);
               } else if (e.isPrimary && !imported && pointer.current === null) {
@@ -459,8 +611,7 @@ export function FourierFitPreview({
                 if (navigating.current) {
                   if (motion?.kind === "drag" && panning.current) {
                     e.preventDefault();
-                    const box = e.currentTarget.getBoundingClientRect();
-                    const ratio = Math.max(1000 / box.width, 760 / box.height);
+                    const { ratio } = outlinePage(e.currentTarget, 0, 0);
                     setOutlineCamera((c) => ({
                       ...c,
                       x: c.x + motion.dx * ratio,
@@ -468,10 +619,11 @@ export function FourierFitPreview({
                     }));
                   } else if (motion?.kind === "pinch") {
                     e.preventDefault();
-                    const box = e.currentTarget.getBoundingClientRect();
-                    const ratio = Math.max(1000 / box.width, 760 / box.height);
-                    const u = (motion.mid.x - box.left - box.width / 2) * ratio;
-                    const v = (motion.mid.y - box.top - box.height / 2) * ratio;
+                    const { ratio, u, v } = outlinePage(
+                      e.currentTarget,
+                      motion.mid.x,
+                      motion.mid.y,
+                    );
                     setOutlineCamera((c) =>
                       zoomAbout(
                         {
@@ -480,7 +632,7 @@ export function FourierFitPreview({
                           y: c.y + motion.dy * ratio,
                         },
                         motion.scale,
-                        [1, 32],
+                        outlineZoomRange,
                         u,
                         v,
                       ),
@@ -491,12 +643,21 @@ export function FourierFitPreview({
                 const d = drag.current;
                 if (d?.id !== e.pointerId) return;
                 e.preventDefault();
+                // A tap's tremor selects. Once crossed, the drag keeps the
+                // whole distance, so the point stays under the pointer.
+                if (
+                  !d.moved &&
+                  Math.hypot(e.clientX - d.client.x, e.clientY - d.client.y) <
+                    d.slop
+                )
+                  return;
+                d.moved = true;
                 // Move relative to the vertex, so grabbing near it never jumps it.
                 const p = correctionPoint(e),
                   source = visiblePoints[d.index];
                 d.target = {
-                  x: source.x + p.x - d.start.x,
-                  y: source.y + p.y - d.start.y,
+                  x: source.x + (p.x - d.start.x),
+                  y: source.y + (p.y - d.start.y),
                 };
                 setGhost(d.target);
               } else if (!imported && pointer.current === e.pointerId) {
@@ -590,8 +751,8 @@ export function FourierFitPreview({
       </div>
       <p className="note">
         Draw your own outline or start with the example leaf, then close it. A
-        new stroke replaces this draft. Or use your current closed base curve;
-        your original study stays here until adoption.
+        new stroke replaces this draft. Or use your current base curve; your
+        original study stays here until adoption.
       </p>
       <div className="fit-layout">
         <section className="fit-draft" aria-label="Outline input">
@@ -603,103 +764,7 @@ export function FourierFitPreview({
                 : "1. Draw or try an example"}
           </h3>
           {outline()}
-          {correcting && (
-            <div className="fit-outline-navigation">
-              <div
-                className="fit-outline-zoom"
-                role="group"
-                aria-label="Outline view"
-              >
-                <button
-                  type="button"
-                  aria-label="Zoom in on outline"
-                  disabled={outlineCamera.zoom >= 32}
-                  onClick={() =>
-                    setOutlineCamera((c) => zoomAbout(c, 1.6, [1, 32]))
-                  }
-                >
-                  Zoom in
-                </button>
-                <button
-                  type="button"
-                  aria-label="Zoom out of outline"
-                  disabled={outlineCamera.zoom <= 1}
-                  onClick={() =>
-                    setOutlineCamera((c) => zoomAbout(c, 1 / 1.6, [1, 32]))
-                  }
-                >
-                  Zoom out
-                </button>
-                <button type="button" onClick={fitOutlineView}>
-                  Fit outline
-                </button>
-              </div>
-              <div className="fit-outline-view-note">
-                <p className="note">
-                  Pinch to zoom · two fingers to pan ·{" "}
-                  {outlineCamera.zoom.toFixed(1)}×
-                </p>
-                <HelpToggle topic="outline view" help={outlineViewHelp} />
-              </div>
-              <HelpText help={outlineViewHelp}>{fitOutlineViewHelp}</HelpText>
-            </div>
-          )}
-          <div className="fit-actions">
-            <div className="fit-source-action">
-              <div className="fit-source-action-row">
-                <button
-                  type="button"
-                  disabled={drawing || !!unavailable}
-                  aria-describedby={
-                    unavailable ? `${title}-source-note` : undefined
-                  }
-                  onClick={() => {
-                    reset();
-                    setImported(true);
-                    engine.current?.useCurve(request.study);
-                  }}
-                >
-                  Use current curve
-                </button>
-                <HelpToggle topic="current curve" help={sourceHelp} />
-              </div>
-              <HelpText help={sourceHelp}>{fitSourceHelp}</HelpText>
-              {unavailable && (
-                <p className="note" id={`${title}-source-note`}>
-                  {unavailable}
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              className="fit-example-action"
-              disabled={drawing}
-              onClick={() => reset(structuredClone(sampleLeaf))}
-            >
-              Use example leaf
-            </button>
-            <button
-              type="button"
-              disabled={drawing || (!points.length && !imported)}
-              onClick={() => reset()}
-            >
-              Reset outline
-            </button>
-            <button
-              type="button"
-              disabled={drawing || imported || closed || !points.length}
-              onClick={() => {
-                setClosed(true);
-                setNotice("");
-                setPlaying(false);
-                setProgress(1);
-                engine.current?.close(stroke.current);
-              }}
-            >
-              Close outline
-            </button>
-          </div>
-          <div className="fit-correction">
+          <div className="fit-canvas-tools">
             <div className="fit-source-action-row">
               <button
                 type="button"
@@ -715,26 +780,162 @@ export function FourierFitPreview({
               </button>
               <HelpToggle topic="outline correction" help={correctionHelp} />
             </div>
-            <HelpText help={correctionHelp}>{fitCorrectionHelp}</HelpText>
+            {correcting && (
+              <div
+                className="fit-outline-zoom"
+                role="group"
+                aria-label="Outline view"
+              >
+                <SteadyButton
+                  aria-label="Zoom in on outline"
+                  title="Zoom in"
+                  unavailable={outlineCamera.zoom >= outlineZoomRange[1]}
+                  onClick={() =>
+                    setOutlineCamera((c) => zoomAbout(c, 1.6, outlineZoomRange))
+                  }
+                >
+                  +
+                </SteadyButton>
+                <SteadyButton
+                  aria-label="Zoom out of outline"
+                  title="Zoom out"
+                  unavailable={outlineCamera.zoom <= outlineZoomRange[0]}
+                  onClick={() =>
+                    setOutlineCamera((c) =>
+                      zoomAbout(c, 1 / 1.6, outlineZoomRange),
+                    )
+                  }
+                >
+                  −
+                </SteadyButton>
+                <button
+                  type="button"
+                  aria-label="Fit outline"
+                  title="Fit outline"
+                  onClick={fitOutlineView}
+                >
+                  Fit
+                </button>
+              </div>
+            )}
+          </div>
+          <HelpText help={correctionHelp}>{fitCorrectionHelp}</HelpText>
+          <div className="fit-actions">
+            <div className="fit-source-action">
+              <div className="fit-source-action-row">
+                <button
+                  type="button"
+                  disabled={drawing || !sourceAvailable}
+                  onClick={() => {
+                    reset();
+                    setImported(true);
+                    engine.current?.useCurve(request.study);
+                  }}
+                >
+                  Use current curve
+                </button>
+                <HelpToggle topic="current curve" help={sourceHelp} />
+              </div>
+              <HelpText help={sourceHelp}>{fitSourceHelp}</HelpText>
+              {state.errorFrom === "source" && (
+                <FitError message={state.error!} />
+              )}
+            </div>
+            <button
+              type="button"
+              className="fit-example-action"
+              disabled={drawing}
+              onClick={() => reset(structuredClone(sampleLeaf))}
+            >
+              Use example leaf
+            </button>
+            <SteadyButton
+              unavailable={drawing || (!points.length && !imported)}
+              onClick={() => reset()}
+            >
+              Reset outline
+            </SteadyButton>
+            <SteadyButton
+              unavailable={
+                drawing || (imported ? !openSource : closed || !points.length)
+              }
+              onClick={() => {
+                setNotice("");
+                setPlaying(false);
+                setProgress(1);
+                if (imported) engine.current?.closeSource();
+                else {
+                  setClosed(true);
+                  engine.current?.close(stroke.current);
+                }
+              }}
+            >
+              Close outline
+            </SteadyButton>
+            {openSource && (
+              <p className="note" data-testid="open-source-note">
+                This curve is open. Close outline joins its ends with a straight
+                segment, then fits it.
+              </p>
+            )}
+            {state.errorFrom === "close" && <FitError message={state.error!} />}
+          </div>
+          <div className="fit-correction">
+            {state.editing && (
+              <div
+                className="fit-history"
+                role="group"
+                aria-label="Outline history"
+              >
+                <SteadyButton
+                  unavailable={!state.editing.canUndo}
+                  onClick={() => {
+                    setPlaying(false);
+                    setProgress(1);
+                    engine.current?.undo();
+                  }}
+                >
+                  Undo correction
+                </SteadyButton>
+                <SteadyButton
+                  unavailable={!state.editing.canRedo}
+                  onClick={() => {
+                    setPlaying(false);
+                    setProgress(1);
+                    engine.current?.redo();
+                  }}
+                >
+                  Redo correction
+                </SteadyButton>
+                <SteadyButton
+                  unavailable={!state.editing.changed}
+                  onClick={() => {
+                    setPlaying(false);
+                    setProgress(1);
+                    engine.current?.restoreOriginal();
+                  }}
+                >
+                  Restore original outline
+                </SteadyButton>
+              </div>
+            )}
+            {state.errorFrom === "correction" && (
+              <FitError message={state.error!} />
+            )}
             {correcting && (
               <>
                 <p className="note" id={`${title}-correction-note`}>
                   Drag near the outline to correct; drag open space to pan.
-                  Arrow keys nudge; Shift moves more finely.
+                  Arrow keys nudge; [ and ] choose another point; Shift is
+                  finer.
                 </p>
-                <Field
-                  label="Outline point"
-                  value={`${pointIndex + 1} / ${uniqueCount}`}
-                >
-                  <input
-                    type="range"
-                    min="0"
-                    max={Math.max(0, uniqueCount - 1)}
-                    step="1"
-                    value={pointIndex}
-                    onChange={(e) => setSelected(+e.target.value)}
-                  />
-                </Field>
+                <div className="fit-outline-view-note">
+                  <p className="note">
+                    {viewHint} · {outlineCamera.zoom.toFixed(1)}×
+                  </p>
+                  <HelpToggle topic="outline view" help={outlineViewHelp} />
+                </div>
+                <HelpText help={outlineViewHelp}>{fitOutlineViewHelp}</HelpText>
                 <Field label="Correction reach">
                   <select
                     value={reach}
@@ -747,56 +948,19 @@ export function FourierFitPreview({
                 </Field>
               </>
             )}
-            {state.editing && (
-              <div
-                className="fit-history"
-                role="group"
-                aria-label="Outline history"
-              >
-                <button
-                  type="button"
-                  disabled={!state.editing.canUndo}
-                  onClick={() => {
-                    setPlaying(false);
-                    setProgress(1);
-                    engine.current?.undo();
-                  }}
-                >
-                  Undo correction
-                </button>
-                <button
-                  type="button"
-                  disabled={!state.editing.canRedo}
-                  onClick={() => {
-                    setPlaying(false);
-                    setProgress(1);
-                    engine.current?.redo();
-                  }}
-                >
-                  Redo correction
-                </button>
-                <button
-                  type="button"
-                  disabled={!state.editing.changed}
-                  onClick={() => {
-                    setPlaying(false);
-                    setProgress(1);
-                    engine.current?.restoreOriginal();
-                  }}
-                >
-                  Restore original outline
-                </button>
-              </div>
-            )}
           </div>
           <p className="note">
             {visiblePoints.length.toLocaleString("en-US")} / 4,096 points ·{" "}
             {imported
-              ? isClosed
-                ? "Closed source · original model units"
-                : state.pending
-                  ? "Checking source closure and sampling"
-                  : "Source not admitted"
+              ? state.outline?.joined
+                ? "Closed by a straight segment · original model units"
+                : isClosed
+                  ? "Closed source · original model units"
+                  : openSource
+                    ? "Open curve · original model units"
+                    : state.pending
+                      ? "Checking source closure and sampling"
+                      : "Source not admitted"
               : closed
                 ? "Closed by a straight segment"
                 : "Open outline"}
@@ -887,6 +1051,7 @@ export function FourierFitPreview({
               ))}
             </select>
           </Field>
+          {state.errorFrom === "terms" && <FitError message={state.error!} />}
           <label className="fit-reference-choice">
             <input
               type="checkbox"
@@ -911,12 +1076,13 @@ export function FourierFitPreview({
       </div>
       <p className="fit-feedback" role="status">
         {notice ||
-          state.error ||
-          (state.fit
-            ? "Preview and sample residuals show the last completed fit."
-            : state.pending
-              ? "Fitting the closed outline…"
-              : "Draw your own shape or use the example leaf.")}
+          (openSource
+            ? "Close the outline to fit this open curve."
+            : state.fit
+              ? "Preview and sample residuals show the last completed fit."
+              : state.pending
+                ? "Fitting the closed outline…"
+                : "Draw your own shape or use the example leaf.")}
       </p>
       <div className="fit-notes">
         <p className="note">

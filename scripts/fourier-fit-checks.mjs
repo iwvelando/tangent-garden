@@ -54,12 +54,48 @@ export function checkFourierFit() {
   assert.equal(imported.terms[1].frequency, 1);
   assert.ok(Math.abs(imported.terms[1].radius - 3) < 0.001);
   assert.deepEqual(fit({ count: 2 }).terms, imported.terms.slice(0, 2));
-  assert.match(
-    fit({ source: { ...source, curve: { ...source.curve, max: 6 } }, count: 8 })
-      .error,
-    /open/,
-  );
+  // An open source returns its outline alone and caches no fit; the same
+  // points then fit as an explicitly closed outline, chord included.
+  const open = fit({
+    source: { ...source, curve: { ...source.curve, max: Math.PI } },
+    count: 8,
+  });
+  assert.equal(open.outline?.open, true, JSON.stringify(open).slice(0, 200));
+  assert.equal(open.terms, undefined);
+  assert.ok(Math.abs(open.outline.points[0].x - 23) < 1e-12);
+  assert.ok(Math.abs(open.outline.points.at(-1).x - 17) < 1e-12);
   assert.match(fit({ count: 8 }).error, /outline/i);
+  const joined = fit({
+    points: open.outline.points,
+    closed: true,
+    close: true,
+    count: 8,
+  });
+  assert.equal(joined.terms.length, 8);
+  assert.ok(Math.abs(joined.length - (3 * Math.PI + 6)) < 0.01);
+  // The closing segment returns divided, ahead of nothing but the source.
+  assert.ok(joined.closedPoints.length > open.outline.points.length + 50);
+  assert.deepEqual(
+    joined.closedPoints.slice(0, open.outline.points.length),
+    open.outline.points,
+  );
+  assert.deepEqual(fit({ count: 2 }).terms, joined.terms.slice(0, 2));
+  assert.equal(
+    fit({ points: joined.closedPoints, closed: true, count: 8 }).closedPoints,
+    undefined,
+  );
+  assert.match(fit({ points, close: true, count: 8 }).error, /close/i);
+  assert.match(
+    fit({
+      points,
+      closed: true,
+      close: true,
+      count: 8,
+      correction: { index: 0, target: { x: 5, y: 0 }, reach: 0.1 },
+    }).error,
+    /close/i,
+  );
+  assert.equal(imported.outline.open, undefined);
   assert.match(fit({ source, points, closed: true, count: 8 }).error, /one/);
   const corrected = fit({
     points,

@@ -10,12 +10,12 @@ import { tiered } from "./help";
 
 export const fitEntryHelp = tiered(
   "Draw any shape as one outline, then turn it into an editable study.",
-  "Close a drawn outline explicitly, or use your current closed base curve. Compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your study; adoption replaces it. Links preserve fitted terms, not the outline.",
+  "Close an open outline explicitly, or use your current base curve. Compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your study; adoption replaces it. Links preserve fitted terms, not the outline.",
 );
 
 export const fitSourceHelp = tiered(
-  "Import a closed base curve without changing its model coordinates.",
-  "Parametric, polar, roulette, Lissajous and Fourier curves only. Sampling permits 4,096 points and 32,768 evaluations, coordinates within ±100,000 and fitted radii up to 100,000. Open endpoints, gaps, jumps, lengths below 0.000001 and unresolved approximations are refused. Sampled chord tolerance differs from fit residuals. Arc-length parameterization preserves start and direction, but generally changes existing Fourier coefficients.",
+  "Import a direct base curve without changing its model coordinates.",
+  "Needs a parametric, polar, roulette, Lissajous or Fourier curve, with Construct on set to The curve itself. Open curves wait for Close outline. Sampling permits 4,096 points and 32,768 evaluations, coordinates within ±100,000 and fitted radii up to 100,000. Gaps, jumps, lengths below 0.000001 and unresolved approximations are refused. Arc-length parameterization preserves start and direction, but generally changes Fourier coefficients.",
 );
 
 export const fitTermsHelp = tiered(
@@ -25,12 +25,12 @@ export const fitTermsHelp = tiered(
 
 export const fitCorrectionHelp = tiered(
   "Move a point and its nearby arc, then refit the edited outline.",
-  "Drag a point or select it. Arrows move 1% of the frame span; Shift moves 0.1%. Reach: 5%, 10% or 20% per direction. Keep 3–4,096 points (three distinct), length ≥0.000001, coordinates within ±100,000 and fitted radii ≤100,000. Undo retains the original and 32 edits, dropping oldest intermediate edits. Reference and history disappear on leaving.",
+  "Press to select a point; drag to move it. Arrows move it 1% of the frame span, [ and ] step 1% of the points; Shift is finer. Reach: 5%, 10% or 20% per direction. Keep 3–4,096 points (three distinct), length ≥0.000001, coordinates within ±100,000 and fitted radii ≤100,000. Undo retains the original and 32 edits, dropping oldest intermediate edits.",
 );
 
 export const fitOutlineViewHelp = tiered(
   "Zoom for precise corrections; drag open space or use two fingers to pan.",
-  "Drag open space to pan; pinch or Zoom in/out magnifies 1–32×. Two fingers pan anywhere; a second finger cancels the tentative edit. Lift both before correcting again. Plus/minus zoom; Home or Fit outline resets. The close-up stays through refits and undo. Model coordinates and the fitted preview stay intact.",
+  "Drag open space to pan; pinch, Ctrl+scroll or the zoom buttons magnify 1–32×. Two fingers or a scroll pan anywhere; a second finger cancels the tentative edit. Lift both before correcting again. Plus/minus zoom; Home or Fit resets. The close-up stays through refits and undo. Model coordinates and the fitted preview stay intact.",
 );
 
 export const maxStrokePoints = 4096;
@@ -76,6 +76,7 @@ export type FourierFitResult = {
   length: number;
   outline?: FourierOutline;
   editedPoints?: Vec[];
+  closedPoints?: Vec[];
   previewRadius?: number;
 };
 export type FourierOutline = {
@@ -83,20 +84,24 @@ export type FourierOutline = {
   tolerance: number;
   evaluations: number;
   closureTolerance: number;
-  previewRadius: number;
+  previewRadius?: number;
+  // The source's ends are apart, and nothing has been fitted.
+  open?: boolean;
+  // An open source closed by Close outline, with a straight segment.
+  joined?: boolean;
 };
 
 const fittedOffset = 0.15;
 
-export function curveFitUnavailable(study: PlanarStudy): string | undefined {
-  if (study.config.input !== "curve")
-    return "Use a direct base curve, not a derived input.";
-  if (
-    !["parametric", "polar", "roulette", "lissajous", "fourier"].includes(
+// Known before any attempt, so the button is simply unavailable and its help
+// says why. The engine still refuses these on its own.
+export function curveFitAvailable(study: PlanarStudy) {
+  return (
+    study.config.input === "curve" &&
+    ["parametric", "polar", "roulette", "lissajous", "fourier"].includes(
       study.config.curve.format,
     )
-  )
-    return "Current-curve fitting accepts direct parametric, polar, roulette, Lissajous and Fourier curves. This source is unavailable; you can still draw an outline.";
+  );
 }
 
 // The fixed offset suits the drawing window and anything larger. An imported
@@ -164,6 +169,8 @@ export type FitState = {
   fit?: FourierFitResult;
   frame?: Frame;
   error?: string;
+  // Which action a refusal answers, so it can be shown beside that action.
+  errorFrom?: "source" | "close" | "correction" | "terms";
   outline?: FourierOutline;
   editing?: OutlineEditing;
   fitEdited?: boolean;
@@ -183,6 +190,8 @@ export class FourierFitSession {
   private history: Vec[][] = [];
   private cursor = 0;
   private correction?: FourierCorrection;
+  // The stroke still needs its closing segment divided by Go.
+  private closing = false;
   private wanted = 8;
   private state: FitState = { count: 8, pending: false };
   private running = false;
@@ -194,6 +203,7 @@ export class FourierFitSession {
     this.cancel();
     this.client = this.factory();
     this.stroke = structuredClone(points);
+    this.closing = true;
     this.state = { count: this.wanted, pending: true };
     this.publish(this.state);
     void this.run();
@@ -208,6 +218,13 @@ export class FourierFitSession {
     this.state = { count: this.wanted, pending: true };
     this.publish(this.state);
     void this.run();
+  }
+  // An open source's only way forward: its ends joined by a straight segment.
+  closeSource() {
+    if (!this.outline?.open) return;
+    this.outline = { ...this.outline, open: false, joined: true };
+    this.closing = true;
+    this.refit(this.outline.points);
   }
   private changed() {
     const points = this.history[this.cursor],
@@ -249,6 +266,7 @@ export class FourierFitSession {
       count: this.wanted,
       pending: true,
       error: undefined,
+      errorFrom: undefined,
       outline: this.outline,
       editing: this.editing(),
     };
@@ -283,6 +301,7 @@ export class FourierFitSession {
       count,
       pending: !!this.client,
       error: undefined,
+      errorFrom: undefined,
     };
     this.publish(this.state);
     if (this.client && !this.running) void this.run();
@@ -303,14 +322,34 @@ export class FourierFitSession {
             input,
             this.source,
             correction,
+            this.closing,
           );
           if (generation !== this.generation) return;
+          // Nothing to fit until an explicit close, which starts a new worker.
+          if (fit.outline?.open) {
+            this.outline = fit.outline;
+            this.source = undefined;
+            this.client?.dispose();
+            this.client = null;
+            this.state = {
+              count: this.wanted,
+              pending: false,
+              outline: this.outline,
+            };
+            this.publish(this.state);
+            return;
+          }
           if (!this.history.length && (fit.outline?.points || input)) {
-            this.history = [structuredClone(fit.outline?.points ?? input!)];
+            this.history = [
+              structuredClone(
+                fit.closedPoints ?? fit.outline?.points ?? input!,
+              ),
+            ];
             this.cursor = 0;
           }
           if (correction && fit.editedPoints) this.remember(fit.editedPoints);
           this.correction = undefined;
+          this.closing = false;
           this.stroke = undefined;
           this.source = undefined;
           this.outline ??= fit.outline;
@@ -341,6 +380,13 @@ export class FourierFitSession {
             count,
             pending: false,
             error: (error as Error).message,
+            errorFrom: this.source
+              ? "source"
+              : this.correction || (this.stroke && this.history.length)
+                ? "correction"
+                : this.stroke
+                  ? "close"
+                  : "terms",
             outline: this.outline,
             editing: this.editing(),
           };
@@ -370,6 +416,7 @@ export class FourierFitSession {
     this.history = [];
     this.cursor = 0;
     this.correction = undefined;
+    this.closing = false;
     this.running = false;
     this.state = { count: this.wanted, pending: false };
     this.publish(this.state);

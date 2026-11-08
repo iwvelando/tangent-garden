@@ -159,6 +159,7 @@ export class EngineClient {
     points?: import("./types").Vec[],
     source?: Pick<import("./planar-link").PlanarStudy, "config" | "bounds">,
     correction?: import("./fourier-fit").FourierCorrection,
+    close?: boolean,
   ): Promise<import("./fourier-fit").FourierFitResult> {
     return (
       await this.request({
@@ -167,6 +168,7 @@ export class EngineClient {
         ...(points && { points, closed: true }),
         ...(source && { source }),
         ...(correction && { correction }),
+        ...(close && { close }),
       })
     ).fit;
   }
