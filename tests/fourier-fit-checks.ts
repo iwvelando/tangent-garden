@@ -1070,6 +1070,41 @@ export async function checkKeyboardPointStepping(page: Page) {
   );
   expect(await polygon.getAttribute("points")).toBe(original);
   await expect(fitButton(d, "Undo correction")).toBeDisabled();
+  // Browser and system shortcuts pass through, while a layout that types a
+  // bracket with Option or AltGr (reported with Alt, or Ctrl and Alt) steps.
+  const key = (init: KeyboardEventInit) =>
+    svg.evaluate((e, init) => {
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      e.dispatchEvent(event);
+      return event.defaultPrevented;
+    }, init);
+  const selected = String(step);
+  await svg.press("Shift+[");
+  await svg.press("Shift+]");
+  for (const shortcut of [
+    { key: "[", metaKey: true },
+    { key: "]", metaKey: true },
+    { key: "[", ctrlKey: true },
+    { key: "-", metaKey: true },
+    { key: "=", ctrlKey: true },
+    { key: "Home", metaKey: true },
+    { key: "ArrowLeft", metaKey: true },
+    { key: "ArrowLeft", altKey: true },
+    { key: "Home", altKey: true },
+    { key: "-", altKey: true },
+  ]) {
+    expect(await key(shortcut), JSON.stringify(shortcut)).toBe(false);
+    await expect(svg).toHaveAttribute("data-selected-point", selected);
+  }
+  await expect(fitButton(d, "Undo correction")).toBeDisabled();
+  expect(await key({ key: "]", altKey: true })).toBe(true);
+  await expect(svg).toHaveAttribute("data-selected-point", String(2 * step));
+  expect(await key({ key: "[", ctrlKey: true, altKey: true })).toBe(true);
+  await expect(svg).toHaveAttribute("data-selected-point", selected);
   // An arrow then moves the point chosen.
   const position = () =>
     svg.evaluate((e, step) => {
@@ -1082,6 +1117,41 @@ export async function checkKeyboardPointStepping(page: Page) {
   await svg.press("ArrowRight");
   await fitSettled(d);
   expect(await position()).toBeGreaterThan(x);
+}
+
+// A press focuses the drawing so its keys work next, without ringing it. A
+// keyboard reader keeps the ring, whichever input came first. Chromium also
+// outlines any focused SVG itself, whether or not :focus-visible matches.
+export async function checkDrawingFocusRing(page: Page) {
+  await page.setViewportSize({ width: 1000, height: 650 });
+  await page.goto("/");
+  await pageReady(page);
+  const d = await leafFit(page),
+    svg = d.getByTestId("stroke-reference");
+  const outline = () => svg.evaluate((e) => getComputedStyle(e).outlineStyle);
+  const press = async () => {
+    await svg.scrollIntoViewIfNeeded();
+    const at = await svg.evaluate((e) => {
+      const root = e as SVGSVGElement,
+        p = root.querySelector("polygon")!.points.getItem(10);
+      const c = new DOMPoint(p.x, p.y).matrixTransform(root.getScreenCTM()!);
+      return { x: c.x, y: c.y };
+    });
+    await page.mouse.move(at.x, at.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await expect(svg).toBeFocused();
+  };
+  await fitButton(d, "Correct outline").click();
+  await press();
+  expect(await outline(), "press after pointer use").toBe("none");
+  // The keyboard brings the ring back at its first key.
+  await page.keyboard.press("]");
+  await expect(d).not.toHaveAttribute("data-quiet", "");
+  await expect.poll(outline, "key after a press").not.toBe("none");
+  // The very first press after keyboard use is already a pointer's.
+  await press();
+  expect(await outline(), "first press after a key").toBe("none");
 }
 
 // Open curves wait for an explicit close: nothing is fitted or invisibly

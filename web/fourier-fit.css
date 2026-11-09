@@ -58,6 +58,10 @@
   touch-action: none;
   cursor: crosshair;
 }
+/* Chromium outlines any focused SVG, even where :focus-visible does not match. */
+.fit-capture:focus:not(:focus-visible) {
+  outline: none;
+}
 .fit-capture polygon,
 .fit-capture polyline,
 .fit-reference polygon {

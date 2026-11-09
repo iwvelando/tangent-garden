@@ -433,6 +433,10 @@ export function FourierFitPreview({
       onKeyDown={
         !preview && correcting
           ? (e) => {
+              // Leave browser shortcuts alone, such as Cmd+[ for Back. Only the
+              // brackets allow Alt, since some layouts type them with Option or
+              // AltGr; Alt+Left is Back elsewhere.
+              if (e.metaKey || (e.ctrlKey && !e.altKey)) return;
               const direction: Record<string, Vec> = {
                 ArrowLeft: { x: -1, y: 0 },
                 ArrowRight: { x: 1, y: 0 },
@@ -455,6 +459,7 @@ export function FourierFitPreview({
                 );
                 return;
               }
+              if (e.altKey) return;
               if (["+", "=", "-", "Home"].includes(e.key)) {
                 e.preventDefault();
                 if (e.key === "Home") fitOutlineView();
@@ -727,7 +732,7 @@ export function FourierFitPreview({
         e.preventDefault();
         finish();
       }}
-      onPointerDown={() => {
+      onPointerDownCapture={() => {
         via.current = "pointer";
         quiet.onPointerDown();
       }}

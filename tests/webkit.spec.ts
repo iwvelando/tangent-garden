@@ -116,6 +116,7 @@ import {
   checkOutlineOpenSpacePan,
   checkDrawnClosingSegment,
   checkKeyboardPointStepping,
+  checkDrawingFocusRing,
   checkOpenCurveImport,
   checkFitErrorsBesideActions,
   checkOutlineTrackpad,
@@ -3031,6 +3032,10 @@ test("a drawn stroke's closing segment can be corrected", async ({ page }) => {
 
 test("the keyboard steps through outline points", async ({ page }) => {
   await checkKeyboardPointStepping(page);
+});
+
+test("pressing the drawing focuses it without a ring", async ({ page }) => {
+  await checkDrawingFocusRing(page);
 });
 
 test("outline drags pan open space and reserve nearby strokes for correction", async ({
