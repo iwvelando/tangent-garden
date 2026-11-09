@@ -101,7 +101,6 @@ func TestFourierCurveOutlineRefusals(t *testing.T) {
 		c             Curve
 		input, reason string
 	}{
-		{"open", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)", Max: 2*math.Pi - .001}, "curve", "open"},
 		{"gap", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+0*sqrt(cos(t))", Max: 2 * math.Pi}, "curve", "gap"},
 		{"jump", Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)+cos(t-.1)/abs(cos(t-.1))", Max: 2 * math.Pi}, "curve", "discontinuity"},
 		{"point", Curve{Format: "parametric", X: "1", Y: "2", Max: 2 * math.Pi}, "curve", "length"},
@@ -131,8 +130,215 @@ func TestFourierCurveOutlineRefusals(t *testing.T) {
 		c := base
 		c.X = "80000+cos(t)"
 		c.Max -= delta
-		if _, err := FourierCurveOutline(c, "curve"); err == nil {
+		o, err := FourierCurveOutline(c, "curve")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !o.Open {
 			t.Fatal("closed an open translated curve")
+		}
+	}
+}
+
+// An open source is admitted for an explicit close: its ends are reported, not
+// joined or snapped, and everything else about admission still applies.
+func TestFourierCurveOutlineAdmitsOpenSources(t *testing.T) {
+	half := Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)", Max: math.Pi}
+	o, err := FourierCurveOutline(half, "curve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.Open {
+		t.Fatal("half circle reported as closed")
+	}
+	first, last := o.Points[0], o.Points[len(o.Points)-1]
+	if math.Hypot(first.X-1, first.Y) > 1e-12 || math.Hypot(last.X+1, last.Y) > 1e-12 {
+		t.Fatalf("entered endpoints moved: %v %v", first, last)
+	}
+	for _, p := range o.Points {
+		if math.Abs(math.Hypot(p.X, p.Y)-1) > 1e-12 || p.Y < -1e-12 {
+			t.Fatalf("added a point off the source: %v", p)
+		}
+	}
+	// Closing is what adds the chord: its diameter joins the half circumference.
+	fit, err := FitFourier(o.Points, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := fit.Select(16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if math.Abs(r.Length-(math.Pi+2)) > 1e-3 {
+		t.Fatalf("closed length %v, want pi+2", r.Length)
+	}
+	// Descending bounds keep the entered traversal and its open ends.
+	back := half
+	back.Min, back.Max = math.Pi, 0
+	reversed, err := FourierCurveOutline(back, "curve")
+	if err != nil || !reversed.Open {
+		t.Fatalf("descending open source: open=%v err=%v", reversed.Open, err)
+	}
+	if p := reversed.Points[0]; math.Hypot(p.X+1, p.Y) > 1e-12 {
+		t.Fatalf("descending traversal starts at %v", p)
+	}
+	// A cusped open arch, as an example opens with, stays admissible.
+	cycloid, err := FourierCurveOutline(Curve{Format: "parametric", X: "2*(t-sin(t))", Y: "2*(1+cos(t))", Max: 2 * math.Pi}, "curve")
+	if err != nil || !cycloid.Open {
+		t.Fatalf("cycloid: open=%v err=%v", cycloid.Open, err)
+	}
+	// Openness never excuses a gap, a jump or a stationary point, and a closed
+	// source still returns its exactly repeated endpoint.
+	for name, c := range map[string]Curve{
+		"gap":   {Format: "parametric", X: "cos(t)", Y: "sin(t)+0*sqrt(cos(t))", Max: 3},
+		"jump":  {Format: "parametric", X: "t", Y: "abs(t-1)/(t-1)", Max: 3},
+		"point": {Format: "parametric", X: "1", Y: "2", Max: 3},
+	} {
+		if _, err := FourierCurveOutline(c, "curve"); err == nil {
+			t.Errorf("%s: open source admitted", name)
+		}
+	}
+	closed, err := FourierCurveOutline(Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)", Max: 2 * math.Pi}, "curve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Open || closed.Points[0] != closed.Points[len(closed.Points)-1] {
+		t.Fatalf("closed source: open=%v, ends %v %v", closed.Open, closed.Points[0], closed.Points[len(closed.Points)-1])
+	}
+}
+
+// Close outline divides its chord at the outline's mean edge, so a correction
+// can bend it locally, without changing the polygon or its fit.
+func TestCloseFourierOutlineDividesTheClosingSegment(t *testing.T) {
+	half, err := FourierCurveOutline(Curve{Format: "parametric", X: "cos(t)", Y: "sin(t)", Max: math.Pi}, "curve")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := append([]Vec(nil), half.Points...)
+	closed := CloseFourierOutline(half.Points)
+	if !reflect.DeepEqual(half.Points, input) {
+		t.Fatal("input mutated")
+	}
+	n := len(input)
+	if !reflect.DeepEqual(closed[:n], input) {
+		t.Fatal("outline before the closing segment changed")
+	}
+	mean := 0.
+	for j := 1; j < n; j++ {
+		mean += input[j].Sub(input[j-1]).Norm()
+	}
+	mean /= float64(n - 1)
+	if want := int(math.Ceil(2/mean)) - 1; len(closed)-n != want {
+		t.Fatalf("%d chord points, want %d for mean edge %v", len(closed)-n, want, mean)
+	}
+	// Evenly spaced on the straight chord, from the last point toward the first.
+	k := len(closed) - n + 1
+	for j, p := range closed[n:] {
+		x := -1 + 2*float64(j+1)/float64(k)
+		if math.Abs(p.X-x) > 1e-12 || math.Abs(p.Y) > 1e-12 {
+			t.Fatalf("chord point %d at %v, want x=%v", j, p, x)
+		}
+	}
+	// The same polygon, so the same fit up to rounding.
+	before, err := FitFourier(input, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := FitFourier(closed, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := before.Select(16)
+	b, _ := after.Select(16)
+	if math.Abs(a.Length-b.Length) > 1e-9 || math.Abs(a.RMS-b.RMS) > 1e-9 {
+		t.Fatalf("fit changed: %v %v, %v %v", a.Length, b.Length, a.RMS, b.RMS)
+	}
+	for j := range a.Terms {
+		if a.Terms[j].Frequency != b.Terms[j].Frequency || math.Abs(a.Terms[j].Radius-b.Terms[j].Radius) > 1e-9 {
+			t.Fatalf("term %d: %v, %v", j, a.Terms[j], b.Terms[j])
+		}
+	}
+	// A narrow correction now bends the chord's middle locally.
+	middle := n + (len(closed)-n)/2
+	target := Vec{closed[middle].X, 0.5}
+	bent, err := CorrectFourierOutline(closed, FourierCorrection{Index: middle, Target: target, Reach: .05})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bent[middle] != target {
+		t.Fatalf("selected chord point at %v", bent[middle])
+	}
+	if bent[0] != closed[0] || bent[n-1] != closed[n-1] {
+		t.Fatal("a narrow bend moved the chord's ends")
+	}
+	if bent[middle+1].Y <= 0 || bent[middle+1].Y >= .5 {
+		t.Fatalf("neighbor not carried smoothly: %v", bent[middle+1])
+	}
+}
+
+func TestCloseFourierOutlineLeavesWhatItCannotDivide(t *testing.T) {
+	arc := func(n int) []Vec {
+		out := make([]Vec, n)
+		for j := range out {
+			a := math.Pi * float64(j) / float64(n-1)
+			out[j] = Vec{math.Cos(a), math.Sin(a)}
+		}
+		return out
+	}
+	// The point budget caps the division rather than refusing it.
+	if got := len(CloseFourierOutline(arc(4090))); got != 4096 {
+		t.Fatalf("near the cap: %d points", got)
+	}
+	full := arc(4096)
+	if got := CloseFourierOutline(full); !reflect.DeepEqual(got, full) {
+		t.Fatal("divided a full outline")
+	}
+	// A chord no longer than an ordinary edge needs no points.
+	square := []Vec{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	if got := CloseFourierOutline(square); !reflect.DeepEqual(got, square) {
+		t.Fatalf("divided an ordinary edge: %v", got)
+	}
+	repeated := []Vec{{0, 0}, {1, 0}, {1, 1}, {0, 0}}
+	if got := CloseFourierOutline(repeated); !reflect.DeepEqual(got, repeated) {
+		t.Fatalf("divided a repeated endpoint: %v", got)
+	}
+	// A pointer held still adds no edges, so it cannot crowd the closing segment.
+	u := []Vec{{0, 0}, {1, 0}, {2, 0}, {2, 5}}
+	var held []Vec
+	for _, p := range u {
+		held = append(held, p, p, p, p)
+	}
+	if a, b := len(CloseFourierOutline(u))-len(u), len(CloseFourierOutline(held))-len(held); a != b {
+		t.Fatalf("held points changed the division: %d, %d", a, b)
+	}
+	// Input FitFourier refuses stays refused and undivided: chord points must not
+	// supply the missing distinct points or carry a bad coordinate along.
+	for name, input := range map[string][]Vec{
+		"one":     {{1, 1}},
+		"two":     {{0, 0}, {5, 0}},
+		"same":    {{1, 1}, {1, 1}, {1, 1}},
+		"doubled": {{0, 0}, {0, 0}, {5, 0}, {5, 0}},
+		"nan":     {{0, 0}, {math.NaN(), 0}, {5, 0}, {5, 5}},
+		"range":   {{0, 0}, {1, 0}, {1, 1}, {1e6, 1}},
+	} {
+		got := CloseFourierOutline(input)
+		if len(got) != len(input) {
+			t.Errorf("%s: divided into %d points", name, len(got))
+		}
+		if _, err := FitFourier(got, true); err == nil {
+			t.Errorf("%s: admitted after closing", name)
+		}
+	}
+	// Back and forth between two points, the rounded mean edge can fall short
+	// of the chord; a chord point there would invent the third distinct point.
+	for i := 1; i < 400; i++ {
+		a, b := Vec{}, Vec{math.Sqrt(float64(i)) / 7, math.Cbrt(float64(i)) / 3}
+		input := []Vec{}
+		for j := 0; j < 3+i%6; j++ {
+			input = append(input, a, b)
+		}
+		if got := CloseFourierOutline(input); len(got) != len(input) {
+			t.Fatalf("two points, case %d: divided into %d points", i, len(got))
 		}
 	}
 }

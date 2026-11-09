@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"math"
+	"slices"
 )
 
 // FourierCorrection moves a vertex and its local arc, without adding points.
@@ -66,4 +67,41 @@ func CorrectFourierOutline(points []Vec, q FourierCorrection) ([]Vec, error) {
 		out[n] = out[0]
 	}
 	return out, nil
+}
+
+// CloseFourierOutline divides the straight segment from an outline's last point
+// back to its first at about the outline's mean edge length, so a correction can
+// bend that segment locally like any other arc. The polygon is unchanged, and so
+// is its fit. It stops at the point limit, and leaves unchanged anything
+// FitFourier refuses: chord points must not supply missing distinct points.
+func CloseFourierOutline(points []Vec) []Vec {
+	out := append([]Vec(nil), points...)
+	if len(points) < 3 || len(points) >= FourierFitMaxPoints {
+		return out
+	}
+	distinct := make([]Vec, 0, 3)
+	length, edges := 0., 0
+	for j, p := range points {
+		if !p.Valid() || math.Abs(p.X) > 1e5 || math.Abs(p.Y) > 1e5 {
+			return out
+		}
+		if len(distinct) < 3 && !slices.Contains(distinct, p) {
+			distinct = append(distinct, p)
+		}
+		if j > 0 && p != points[j-1] {
+			length += p.Sub(points[j-1]).Norm()
+			edges++
+		}
+	}
+	if len(distinct) < 3 {
+		return out
+	}
+	from, to := points[len(points)-1], points[0]
+	inner := int(math.Ceil(to.Sub(from).Norm()*float64(edges)/length)) - 1
+	inner = min(inner, FourierFitMaxPoints-len(points))
+	for j := 1; j <= inner; j++ {
+		u := float64(j) / float64(inner+1)
+		out = append(out, Vec{from.X + (to.X-from.X)*u, from.Y + (to.Y-from.Y)*u})
+	}
+	return out
 }

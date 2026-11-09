@@ -114,6 +114,15 @@ import {
   checkOutlineCorrection,
   checkOutlineZoom,
   checkOutlineOpenSpacePan,
+  checkDrawnClosingSegment,
+  checkKeyboardPointStepping,
+  checkDrawingFocusRing,
+  checkOpenCurveImport,
+  checkFitErrorsBesideActions,
+  checkOutlineTrackpad,
+  checkCorrectionToggleKeepsControls,
+  checkDisablingKeepsFocus,
+  checkCorrectionDragThreshold,
   checkCorrectionStability,
   leafFit,
 } from "./fourier-fit-checks";
@@ -2981,6 +2990,52 @@ test("outline close-up zoom preserves geometry and separates multitouch from cor
   page,
 }) => {
   await checkOutlineZoom(page);
+});
+
+test("an open current curve waits for Close outline, then behaves as any outline", async ({
+  page,
+}) => {
+  await checkOpenCurveImport(page);
+});
+
+test("fit refusals read as errors beside the action that caused them", async ({
+  page,
+}) => {
+  await checkFitErrorsBesideActions(page);
+});
+
+test("a trackpad pinches and pans the outline view as fingers do", async ({
+  page,
+}) => {
+  await checkOutlineTrackpad(page);
+});
+
+test("turning correction on moves no button", async ({ page }) => {
+  await checkCorrectionToggleKeepsControls(page);
+});
+
+test("a button its own press disables keeps keyboard focus", async ({
+  page,
+}) => {
+  await checkDisablingKeepsFocus(page);
+});
+
+test("a press near the outline selects; only a deliberate drag corrects", async ({
+  page,
+}) => {
+  await checkCorrectionDragThreshold(page);
+});
+
+test("a drawn stroke's closing segment can be corrected", async ({ page }) => {
+  await checkDrawnClosingSegment(page);
+});
+
+test("the keyboard steps through outline points", async ({ page }) => {
+  await checkKeyboardPointStepping(page);
+});
+
+test("pressing the drawing focuses it without a ring", async ({ page }) => {
+  await checkDrawingFocusRing(page);
 });
 
 test("outline drags pan open space and reserve nearby strokes for correction", async ({

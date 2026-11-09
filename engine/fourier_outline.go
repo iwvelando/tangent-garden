@@ -31,11 +31,15 @@ type FourierOutline struct {
 	Evaluations      int     `json:"evaluations"`
 	ClosureTolerance float64 `json:"closureTolerance"`
 	PreviewRadius    float64 `json:"previewRadius,omitempty"`
+	// Open reports entered endpoints further apart than ClosureTolerance. Its
+	// polyline ends where the source does; nothing joins them until a closed fit.
+	Open bool `json:"open,omitempty"`
 }
 
-// FourierCurveOutline admits only direct, closed base curves. It shares the
-// production evaluator and refinement's gap/unresolved decisions, but does not
-// require a construction tangent: continuous corners and cusps are valid here.
+// FourierCurveOutline admits only direct base curves. It shares the production
+// evaluator and refinement's gap/unresolved decisions, but does not require a
+// construction tangent: continuous corners and cusps are valid here. An open
+// source is admitted and reported as Open, never silently closed.
 func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 	out := FourierOutline{}
 	if input != "curve" && input != "" {
@@ -68,7 +72,7 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 		out.Evaluations++
 		p := at(t)
 		if !p.Valid() {
-			failure = fmt.Errorf("source contains a gap or nonfinite interval; choose a continuous closed curve")
+			failure = fmt.Errorf("source contains a gap or nonfinite interval; choose a continuous curve")
 			return nil
 		}
 		if math.Abs(p.X) > 1e5 || math.Abs(p.Y) > 1e5 {
@@ -110,9 +114,7 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 	if out.ClosureTolerance > 1e-6*extent && extent > 0 {
 		return out, fmt.Errorf("source precision cannot resolve endpoint closure at this coordinate/parameter scale")
 	}
-	if points[0].Sub(*points[intervals]).Norm() > out.ClosureTolerance {
-		return out, fmt.Errorf("source is open at the entered endpoints; no closing chord was added")
-	}
+	out.Open = points[0].Sub(*points[intervals]).Norm() > out.ClosureTolerance
 	if extent == 0 {
 		return out, fmt.Errorf("source has zero or near-zero length; use an outline at least 0.000001 long")
 	}
@@ -194,7 +196,9 @@ func FourierCurveOutline(c Curve, input string) (FourierOutline, error) {
 		return FourierOutline{}, fmt.Errorf("source approximation could not be resolved within 4096 outline points")
 	}
 	// Only rounding-sized endpoint disagreement is snapped, retaining the start.
-	out.Points[len(out.Points)-1] = out.Points[0]
+	if !out.Open {
+		out.Points[len(out.Points)-1] = out.Points[0]
+	}
 	if length < 1e-6 {
 		return out, fmt.Errorf("source total length must be at least 0.000001")
 	}
