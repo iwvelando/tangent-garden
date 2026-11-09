@@ -16,7 +16,9 @@ export type LoomSource = {
   curve: Config["curve"];
 };
 export type LoomRequest = {
-  map: "square" | "mobius" | "joukowski";
+  map: "square" | "power" | "mobius" | "joukowski";
+  // The power map's whole-number degree, 2–6. Categorical: never animated.
+  degree?: number;
   mapParameter?: number;
   exclusionRadius?: number;
   source: LoomSource;
@@ -35,13 +37,18 @@ export type LoomStudy = LoomRequest & {
 };
 const rationalTraversal =
   "Traversal advances uniformly in the original source parameter, not arc length. Poles and their excluded source disks have no image. Critical images remain drawable, but do not claim regular conformality. Map motion keeps this point fixed while changing the map.";
-// Each map's labels, help, supported parameter and actual pole. Components
-// read these instead of branching on map names.
+const fixedDomain =
+  "Closed source disk omitted at each actual pole; no pole for identity. Image radius above 100000000 clipped. Finite expression sampling is not certified topology.";
+// Each map's labels, help, supported parameter, degree and actual pole.
+// Components read these, through mapText for degree-dependent words,
+// instead of branching on map names.
 export const maps = {
   square: {
     label: "Squaring",
     formula: "w = z²",
     parameterized: false,
+    degree: undefined,
+    exportDomain: fixedDomain,
     symbol: "",
     range: [0, 0],
     initial: 0,
@@ -53,10 +60,31 @@ export const maps = {
       "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
     pole: (_parameter: number): Vec | undefined => undefined,
   },
+  // "ⁿ" in these strings becomes the chosen degree (mapText).
+  power: {
+    label: "Power zⁿ",
+    formula: "w = zⁿ",
+    parameterized: false,
+    degree: { range: [2, 6], initial: 3 },
+    exportDomain:
+      "No pole or excluded disk; zero is critical. Image radius above 1e100 clipped. Finite expression sampling is not certified topology.",
+    symbol: "",
+    range: [0, 0],
+    initial: 0,
+    note: "Powers multiply angles about zero by n. Zero is drawable but critical.",
+    imageLabel: "zⁿ image plane",
+    imageHeading: "Image plane · zⁿ",
+    imageNoun: "image",
+    traversalHelp:
+      "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have z(θ) = r exp(iα)(1 + exp(iθ)), α = 2πk/N; θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero. Images beyond radius 10¹⁰⁰ are clipped.",
+    pole: (_parameter: number): Vec | undefined => undefined,
+  },
   mobius: {
     label: "Möbius",
     formula: "w = (z − b)/(1 − bz)",
     parameterized: true,
+    degree: undefined,
+    exportDomain: fixedDomain,
     symbol: "b",
     range: [-0.9, 0.9],
     initial: 0.5,
@@ -73,6 +101,8 @@ export const maps = {
     label: "z + λ/z",
     formula: "w = z + λ/z",
     parameterized: true,
+    degree: undefined,
+    exportDomain: fixedDomain,
     symbol: "λ",
     range: [0, 1],
     initial: 0.5,
@@ -86,9 +116,30 @@ export const maps = {
   },
 } as const;
 export const mapHelp = tiered(
-  "Squaring doubles angles, Möbius preserves circles, and z + λ/z folds circles into ellipses.",
-  "Squaring z² has a critical point at zero. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, sends circles to circles or lines; its pole is 1/b. For z+λ/z, 0≤λ≤1, zero is a pole and ±√λ are critical points. Both parameterized maps become identity at zero. Actual poles exclude source disks; critical images remain drawable without regular conformality.",
+  "Squaring and powers zⁿ multiply angles, Möbius preserves circles, and z + λ/z folds circles into ellipses.",
+  "Squaring z² and powers zⁿ, n = 2–6, have a critical point at zero. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, sends circles to circles or lines; its pole is 1/b. For z+λ/z, 0≤λ≤1, zero is a pole and ±√λ are critical. Both become identity at zero. Poles exclude source disks; critical images stay drawable.",
 );
+export const degreeHelp = tiered(
+  "Whole number 2–6; the image multiplies angles about zero by n.",
+  "Zero is a critical point, drawn but not conformal. Images beyond radius 10¹⁰⁰ are clipped; every grid and circle family fits inside, so only a selected curve can reach it.",
+);
+const superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+// A map's words with its degree in place of n: z³ for a cubic.
+export function mapText(q: Pick<LoomRequest, "map" | "degree">) {
+  const m = maps[q.map];
+  const n =
+    m.degree && Number.isInteger(q.degree) ? superscripts[q.degree!] : "ⁿ";
+  const fill = (text: string) => text.replaceAll("zⁿ", `z${n}`);
+  return {
+    label: m.label,
+    formula: fill(m.formula),
+    imageLabel: fill(m.imageLabel),
+    imageHeading: fill(m.imageHeading),
+    imageNoun: m.imageNoun,
+    // Distinguishes degrees in file names: complex-power-3.
+    kind: m.degree ? `${q.map}-${q.degree}` : q.map,
+  };
+}
 
 export function replaceMap(
   s: LoomStudy,
@@ -97,6 +148,19 @@ export function replaceMap(
 ): LoomStudy {
   if (map === s.map) return s;
   const { motion: _motion, ...rest } = s;
+  const degree = maps[map].degree;
+  // A retained valid degree survives map changes, as the radius does.
+  if (degree)
+    return {
+      ...rest,
+      map,
+      degree:
+        Number.isInteger(s.degree) &&
+        s.degree! >= degree.range[0] &&
+        s.degree! <= degree.range[1]
+          ? s.degree
+          : degree.initial,
+    };
   if (!maps[map].parameterized) return { ...rest, map };
   const size =
     s.source.kind === "grid"
@@ -216,17 +280,65 @@ export const loomPresets = [
     map: "joukowski",
     motion: { from: 0.5, to: 1 },
   },
+  // Opens at n = 5 on the twelve rotated circles. Each circle's fifth
+  // power, (2r cos(θ/2))⁵ exp(5i(α + θ/2)), winds two and a half turns into
+  // a curled loop; twelve is prime to five, so all twelve stay distinct.
+  {
+    title: "A quintic rosette",
+    note: "The fifth power curls circles through the origin into a lace of spirals",
+    kind: "rosette",
+    map: "power",
+    degree: 5,
+  },
+  // Opens at n = 3 on a 9 × 9 grid over the unit square, selecting the line
+  // x = 1/4, whose cube loops once around the critical zero. Odd powers open
+  // the centered grid into a four-pointed star; even ones fold it onto itself.
+  {
+    title: "A grid cubed into a star",
+    note: "Cubing a square grid opens it into a four-pointed star around a laced core",
+    kind: "grid",
+    map: "power",
+    degree: 3,
+    lines: 9,
+    extent: 1,
+    selected: 5,
+  },
 ] as const satisfies readonly {
   title: string;
   note: string;
   kind: LoomSource["kind"];
   map?: LoomRequest["map"];
+  degree?: number;
+  lines?: number;
+  extent?: number;
+  selected?: number;
   motion?: { from: number; to: number };
 }[];
 export function presetLoom(index: number, config: Config): LoomStudy {
   const study = defaultLoom(config);
-  const source = { ...study.source, kind: loomPresets[index].kind };
   const definition = loomPresets[index];
+  const source = {
+    ...study.source,
+    kind: definition.kind,
+    ...("lines" in definition && {
+      xCount: definition.lines,
+      yCount: definition.lines,
+      xMin: -definition.extent,
+      xMax: definition.extent,
+      yMin: -definition.extent,
+      yMax: definition.extent,
+    }),
+  };
+  if ("degree" in definition) {
+    const selected = "selected" in definition ? definition.selected : 0;
+    return {
+      ...replaceMap(study, definition.map),
+      degree: definition.degree,
+      source,
+      selected,
+      parameter: memberInterval(source, selected)[0],
+    };
+  }
   const rational = "map" in definition;
   const mapped = rational ? replaceMap(study, definition.map) : study;
   return {
@@ -314,6 +426,8 @@ export const memberCount = (s: LoomSource) =>
 export function loomRequest(s: LoomStudy): LoomRequest {
   return {
     map: s.map,
+    // Squaring and the rational maps keep their previous request.
+    ...(maps[s.map].degree && { degree: s.degree }),
     ...(s.mapParameter !== undefined && { mapParameter: s.mapParameter }),
     ...(s.exclusionRadius !== undefined && {
       exclusionRadius: s.exclusionRadius,

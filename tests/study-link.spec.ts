@@ -3982,3 +3982,94 @@ test("loom replaces a timed-out worker before processing coalesced replacement w
   assert.equal(shown, true);
   session.cancel();
 });
+
+test("power loom links carry a whole-number degree and older loom links keep their requests", async () => {
+  const model = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const square = model.defaultLoom(ordinary.config);
+  square.views.image = { x: 37, y: -19, zoom: 2 };
+  const squareRequest = structuredClone(model.loomRequest(square));
+  // An older squaring link has no degree, and its request gains none.
+  assert.equal("degree" in square, false);
+  assert.equal("degree" in squareRequest, false);
+  const power = model.replaceMap(square, "power");
+  assert.equal(power.map, "power");
+  assert.equal(power.degree, 3);
+  assert.deepEqual(power.source, square.source);
+  assert.deepEqual(power.views, square.views);
+  assert.equal(model.loomRequest(power).degree, 3);
+  for (const degree of [2, 6]) {
+    const study = { ...power, degree };
+    const saved = planarStudy({ ...ordinary, loom: study });
+    assert.deepEqual(saved.loom, study);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).loom, study);
+  }
+  for (const degree of [undefined, 1, 7, 2.5, Number.NaN, "3"]) {
+    const { degree: _d, ...rest } = power;
+    const loom = degree === undefined ? rest : { ...rest, degree };
+    assert.throws(
+      () => planarStudy({ ...ordinary, loom }),
+      (e: unknown) =>
+        e instanceof LinkError && /degree/.test(String((e as any).field ?? e)),
+      `degree ${String(degree)}`,
+    );
+  }
+  // Powers are categorical: no map motion.
+  assert.throws(
+    () =>
+      planarStudy({
+        ...ordinary,
+        loom: { ...power, motion: { mode: "map", from: 2, to: 6 } },
+      }),
+    LinkError,
+  );
+  // A retained degree survives a change to squaring and back, without
+  // entering squaring's request.
+  const back = model.replaceMap({ ...power, degree: 5 }, "square");
+  assert.deepEqual(model.loomRequest(back), {
+    ...squareRequest,
+    ...(back.mapParameter !== undefined && { mapParameter: back.mapParameter }),
+  });
+  assert.deepEqual(planarStudy({ ...ordinary, loom: back }).loom, back);
+  assert.equal(model.replaceMap(back, "power").degree, 5);
+  // An invalid retained degree restarts from the initial degree.
+  assert.equal(model.replaceMap({ ...back, degree: 9 }, "power").degree, 3);
+  // Rational settings retained from another map stay on the study.
+  const fold = model.replaceMap(square, "joukowski");
+  const powered = model.replaceMap(fold, "power");
+  assert.equal(powered.exclusionRadius, fold.exclusionRadius);
+  assert.equal(
+    model.replaceMap(powered, "joukowski").exclusionRadius,
+    fold.exclusionRadius,
+  );
+});
+
+test("power loom presets open their own degree and selection over the base curve", async () => {
+  const model = await import("../web/loom/model");
+  const base = planarPreset(0).config;
+  for (const [title, degree, kind] of [
+    ["A quintic rosette", 5, "rosette"],
+    ["A grid cubed into a star", 3, "grid"],
+  ] as const) {
+    const index = model.loomPresets.findIndex((p) => p.title === title);
+    assert.ok(index >= 0, `${title} is missing`);
+    const s = model.presetLoom(index, base);
+    assert.equal(s.map, "power");
+    assert.equal(s.degree, degree);
+    assert.equal(s.source.kind, kind);
+    assert.equal("motion" in s, false);
+    assert.deepEqual(s.source.curve, base.curve);
+    assert.equal(s.parameter, model.memberInterval(s.source, s.selected)[0]);
+    assert.deepEqual(planarStudy({ ...planarPreset(0), loom: s }).loom, s);
+  }
+  // Existing presets are unchanged by the power entries.
+  for (const [i, map] of [
+    "square",
+    "square",
+    "square",
+    "mobius",
+    "joukowski",
+  ].entries())
+    assert.equal(model.presetLoom(i, base).map, map);
+});

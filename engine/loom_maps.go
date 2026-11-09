@@ -7,9 +7,21 @@ import "math"
 // independent of the source exclusion and of either manual camera.
 const LoomImageLimit = 1e8
 
+// Power images outside this disk are omitted. A polynomial has no pole, so
+// this fence only keeps arithmetic finite: squares of retained coordinates
+// stay far below float64 overflow, and every admitted analytic family
+// (|z| ≤ √2·10⁶, so |z⁶| < 10³⁷) lies strictly inside it.
+const LoomPowerImageLimit = 1e100
+
 func (q LoomRequest) validateMap() error {
 	switch q.Map {
 	case "square":
+		return nil
+	case "power":
+		// Categorical configuration: no parameter, pole or exclusion.
+		if q.Degree < 2 || q.Degree > 6 {
+			return fieldErr("degree", "power degree must be a whole number 2–6")
+		}
 		return nil
 	case "mobius":
 		if !finite(q.MapParameter) || math.Abs(q.MapParameter) > .9 {
@@ -20,7 +32,7 @@ func (q LoomRequest) validateMap() error {
 			return fieldErr("mapParameter", "rational parameter must be 0–1")
 		}
 	default:
-		return fieldErr("map", "choose squaring, Möbius or z + λ/z")
+		return fieldErr("map", "choose squaring, a power zⁿ, Möbius or z + λ/z")
 	}
 	if !finite(q.ExclusionRadius) || q.ExclusionRadius < 1e-6 || q.ExclusionRadius > 1e6 {
 		return fieldErr("exclusionRadius", "pole exclusion radius must be 0.000001–1000000 source units")
@@ -32,6 +44,7 @@ func (q LoomRequest) pole() *Vec {
 	if q.MapParameter == 0 {
 		return nil
 	}
+	// Squaring and powers have no pole, whatever rational settings remain.
 	switch q.Map {
 	case "mobius":
 		// Avoid even forming 1/b when a tiny b puts the pole outside all
@@ -43,17 +56,47 @@ func (q LoomRequest) pole() *Vec {
 	return nil
 }
 
+// imageLimit is the map's image fence; squaring keeps its unfenced output.
+func (q LoomRequest) imageLimit() float64 {
+	switch q.Map {
+	case "square":
+		return math.Inf(1)
+	case "power":
+		return LoomPowerImageLimit
+	}
+	return LoomImageLimit
+}
+
 func (q LoomRequest) image(p Vec) *Vec {
 	w := q.mapImage(p)
-	if q.Map != "square" && w != nil && w.Norm() > LoomImageLimit {
+	if w != nil && w.Norm() > q.imageLimit() {
 		return nil
 	}
 	return w
 }
 
+// loomPower evaluates z^n, 2 ≤ n ≤ 6, by repeated complex multiplication.
+// Degree two is exactly squaring's arithmetic. A source whose modulus
+// already puts z^n well beyond the fence returns nil before multiplying, so
+// no intermediate overflows; the fence itself is applied by image.
+func loomPower(p Vec, n int) *Vec {
+	if p.Norm() > 2*math.Pow(LoomPowerImageLimit, 1/float64(n)) {
+		return nil
+	}
+	w := *loomSquare(p)
+	for k := 2; k < n; k++ {
+		w = Vec{w.X*p.X - w.Y*p.Y, w.X*p.Y + w.Y*p.X}
+	}
+	return point(w)
+}
+
 func (q LoomRequest) mapImage(p Vec) *Vec {
-	if q.Map == "square" {
+	switch q.Map {
+	case "square":
 		return loomSquare(p)
+	case "power":
+		// Never the rational identity limit: MapParameter is ignored here.
+		return loomPower(p, q.Degree)
 	}
 	if q.MapParameter == 0 {
 		return point(p)
@@ -159,7 +202,8 @@ func (q LoomRequest) domainSafe(a, b Vec, probes [3]loomNode) bool {
 }
 
 func (q LoomRequest) critical(p Vec) bool {
-	if q.Map == "square" {
+	// (zⁿ)′ = n zⁿ⁻¹ vanishes only at zero, a finite drawable point.
+	if q.Map == "square" || q.Map == "power" {
 		return p.X == 0 && p.Y == 0
 	}
 	if q.Map == "joukowski" && q.MapParameter > 0 {

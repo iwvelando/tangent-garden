@@ -82,7 +82,7 @@ export const loomExamples: Example[] = loomPresets.map((p, i) => ({
   title: p.title,
   caption: p.note,
   family: "Complex maps",
-  keywords: `complex loom square squaring z² ${p.kind}`,
+  keywords: `complex loom square squaring z² ${p.kind}${"degree" in p ? " power powers polynomial cube cubic quintic" : ""}`,
   fingerprint: fingerprint(presetDefinition(i)),
 }));
 

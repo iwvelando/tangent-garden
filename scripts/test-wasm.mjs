@@ -262,6 +262,43 @@ checkFourierFit();
       "exclusionRadius",
     );
   }
+  // Powers: z^n against the polar form, the critical zero and degree refusal.
+  for (const degree of [3, 6]) {
+    const request = { ...q, map: "power", degree };
+    const result = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify(request)),
+    );
+    assert.deepEqual(result.marker.image, { x: 0, y: 0 });
+    assert.equal(result.marker.critical, true);
+    let drawn = 0;
+    for (const m of result.members)
+      for (let i = 0; i < m.at.length; i++) {
+        const p = m.source[i],
+          w = m.image[i];
+        assert.ok(p && w);
+        drawn++;
+        const r = Math.hypot(p.x, p.y) ** degree,
+          a = degree * Math.atan2(p.y, p.x);
+        assert.ok(
+          Math.hypot(w.x - r * Math.cos(a), w.y - r * Math.sin(a)) <
+            1e-12 * Math.max(r, 1),
+        );
+      }
+    assert.ok(drawn > 8 * 32);
+    assert.deepEqual(
+      JSON.parse(globalThis.tangentGardenLoomPoint(JSON.stringify(request)))
+        .marker,
+      result.marker,
+    );
+  }
+  assert.equal(
+    JSON.parse(
+      globalThis.tangentGardenLoom(
+        JSON.stringify({ ...q, map: "power", degree: 7 }),
+      ),
+    ).field,
+    "degree",
+  );
   console.log(
     `Loom: typed paired geometry, correspondence and point-only bridge passed (${replyBytes(raw)} bytes)`,
   );
