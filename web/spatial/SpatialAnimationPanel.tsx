@@ -51,6 +51,7 @@ import {
 import type {
   Bounds3,
   Frame,
+  HarmonicChainTrack,
   RefinementView,
   SpatialConfig,
   SurfaceQuery,
@@ -174,6 +175,8 @@ type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
 type Session = {
   original: Frame;
+  // Present only while revealing a harmonic study: its chain at every sample.
+  chains?: HarmonicChainTrack;
   first: Frame;
   final: Frame;
   tracks: NumericTrack[];
@@ -673,7 +676,7 @@ export function SpatialAnimationPanel({
     } else if (s.mode === "reveal")
       current = {
         config: s.original.config,
-        result: reveal((await fixedStudy(s, p, engine)).result, p),
+        result: reveal((await fixedStudy(s, p, engine)).result, p, s.chains),
       };
     else if (
       s.mode === "orbit" ||
@@ -1241,6 +1244,11 @@ export function SpatialAnimationPanel({
         ]);
         [first, final] = results;
       }
+      // Asked for once, so every frame, scrubbed or exported, draws from it.
+      const chains =
+        mode === "reveal" && frame.result.harmonic
+          ? await client.current.harmonicChains(frame.config)
+          : undefined;
       if (epoch.current !== token) return;
       // The story's level rests at its bracket's levels, when asked and
       // while the study is its story's.
@@ -1269,6 +1277,7 @@ export function SpatialAnimationPanel({
       if (ray && !rode) throw new Error("This ray cannot be ridden.");
       const s: Session = {
         original,
+        ...(chains && { chains }),
         timeline,
         ...(rode && {
           ride: {

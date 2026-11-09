@@ -199,6 +199,20 @@ export class EngineClient {
   ): Promise<import("./spatial/types").Frame> {
     return { config, result: await this.spatial(config, options) };
   }
+  // One disposable worker holds one source's fit: a request naming a source
+  // replaces it, and a count alone selects from it.
+  async spatialFit(
+    q: import("./spatial/harmonic-fit").HarmonicFitRequest,
+  ): Promise<import("./spatial/harmonic-fit").HarmonicFitResult> {
+    return (await this.request({ action: "spatial-fit", spatialFit: q }))
+      .result;
+  }
+  async harmonicChains(
+    config: SpatialConfig,
+  ): Promise<import("./spatial/types").HarmonicChainTrack> {
+    return (await this.request({ action: "harmonic-chains", spatial: config }))
+      .result;
+  }
   async spatial(
     config: SpatialConfig,
     options: SpatialOptions = {},

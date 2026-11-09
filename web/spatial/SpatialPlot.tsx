@@ -33,6 +33,10 @@ const cameraKeys = [
   "-",
   "Home",
 ];
+// What the manual camera answers to, as the notebook and an excursion state it.
+export const plotGestures =
+  "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home";
+
 export function SpatialPlot({
   id = "spatial-artwork",
   showError = true,

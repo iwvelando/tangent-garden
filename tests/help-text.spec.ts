@@ -36,6 +36,11 @@ import {
 import { curveProbeMotionHelp } from "../web/probe";
 import { cutHelp } from "../web/spatial/cut";
 import {
+  harmonicFitEntryHelp,
+  harmonicFitParameterHelp,
+  harmonicFitTermsHelp,
+} from "../web/spatial/harmonic-fit";
+import {
   repeatHelp as spatialRepeatHelp,
   smoothLoopHelp,
 } from "../web/spatial/loop";
@@ -217,6 +222,9 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("atlas entry", atlasEntryHelp);
   add("spatial atlas entry", spatialAtlasEntryHelp);
   add("4D atlas entry", tesseractAtlasEntryHelp);
+  add("harmonic fit entry", harmonicFitEntryHelp);
+  add("harmonic fit terms", harmonicFitTermsHelp);
+  add("harmonic fit sampling", harmonicFitParameterHelp);
   add("drawn Fourier terms", fitTermsHelp);
   add("drawn Fourier entry", fitEntryHelp);
   add("current-curve Fourier input", fitSourceHelp);

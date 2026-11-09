@@ -30,6 +30,12 @@ declare const tangentGardenLaceFrame: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
+declare const tangentGardenSpatialFit: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
+declare const tangentGardenHarmonicChains: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 // A curve-shortening film's loops at some times (engine/shorten.Reply).
 declare const tangentGardenShorten: (
   json: string,
@@ -91,6 +97,8 @@ self.onmessage = async ({
     | "spatial"
     | "tesseract"
     | "fourier-fit"
+    | "spatial-fit"
+    | "harmonic-chains"
     | "loom"
     | "garden"
     | "lace"
@@ -107,6 +115,7 @@ self.onmessage = async ({
   closed?: boolean;
   count?: number;
   correction?: import("./fourier-fit").FourierCorrection;
+  spatialFit?: import("./spatial/harmonic-fit").HarmonicFitRequest;
   close?: boolean;
   tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
@@ -308,6 +317,27 @@ self.onmessage = async ({
           [lifted.floats.buffer],
         );
       }
+      return;
+    }
+    if (data.action === "spatial-fit") {
+      const q = data.spatialFit;
+      if (!q) throw new Error("Choose a spatial curve to fit.");
+      // JSON would turn a nonfinite number into zero-valued null in Go.
+      if (!allFinite(q)) throw new Error("Every source number must be finite.");
+      const start = performance.now();
+      postLifted(data.id, tangentGardenSpatialFit(JSON.stringify(q)), start);
+      return;
+    }
+    if (data.action === "harmonic-chains") {
+      const q = data.spatial;
+      if (!q) throw new Error("Choose a harmonic curve.");
+      if (!allFinite(q)) throw new Error("Every number must be finite.");
+      const start = performance.now();
+      postLifted(
+        data.id,
+        tangentGardenHarmonicChains(JSON.stringify(q)),
+        start,
+      );
       return;
     }
     if (data.action === "fourier-fit") {
@@ -1235,6 +1265,15 @@ function fieldError(field: string, message: string) {
 
 // Posts a lifted reply, the JSON with its arrays in one transferred float64
 // buffer, or a refusal, with the preparation time and size.
+const allFinite = (v: unknown): boolean =>
+  typeof v === "number"
+    ? Number.isFinite(v)
+    : Array.isArray(v)
+      ? v.every(allFinite)
+      : v && typeof v === "object"
+        ? Object.values(v).every(allFinite)
+        : true;
+
 function postLifted(
   id: number,
   raw: string | { json: string; lifted: import("./lifted").Lifted },

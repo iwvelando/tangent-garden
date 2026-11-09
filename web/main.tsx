@@ -35,6 +35,10 @@ import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { FourierFitPreview } from "./FourierFitPreview";
 import { FourierFitContext, type FourierFitRequest } from "./FourierFitContext";
+import {
+  HarmonicFitContext,
+  type HarmonicFitEntry,
+} from "./spatial/HarmonicFitContext";
 import { fitEntryHelp } from "./fourier-fit";
 import { AtlasPreview } from "./AtlasPreview";
 import {
@@ -3096,6 +3100,7 @@ const ShortenPreview = lazy(() =>
 );
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const SpatialAtlasPreview = lazy(() => import("./spatial/AtlasPreview"));
+const HarmonicFitPreview = lazy(() => import("./spatial/HarmonicFitPreview"));
 const TesseractAtlasPreview = lazy(() => import("./tesseract/AtlasPreview"));
 const TesseractApp = lazy(() => import("./tesseract/App"));
 type NotebookKind = "2d" | "3d" | "4d";
@@ -3119,6 +3124,7 @@ function Notebook() {
   const [tesseractAtlas, setTesseractAtlas] =
     useState<TesseractAtlasRequest | null>(null);
   const [fit, setFit] = useState<FourierFitRequest | null>(null);
+  const [spatialFit, setSpatialFit] = useState<HarmonicFitEntry | null>(null);
   const [loom, setLoom] = useState<LoomEntry | null>(null);
   const [garden, setGarden] = useState<GardenEntry | null>(null);
   const [lace, setLace] = useState<LaceEntry | null>(null);
@@ -3130,6 +3136,7 @@ function Notebook() {
     !!spatialAtlas ||
     !!tesseractAtlas ||
     !!fit ||
+    !!spatialFit ||
     !!loom ||
     !!garden ||
     !!lace ||
@@ -3151,6 +3158,7 @@ function Notebook() {
     spatialAtlas,
     tesseractAtlas,
     fit,
+    spatialFit,
     loom,
     garden,
     lace,
@@ -3173,6 +3181,7 @@ function Notebook() {
     setSpatialAtlas(null);
     setTesseractAtlas(null);
     setFit(null);
+    setSpatialFit(null);
     setLoom(null);
     setGarden(null);
     setLace(null);
@@ -3203,6 +3212,7 @@ function Notebook() {
       setSpatialAtlas(null);
       setTesseractAtlas(null);
       setFit(null);
+      setSpatialFit(null);
       setLoom(null);
       setGarden(null);
       setLace(null);
@@ -3228,6 +3238,7 @@ function Notebook() {
       setSpatialAtlas(null);
       setTesseractAtlas(null);
       setFit(null);
+      setSpatialFit(null);
       setLoom(null);
       setGarden(null);
       setLace(null);
@@ -3370,6 +3381,44 @@ function Notebook() {
                       setLace(null);
                       setShorten(null);
                       setShorten(null);
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {spatialFit && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening the fit…
+                    </div>
+                  }
+                >
+                  <HarmonicFitPreview
+                    request={spatialFit}
+                    onReturn={(via) => {
+                      restoreFocus.current = () => spatialFit.restoreFocus(via);
+                      setSpatialFit(null);
+                    }}
+                    onAdopt={(study, via) => {
+                      links.current++;
+                      setShared((s) => ({ ...s, "3d": undefined }));
+                      setAdoptions((a) => ({
+                        ...a,
+                        "3d": {
+                          notebook: "3d",
+                          study,
+                          custom: true,
+                          preset: 0,
+                          id: ++adoptionId.current,
+                        },
+                      }));
+                      restoreFocus.current = () => spatialFit.restoreFocus(via);
+                      setSpatialFit(null);
                     }}
                   />
                 </Suspense>
@@ -3619,11 +3668,13 @@ function Notebook() {
                     <div className="loading">Opening the spatial notebook…</div>
                   }
                 >
-                  <SpatialApp
-                    active={mode === "3d"}
-                    shared={shared["3d"]}
-                    adoption={adoptions["3d"]}
-                  />
+                  <HarmonicFitContext.Provider value={{ begin: setSpatialFit }}>
+                    <SpatialApp
+                      active={mode === "3d"}
+                      shared={shared["3d"]}
+                      adoption={adoptions["3d"]}
+                    />
+                  </HarmonicFitContext.Provider>
                 </Suspense>
               </div>
             )}

@@ -1,7 +1,14 @@
 import { useRef, useState } from "react";
 import type { EngineClient } from "../engine-client";
 import type { ColorScheme } from "../color-schemes";
-import { SpatialPlot } from "./SpatialPlot";
+import type { NamedView } from "../named-views";
+import {
+  feedOrientation,
+  LiveOrientation,
+  type OrientationFeed,
+} from "../Orientation";
+import { plotGestures, SpatialPlot } from "./SpatialPlot";
+import { viewBasis } from "./scene";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import {
   animationCamera,
@@ -26,8 +33,16 @@ export default function JourneyDrawing(p: {
   client: { current: EngineClient | null };
   dark: boolean;
   scheme: ColorScheme;
+  // Reset view, the named views and what the drawing answers to, for a
+  // drawing the reader is meant to turn over. A guided journey has none.
+  viewControls?: boolean;
 }) {
   const [motion, setMotion] = useState<AnimationView | null>(null);
+  const [reset, setReset] = useState(0),
+    [refit, setRefit] = useState(0),
+    [turn, setTurn] = useState<{ id: number; to: NamedView } | null>(null),
+    [running, setRunning] = useState(false);
+  const orientation = useRef<OrientationFeed>({});
   const view = useRef<Viewport | undefined>(undefined);
   const animation = p.pending ? null : motion;
   const shown = animation?.frame ?? p.frame;
@@ -44,7 +59,9 @@ export default function JourneyDrawing(p: {
             dark={p.dark}
             scheme={p.scheme}
             layers={p.study.layers}
-            reset={0}
+            reset={reset}
+            refit={refit}
+            turn={turn}
             spinning={false}
             override={animation?.complete ? undefined : camera}
             released={animation?.complete ? camera : undefined}
@@ -56,11 +73,37 @@ export default function JourneyDrawing(p: {
             cut={animation?.cut ?? cut.spec}
             onViewport={(v) => {
               view.current = v;
+              if (p.viewControls)
+                feedOrientation(orientation.current, viewBasis(v));
             }}
             onError={p.onError}
           />
         )}
       </div>
+      {p.viewControls && (
+        <div className="journey-view">
+          <div className="journey-view-row">
+            <LiveOrientation
+              feed={orientation.current}
+              dark={p.dark}
+              disabled={running}
+              onTurn={(to) => setTurn((t) => ({ id: (t?.id ?? 0) + 1, to }))}
+            />
+            <button
+              type="button"
+              disabled={running}
+              onClick={() =>
+                animation?.complete
+                  ? setRefit((n) => n + 1)
+                  : setReset((n) => n + 1)
+              }
+            >
+              Reset view
+            </button>
+          </div>
+          <p className="note">{plotGestures}</p>
+        </div>
+      )}
       <p
         className="journey-feedback note"
         role={p.error ? "alert" : p.pending && p.slow ? "status" : undefined}
@@ -87,7 +130,7 @@ export default function JourneyDrawing(p: {
           layers={p.study.layers}
           getCurrentView={() => view.current}
           onView={setMotion}
-          onRunning={() => {}}
+          onRunning={setRunning}
           onPlay={() => {}}
           onReveal={() => {}}
           restore={p.frame ? { id: 0, settings: p.study.animation } : null}

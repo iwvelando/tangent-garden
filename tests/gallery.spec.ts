@@ -5696,6 +5696,44 @@ test("construction, entry and journey buttons carry scheme-colored pictures", as
   );
 });
 
+test("the harmonic fit entry draws a knot and the chain that traces it", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await settled(page);
+  const icon = page
+    .getByRole("button", { name: "Fit into harmonic terms", exact: true })
+    .locator("svg.icon");
+  await expect(icon).toHaveAttribute("aria-hidden", "true");
+  await expect(icon.locator(".b")).toHaveCount(1);
+  await expect(icon.locator(".d")).toHaveCount(1);
+  const fits = await icon.evaluate((svg) => {
+    const box = (svg as unknown as SVGGraphicsElement).getBBox();
+    return (
+      box.width > 8 &&
+      box.height > 6 &&
+      box.x >= -0.5 &&
+      box.y >= -0.5 &&
+      box.x + box.width <= 24.5 &&
+      box.y + box.height <= 24.5
+    );
+  });
+  expect(fits).toBe(true);
+  const inks = () =>
+    icon.evaluate((svg) => {
+      const s = getComputedStyle(svg);
+      return [
+        s.getPropertyValue("--base-ink"),
+        getComputedStyle(svg.querySelector(".b")!).stroke,
+      ];
+    });
+  const before = await inks();
+  await page.getByRole("button", { name: /color scheme/i }).click();
+  await page.getByRole("menuitemradio").last().click();
+  await expect.poll(async () => (await inks())[0]).not.toBe(before[0]);
+  await expect.poll(async () => (await inks())[1]).not.toBe(before[1]);
+});
+
 for (const notebook of ["3D", "4D"])
   test(`the ${notebook} atlas entry carries the same picture`, async ({
     page,

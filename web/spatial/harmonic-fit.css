@@ -1,0 +1,198 @@
+/* The dialog keeps its height, whatever the fit lists, so that its footer stays
+   put as terms come and go. */
+.harmonic-fit[open] {
+  display: flex;
+  flex-direction: column;
+  height: min(calc(100% - 48px), 1040px);
+}
+/* The drawing, then what chooses it, then what describes it. Narrow screens put
+   the choice first, so that Terms and the drawing it changes stay together. */
+.harmonic-fit-layout {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  grid-template-areas:
+    "art choice"
+    "art details";
+  grid-template-rows: auto 1fr;
+  gap: 16px 24px;
+}
+.harmonic-fit-layout section {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.harmonic-fit-art {
+  grid-area: art;
+}
+.harmonic-fit-choice {
+  grid-area: choice;
+}
+.harmonic-fit-details {
+  grid-area: details;
+}
+/* The drawing leaves room for the view row and Play above the footer on a
+   short screen. */
+.harmonic-fit .journey-art {
+  height: clamp(220px, calc(100dvh - 450px), 620px);
+  aspect-ratio: auto;
+}
+.harmonic-fit .journey-feedback:empty {
+  display: none;
+}
+.journey-view-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+.journey-view-row .orientation {
+  padding: 0 4px 0 0;
+}
+.journey-view-row > button {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.journey-view .note {
+  margin: 6px 0 8px;
+  font-size: 12px;
+}
+/* A note's two wordings share one cell: the longest, unseen, sets the height. */
+.harmonic-fit-steady {
+  display: grid;
+  margin: 0;
+}
+.harmonic-fit-steady > span {
+  grid-area: 1 / 1;
+}
+.harmonic-fit-steady > span[aria-hidden] {
+  visibility: hidden;
+}
+.harmonic-fit .fit-heading h2 {
+  margin-bottom: 8px;
+}
+.harmonic-fit-empty {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  padding: 24px;
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.harmonic-fit-choice,
+.harmonic-fit-details {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+.harmonic-fit-parameter {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.harmonic-fit-parameter legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+/* The choices keep their own row, so the help below them moves neither. */
+.harmonic-fit-options {
+  display: flex;
+  flex-direction: column;
+}
+.harmonic-fit-parameter label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.harmonic-fit-terms {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.harmonic-fit-terms span {
+  display: inline-block;
+  min-width: 56px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 700px) {
+  .harmonic-fit[open] {
+    height: 100%;
+  }
+}
+@media (max-width: 760px) {
+  .harmonic-fit-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "choice"
+      "art"
+      "details";
+    grid-template-rows: none;
+  }
+  .harmonic-fit .journey-art {
+    height: min(52dvh, 420px);
+  }
+  /* Keep Terms, its error and the choice of parameter one glance above the
+     drawing they change. */
+  .harmonic-fit-options {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0 16px;
+  }
+  .harmonic-fit .fit-heading h2 {
+    margin: 2px 0 4px;
+    font-size: 20px;
+  }
+  .harmonic-fit .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+  }
+}
+/* A phone on its side: the drawing and its choice share the height, and the
+   heading and footer give it back what they can. */
+@media (max-height: 520px) and (orientation: landscape) and (min-width: 561px) {
+  .harmonic-fit.fourier-fit[open] {
+    width: calc(100% - 16px);
+    height: calc(100% - 16px);
+    max-height: calc(100% - 16px);
+    margin: 8px auto;
+    padding: 12px 16px;
+    --fit-dialog-padding: 12px;
+  }
+  .harmonic-fit-layout {
+    grid-template-columns: minmax(0, 1.3fr) minmax(220px, 1fr);
+    grid-template-areas:
+      "art choice"
+      "art details";
+    grid-template-rows: auto 1fr;
+    gap: 8px 16px;
+  }
+  .harmonic-fit .fit-heading h2 {
+    margin: 0 0 6px;
+    font-size: 18px;
+  }
+  .harmonic-fit .fit-adopt-copy span {
+    display: none;
+  }
+  .harmonic-fit .fit-footer button {
+    min-height: 36px;
+  }
+  .harmonic-fit .journey-art {
+    height: calc(100dvh - 142px);
+    min-height: 170px;
+  }
+}

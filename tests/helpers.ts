@@ -173,3 +173,34 @@ export async function scriptedKeyboard(page: Page) {
       [offsetTop, height],
     );
 }
+
+// Pixels clearly apart in two captures of the drawing, by the page's decoder.
+export const changedPixels = (page: Page, a: string, b: string) =>
+  page.evaluate(
+    async ([one, two]) => {
+      const read = async (url: string) => {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        const c = document.createElement("canvas");
+        c.width = image.width;
+        c.height = image.height;
+        const g = c.getContext("2d")!;
+        g.drawImage(image, 0, 0);
+        return g.getImageData(0, 0, c.width, c.height).data;
+      };
+      const x = await read(one),
+        y = await read(two);
+      let count = 0;
+      for (let i = 0; i < x.length; i += 4)
+        if (
+          Math.abs(x[i] - y[i]) +
+            Math.abs(x[i + 1] - y[i + 1]) +
+            Math.abs(x[i + 2] - y[i + 2]) >
+          32
+        )
+          count++;
+      return count;
+    },
+    [a, b],
+  );

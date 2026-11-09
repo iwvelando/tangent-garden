@@ -35,9 +35,15 @@ Open **A knot through perpendiculars** for the trefoil's tangent-foot curve, or 
 
 ## Harmonic generators
 
-Choose **Spatial definition · Harmonic sum** to add turning vectors: r(t) = c₀ + Σ[Aₖ cos(ωₖt) + Bₖ sin(ωₖt)]. Each term turns around the ellipse spanned by Aₖ and Bₖ at frequency ωₖ, and the vectors are chained from c₀ in term order. Gray chains show the vector sums at the representative samples; at the last one shown, darker lines repeat that chain and trace each term's generating ellipse around its joint, with a cross at c₀. Toggle **Vector sums** and **Generating ellipses** separately; they stay available under every construction. Up to eight terms; every field accepts constant expressions and parameter animation.
+Choose **Spatial definition · Harmonic sum** to add turning vectors: r(t) = c₀ + Σ[Aₖ cos(ωₖt) + Bₖ sin(ωₖt)]. Each term turns around the ellipse spanned by Aₖ and Bₖ at frequency ωₖ, and the vectors are chained from c₀ in term order. Gray chains show the vector sums at the representative samples; at the last position, darker lines repeat that chain and trace each term's generating ellipse around its joint, with a cross at c₀. During a reveal that darker chain is the exact one at the revealed sample, so it moves smoothly with the curve's head. Toggle **Vector sums** and **Generating ellipses** separately; they stay available under every construction. Up to eight terms; every field accepts constant expressions and parameter animation.
 
 The domain is yours: the curve closes only when it spans a whole number of periods, and the note under the domain says so. **A harmonic trefoil** chains two circles turning opposite ways with a vertical wave into a trefoil knot. **Tilted ellipses · 1 : 3 : −5** tilts its generating ellipses into three different planes. **An orbit that never closes** uses frequencies 1 and φ, whose ratio is irrational: the ribbon stays an open arc however long the domain. Draw along the curve to watch the chain turn as the curve grows. See [the definitions and checks](mathematics.md#spatial-harmonic-curves).
+
+### Fit a curve into turning vectors
+
+Open **Trefoil · (2, 3)** and choose **Fit into harmonic terms**. Step **Terms** from 1 to 4 against the source beneath: a circle, a segment, then two more circles, and at four the terms reproduce every sample to rounding, because a torus knot is exactly such a sum. Two terms already look like a knot, but they pass through themselves: a small error does not guarantee the same knot. Press **Play animation** to watch the chain draw the curve while the camera turns once around, which is what shows its depth.
+
+Switch **Sampled by** to **Even pace (arc length)** to fit equal lengths along the curve instead of equal steps of its parameter. An exact sum then needs more terms, but a curve whose parameter hurries and stalls fits better. **Back to your study** restores everything; **Adopt fitted study** makes the terms an ordinary harmonic study you can edit, build on, link and export. See [the definitions and limits](mathematics.md#fitting-a-closed-spatial-curve).
 
 ## Inversion in a sphere
 

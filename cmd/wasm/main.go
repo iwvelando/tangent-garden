@@ -14,6 +14,8 @@ import (
 
 func main() {
 	registerFourierFit()
+	registerSpatialFit()
+	registerHarmonicChains()
 	registerLoom()
 	registerGarden()
 	registerLace()

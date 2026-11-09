@@ -46,6 +46,8 @@ import {
 } from "react";
 import { AtlasContext } from "../AtlasContext";
 import { useQuietFocus } from "../quiet-focus";
+import { HarmonicFitContext } from "./HarmonicFitContext";
+import { harmonicFitEligible, harmonicFitEntryHelp } from "./harmonic-fit";
 import type { JourneyVia } from "../JourneyContext";
 import {
   spatialAtlasBudget,
@@ -78,7 +80,7 @@ import { NotebookMode } from "../NotebookMode";
 import { revealDrawing } from "../revealDrawing";
 import { ExportImageMenu } from "../ExportImageMenu";
 import { saveFile, stillSize, type Still } from "../export-image";
-import { SpatialPlot } from "./SpatialPlot";
+import { plotGestures, SpatialPlot } from "./SpatialPlot";
 import { SpatialAnimationPanel } from "./SpatialAnimationPanel";
 import { CutPanel } from "./CutPanel";
 import {
@@ -444,6 +446,15 @@ export default function SpatialApp({
   const atlasButton = useRef<HTMLButtonElement>(null);
   const atlasQuiet = useQuietFocus(atlasEntry);
   const atlasHelp = useHelp();
+  // Fitting this curve into harmonic terms: entered from the settled
+  // study as the atlas is, with the notebook held mounted beneath it.
+  const fitOwner = useContext(HarmonicFitContext);
+  const [fitWaiting, setFitWaiting] = useState<JourneyVia | null>(null);
+  const [fitNotice, setFitNotice] = useState("");
+  const fitEntry = useRef<HTMLDivElement>(null);
+  const fitButton = useRef<HTMLButtonElement>(null);
+  const fitQuiet = useQuietFocus(fitEntry);
+  const fitHelp = useHelp();
   const revision = JSON.stringify([
     key,
     states,
@@ -1984,6 +1995,30 @@ export default function SpatialApp({
       }
     }
   }, [active, atlasWaiting, busy, failure]);
+  useEffect(() => {
+    if (!active) {
+      setFitWaiting(null);
+      setFitNotice("");
+    } else if (fitWaiting && !busy) {
+      const via = fitWaiting;
+      setFitWaiting(null);
+      if (failure || !frame)
+        setFitNotice("Correct the highlighted input before fitting.");
+      else {
+        setFitNotice("");
+        fitOwner.begin({
+          study: structuredClone(snapshot()),
+          via,
+          restoreFocus: (returnVia) => {
+            if (returnVia === "pointer") fitQuiet.onPointerDown();
+            else fitQuiet.onKeyDownCapture();
+            fitQuiet.quiet();
+            fitButton.current?.focus({ preventScroll: true });
+          },
+        });
+      }
+    }
+  }, [active, fitWaiting, busy, failure]);
   // The event strip, while the study has a story: its context now, its
   // previews, and choosing a state.
   const event = useMemo(() => storyContext(config, story), [key, story]);
@@ -3235,6 +3270,36 @@ export default function SpatialApp({
             {(atlasNotice || atlasRefusal) && (
               <p className="note" role="status">
                 {atlasNotice || atlasRefusal}
+              </p>
+            )}
+          </div>
+          <div
+            className="atlas-entry"
+            ref={fitEntry}
+            onPointerDown={fitQuiet.onPointerDown}
+            onKeyDownCapture={fitQuiet.onKeyDownCapture}
+          >
+            <div className="atlas-entry-actions">
+              <button
+                ref={fitButton}
+                type="button"
+                disabled={!harmonicFitEligible(config) || !!failure || running}
+                aria-describedby={fitHelp.open ? fitHelp.id : undefined}
+                className="with-icon"
+                onClick={(e) => {
+                  setFitWaiting(e.detail === 0 ? "keyboard" : "pointer");
+                  setFitNotice("Waiting for your study’s inputs…");
+                }}
+              >
+                <Icon name="harmonic" />
+                Fit into harmonic terms
+              </button>
+              <HelpToggle topic="harmonic fitting" help={fitHelp} />
+            </div>
+            <HelpText help={fitHelp}>{harmonicFitEntryHelp}</HelpText>
+            {fitNotice && (
+              <p className="note" role="status">
+                {fitNotice}
               </p>
             )}
           </div>
@@ -4681,7 +4746,7 @@ export default function SpatialApp({
                       ? "Perspective · riding a ray · Stop restores manual framing"
                       : animation
                         ? "Animation camera · Stop restores manual framing"
-                        : "Drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home"}
+                        : plotGestures}
               </span>
             </div>
           </div>
