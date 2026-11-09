@@ -16,7 +16,7 @@ test("every Chromium spec file runs in exactly one shard", () => {
     .filter((f) => f.endsWith(".spec.ts") && !webkitOnly.test(f))
     .sort();
   expect(specFiles(webkitOnly)).toEqual(all);
-  for (const total of [1, 2, 6, 8]) {
+  for (const total of [1, 2, 6, 8, 9]) {
     const shards = Array.from({ length: total }, (_, i) =>
       shardFiles(`${i + 1}/${total}`, webkitOnly),
     );
@@ -52,7 +52,7 @@ test("packing is the same every time, whatever order files are listed in", () =>
 test("the recorded durations pack into shards of about equal length", () => {
   const files = specFiles(webkitOnly).filter((f) => f in durations);
   const total = files.reduce((s, f) => s + durations[f], 0);
-  for (const n of [6, 8]) {
+  for (const n of [6, 8, 9]) {
     const loads = packShards(files, durations, n).map((shard) =>
       shard.reduce((s, f) => s + durations[f], 0),
     );

@@ -58,8 +58,6 @@ export type HarmonicCurve = {
   max: number;
 };
 export const maxHarmonicTerms = 8;
-// A transient comparison outline: a closed polygon that a fitting preview draws
-// beneath its fit. Never in a study, link or ordinary result.
 // A harmonic study's chain at every sample, for a reveal: sample i's terms'
 // joints and then its point start at points[i * (terms + 1)].
 export type HarmonicChainTrack = {
@@ -67,6 +65,8 @@ export type HarmonicChainTrack = {
   terms: number;
   points: Vec3[];
 };
+// A transient comparison outline: a closed polygon that a fitting preview draws
+// beneath its fit. Never in a study, link or ordinary result.
 export type FitSourceOutline = Vec3[];
 // A frame (T, U, V) along the curve: rotation-minimizing (parallel transport)
 // or the Frenet frame as a diagnostic. N₀ (`reference`), projected onto the
