@@ -1,3 +1,4 @@
+import { Icon } from "../icons";
 import {
   ReceiverViewCheck,
   receiverViewEnabled,
@@ -3219,11 +3220,13 @@ export default function SpatialApp({
                   ).error
                 }
                 aria-describedby={atlasHelp.open ? atlasHelp.id : undefined}
+                className="with-icon"
                 onClick={(e) => {
                   setAtlasWaiting(e.detail === 0 ? "keyboard" : "pointer");
                   setAtlasNotice("Waiting for your study’s inputs…");
                 }}
               >
+                <Icon name="atlas" />
                 Explore parameter atlas
               </button>
               <HelpToggle topic="parameter atlas" help={atlasHelp} />

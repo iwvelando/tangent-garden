@@ -25,7 +25,17 @@ import {
 } from "./fourier-fit";
 import type { FourierFitRequest } from "./FourierFitContext";
 import type { JourneyVia } from "./JourneyContext";
-import { createGesture, zoomAbout } from "./gestures";
+import {
+  atHome,
+  cameraMatching,
+  drawingWindow,
+  frameBox,
+  paneView,
+  pointsBox,
+  usePaneCamera,
+  viewBoxOf,
+  type PaneFrame,
+} from "./fit-view";
 import { useQuietFocus } from "./quiet-focus";
 import { useTheme } from "./useTheme";
 import { Plot } from "./Plot";
@@ -67,26 +77,53 @@ function FitError({ message }: { message: string }) {
 
 // How far a press moves before it is a drag, in CSS pixels: wider for a finger.
 const dragSlop = { touch: 8, other: 4 };
-// A pinch reaches the wheel as small deltas with ctrlKey; a held Ctrl and a
-// mouse wheel send far larger ones, kept here to one modest step.
-const pinchRate = 0.01,
-  pinchStep = 25;
-const outlineZoomRange = [1, 32] as const;
-
-// A client point in the outline's 1000 × 760 page, from its middle, as the SVG
-// actually draws it: its border and rounded box sizes would otherwise make a
-// pan fall short of the pointer and a zoom drift from its anchor. The result
-// does not depend on the camera, so events within one frame can share it.
-function outlinePage(svg: SVGSVGElement, x: number, y: number) {
-  const m = svg.getScreenCTM()!,
-    view = svg.viewBox.baseVal,
-    ratio = 1000 / (view.width * m.a);
-  return {
-    ratio,
-    height: 760 / ratio,
-    u: (x - m.a * (view.x + view.width / 2) - m.e) * ratio,
-    v: (y - m.d * (view.y + view.height / 2) - m.f) * ratio,
-  };
+// How near the outline a press edits rather than pans, in CSS pixels.
+const touchReach = 18,
+  pointerReach = 10;
+// One pane's zoom: the readout and buttons are the same on both.
+function PaneZoom({
+  noun,
+  view,
+  available,
+  onFit,
+}: {
+  noun: string;
+  view: ReturnType<typeof usePaneCamera>;
+  available: boolean;
+  onFit: () => void;
+}) {
+  const title = noun.charAt(0).toUpperCase() + noun.slice(1);
+  return (
+    <div className="fit-pane-zoom" role="group" aria-label={`${title} view`}>
+      <span className="fit-zoom-readout" data-testid={`${noun}-zoom`}>
+        {view.camera.zoom.toFixed(1)}×
+      </span>
+      <SteadyButton
+        aria-label={`Zoom in on ${noun}`}
+        title="Zoom in"
+        unavailable={!available || !view.canZoomIn}
+        onClick={() => view.zoomBy(1.6)}
+      >
+        +
+      </SteadyButton>
+      <SteadyButton
+        aria-label={`Zoom out of ${noun}`}
+        title="Zoom out"
+        unavailable={!available || !view.canZoomOut}
+        onClick={() => view.zoomBy(1 / 1.6)}
+      >
+        −
+      </SteadyButton>
+      <SteadyButton
+        aria-label={`Fit ${noun}`}
+        title={`Fit ${noun}`}
+        unavailable={!available}
+        onClick={onFit}
+      >
+        Fit
+      </SteadyButton>
+    </div>
+  );
 }
 
 export function FourierFitPreview({
@@ -105,7 +142,8 @@ export function FourierFitPreview({
     outlineViewHelp = useHelp();
   const dialog = useRef<HTMLDialogElement>(null),
     back = useRef<HTMLButtonElement>(null),
-    capture = useRef<SVGSVGElement>(null);
+    capture = useRef<SVGSVGElement>(null),
+    art = useRef<HTMLDivElement>(null);
   const quiet = useQuietFocus(dialog),
     via = useRef(request.via);
   const engine = useRef<FourierFitSession | null>(null);
@@ -117,14 +155,12 @@ export function FourierFitPreview({
     [notice, setNotice] = useState("");
   const [reference, setReference] = useState(false);
   const [imported, setImported] = useState(false);
-  const [correcting, setCorrecting] = useState(false),
-    [selected, setSelected] = useState(0),
+  const [selected, setSelected] = useState(0),
     [reach, setReach] = useState(0.1);
-  const gesture = useRef(createGesture()),
-    navigating = useRef(false),
+  const navigating = useRef(false),
     panning = useRef(false);
-  const editFrame = useRef({ cx: 0, cy: 0, scale: 1000 / 6, span: 6 });
-  const [outlineCamera, setOutlineCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const inputFrame = useRef<PaneFrame | null>(null),
+    previewFrame = useRef<PaneFrame>(drawingWindow);
   const drag = useRef<{
     id: number;
     index: number;
@@ -174,59 +210,6 @@ export function FourierFitPreview({
     setPlaying(false);
     setProgress(1);
   }, [state.frame]);
-  // A trackpad acts as fingers do on a phone. Held pointers own the view: iOS
-  // also sends gesture events during a touch pinch they already handle.
-  useEffect(() => {
-    const svg = capture.current;
-    if (!svg || !correcting) return;
-    const wheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (gesture.current.count) return;
-      const { ratio, height, u, v } = outlinePage(svg, e.clientX, e.clientY);
-      if (e.ctrlKey) {
-        const step = Math.max(-pinchStep, Math.min(pinchStep, e.deltaY));
-        setOutlineCamera((c) =>
-          zoomAbout(c, Math.exp(-step * pinchRate), outlineZoomRange, u, v),
-        );
-        return;
-      }
-      const unit =
-        e.deltaMode === WheelEvent.DOM_DELTA_LINE
-          ? 16
-          : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? height
-            : 1;
-      setOutlineCamera((c) => ({
-        ...c,
-        x: c.x - e.deltaX * unit * ratio,
-        y: c.y - e.deltaY * unit * ratio,
-      }));
-    };
-    // Safari's own events for a trackpad pinch: scale runs from the start.
-    type Pinch = Event & { scale: number; clientX: number; clientY: number };
-    let last = 1;
-    const pinchStart = (e: Event) => {
-      e.preventDefault();
-      last = 1;
-    };
-    const pinchChange = (event: Event) => {
-      const e = event as Pinch;
-      e.preventDefault();
-      if (gesture.current.count) return;
-      const k = e.scale / last,
-        { u, v } = outlinePage(svg, e.clientX, e.clientY);
-      last = e.scale;
-      setOutlineCamera((c) => zoomAbout(c, k, outlineZoomRange, u, v));
-    };
-    svg.addEventListener("wheel", wheel, { passive: false });
-    svg.addEventListener("gesturestart", pinchStart);
-    svg.addEventListener("gesturechange", pinchChange);
-    return () => {
-      svg.removeEventListener("wheel", wheel);
-      svg.removeEventListener("gesturestart", pinchStart);
-      svg.removeEventListener("gesturechange", pinchChange);
-    };
-  }, [correcting]);
   function reset(next: Vec[] = []) {
     engine.current?.cancel();
     stroke.current = next;
@@ -236,13 +219,15 @@ export function FourierFitPreview({
     setProgress(1);
     setNotice("");
     setImported(false);
-    setCorrecting(false);
     setSelected(0);
     drag.current = null;
-    gesture.current = createGesture();
+    inputFrame.current = null;
+    previewFrame.current = drawingWindow;
+    input.home();
+    preview.home();
+    input.forgetPointers();
     navigating.current = false;
     panning.current = false;
-    setOutlineCamera({ x: 0, y: 0, zoom: 1 });
     setGhost(null);
   }
   function model(e: PointerEvent<SVGSVGElement>): Vec {
@@ -300,7 +285,7 @@ export function FourierFitPreview({
     () =>
       matchMedia("(pointer: coarse)").matches
         ? "Pinch to zoom · two fingers to pan"
-        : "Pinch or Ctrl+scroll to zoom · scroll to pan",
+        : "Pinch or Ctrl+scroll to zoom · drag to pan",
     [],
   );
   const frame = state.frame;
@@ -318,63 +303,91 @@ export function FourierFitPreview({
       : 0);
   const pointIndex = Math.min(selected, Math.max(0, uniqueCount - 1));
   const chosen = visiblePoints[pointIndex];
-  const heldFraming = useRef({ cx: 0, cy: 0, scale: 1000 / 6, span: 6 });
   const openSource = imported && !!state.outline?.open;
   const isClosed = imported ? !!state.outline && !openSource : closed;
-  // Keep imported coordinates untouched. One frame includes the entire
-  // source and all 16 ranked circles, independent of selection/playback.
-  const framing = useMemo(() => {
-    if (!imported && !state.editing?.changed) {
-      heldFraming.current = { cx: 0, cy: 0, scale: 1000 / 6, span: 6 };
-    } else if (!state.pending && (state.fit || openSource)) {
-      const r = Math.max(
-        imported ? 0 : 3,
-        state.outline?.previewRadius ?? 0,
-        state.fit?.previewRadius ?? 0,
-        ...originalPoints.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y))),
-        ...visiblePoints.map((p) => Math.max(Math.abs(p.x), Math.abs(p.y))),
+  // What a press on the input means. Until an outline exists it draws. Once one
+  // is retained there is nothing left to draw: it pans, and a closed outline
+  // can also be edited in place.
+  const editable = !!state.editing;
+  const navigable = editable || (imported && visiblePoints.length > 0);
+  const hit = (svg: SVGSVGElement, x: number, y: number) => {
+    const m = svg.getScreenCTM()!.inverse();
+    const p = new DOMPoint(x, y).matrixTransform(m),
+      target = { x: p.x, y: -p.y };
+    let index = 0,
+      distance = Infinity,
+      outlineDistance = Infinity;
+    for (let i = 0; i < uniqueCount; i++) {
+      const a = visiblePoints[i],
+        d = Math.hypot(a.x - target.x, a.y - target.y);
+      if (d < distance) {
+        distance = d;
+        index = i;
+      }
+      // Hit the visible closed polygon, including long edges and its closing
+      // segment. Tolerance stays in CSS pixels.
+      const next = visiblePoints[(i + 1) % uniqueCount];
+      const dx = next.x - a.x,
+        dy = next.y - a.y,
+        length2 = dx * dx + dy * dy;
+      const u =
+        length2 === 0
+          ? 0
+          : Math.max(
+              0,
+              Math.min(
+                1,
+                ((target.x - a.x) * dx + (target.y - a.y) * dy) / length2,
+              ),
+            );
+      outlineDistance = Math.min(
+        outlineDistance,
+        Math.hypot(target.x - a.x - u * dx, target.y - a.y - u * dy),
       );
-      heldFraming.current = {
-        cx: 0,
-        cy: 0,
-        scale: 760 / (2.2 * r),
-        span: 2.2 * r,
-      };
     }
-    return heldFraming.current;
-  }, [imported, state]);
-  const viewBox = `${framing.cx - 500 / framing.scale} ${-framing.cy - 380 / framing.scale} ${1000 / framing.scale} ${760 / framing.scale}`;
-  function fitOutlineView() {
-    const xs = visiblePoints.map((p) => p.x),
-      ys = visiblePoints.map((p) => p.y);
-    const x0 = Math.min(...xs),
-      x1 = Math.max(...xs),
-      y0 = Math.min(...ys),
-      y1 = Math.max(...ys);
-    const scale = Math.min(1000 / (1.12 * (x1 - x0)), 760 / (1.12 * (y1 - y0)));
-    editFrame.current = {
-      cx: (x0 + x1) / 2,
-      cy: (y0 + y1) / 2,
-      scale,
-      span: 1000 / scale,
+    const forward = svg.getScreenCTM()!;
+    return {
+      index,
+      target,
+      pixels: outlineDistance * Math.hypot(forward.a, forward.b),
     };
+  };
+  const input = usePaneCamera(capture, () => capture.current, {
+    active: navigable,
+    claimsTouch: (x, y) =>
+      editable &&
+      !!capture.current &&
+      hit(capture.current, x, y).pixels <= touchReach,
+  });
+  const preview = usePaneCamera(
+    art,
+    () => art.current?.querySelector("svg") ?? null,
+    { active: !!frame },
+  );
+  const targetPoints = state.fitPoints ?? visiblePoints;
+  // Each pane fits its own content and is centered on it. The input keeps its
+  // frame through edits, so a point stays under the pointer; Fit takes a new
+  // one. A fitted preview follows each completed fit, until it has been moved.
+  if (!inputFrame.current && navigable)
+    inputFrame.current = frameBox(pointsBox(visiblePoints));
+  if (!state.pending && state.fit && atHome(preview.camera))
+    previewFrame.current = frameBox(
+      pointsBox(
+        [...targetPoints, ...originalPoints],
+        state.fit.previewBounds ?? undefined,
+      ),
+    );
+  const inputView = paneView(inputFrame.current ?? drawingWindow, input.camera);
+  const previewView = paneView(previewFrame.current, preview.camera);
+  function fitInput() {
+    inputFrame.current = navigable ? frameBox(pointsBox(visiblePoints)) : null;
     drag.current = null;
     setGhost(null);
-    gesture.current = createGesture();
     navigating.current = false;
     panning.current = false;
-    setOutlineCamera({ x: 0, y: 0, zoom: 1 });
+    input.home();
   }
-  const inputScale = correcting
-    ? editFrame.current.scale * outlineCamera.zoom
-    : framing.scale;
-  const inputCX = correcting
-    ? editFrame.current.cx - outlineCamera.x / inputScale
-    : framing.cx;
-  const inputCY = correcting
-    ? editFrame.current.cy + outlineCamera.y / inputScale
-    : framing.cy;
-  const inputViewBox = `${inputCX - 500 / inputScale} ${-inputCY - 380 / inputScale} ${1000 / inputScale} ${760 / inputScale}`;
+  const inputScale = inputView.scale;
 
   const layers = useMemo(
     () => (state.fit ? fittedStudy(state.fit.terms).layers : undefined),
@@ -398,9 +411,9 @@ export function FourierFitPreview({
     engine.current?.correct({ index, target, reach });
   }
   function endCorrection(e: PointerEvent<SVGSVGElement>, canceled = false) {
-    gesture.current.up(e);
+    input.gesture.current.up(e);
     if (navigating.current) {
-      if (gesture.current.count === 0) {
+      if (input.gesture.current.count === 0) {
         navigating.current = false;
         panning.current = false;
       }
@@ -421,17 +434,16 @@ export function FourierFitPreview({
       commitCorrection(d.index, d.target);
   }
   const path = (points: Vec[]) => points.map((p) => `${p.x},${-p.y}`).join(" ");
-  const targetPoints = state.fitPoints ?? visiblePoints;
-  const outline = (preview = false) => (
+  const outline = (reference = false) => (
     <svg
-      ref={preview ? undefined : capture}
-      viewBox={preview ? viewBox : inputViewBox}
-      tabIndex={!preview && correcting ? 0 : undefined}
+      ref={reference ? undefined : capture}
+      viewBox={viewBoxOf(reference ? previewView : inputView)}
+      tabIndex={!reference && navigable ? 0 : undefined}
       aria-describedby={
-        !preview && correcting ? `${title}-correction-note` : undefined
+        !reference && editable ? `${title}-correction-note` : undefined
       }
       onKeyDown={
-        !preview && correcting
+        !reference && navigable
           ? (e) => {
               // Leave browser shortcuts alone, such as Cmd+[ for Back. Only the
               // brackets allow Alt, since some layouts type them with Option or
@@ -445,9 +457,11 @@ export function FourierFitPreview({
               };
               // Step through the closed outline, about 1% at a time; Shift is
               // finer, as with the arrows, down to a single point.
-              const stepping = (
-                { "[": -1, "]": 1, "{": -1, "}": 1 } as Record<string, number>
-              )[e.key];
+              const stepping =
+                editable &&
+                (
+                  { "[": -1, "]": 1, "{": -1, "}": 1 } as Record<string, number>
+                )[e.key];
               if (stepping) {
                 e.preventDefault();
                 const step =
@@ -462,18 +476,11 @@ export function FourierFitPreview({
               if (e.altKey) return;
               if (["+", "=", "-", "Home"].includes(e.key)) {
                 e.preventDefault();
-                if (e.key === "Home") fitOutlineView();
-                else
-                  setOutlineCamera((c) =>
-                    zoomAbout(
-                      c,
-                      e.key === "-" ? 1 / 1.6 : 1.6,
-                      outlineZoomRange,
-                    ),
-                  );
+                if (e.key === "Home") fitInput();
+                else input.zoomBy(e.key === "-" ? 1 / 1.6 : 1.6);
                 return;
               }
-              if (!direction[e.key]) return;
+              if (!editable || !direction[e.key]) return;
               e.preventDefault();
               if (state.pending || !chosen) return;
               const step = (1000 / inputScale) * (e.shiftKey ? 0.001 : 0.01),
@@ -485,46 +492,47 @@ export function FourierFitPreview({
             }
           : undefined
       }
-      aria-hidden={preview || undefined}
-      role={preview ? undefined : "img"}
+      aria-hidden={reference || undefined}
+      role={reference ? undefined : "img"}
       aria-label={
-        preview
+        reference
           ? undefined
           : (state.editing?.changed
               ? "Edited outline"
               : imported
                 ? "Current curve outline"
                 : "Draw one outline") +
-            (correcting ? `, point ${pointIndex + 1} of ${uniqueCount}` : "")
+            (editable ? `, point ${pointIndex + 1} of ${uniqueCount}` : "")
       }
-      className={preview ? "fit-reference" : "fit-capture"}
-      data-testid={preview ? "fit-reference" : "stroke-reference"}
+      className={reference ? "fit-reference" : "fit-capture"}
+      data-testid={reference ? "fit-reference" : "stroke-reference"}
       data-closed={String(isClosed)}
       data-point-count={visiblePoints.length}
       data-selected-point={pointIndex}
       data-source={imported ? "curve" : "drawing"}
+      data-movable={!reference && navigable ? "" : undefined}
       style={
         {
-          "--outline-unit": `${(0.015 * (1000 / 6)) / (preview ? framing.scale : inputScale)}px`,
-          cursor: correcting ? "grab" : imported ? "default" : undefined,
-          touchAction: correcting
-            ? "none"
-            : imported
-              ? "pan-y pinch-zoom"
-              : undefined,
+          "--outline-unit": `${(0.015 * (1000 / 6)) / (reference ? previewView.scale : inputScale)}px`,
+          touchAction: navigable
+            ? atHome(input.camera)
+              ? "pan-y"
+              : "none"
+            : undefined,
         } as CSSProperties
       }
       onPointerDown={
-        preview
+        reference
           ? undefined
           : (e) => {
               if (e.button !== 0) return;
-              if (correcting) {
-                if (gesture.current.count >= 2) return;
+              if (navigable) {
+                const gesture = input.gesture.current;
+                if (gesture.count >= 2) return;
                 e.preventDefault();
-                gesture.current.down(e);
+                gesture.down(e);
                 e.currentTarget.setPointerCapture(e.pointerId);
-                if (gesture.current.count === 2) {
+                if (gesture.count === 2) {
                   navigating.current = true;
                   panning.current = false;
                   if (drag.current) setSelected(drag.current.previousIndex);
@@ -532,51 +540,16 @@ export function FourierFitPreview({
                   setGhost(null);
                   return;
                 }
-                if (navigating.current || !chosen || drag.current) return;
-                const target = correctionPoint(e);
-                let index = 0,
-                  distance = Infinity,
-                  outlineDistance = Infinity;
-                for (let i = 0; i < uniqueCount; i++) {
-                  const p = visiblePoints[i],
-                    d = Math.hypot(p.x - target.x, p.y - target.y);
-                  if (d < distance) {
-                    distance = d;
-                    index = i;
-                  }
-                  // Hit the visible closed polygon, including long edges and
-                  // its closing segment. Tolerance stays in CSS pixels.
-                  const next = visiblePoints[(i + 1) % uniqueCount];
-                  const dx = next.x - p.x,
-                    dy = next.y - p.y,
-                    length2 = dx * dx + dy * dy;
-                  const u =
-                    length2 === 0
-                      ? 0
-                      : Math.max(
-                          0,
-                          Math.min(
-                            1,
-                            ((target.x - p.x) * dx + (target.y - p.y) * dy) /
-                              length2,
-                          ),
-                        );
-                  outlineDistance = Math.min(
-                    outlineDistance,
-                    Math.hypot(
-                      target.x - p.x - u * dx,
-                      target.y - p.y - u * dy,
-                    ),
-                  );
-                }
+                if (navigating.current || drag.current) return;
                 quiet.quiet();
                 e.currentTarget.focus({ preventScroll: true });
-                const matrix = e.currentTarget.getScreenCTM()!;
-                const pixelsPerUnit = Math.hypot(matrix.a, matrix.b);
-                if (
-                  outlineDistance * pixelsPerUnit >
-                  (e.pointerType === "touch" ? 18 : 10)
-                ) {
+                const { index, target, pixels } = hit(
+                  e.currentTarget,
+                  e.clientX,
+                  e.clientY,
+                );
+                const touch = e.pointerType === "touch";
+                if (!editable || pixels > (touch ? touchReach : pointerReach)) {
                   // Ownership is fixed at pointer-down; crossing the outline
                   // while panning must never start a correction.
                   panning.current = true;
@@ -592,12 +565,10 @@ export function FourierFitPreview({
                   start: target,
                   target,
                   client: { x: e.clientX, y: e.clientY },
-                  slop:
-                    e.pointerType === "touch" ? dragSlop.touch : dragSlop.other,
+                  slop: touch ? dragSlop.touch : dragSlop.other,
                   moved: false,
                 };
-                e.currentTarget.setPointerCapture(e.pointerId);
-              } else if (e.isPrimary && !imported && pointer.current === null) {
+              } else if (!imported && e.isPrimary && pointer.current === null) {
                 e.preventDefault();
                 reset();
                 pointer.current = e.pointerId;
@@ -608,41 +579,14 @@ export function FourierFitPreview({
             }
       }
       onPointerMove={
-        preview
+        reference
           ? undefined
           : (e) => {
-              if (correcting) {
-                const motion = gesture.current.move(e);
+              if (navigable) {
+                const motion = input.gesture.current.move(e);
                 if (navigating.current) {
-                  if (motion?.kind === "drag" && panning.current) {
-                    e.preventDefault();
-                    const { ratio } = outlinePage(e.currentTarget, 0, 0);
-                    setOutlineCamera((c) => ({
-                      ...c,
-                      x: c.x + motion.dx * ratio,
-                      y: c.y + motion.dy * ratio,
-                    }));
-                  } else if (motion?.kind === "pinch") {
-                    e.preventDefault();
-                    const { ratio, u, v } = outlinePage(
-                      e.currentTarget,
-                      motion.mid.x,
-                      motion.mid.y,
-                    );
-                    setOutlineCamera((c) =>
-                      zoomAbout(
-                        {
-                          ...c,
-                          x: c.x + motion.dx * ratio,
-                          y: c.y + motion.dy * ratio,
-                        },
-                        motion.scale,
-                        outlineZoomRange,
-                        u,
-                        v,
-                      ),
-                    );
-                  }
+                  if (motion) e.preventDefault();
+                  input.follow(motion, e.currentTarget, panning.current);
                   return;
                 }
                 const d = drag.current;
@@ -665,41 +609,34 @@ export function FourierFitPreview({
                   y: source.y + (p.y - d.start.y),
                 };
                 setGhost(d.target);
-              } else if (!imported && pointer.current === e.pointerId) {
+              } else if (pointer.current === e.pointerId) {
                 e.preventDefault();
                 append(e);
               }
             }
       }
       onPointerUp={
-        preview
+        reference
           ? undefined
-          : (e) =>
-              correcting ? endCorrection(e) : !imported && finishPointer(e)
+          : (e) => (navigable ? endCorrection(e) : finishPointer(e))
       }
       onPointerCancel={
-        preview
+        reference
           ? undefined
-          : (e) =>
-              correcting
-                ? endCorrection(e, true)
-                : !imported && finishPointer(e, true)
+          : (e) => (navigable ? endCorrection(e, true) : finishPointer(e, true))
       }
       onLostPointerCapture={
-        preview
+        reference
           ? undefined
-          : (e) =>
-              correcting
-                ? endCorrection(e, true)
-                : !imported && finishPointer(e, true)
+          : (e) => (navigable ? endCorrection(e, true) : finishPointer(e, true))
       }
     >
       {isClosed ? (
-        <polygon points={path(preview ? targetPoints : visiblePoints)} />
+        <polygon points={path(reference ? targetPoints : visiblePoints)} />
       ) : (
-        <polyline points={path(preview ? targetPoints : visiblePoints)} />
+        <polyline points={path(reference ? targetPoints : visiblePoints)} />
       )}
-      {!preview && correcting && chosen && (
+      {!reference && editable && chosen && (
         <>
           {state.editing?.changed && (
             <polygon className="fit-original" points={path(originalPoints)} />
@@ -755,9 +692,9 @@ export function FourierFitPreview({
         </button>
       </div>
       <p className="note">
-        Draw your own outline or start with the example leaf, then close it. A
-        new stroke replaces this draft. Or use your current base curve; your
-        original study stays here until adoption.
+        Draw your own outline or start with the example leaf, then close it. Or
+        use your current base curve; your original study stays here until
+        adoption.
       </p>
       <div className="fit-layout">
         <section className="fit-draft" aria-label="Outline input">
@@ -770,59 +707,26 @@ export function FourierFitPreview({
           </h3>
           {outline()}
           <div className="fit-canvas-tools">
-            <div className="fit-source-action-row">
-              <button
-                type="button"
-                aria-pressed={correcting}
-                disabled={!state.editing || drawing}
-                onClick={() => {
-                  fitOutlineView();
-                  setCorrecting(!correcting);
-                  setPlaying(false);
-                }}
+            <div className="fit-reach">
+              <label htmlFor={`${title}-reach`}>Correction reach</label>
+              <select
+                id={`${title}-reach`}
+                value={reach}
+                disabled={!editable}
+                onChange={(e) => setReach(+e.target.value)}
               >
-                Correct outline
-              </button>
+                <option value="0.05">Narrow · 5%</option>
+                <option value="0.1">Medium · 10%</option>
+                <option value="0.2">Broad · 20%</option>
+              </select>
               <HelpToggle topic="outline correction" help={correctionHelp} />
             </div>
-            {correcting && (
-              <div
-                className="fit-outline-zoom"
-                role="group"
-                aria-label="Outline view"
-              >
-                <SteadyButton
-                  aria-label="Zoom in on outline"
-                  title="Zoom in"
-                  unavailable={outlineCamera.zoom >= outlineZoomRange[1]}
-                  onClick={() =>
-                    setOutlineCamera((c) => zoomAbout(c, 1.6, outlineZoomRange))
-                  }
-                >
-                  +
-                </SteadyButton>
-                <SteadyButton
-                  aria-label="Zoom out of outline"
-                  title="Zoom out"
-                  unavailable={outlineCamera.zoom <= outlineZoomRange[0]}
-                  onClick={() =>
-                    setOutlineCamera((c) =>
-                      zoomAbout(c, 1 / 1.6, outlineZoomRange),
-                    )
-                  }
-                >
-                  −
-                </SteadyButton>
-                <button
-                  type="button"
-                  aria-label="Fit outline"
-                  title="Fit outline"
-                  onClick={fitOutlineView}
-                >
-                  Fit
-                </button>
-              </div>
-            )}
+            <PaneZoom
+              noun="outline"
+              view={input}
+              available={navigable}
+              onFit={fitInput}
+            />
           </div>
           <HelpText help={correctionHelp}>{fitCorrectionHelp}</HelpText>
           <div className="fit-actions">
@@ -927,32 +831,19 @@ export function FourierFitPreview({
             {state.errorFrom === "correction" && (
               <FitError message={state.error!} />
             )}
-            {correcting && (
-              <>
-                <p className="note" id={`${title}-correction-note`}>
-                  Drag near the outline to correct; drag open space to pan.
-                  Arrow keys nudge; [ and ] choose another point; Shift is
-                  finer.
-                </p>
-                <div className="fit-outline-view-note">
-                  <p className="note">
-                    {viewHint} · {outlineCamera.zoom.toFixed(1)}×
-                  </p>
-                  <HelpToggle topic="outline view" help={outlineViewHelp} />
-                </div>
-                <HelpText help={outlineViewHelp}>{fitOutlineViewHelp}</HelpText>
-                <Field label="Correction reach">
-                  <select
-                    value={reach}
-                    onChange={(e) => setReach(+e.target.value)}
-                  >
-                    <option value="0.05">Narrow · 5%</option>
-                    <option value="0.1">Medium · 10%</option>
-                    <option value="0.2">Broad · 20%</option>
-                  </select>
-                </Field>
-              </>
+            {editable && (
+              <p className="note" id={`${title}-correction-note`}>
+                Drag near the outline to correct; drag open space to pan. Arrow
+                keys nudge; [ and ] choose another point; Shift is finer.
+              </p>
             )}
+            {navigable && (
+              <div className="fit-outline-view-note">
+                <p className="note">{viewHint}</p>
+                <HelpToggle topic="outline view" help={outlineViewHelp} />
+              </div>
+            )}
+            <HelpText help={outlineViewHelp}>{fitOutlineViewHelp}</HelpText>
           </div>
           <p className="note">
             {visiblePoints.length.toLocaleString("en-US")} / 4,096 points ·{" "}
@@ -989,7 +880,52 @@ export function FourierFitPreview({
         >
           <h3>2. Find the shape in circles</h3>
           <div className="fit-player">
-            <div className="fit-art">
+            <div
+              ref={art}
+              className="fit-art"
+              role="group"
+              aria-label="Fitted preview view"
+              tabIndex={frame ? 0 : undefined}
+              data-movable={frame ? "" : undefined}
+              style={{ touchAction: atHome(preview.camera) ? "pan-y" : "none" }}
+              onKeyDown={(e) => {
+                if (!frame || e.metaKey || e.ctrlKey || e.altKey) return;
+                const pan: Record<string, [number, number]> = {
+                  ArrowLeft: [40, 0],
+                  ArrowRight: [-40, 0],
+                  ArrowUp: [0, 40],
+                  ArrowDown: [0, -40],
+                };
+                if (e.key === "Home") preview.home();
+                else if (e.key === "+" || e.key === "=") preview.zoomBy(1.6);
+                else if (e.key === "-") preview.zoomBy(1 / 1.6);
+                else if (pan[e.key])
+                  preview.setCamera((c) => ({
+                    ...c,
+                    x: c.x + pan[e.key][0],
+                    y: c.y + pan[e.key][1],
+                  }));
+                else return;
+                e.preventDefault();
+              }}
+              onPointerDown={(e) => {
+                if (!frame || e.button !== 0) return;
+                preview.gesture.current.down(e);
+                e.currentTarget.setPointerCapture(e.pointerId);
+                quiet.quiet();
+              }}
+              onPointerMove={(e) => {
+                const svg = art.current?.querySelector("svg");
+                const motion = preview.gesture.current.move(e);
+                if (motion && svg) {
+                  e.preventDefault();
+                  preview.follow(motion, svg);
+                }
+              }}
+              onPointerUp={(e) => preview.gesture.current.up(e)}
+              onPointerCancel={(e) => preview.gesture.current.up(e)}
+              onLostPointerCapture={(e) => preview.gesture.current.up(e)}
+            >
               {shown && (
                 <Plot
                   id="fit-artwork"
@@ -1000,7 +936,7 @@ export function FourierFitPreview({
                   scheme={theme.scheme}
                   length={0.8}
                   reset={0}
-                  framing={framing}
+                  framing={previewView}
                 />
               )}
               {reference && isClosed && outline(true)}
@@ -1039,6 +975,26 @@ export function FourierFitPreview({
                 }}
               />
             </div>
+          </div>
+          <div className="fit-canvas-tools fit-preview-tools">
+            <SteadyButton
+              className="fit-match"
+              title="Show the same part of the plane as the outline"
+              unavailable={!frame || !navigable}
+              onClick={() =>
+                preview.setCamera(
+                  cameraMatching(previewFrame.current, inputView),
+                )
+              }
+            >
+              Match outline
+            </SteadyButton>
+            <PaneZoom
+              noun="preview"
+              view={preview}
+              available={!!frame}
+              onFit={preview.home}
+            />
           </div>
           <Field label="Total terms" help={fitTermsHelp}>
             <select

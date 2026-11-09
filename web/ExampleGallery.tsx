@@ -1,3 +1,4 @@
+import { Icon } from "./icons";
 import type { ColorScheme } from "./color-schemes";
 import { useTheme } from "./useTheme";
 import {
@@ -402,6 +403,7 @@ export function ExampleGallery({
                   {journeys.map((journey) => (
                     <button
                       key={journey.title}
+                      className="with-icon"
                       onClick={() => {
                         close();
                         onJourney(
@@ -417,6 +419,7 @@ export function ExampleGallery({
                         );
                       }}
                     >
+                      <Icon name={journey.icon} />
                       {journey.title}
                     </button>
                   ))}

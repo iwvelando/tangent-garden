@@ -30,7 +30,6 @@ type FourierOutline struct {
 	Tolerance        float64 `json:"tolerance"`
 	Evaluations      int     `json:"evaluations"`
 	ClosureTolerance float64 `json:"closureTolerance"`
-	PreviewRadius    float64 `json:"previewRadius,omitempty"`
 	// Open reports entered endpoints further apart than ClosureTolerance. Its
 	// polyline ends where the source does; nothing joins them until a closed fit.
 	Open bool `json:"open,omitempty"`

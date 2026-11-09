@@ -58,6 +58,10 @@
 .gallery-journey-list[data-more-end] {
   --fade-end: var(--journey-fade);
 }
+.gallery-journey-list .icon {
+  width: 22px;
+  height: 22px;
+}
 .gallery-journey-list > * {
   flex-shrink: 0;
   white-space: nowrap;

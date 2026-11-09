@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import {
   choosePreset,
   examplesButton,
@@ -5619,4 +5619,95 @@ for (const [pair, title] of [
     );
     await expect(atlas.locator(".atlas-art")).toHaveCount(0);
     await page.keyboard.press("Escape");
+  });
+
+// Each picture is decorative: its button keeps its name, its geometry stays in
+// its box, and its inks are the current scheme's.
+async function expectIcons(buttons: Locator, names: (string | RegExp)[]) {
+  await expect(buttons).toHaveText(names);
+  for (const button of await buttons.all()) {
+    const icon = button.locator("svg.icon");
+    await expect(icon).toHaveAttribute("aria-hidden", "true");
+    const fits = await icon.evaluate((svg) => {
+      const box = (svg as unknown as SVGGraphicsElement).getBBox();
+      return (
+        box.width > 8 &&
+        box.height > 6 &&
+        box.x >= -0.5 &&
+        box.y >= -0.5 &&
+        box.x + box.width <= 24.5 &&
+        box.y + box.height <= 24.5
+      );
+    });
+    expect(fits, await button.textContent()).toBe(true);
+  }
+}
+
+test("construction, entry and journey buttons carry scheme-colored pictures", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await expectIcons(
+    page.getByRole("group", { name: "Construction" }).getByRole("button"),
+    [
+      /evolute/i,
+      /involute/i,
+      /catacaustic/i,
+      /diacaustic/i,
+      /pedal/i,
+      /offset/i,
+      /rolling/i,
+      /envelope/i,
+      /inversion/i,
+    ],
+  );
+  for (const name of [
+    "Explore parameter atlas",
+    "Draw a loop",
+    "Open complex loom",
+  ])
+    await expect(
+      page.getByRole("button", { name, exact: true }).locator("svg.icon"),
+    ).toHaveCount(1);
+  const tab = page
+    .getByRole("group", { name: "Construction" })
+    .getByRole("button", { name: "Catacaustic" });
+  const inks = () =>
+    tab.evaluate((b) => {
+      const s = getComputedStyle(b);
+      return {
+        base: s.getPropertyValue("--base-ink"),
+        drawn: getComputedStyle(b.querySelector("svg.icon .b")!).stroke,
+      };
+    });
+  const before = await inks();
+  await page.getByRole("button", { name: /color scheme/i }).click();
+  await page.getByRole("menuitemradio").last().click();
+  await expect.poll(async () => (await inks()).base).not.toBe(before.base);
+  await expect.poll(async () => (await inks()).drawn).not.toBe(before.drawn);
+  await page.keyboard.press("Escape");
+  await examplesButton(page).click();
+  await expectIcons(
+    gallery(page)
+      .getByRole("group", { name: "Try a guided journey" })
+      .getByRole("button"),
+    journeyTitles,
+  );
+});
+
+for (const notebook of ["3D", "4D"])
+  test(`the ${notebook} atlas entry carries the same picture`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await settled(page);
+    await page
+      .getByRole("radio", { name: `${notebook} studies`, exact: true })
+      .click();
+    await expect(
+      page
+        .getByRole("button", { name: "Explore parameter atlas", exact: true })
+        .locator("svg.icon"),
+    ).toHaveCount(1);
   });

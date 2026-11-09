@@ -1,3 +1,4 @@
+import { Icon } from "../icons";
 import { AtlasContext } from "../AtlasContext";
 import type { JourneyVia } from "../JourneyContext";
 import { useQuietFocus } from "../quiet-focus";
@@ -927,6 +928,7 @@ export default function TesseractApp({
                       aria-describedby={
                         atlasHelp.open ? atlasHelp.id : undefined
                       }
+                      className="with-icon"
                       onClick={(e) => {
                         setAtlasWaiting(
                           e.detail === 0 ? "keyboard" : "pointer",
@@ -934,6 +936,7 @@ export default function TesseractApp({
                         setAtlasNotice("Waiting for your study’s inputs…");
                       }}
                     >
+                      <Icon name="atlas" />
                       Explore parameter atlas
                     </button>
                     <HelpToggle topic="parameter atlas" help={atlasHelp} />

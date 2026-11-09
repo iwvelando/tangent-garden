@@ -1,3 +1,4 @@
+import type { Box } from "./fit-view";
 import type { EngineClient } from "./engine-client";
 import {
   defaultAnimation,
@@ -24,13 +25,13 @@ export const fitTermsHelp = tiered(
 );
 
 export const fitCorrectionHelp = tiered(
-  "Move a point and its nearby arc, then refit the edited outline.",
-  "Press to select a point; drag to move it. Arrows move it 1% of the frame span, [ and ] step 1% of the points; Shift is finer. Reach: 5%, 10% or 20% per direction. Keep 3–4,096 points (three distinct), length ≥0.000001, coordinates within ±100,000 and fitted radii ≤100,000. Undo retains the original and 32 edits, dropping oldest intermediate edits.",
+  "Drag near a closed outline to move a point and its nearby arc, then refit.",
+  "A tap selects without moving. Arrows move the point 1% of the frame span, [ and ] step 1% of the points; Shift is finer. Reach: 5%, 10% or 20% per direction. Keep 3–4,096 points (three distinct), length ≥0.000001, coordinates within ±100,000 and fitted radii ≤100,000. Undo retains the original and 32 edits, dropping oldest intermediate edits.",
 );
 
 export const fitOutlineViewHelp = tiered(
-  "Zoom for precise corrections; drag open space or use two fingers to pan.",
-  "Drag open space to pan; pinch, Ctrl+scroll or the zoom buttons magnify 1–32×. Two fingers or a scroll pan anywhere; a second finger cancels the tentative edit. Lift both before correcting again. Plus/minus zoom; Home or Fit resets. The close-up stays through refits and undo. Model coordinates and the fitted preview stay intact.",
+  "Each drawing has its own zoom and pan, kept through refits and undo.",
+  "Pinch, Ctrl+scroll or the zoom buttons magnify 1–32×. Drag open space or use two fingers to pan; once zoomed, a scroll pans too, while at the fit it moves the page. A second finger cancels a tentative edit. Plus, minus and Home work on a focused drawing; Fit resets. Match outline copies the outline's view.",
 );
 
 export const maxStrokePoints = 4096;
@@ -77,14 +78,13 @@ export type FourierFitResult = {
   outline?: FourierOutline;
   editedPoints?: Vec[];
   closedPoints?: Vec[];
-  previewRadius?: number;
+  previewBounds?: Box;
 };
 export type FourierOutline = {
   points: Vec[];
   tolerance: number;
   evaluations: number;
   closureTolerance: number;
-  previewRadius?: number;
   // The source's ends are apart, and nothing has been fitted.
   open?: boolean;
   // An open source closed by Close outline, with a straight segment.

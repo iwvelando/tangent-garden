@@ -529,7 +529,78 @@ input[type="range"] {
   gap: 5px;
   margin: 19px 0 22px;
 }
+.icon {
+  flex: none;
+  display: block;
+  width: 20px;
+  height: 20px;
+  overflow: visible;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon .b,
+.icon .d {
+  stroke-width: 1.5;
+}
+.icon .b {
+  stroke: var(--base-ink);
+}
+.icon .d {
+  stroke: var(--derived-ink);
+}
+.icon .m {
+  stroke: currentColor;
+  stroke-width: 1.2;
+  opacity: 0.65;
+}
+.icon .line {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.icon .fine {
+  stroke-width: 0.9;
+}
+.icon .fine2 {
+  stroke-width: 0.85;
+}
+.icon .dash {
+  stroke-width: 1;
+  stroke-dasharray: 1.6 1.8;
+}
+.icon .bb {
+  fill: var(--base-ink);
+}
+.icon .dd {
+  fill: var(--derived-ink);
+}
+.icon .mm {
+  fill: currentColor;
+}
+.icon .dots {
+  stroke: var(--derived-ink);
+  stroke-width: 0.95;
+}
+.icon .wash {
+  fill: var(--base-ink);
+  opacity: 0.16;
+}
+.icon .shade {
+  fill: var(--derived-ink);
+  opacity: 0.4;
+}
+/* A picture beside its words; the button's width and name are the words'. */
+.with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   text-transform: capitalize;
   font-size: 13px;
   border-color: var(--border);

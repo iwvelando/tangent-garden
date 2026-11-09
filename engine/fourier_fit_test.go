@@ -826,3 +826,60 @@ func TestFourierOutlineCorrectionAtPointCap(t *testing.T) {
 		t.Fatal("accepted out-of-range displaced neighbor")
 	}
 }
+
+// Every circle of every prefix, at every position of its chain, stays inside
+// the bounds: measured by walking the chain itself across a dense parameter.
+func TestFourierFitPreviewBoundsContainEveryCircle(t *testing.T) {
+	for name, outline := range map[string][]Vec{
+		"off-origin half moon": halfMoon(30, -2),
+		"origin-centered":      halfMoon(0, -1),
+		// Near enough that the rotating circles, not the translation's circle,
+		// reach furthest in every direction.
+		"near the origin": halfMoon(.4, .7),
+		"other quadrant":  halfMoon(-30, 2),
+	} {
+		f, err := FitFourier(outline, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := f.PreviewBounds()
+		var seen Bounds
+		seen.MinX, seen.MinY = math.Inf(1), math.Inf(1)
+		seen.MaxX, seen.MaxY = math.Inf(-1), math.Inf(-1)
+		take := func(c Vec, r float64) {
+			seen.MinX, seen.MaxX = math.Min(seen.MinX, c.X-r), math.Max(seen.MaxX, c.X+r)
+			seen.MinY, seen.MaxY = math.Min(seen.MinY, c.Y-r), math.Max(seen.MaxY, c.Y+r)
+		}
+		for s := 0; s <= 4096; s++ {
+			u := 2 * math.Pi * float64(s) / 4096
+			joint := Vec{}
+			for _, term := range f.terms[:maxTerms] {
+				take(joint, term.Radius)
+				a := term.Frequency*u + term.Phase
+				joint = joint.Add(Vec{term.Radius * math.Cos(a), term.Radius * math.Sin(a)})
+			}
+		}
+		const slack = 1e-9
+		if seen.MinX < b.MinX-slack || seen.MaxX > b.MaxX+slack || seen.MinY < b.MinY-slack || seen.MaxY > b.MaxY+slack {
+			t.Fatalf("%s: drawn circles %+v escape bounds %+v", name, seen, b)
+		}
+		// Tighter than the origin-centered square it replaces, which is what
+		// lets a curve far from the origin fill its pane.
+		r := f.previewReach()
+		if b.MaxX-b.MinX >= 2*r && b.MaxY-b.MinY >= 2*r {
+			t.Fatalf("%s: bounds %+v are no tighter than the ±%v square", name, b, r)
+		}
+	}
+}
+
+func halfMoon(cx, cy float64) []Vec {
+	points := make([]Vec, 0, 90)
+	for i := 0; i < 60; i++ {
+		a := math.Pi * float64(i) / 59
+		points = append(points, Vec{cx + 3*math.Cos(a), cy - 1.5*math.Sin(a)})
+	}
+	for i := 1; i < 30; i++ {
+		points = append(points, Vec{cx - 3 + 6*float64(i)/30, cy})
+	}
+	return points
+}

@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
 
 // Called by the real WASM bridge suite, and separately during focused TDD.
+// Walks the returned chain itself: each circle sits where the vectors before it
+// end, at every sampled position.
+function assertBoundsHoldChain(box, terms) {
+  for (let i = 0; i <= 720; i++) {
+    const u = (i * Math.PI) / 360;
+    let x = 0,
+      y = 0;
+    for (const { frequency, radius, phase } of terms) {
+      assert.ok(x - radius >= box.minX - 1e-9 && x + radius <= box.maxX + 1e-9);
+      assert.ok(y - radius >= box.minY - 1e-9 && y + radius <= box.maxY + 1e-9);
+      x += radius * Math.cos(frequency * u + phase);
+      y += radius * Math.sin(frequency * u + phase);
+    }
+  }
+}
+
 export function checkFourierFit() {
   const fit = (request) =>
     JSON.parse(globalThis.tangentGardenFit(JSON.stringify(request)));
@@ -43,14 +59,14 @@ export function checkFourierFit() {
   assert.ok(imported.outline?.points.length > 256, JSON.stringify(imported));
   assert.ok(imported.outline.points.length <= 4096);
   assert.ok(imported.outline.evaluations <= 32768);
-  assert.ok(
-    imported.outline.previewRadius >=
-      imported.terms.reduce((s, t) => s + t.radius, 0),
-  );
-  assert.equal(
-    imported.outline.previewRadius,
-    fit({ count: 16 }).terms.reduce((s, t) => s + t.radius, 0),
-  );
+  // The bounds reach the page unchanged by the term count, and hold every
+  // circle of the chain and the source's own circle, close to its far edge.
+  const whole = fit({ count: 16 });
+  assert.deepEqual(imported.previewBounds, whole.previewBounds);
+  assertBoundsHoldChain(whole.previewBounds, whole.terms);
+  assert.ok(whole.previewBounds.maxX > 22.99);
+  assert.ok(whole.previewBounds.maxX < 24);
+  assert.ok(whole.previewBounds.minY >= -22);
   assert.equal(imported.terms[1].frequency, 1);
   assert.ok(Math.abs(imported.terms[1].radius - 3) < 0.001);
   assert.deepEqual(fit({ count: 2 }).terms, imported.terms.slice(0, 2));
@@ -106,10 +122,7 @@ export function checkFourierFit() {
   assert.ok(corrected.editedPoints, JSON.stringify(corrected));
   assert.deepEqual(corrected.editedPoints[0], { x: 5.5, y: -1 });
   assert.deepEqual(corrected.editedPoints[64], points[64]);
-  assert.ok(
-    corrected.previewRadius >=
-      corrected.terms.reduce((s, t) => s + t.radius, 0),
-  );
+  assertBoundsHoldChain(corrected.previewBounds, corrected.terms);
   const direct = fit({
     points: corrected.editedPoints,
     closed: true,
