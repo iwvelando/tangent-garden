@@ -292,6 +292,31 @@ test("keyboard use keeps focus on Close outline after it closes", async ({
   expect(await dialog(page).getAttribute("data-fit")).toBe(before);
 });
 
+test("closing keeps the drawing and the view the reader orbited to", async ({
+  page,
+}) => {
+  await openHelix(page);
+  const d = dialog(page),
+    art = d.locator("#journey-artwork");
+  await expect(art).toBeVisible();
+  const opening = await across(d);
+  const box = (await art.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  const orbited = await across(d);
+  expect(Math.abs(orbited - opening)).toBeGreaterThan(0.1);
+  // The canvas the reader orbited is the one the fit is drawn in.
+  await art.evaluate((c) => c.setAttribute("data-orbited", ""));
+  await closeOutline(page).click();
+  await fit(page);
+  await expect(d.locator("#journey-artwork[data-orbited]")).toHaveCount(1);
+  expect(await across(d)).toBeCloseTo(orbited, 6);
+});
+
 test("returning keeps the raw study; adoption replaces it with an ordinary one", async ({
   page,
 }) => {

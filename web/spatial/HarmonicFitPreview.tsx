@@ -125,9 +125,10 @@ export default function HarmonicFitPreview({
         : null,
     [sourceKey],
   );
-  // An open source not yet closed has no fit: its study only carries the
-  // view and layers its outline is drawn with, and nothing can play.
-  const waiting = !fit && !!state.open && !state.closed && !state.error;
+  // An open source has no fit until it is closed and refitted: meanwhile its
+  // study only carries the view and layers its outline is drawn with, and
+  // nothing can play.
+  const waiting = !fit && !!state.open && !state.error;
   const study = useMemo(
     () =>
       fit && opening
@@ -180,24 +181,26 @@ export default function HarmonicFitPreview({
     };
   }, [study]);
   // One frame for every term count, with the source beneath the fit. Both are
-  // transient: an adopted study, its links and exports carry neither.
+  // transient: an adopted study, its links and exports carry neither. An open
+  // source's outline stays drawn until its closed-up fit is, so closing keeps
+  // the drawing, and the view the reader orbited to.
   const shown = useMemo<Frame | null>(
     () =>
-      waiting && state.outline
-        ? harmonicFitOutlineFrame(request.study.config, state.outline)
-        : frame && bounds
-          ? {
-              ...frame,
-              result: {
-                ...frame.result,
-                bounds,
-                ...(showSource && state.outline
-                  ? { fitSource: state.outline }
-                  : {}),
-              },
-            }
+      frame && bounds
+        ? {
+            ...frame,
+            result: {
+              ...frame.result,
+              bounds,
+              ...(showSource && state.outline
+                ? { fitSource: state.outline }
+                : {}),
+            },
+          }
+        : state.open && state.outline && !state.error
+          ? harmonicFitOutlineFrame(request.study.config, state.outline)
           : null,
-    [frame, bounds, showSource, state.outline, waiting],
+    [frame, bounds, showSource, state.outline, state.open, state.error],
   );
   const pending = state.pending || computing;
   const finish = (adopted?: SpatialStudy) => {
