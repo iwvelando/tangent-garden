@@ -8,8 +8,10 @@ import type { HarmonicFitEntry } from "./HarmonicFitContext";
 import JourneyDrawing from "./JourneyDrawing";
 import {
   harmonicEllipseWords,
+  harmonicFitOutlineFrame,
   HarmonicFitSession,
   harmonicFitOpeningView,
+  harmonicFitSourcePoints,
   harmonicFitParameterHelp,
   harmonicFitStudy,
   harmonicFitTermsHelp,
@@ -24,6 +26,23 @@ import "./harmonic-fit.css";
 
 const short = (x: number) =>
   x === 0 ? "0" : Math.abs(x) < 1e-3 ? x.toExponential(1) : x.toPrecision(3);
+
+// Unavailable without leaving the tab order, so focus stays where a keyboard
+// left it, as in the planar fit's SteadyButton.
+function SteadyButton({
+  unavailable,
+  onClick,
+  ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { unavailable: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-disabled={unavailable || undefined}
+      onClick={unavailable ? undefined : onClick}
+      {...rest}
+    />
+  );
+}
 
 // A note that varies with the fit, holding the height of its longest wording
 // at any width, so that nothing beside or below it moves as it changes.
@@ -94,14 +113,38 @@ export default function HarmonicFitPreview({
   }, []);
   const fit = state.fit;
   const curveKey = fit ? JSON.stringify(fit.curve) : "";
-  // Fixed for the session by the source, whichever terms are shown.
+  // Fixed for the session by the source, whichever terms are shown and
+  // whether or not it has been closed.
+  const sourceKey = state.outline
+    ? JSON.stringify(harmonicFitSourcePoints(state.outline))
+    : "";
   const opening = useMemo(
-    () => (state.outline ? harmonicFitOpeningView(state.outline) : null),
-    [state.outline],
+    () =>
+      state.outline
+        ? harmonicFitOpeningView(harmonicFitSourcePoints(state.outline))
+        : null,
+    [sourceKey],
   );
+  // An open source has no fit until it is closed and refitted: meanwhile its
+  // study only carries the view and layers its outline is drawn with, and
+  // nothing can play.
+  const waiting = !fit && !!state.open && !state.error;
   const study = useMemo(
-    () => (fit && opening ? harmonicFitStudy(fit.curve, opening) : null),
-    [curveKey, opening],
+    () =>
+      fit && opening
+        ? harmonicFitStudy(fit.curve, opening)
+        : waiting && opening
+          ? harmonicFitStudy(
+              {
+                center: { x: 0, y: 0, z: 0 },
+                terms: [],
+                min: 0,
+                max: 2 * Math.PI,
+              },
+              opening,
+            )
+          : null,
+    [curveKey, opening, waiting],
   );
   // Layers change the picture, not the computation or the adopted study's
   // geometry, so toggling one need not compute a new frame.
@@ -115,7 +158,7 @@ export default function HarmonicFitPreview({
   );
   const bounds = fit?.bounds;
   useEffect(() => {
-    if (!study) {
+    if (!study || !fit) {
       setFrame(null);
       return;
     }
@@ -138,7 +181,9 @@ export default function HarmonicFitPreview({
     };
   }, [study]);
   // One frame for every term count, with the source beneath the fit. Both are
-  // transient: an adopted study, its links and exports carry neither.
+  // transient: an adopted study, its links and exports carry neither. An open
+  // source's outline stays drawn until its closed-up fit is, so closing keeps
+  // the drawing, and the view the reader orbited to.
   const shown = useMemo<Frame | null>(
     () =>
       frame && bounds
@@ -152,8 +197,10 @@ export default function HarmonicFitPreview({
                 : {}),
             },
           }
-        : null,
-    [frame, bounds, showSource, state.outline],
+        : state.open && state.outline && !state.error
+          ? harmonicFitOutlineFrame(request.study.config, state.outline)
+          : null,
+    [frame, bounds, showSource, state.outline, state.open, state.error],
   );
   const pending = state.pending || computing;
   const finish = (adopted?: SpatialStudy) => {
@@ -172,6 +219,7 @@ export default function HarmonicFitPreview({
       aria-labelledby={title}
       data-pending={pending}
       data-count={fit ? fit.curve.terms.length : undefined}
+      data-open={state.open || undefined}
       data-fit={fit ? JSON.stringify(fit) : undefined}
       onCancel={(e) => {
         e.preventDefault();
@@ -205,7 +253,7 @@ export default function HarmonicFitPreview({
               slow={false}
               requested={0}
               revision={curveKey}
-              invalid={false}
+              invalid={!fit}
               error={renderError || undefined}
               onError={setRenderError}
               client={client}
@@ -246,14 +294,14 @@ export default function HarmonicFitPreview({
           </Field>
           <SteadyNote
             testid="fit-error"
-            longest="Sample error: RMS 0.00123, largest 0.00123, 0.00123% of the source's 1.00e+5 diagonal. Between samples, proved within 0.00123 of the source's polygon."
+            longest="Sample error: RMS 0.00123, largest 0.00123, 0.00123% of the source's 1.00e+5 diagonal. Between samples, proved within 0.00123 of the closed-up polygon."
           >
             {fit &&
               (exact
                 ? "These terms reproduce all 1,024 samples to rounding."
                 : `Sample error: RMS ${short(fit.rms)}, largest ${short(fit.maxResidual)}, ${short((100 * fit.maxResidual) / fit.extent)}% of the source's ${short(fit.extent)} diagonal.`)}
             {fit?.continuousBound
-              ? ` Between samples, proved within ${short(fit.continuousBound)} of the source's polygon.`
+              ? ` Between samples, proved within ${short(fit.continuousBound)} of the ${fit.joined ? "closed-up" : "source's"} polygon.`
               : ""}
           </SteadyNote>
           <fieldset className="harmonic-fit-parameter">
@@ -284,6 +332,29 @@ export default function HarmonicFitPreview({
             </div>
             <HelpText help={parameterHelp}>{harmonicFitParameterHelp}</HelpText>
           </fieldset>
+          {state.open && (
+            <div className="harmonic-fit-close">
+              <SteadyNote
+                testid="fit-closure"
+                longest="Closed by a straight segment of length 0.00123, dashed in the source. The fit rounds the two corners it makes."
+              >
+                {state.closed
+                  ? fit?.joined
+                    ? `Closed by a straight segment of length ${short(fit.joined)}, dashed in the source. The fit rounds the two corners it makes.`
+                    : ""
+                  : "This curve is open. Close outline joins its ends with a straight segment, then fits it."}
+              </SteadyNote>
+              <SteadyButton
+                unavailable={!!state.closed}
+                onClick={() => {
+                  setRenderError("");
+                  session.current?.close();
+                }}
+              >
+                Close outline
+              </SteadyButton>
+            </div>
+          )}
         </section>
         <section className="harmonic-fit-details" aria-label="Terms and layers">
           <label className="fit-reference-choice">
@@ -342,8 +413,8 @@ export default function HarmonicFitPreview({
         <button
           type="button"
           aria-describedby={`${title}-adopt-note`}
-          disabled={!drawn || pending || !!state.error}
-          onClick={() => drawn && finish(drawn)}
+          disabled={!fit || !drawn || pending || !!state.error}
+          onClick={() => fit && drawn && finish(drawn)}
         >
           Adopt fitted study
         </button>

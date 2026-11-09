@@ -9,11 +9,17 @@ import {
   type SpatialStudy,
 } from "./link";
 import { defaultLayers, initialView, lensAngles, viewBasis } from "./scene";
-import type { HarmonicCurve, SpatialConfig, Vec3 } from "./types";
+import type {
+  FitSourceOutline,
+  Frame,
+  HarmonicCurve,
+  SpatialConfig,
+  Vec3,
+} from "./types";
 
 export const harmonicFitEntryHelp = tiered(
-  "Fit a closed torus knot, expression or harmonic curve with turning vectors, then compare.",
-  "The study must build on the base curve, whose ends must meet. Sampling permits 4,096 points and 32,768 evaluations, coordinates and fitted vectors within ±100,000, and length at least 0.000001. Open ends, gaps, jumps and unresolved detail are refused. Back keeps your study; adoption replaces it.",
+  "Fit a torus knot, expression or harmonic curve with turning vectors, then compare.",
+  "The study must build on the base curve. An open one is fitted only after Close outline joins its ends with a straight segment. Sampling permits 4,096 points and 32,768 evaluations, coordinates and fitted vectors within ±100,000, and length at least 0.000001. Gaps, jumps and unresolved detail are refused. Back keeps your study; adoption replaces it.",
 );
 export const harmonicFitTermsHelp = tiered(
   "Choose 1–8 turning vectors, largest first; adding one never reorders the rest.",
@@ -21,7 +27,7 @@ export const harmonicFitTermsHelp = tiered(
 );
 export const harmonicFitParameterHelp = tiered(
   "Source parameter can recover a finite sum exactly; even pace ignores how the source was timed.",
-  "Source parameter samples the source at equal steps of its own t, so a torus knot is recovered exactly. Even pace samples equal lengths along its polygon: it never recovers those exactly, but rewriting t leaves it unchanged and it needs fewer terms when t runs very unevenly. Both keep the start and direction.",
+  "Source parameter takes equal steps of the source's own t, so a torus knot is recovered exactly. Even pace takes equal lengths along its polygon: never exact, but unchanged by rewriting t and better when t runs unevenly. Both keep the start and direction. A closing segment runs at the source's mean pace, and its corners rule out exactness.",
 );
 
 export type HarmonicParameter = "source" | "arc-length";
@@ -30,6 +36,15 @@ export type HarmonicFitRequest = {
   source?: SpatialConfig;
   parameter?: HarmonicParameter;
   count: number;
+  // Join an open source's ends with a straight segment; Go's decision alone
+  // says whether they are apart.
+  close?: boolean;
+};
+// Mirrors engine3.HarmonicOutline as the bridge returns it.
+export type HarmonicFitOutline = {
+  points: Vec3[];
+  open?: boolean;
+  closing?: number;
 };
 export type HarmonicEllipse = { major: number; minor: number; normal: Vec3 };
 export type HarmonicFitResult = {
@@ -45,21 +60,31 @@ export type HarmonicFitResult = {
   extent: number;
   tolerance: number;
   evaluations: number;
-  outline?: { points: Vec3[] };
+  // The closing segment's length, for a source closed explicitly.
+  joined?: number;
+  outline?: HarmonicFitOutline;
 };
+// An open source not yet closed returns only its outline.
+export type HarmonicFitReply =
+  HarmonicFitResult | { outline: HarmonicFitOutline; curve?: undefined };
 
 export type HarmonicFitState = {
   count: number;
   parameter: HarmonicParameter;
   pending: boolean;
   fit?: HarmonicFitResult;
-  outline?: Vec3[];
+  outline?: FitSourceOutline;
+  // The source's ends are apart; it waits for close() unless closed.
+  open?: boolean;
+  closed?: boolean;
   error?: string;
 };
 
 // One disposable worker and at most one request at a time, as in
 // FourierFitSession: a term change overwrites the one wanted count, and a new
-// parameter disposes the worker, so an obsolete reply cannot arrive.
+// parameter disposes the worker, so an obsolete reply cannot arrive. An open
+// source returns its outline alone, and nothing is fitted until close(), which
+// every later refit keeps.
 export class HarmonicFitSession {
   private client: EngineClient | null = null;
   private generation = 0;
@@ -96,7 +121,7 @@ export class HarmonicFitSession {
     const generation = this.generation;
     const client = this.client!;
     while (generation === this.generation) {
-      const { count, parameter, fit } = this.state;
+      const { count, parameter, fit, closed } = this.state;
       const asked = this.needsSource;
       if (
         !asked &&
@@ -109,16 +134,23 @@ export class HarmonicFitSession {
       }
       try {
         const reply = await client.spatialFit(
-          asked ? { source: this.source, parameter, count } : { count },
+          asked
+            ? { source: this.source, parameter, count, close: !!closed }
+            : { count },
         );
         if (generation !== this.generation) return;
         this.needsSource = false;
         const { outline, ...selected } = reply;
-        this.set({
-          fit: selected,
-          ...(outline && { outline: outline.points }),
-          error: undefined,
-        });
+        const shown = outline && {
+          outline: { points: outline.points, closing: outline.closing },
+          open: !!outline.open,
+        };
+        if (!selected.curve) {
+          this.running = false;
+          this.set({ ...shown, pending: false, fit: undefined });
+          return;
+        }
+        this.set({ fit: selected, ...shown, error: undefined });
       } catch (e) {
         if (generation !== this.generation) return;
         this.running = false;
@@ -138,7 +170,16 @@ export class HarmonicFitSession {
   }
   parameterize(parameter: HarmonicParameter) {
     if (parameter === this.state.parameter) return;
+    // An open source has nothing to sample until it is closed.
+    if (this.state.open && !this.state.closed && !this.state.pending)
+      return this.set({ parameter });
     this.state = { ...this.state, parameter };
+    this.fresh();
+  }
+  // An open source's only way forward: its ends joined by a straight segment.
+  close() {
+    if (!this.state.open || this.state.closed) return;
+    this.state = { ...this.state, closed: true };
     this.fresh();
   }
   cancel() {
@@ -156,6 +197,57 @@ export function harmonicFitEligible(c: SpatialConfig) {
       c.format === "harmonic") &&
     (c.input === "base" || !c.input)
   );
+}
+
+// The source's own points, without any closing segment, so that closing
+// changes neither the opening view nor anything else chosen from the source.
+export function harmonicFitSourcePoints({ points, closing }: FitSourceOutline) {
+  return closing === undefined ? points : points.slice(0, closing + 1);
+}
+
+// What the excursion draws of an open source before it is closed: its outline
+// alone, framed about its own points, in an otherwise empty result.
+export function harmonicFitOutlineFrame(
+  config: SpatialConfig,
+  outline: FitSourceOutline,
+): Frame {
+  const low = { ...outline.points[0] },
+    high = { ...outline.points[0] };
+  for (const p of outline.points)
+    for (const k of ["x", "y", "z"] as const) {
+      low[k] = Math.min(low[k], p[k]);
+      high[k] = Math.max(high[k], p[k]);
+    }
+  const center = {
+    x: (low.x + high.x) / 2,
+    y: (low.y + high.y) / 2,
+    z: (low.z + high.z) / 2,
+  };
+  const radius = Math.max(
+    ...outline.points.map((p) =>
+      Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z),
+    ),
+  );
+  return {
+    config,
+    result: {
+      base: [],
+      minus: [],
+      plus: [],
+      breaks: [],
+      mesh: {
+        vertices: new Float64Array(),
+        triangles: new Int32Array(),
+        sampleIndex: new Int32Array(),
+      },
+      rulings: [],
+      bounds: { center, radius },
+      radius: 0,
+      omitted: 0,
+      invalid: 0,
+      fitSource: outline,
+    },
+  };
 }
 
 // The principal spreads of points as a view projects them.

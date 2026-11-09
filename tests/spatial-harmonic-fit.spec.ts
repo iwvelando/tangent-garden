@@ -11,7 +11,7 @@ import {
 } from "../web/spatial/harmonic-fit";
 import { presetStudy, spatialStudy } from "../web/spatial/link";
 import { pathError } from "../web/spatial/path";
-import { initialView, viewBasis } from "../web/spatial/scene";
+import { fitSourceEdges, initialView, viewBasis } from "../web/spatial/scene";
 import type { Vec3 } from "../web/spatial/types";
 
 const stage = (page: Page) => page.locator(".spatial-stage");
@@ -135,25 +135,186 @@ test("the error's explanation matches where the error comes from", async ({
   await expect(note).not.toContainText("finer");
 });
 
-test("a source a closed fit cannot honestly use is refused with its reason", async ({
-  page,
-}) => {
-  await ready(page);
-  // Custom expressions: an open helix, then its ends joined by the domain.
+// A custom expression study, settled.
+async function expressions(page: Page, x: string, y: string, z: string) {
   await page
     .getByRole("combobox", { name: "Spatial definition" })
     .selectOption("parametric");
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
-  await page.getByRole("textbox", { name: "x(t)", exact: true }).fill("cos(t)");
-  await page.getByRole("textbox", { name: "y(t)", exact: true }).fill("sin(t)");
-  await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");
+  await page.getByRole("textbox", { name: "x(t)", exact: true }).fill(x);
+  await page.getByRole("textbox", { name: "y(t)", exact: true }).fill(y);
+  await page.getByRole("textbox", { name: "z(t)", exact: true }).fill(z);
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
+}
+const gap = "sqrt(sin(t+0.3))";
+
+test("a source no fit can honestly use is refused with its reason", async ({
+  page,
+}) => {
+  await ready(page);
+  await expressions(page, "cos(t)", "sin(t)", gap);
   await open(page);
   await expect(dialog(page)).toHaveAttribute("data-pending", "false");
-  await expect(dialog(page).getByRole("alert")).toContainText("open");
+  await expect(dialog(page).getByRole("alert")).toContainText("gap");
+  await expect(page.getByTestId("fit-closure")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Adopt fitted study" }),
   ).toBeDisabled();
+});
+
+// An open helix, z rising by π/2 over the default domain 0..2π, so its ends
+// lie straight above one another.
+async function openHelix(page: Page) {
+  await ready(page);
+  await expressions(page, "cos(t)", "sin(t)", "t/4");
+  await open(page);
+  await expect(dialog(page)).toHaveAttribute("data-pending", "false");
+  await expect(dialog(page)).toHaveAttribute("data-open", "true");
+}
+const closeOutline = (page: Page) =>
+  dialog(page).getByRole("button", { name: "Close outline", exact: true });
+
+test("an open curve appears as it is, and is fitted only once closed", async ({
+  page,
+}) => {
+  await openHelix(page);
+  const d = dialog(page);
+  await expect(d).not.toHaveAttribute("data-fit", /./);
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByTestId("fit-closure")).toContainText(
+    "This curve is open.",
+  );
+  await expect(page.getByLabel("Terms", { exact: true })).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeDisabled();
+  await expect(
+    d.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeDisabled();
+  // The source itself is drawn, across a fair share of the drawing.
+  const art = d.locator("#journey-artwork");
+  const ink = await inkBox(art);
+  expect(Math.max(ink.width, ink.height)).toBeGreaterThan(0.3);
+  const open = await pixels(art);
+
+  await closeOutline(page).click();
+  const f = await fit(page);
+  expect(f.joined).toBeCloseTo(Math.PI / 2, 12);
+  expect(f.curve.terms).toHaveLength(8);
+  // Its corners need every frequency: never exact, and never said to be.
+  expect(f.maxResidual).toBeGreaterThan(1e-3 * f.extent);
+  await expect(page.getByTestId("fit-error")).not.toContainText("rounding");
+  await expect(page.getByTestId("fit-closure")).toContainText(
+    "straight segment of length 1.57",
+  );
+  await expect(closeOutline(page)).toHaveAttribute("aria-disabled", "true");
+  await expect(d).toHaveAttribute("data-open", "true");
+  await expect(
+    page.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await expect(
+    d.getByRole("button", { name: "Play animation", exact: true }),
+  ).toBeEnabled();
+  expect(await pixels(art)).not.toBe(open);
+});
+
+test("a sampling choice waits for the close, and the close outlasts it", async ({
+  page,
+}) => {
+  await openHelix(page);
+  await page.getByRole("radio", { name: /Even pace/ }).check();
+  await expect(dialog(page)).toHaveAttribute("data-pending", "false");
+  await expect(dialog(page)).not.toHaveAttribute("data-fit", /./);
+  await expect(dialog(page).getByRole("alert")).toHaveCount(0);
+  await closeOutline(page).click();
+  const even = await fit(page);
+  expect(even.parameter).toBe("arc-length");
+  expect(even.continuousBound).toBeGreaterThan(even.maxResidual);
+  await expect(page.getByTestId("fit-error")).toContainText(
+    "closed-up polygon",
+  );
+  await page.getByRole("radio", { name: /Source parameter/ }).check();
+  await expect.poll(async () => (await fit(page)).parameter).toBe("source");
+  const own = await fit(page);
+  expect(own.joined).toBe(even.joined);
+  await expect(closeOutline(page)).toHaveAttribute("aria-disabled", "true");
+  // A unit-speed helix with its segment at the mean pace: the two agree.
+  expect(Math.abs(own.rms - even.rms)).toBeLessThan(1e-3 * own.extent);
+});
+
+test("closing belongs to the excursion: Back forgets it, adoption keeps only terms", async ({
+  page,
+}) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openHelix(page);
+  const before = await stage(page).getAttribute("data-config");
+  await closeOutline(page).click();
+  await fit(page);
+  await page.getByRole("button", { name: "Back to your study" }).click();
+  await expect(dialog(page)).toHaveCount(0);
+  expect(await stage(page).getAttribute("data-config")).toBe(before);
+  await expect(
+    page.getByRole("textbox", { name: "z(t)", exact: true }),
+  ).toHaveValue("t/4");
+  await expect(entry(page)).toBeFocused();
+  // A new excursion starts open again.
+  await open(page);
+  await expect(dialog(page)).toHaveAttribute("data-pending", "false");
+  await expect(dialog(page)).toHaveAttribute("data-open", "true");
+  await expect(dialog(page)).not.toHaveAttribute("data-fit", /./);
+  await closeOutline(page).click();
+  const chosen = await fit(page);
+  await page.getByRole("button", { name: "Adopt fitted study" }).click();
+  await adopted(page);
+  const config = (await stage(page).getAttribute("data-config"))!;
+  expect(JSON.parse(config).harmonic.terms).toEqual(chosen.curve.terms);
+  for (const transient of ["closing", "joined", "outline", "fitSource"])
+    expect(config).not.toContain(transient);
+  const link = JSON.stringify(await copied(page));
+  for (const transient of ["closing", "joined", "outline", "fitSource"])
+    expect(link).not.toContain(transient);
+  await expect(page.getByTestId("closure-note")).toContainText("closed");
+});
+
+test("keyboard use keeps focus on Close outline after it closes", async ({
+  page,
+}) => {
+  await openHelix(page);
+  await closeOutline(page).focus();
+  await page.keyboard.press("Enter");
+  await fit(page);
+  await expect(closeOutline(page)).toBeFocused();
+  await expect(closeOutline(page)).toHaveAttribute("aria-disabled", "true");
+  // Activating it again does nothing.
+  const before = await dialog(page).getAttribute("data-fit");
+  await page.keyboard.press("Enter");
+  await expect(dialog(page)).toHaveAttribute("data-pending", "false");
+  expect(await dialog(page).getAttribute("data-fit")).toBe(before);
+});
+
+test("closing keeps the drawing and the view the reader orbited to", async ({
+  page,
+}) => {
+  await openHelix(page);
+  const d = dialog(page),
+    art = d.locator("#journey-artwork");
+  await expect(art).toBeVisible();
+  const opening = await across(d);
+  const box = (await art.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  const orbited = await across(d);
+  expect(Math.abs(orbited - opening)).toBeGreaterThan(0.1);
+  // The canvas the reader orbited is the one the fit is drawn in.
+  await art.evaluate((c) => c.setAttribute("data-orbited", ""));
+  await closeOutline(page).click();
+  await fit(page);
+  await expect(d.locator("#journey-artwork[data-orbited]")).toHaveCount(1);
+  expect(await across(d)).toBeCloseTo(orbited, 6);
 });
 
 test("returning keeps the raw study; adoption replaces it with an ordinary one", async ({
@@ -259,7 +420,7 @@ test("a derived or integrated study cannot be entered, and says so", async ({
   await expect(entry(page)).toBeDisabled();
   await page.getByRole("button", { name: /harmonic fitting/ }).click();
   await expect(
-    page.getByText("closed torus knot, expression or harmonic curve"),
+    page.getByText("Fit a torus knot, expression or harmonic curve"),
   ).toBeVisible();
 });
 
@@ -431,6 +592,49 @@ test("a doubled segment takes the view that shows it longest of those it would b
   }
 });
 
+// The source is drawn whole and the segment that closes it dashed, so what
+// closure added reads as added; a closed source has no dashes at all.
+test("the closing segment is dashed beneath the fit, the source drawn whole", () => {
+  const half: Vec3[] = Array.from({ length: 65 }, (_, i) => ({
+    x: Math.cos((Math.PI * i) / 64),
+    y: Math.sin((Math.PI * i) / 64),
+    z: 0,
+  }));
+  const edges = fitSourceEdges({ points: [...half, half[0]], closing: 64 });
+  const pairs: [Vec3, Vec3][] = [];
+  for (let i = 0; i < edges.length; i += 2)
+    pairs.push([edges[i], edges[i + 1]]);
+  for (let i = 0; i < 64; i++) expect(pairs[i]).toEqual([half[i], half[i + 1]]);
+  const dashes = pairs.slice(64);
+  expect(dashes.length).toBeGreaterThanOrEqual(3);
+  let drawn = 0,
+    x = -1;
+  for (const [a, b] of dashes) {
+    // On the diameter, in order from the source's end back to its start,
+    // with a gap before each dash after the first.
+    for (const p of [a, b])
+      expect(Math.max(Math.abs(p.y), Math.abs(p.z))).toBeLessThan(1e-15);
+    expect(a.x).toBeGreaterThanOrEqual(x);
+    expect(b.x).toBeGreaterThan(a.x);
+    if (x > -1) expect(a.x).toBeGreaterThan(x);
+    x = b.x;
+    drawn += b.x - a.x;
+  }
+  expect(dashes[0][0].x).toBe(-1);
+  expect(dashes.at(-1)![1].x).toBe(1);
+  expect(drawn / 2).toBeGreaterThan(0.4);
+  expect(drawn / 2).toBeLessThan(0.65);
+
+  const loop = [...half, ...half.slice(1).map((p) => ({ ...p, y: -p.y }))];
+  const whole = fitSourceEdges({ points: loop });
+  expect(whole).toHaveLength(2 * (loop.length - 1));
+  for (let i = 1; i < loop.length; i++)
+    expect([whole[2 * i - 2], whole[2 * i - 1]]).toEqual([
+      loop[i - 1],
+      loop[i],
+    ]);
+});
+
 // The pixels of the drawing the reader can see: what differs from its paper.
 const inkBox = (art: Locator) =>
   art.evaluate((c: HTMLCanvasElement) => {
@@ -553,6 +757,44 @@ for (const [name, size] of Object.entries(layouts)) {
     await setTerms(page, 2);
     expect(await where()).toEqual(before);
     await page.getByRole("radio", { name: /Source parameter/ }).check();
+    await fit(page);
+    expect(await where()).toEqual(before);
+  });
+
+  test(`closing an open curve moves nothing at ${name} size`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(size);
+    await openHelix(page);
+    const d = dialog(page);
+    const anchors = [
+      page.getByLabel("Terms", { exact: true }),
+      page.getByRole("radio", { name: /Source parameter/ }),
+      page.getByRole("radio", { name: /Even pace/ }),
+      closeOutline(page),
+      d.locator("#journey-artwork"),
+      d.getByRole("button", { name: "Play animation" }),
+      d.getByRole("button", { name: "Reset view" }),
+      page.getByRole("checkbox", { name: /Show the source/ }),
+      page.getByRole("checkbox", { name: "Vector sums" }),
+      page.getByRole("button", { name: "Adopt fitted study" }),
+    ];
+    const where = async () => {
+      await d.evaluate((e) => {
+        e.scrollTop = 0;
+      });
+      return Promise.all(
+        anchors.map(async (a) => {
+          const box = (await a.boundingBox())!;
+          return [box.x, box.y, box.width, box.height].map(Math.round);
+        }),
+      );
+    };
+    const before = await where();
+    await closeOutline(page).click();
+    await fit(page);
+    expect(await where()).toEqual(before);
+    await page.getByRole("radio", { name: /Even pace/ }).check();
     await fit(page);
     expect(await where()).toEqual(before);
   });
@@ -890,11 +1132,11 @@ test("a refused source can be mended, and nothing of the refusal stays", async (
   await page.getByRole("textbox", { name: "x(t)", exact: true }).fill("cos(t)");
   await page.getByRole("textbox", { name: "y(t)", exact: true }).fill("sin(t)");
   const z = page.getByRole("textbox", { name: "z(t)", exact: true });
-  await z.fill("t/4");
+  await z.fill(gap);
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
   await open(page);
   await expect(dialog(page)).toHaveAttribute("data-pending", "false");
-  await expect(dialog(page).getByRole("alert")).toContainText("open");
+  await expect(dialog(page).getByRole("alert")).toContainText("gap");
   await page.getByRole("button", { name: "Back to your study" }).click();
   await expect(dialog(page)).toHaveCount(0);
   // A broken expression holds the entry shut, and says so if it was asked.

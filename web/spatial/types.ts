@@ -65,9 +65,11 @@ export type HarmonicChainTrack = {
   terms: number;
   points: Vec3[];
 };
-// A transient comparison outline: a closed polygon that a fitting preview draws
-// beneath its fit. Never in a study, link or ordinary result.
-export type FitSourceOutline = Vec3[];
+// A transient comparison outline: the polygon a fitting preview draws beneath
+// its fit. For a source closed explicitly, points after `closing` (the
+// source's last point) lie on the straight segment back to the first. Never
+// in a study, link or ordinary result.
+export type FitSourceOutline = { points: Vec3[]; closing?: number };
 // A frame (T, U, V) along the curve: rotation-minimizing (parallel transport)
 // or the Frenet frame as a diagnostic. N₀ (`reference`), projected onto the
 // normal plane where each unbroken stretch begins, sets U there. The offset

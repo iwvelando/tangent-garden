@@ -115,6 +115,13 @@
   gap: 8px;
   min-height: 32px;
 }
+/* An open source's closure: its note and button keep their places once it is
+   closed, so nothing below them moves. */
+.harmonic-fit-close {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
 .harmonic-fit-terms {
   display: grid;
   gap: 4px;

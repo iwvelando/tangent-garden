@@ -1,9 +1,11 @@
 package engine3
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -334,8 +336,10 @@ func TestHarmonicFitCorpus(t *testing.T) {
 
 // TestHarmonicFitEveryPreset runs the fit on every shipped spatial study: beyond
 // the authored corpus, each must be fitted or refused with a reason, never fail
-// otherwise, and each fit must be an ordinary closed study. With -v it prints
-// the catalog the proposed admission would offer.
+// otherwise, and each fit must be an ordinary closed study. An open one is then
+// closed explicitly, and must fit or be refused for another reason; closing a
+// closed one must change nothing. With -v it prints the catalog admission
+// offers.
 func TestHarmonicFitEveryPreset(t *testing.T) {
 	presets := spatialPresets(t)
 	titles := make([]string, 0, len(presets))
@@ -344,11 +348,29 @@ func TestHarmonicFitEveryPreset(t *testing.T) {
 	}
 	sort.Strings(titles)
 	refusals := map[string]int{}
-	admitted, exact := 0, 0
+	admitted, exact, joined := 0, 0, 0
 	var log strings.Builder
 	for _, title := range titles {
 		config := presets[title]
 		f, err := FitHarmonicSource(config, HarmonicFitSource)
+		var open *HarmonicOpenError
+		if errors.As(err, &open) {
+			c, err := CloseHarmonicSource(config, HarmonicFitSource)
+			if err != nil {
+				if strings.Contains(err.Error(), "open") {
+					t.Errorf("%s: closing still refuses it as open", title)
+				}
+				refusals["closed, then "+err.Error()]++
+				continue
+			}
+			joined++
+			r := selected(t, c, 8)
+			if r.Joined <= 0 || r.Curve.validate() != nil {
+				t.Errorf("%s: unusable closed-up fit, joined %g", title, r.Joined)
+			}
+			fmt.Fprintf(&log, "%-46.46s closed  terms %d  max/D %.1e  joined/L %.2f  ev %d\n", title, len(r.Curve.Terms), r.MaxResidual/r.Extent, r.Joined/r.Length, c.outline.Evaluations)
+			continue
+		}
 		if err != nil {
 			reason := err.Error()
 			if len(reason) > 58 {
@@ -366,10 +388,13 @@ func TestHarmonicFitEveryPreset(t *testing.T) {
 		if len(r.Curve.Terms) == 0 || len(r.Curve.Terms) > 8 || r.Curve.validate() != nil {
 			t.Errorf("%s: unusable fit %+v", title, r.Curve)
 		}
+		if !reflect.DeepEqual(r, selected(t, closedUp(t, config, HarmonicFitSource), 8)) {
+			t.Errorf("%s: closing a closed preset changed its fit", title)
+		}
 		arc := selected(t, fitted(t, config, HarmonicFitArcLength), 8)
 		fmt.Fprintf(&log, "%-46.46s terms %d  source max/D %.1e  arc max/D %.1e  ev %d\n", title, len(r.Curve.Terms), rel, arc.MaxResidual/arc.Extent, f.outline.Evaluations)
 	}
-	fmt.Fprintf(&log, "%d presets: %d admitted, %d exact in their own parameter\n", len(presets), admitted, exact)
+	fmt.Fprintf(&log, "%d presets: %d admitted, %d exact in their own parameter; %d more fitted once closed\n", len(presets), admitted, exact, joined)
 	reasons := make([]string, 0, len(refusals))
 	for reason := range refusals {
 		reasons = append(reasons, reason)
@@ -383,6 +408,9 @@ func TestHarmonicFitEveryPreset(t *testing.T) {
 	// recovered exactly by their own parameter, so a change that loses them shows.
 	if admitted < 40 {
 		t.Errorf("only %d presets admitted", admitted)
+	}
+	if joined < 20 {
+		t.Errorf("only %d open presets fitted once closed", joined)
 	}
 	if exact*10 < admitted*9 {
 		t.Errorf("only %d of %d admitted presets are exact in their own parameter", exact, admitted)

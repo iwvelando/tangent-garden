@@ -43,7 +43,9 @@ The domain is yours: the curve closes only when it spans a whole number of perio
 
 Open **Trefoil · (2, 3)** and choose **Fit into harmonic terms**. Step **Terms** from 1 to 4 against the source beneath: a circle, a segment, then two more circles, and at four the terms reproduce every sample to rounding, because a torus knot is exactly such a sum. Two terms already look like a knot, but they pass through themselves: a small error does not guarantee the same knot. Press **Play animation** to watch the chain draw the curve while the camera turns once around, which is what shows its depth.
 
-Switch **Sampled by** to **Even pace (arc length)** to fit equal lengths along the curve instead of equal steps of its parameter. An exact sum then needs more terms, but a curve whose parameter hurries and stalls fits better. **Back to your study** restores everything; **Adopt fitted study** makes the terms an ordinary harmonic study you can edit, build on, link and export. See [the definitions and limits](mathematics.md#fitting-a-closed-spatial-curve).
+Switch **Sampled by** to **Even pace (arc length)** to fit equal lengths along the curve instead of equal steps of its parameter. An exact sum then needs more terms, but a curve whose parameter hurries and stalls fits better. **Back to your study** restores everything; **Adopt fitted study** makes the terms an ordinary harmonic study you can edit, build on, link and export.
+
+**Helix · a ribbon staircase** is open, so its fit begins with the helix alone. **Close outline** joins its ends with a straight segment, dashed beneath the fit, and eight terms then trace a coil whose two closing corners are rounded: closure makes corners, which no finite sum turns exactly. See [the definitions and limits](mathematics.md#fitting-a-closed-spatial-curve).
 
 ## Inversion in a sphere
 
