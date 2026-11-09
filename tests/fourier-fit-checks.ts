@@ -1258,14 +1258,28 @@ export async function checkFitErrorsBesideActions(page: Page) {
   derived.config.input = "evolute" as typeof derived.config.input;
   const gapLink = await writeStudyLink("2d", gap),
     derivedLink = await writeStudyLink("2d", derived);
+  // The app removes a link's fragment once read, so a reload could lose it, and
+  // the drawing still shows the previous study for a moment after that.
+  const openLinked = async (
+    link: string,
+    applied: (study: { input: string; curve: { y: string } }) => boolean,
+  ) => {
+    await page.goto(`/#s=${link}`);
+    await expect
+      .poll(async () =>
+        applied(
+          JSON.parse((await page.locator("#artwork desc").textContent())!),
+        ),
+      )
+      .toBe(true);
+    await pageReady(page);
+  };
   for (const size of [
     { width: 390, height: 844 },
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(size);
-    await page.goto(`/#s=${gapLink}`);
-    await page.reload();
-    await pageReady(page);
+    await openLinked(gapLink, (study) => study.curve.y.includes("sqrt"));
     const d = await openFit(page),
       current = fitButton(d, "Use current curve");
     await current.click();
@@ -1307,9 +1321,7 @@ export async function checkFitErrorsBesideActions(page: Page) {
     expect(refusal.y - action.y - action.height).toBeLessThanOrEqual(16);
     await fitButton(d, "Cancel drawing").click();
 
-    await page.goto(`/#s=${derivedLink}`);
-    await page.reload();
-    await pageReady(page);
+    await openLinked(derivedLink, (study) => study.input === "evolute");
     // Known in advance is not a failure: gray, quiet, and explained on request.
     const e = await openFit(page);
     const unavailable = fitButton(e, "Use current curve");
