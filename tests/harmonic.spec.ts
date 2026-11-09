@@ -53,7 +53,7 @@ import {
 } from "./fourier-fit-checks";
 import { readStudyLink, writeStudyLink } from "../web/study-link";
 import { decodePng } from "./png";
-import { decodeVideo, probe as probeMovie } from "./video";
+import { decodeVideo, decodedFrame, probe as probeMovie } from "./video";
 import { openExportSettings } from "./helpers";
 
 test("drawing playback stays beside its scrubber immediately below the visible art in both phone orientations", async ({
@@ -600,6 +600,87 @@ for (const dark of [false, true])
     });
     await page.keyboard.press("Escape");
   });
+
+// With two lines, a reveal has no representative chain between its ends:
+// only the track moves it. Two neighboring frames of the movie differ by the
+// chain's circles, far more than by the curve's growth.
+test("a movie carries the turning chain frame by frame", async ({ page }) => {
+  const study = fittedStudy([
+    { frequency: 1, radius: 1, phase: 0 },
+    { frequency: -3, radius: 0.5, phase: 0.4 },
+  ]);
+  study.config.lines = 2;
+  study.layers = { ...study.layers, definitionGuides: true };
+  await page.goto(`/#s=${await writeStudyLink("2d", study)}`);
+  await settled(page);
+  await openExportSettings(page);
+  await page.getByLabel("Duration (seconds)", { exact: true }).fill("2");
+  await page
+    .getByLabel("Export frame rate", { exact: true })
+    .selectOption("15");
+  await page.getByLabel("Export resolution", { exact: true }).fill("0.5");
+  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  const save = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export MP4 video" }).click();
+  const path = (await (await save).path())!;
+  const data = probeMovie(path);
+  test.skip(!data, "ffmpeg reads the frames");
+  expect(data!.frames).toBe(30);
+  const changed = (a: number, b: number) => {
+    const one = decodedFrame(path, data!.width, data!.height, a)!,
+      two = decodedFrame(path, data!.width, data!.height, b)!;
+    let moved = 0;
+    for (let i = 0; i < one.length; i += 3)
+      if (
+        Math.abs(one[i] - two[i]) +
+          Math.abs(one[i + 1] - two[i + 1]) +
+          Math.abs(one[i + 2] - two[i + 2]) >
+        32
+      )
+        moved++;
+    return moved;
+  };
+  expect(changed(10, 11)).toBeGreaterThan(400);
+  expect(changed(20, 21)).toBeGreaterThan(400);
+});
+
+// The fitted study has 1025 samples and 48 lines; 0.371 reveals through
+// sample 379, between the lines at 370 and 392.
+test("Play circles turns the chain with the curve's head between representative samples", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await leafFit(page);
+  const position = d.getByLabel("Preview position", { exact: true });
+  for (const [p, through] of [
+    [0.371, 379],
+    [0.372, 380],
+  ] as const) {
+    await position.fill(String(p));
+    await expect(d.getByTestId("epicycles")).toHaveAttribute(
+      "data-sample",
+      String(through),
+    );
+    const tip = d.getByTestId("harmonic-point");
+    const curve = (await d.getByTestId("base-curve").getAttribute("d"))!.trim();
+    const [x, y] = curve
+      .slice(curve.lastIndexOf(" ") + 2)
+      .split(",")
+      .map(Number);
+    expect(Math.abs(Number(await tip.getAttribute("cx")) - x)).toBeLessThan(
+      0.002,
+    );
+    expect(Math.abs(Number(await tip.getAttribute("cy")) - y)).toBeLessThan(
+      0.002,
+    );
+  }
+  // Played through, the finished drawing ends on its last line.
+  await position.fill("1");
+  await expect(d.getByTestId("epicycles")).toHaveAttribute(
+    "data-sample",
+    "1024",
+  );
+});
 
 test("drawn Fourier term edits retain geometry and residual layout while fitting", async ({
   page,

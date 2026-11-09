@@ -39,10 +39,10 @@ import {
 import { useQuietFocus } from "./quiet-focus";
 import { useTheme } from "./useTheme";
 import { Plot } from "./Plot";
-import { reveal } from "./animation";
+import { reveal, ridesHead } from "./animation";
 import { Field, HelpToggle, HelpText, useHelp } from "./Field";
 import type { PlanarStudy } from "./planar-link";
-import type { Vec } from "./types";
+import type { ConstructionTrack, Frame, Vec } from "./types";
 import "./fourier-fit.css";
 
 // A press that makes its own button unavailable must not drop the keyboard's
@@ -209,6 +209,26 @@ export function FourierFitPreview({
   useEffect(() => {
     setPlaying(false);
     setProgress(1);
+  }, [state.frame]);
+  // The chain at every sample, so that played or scrubbed it turns with the
+  // curve's head. Until it arrives, it turns between representative samples.
+  const [track, setTrack] = useState<{
+    frame: Frame;
+    track: ConstructionTrack;
+  } | null>(null);
+  useEffect(() => {
+    const frame = state.frame;
+    if (!frame || !ridesHead(frame.result)) return;
+    let current = true;
+    engine.current
+      ?.track(frame)
+      .then((t) => {
+        if (current && t) setTrack({ frame, track: t });
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
   }, [state.frame]);
   function reset(next: Vec[] = []) {
     engine.current?.cancel();
@@ -396,7 +416,14 @@ export function FourierFitPreview({
   const shown =
     frame &&
     (progress < 1
-      ? { ...frame, result: reveal(frame.result, progress) }
+      ? {
+          ...frame,
+          result: reveal(
+            frame.result,
+            progress,
+            track?.frame === frame ? track.track : undefined,
+          ),
+        }
       : frame);
   function correctionPoint(e: PointerEvent<SVGSVGElement>): Vec {
     const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(

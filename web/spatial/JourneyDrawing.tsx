@@ -28,6 +28,8 @@ export default function JourneyDrawing(p: {
   requested: number;
   revision: string;
   invalid: boolean;
+  // Why Play is unavailable, for the status beside it.
+  unavailable?: string;
   error?: string;
   onError: (message: string) => void;
   client: { current: EngineClient | null };
@@ -122,6 +124,7 @@ export default function JourneyDrawing(p: {
           length={p.study.config.length}
           revision={p.revision}
           disabled={(p.pending && p.slow) || !p.frame || !!p.error || p.invalid}
+          unavailable={p.unavailable}
           probe={null}
           cut={cut.spec}
           sight={p.study.sight}

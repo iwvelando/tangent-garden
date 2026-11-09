@@ -6,7 +6,7 @@ import {
   presetStudy,
   type PlanarStudy,
 } from "./planar-link";
-import type { Frame, Term, Vec } from "./types";
+import type { ConstructionTrack, Frame, Term, Vec } from "./types";
 import { tiered } from "./help";
 
 export const fitEntryHelp = tiered(
@@ -176,7 +176,9 @@ export type FitState = {
   fitEdited?: boolean;
   fitPoints?: Vec[];
 };
-type FitEngine = Pick<EngineClient, "fitFourier" | "compute" | "dispose">;
+// An engine without tracks plays the circles at representative samples.
+type FitEngine = Pick<EngineClient, "fitFourier" | "compute" | "dispose"> &
+  Partial<Pick<EngineClient, "track">>;
 
 // Exactly one worker and one request at a time. Selection changes replace a
 // single wanted count; the current worker caches only this stroke's fit. The
@@ -397,6 +399,12 @@ export class FourierFitSession {
     } finally {
       if (generation === this.generation) this.running = false;
     }
+  }
+  // A completed frame's construction track, for its preview's reveal, asked
+  // of the worker that holds the fit and refused once the worker is
+  // replaced.
+  async track(frame: Frame): Promise<ConstructionTrack | undefined> {
+    return this.client?.track?.(frame.config);
   }
   candidate(): PlanarStudy | null {
     return !this.state.pending &&

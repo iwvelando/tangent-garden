@@ -3,6 +3,7 @@ import {
   availableTargets,
   integerTargets,
   reveal,
+  ridesHead,
   targetValue,
   type Target,
   type AnimationView,
@@ -31,7 +32,13 @@ import {
 } from "./planar-path";
 import { viewZoom } from "./refinement";
 import { progressAt, type Pace } from "./timing";
-import type { Config, Result, Frame, ViewRect } from "./types";
+import type {
+  Config,
+  ConstructionTrack,
+  Result,
+  Frame,
+  ViewRect,
+} from "./types";
 
 export const maxPhases = 12;
 // A camera key: the point of the plane in the middle of the page and the
@@ -399,7 +406,10 @@ export function phraseAt(phrase: CompiledPhrase, seconds: number) {
   };
 }
 
-type PhraseEngine = Pick<EngineClient, "compute">;
+// An engine without tracks draws a construction stage's representative
+// samples alone.
+type PhraseEngine = Pick<EngineClient, "compute"> &
+  Partial<Pick<EngineClient, "track">>;
 // One reusable renderer-input sampler for playback, direct seeks, stills and
 // export. The caller maps repeat time into absolute phrase seconds and owns
 // cancellation. Each engine retains only its last geometry/pending request,
@@ -430,6 +440,12 @@ export function createPhraseSampler(options: {
   const frames = new WeakMap<
     PhraseEngine,
     { value: number; area: string; frame: Promise<Frame> }
+  >();
+  // Each engine's last construction track, by input value: the track is the
+  // study's samples, which the area a frame is refined to leaves alone.
+  const tracks = new WeakMap<
+    PhraseEngine,
+    { value: number; track: Promise<ConstructionTrack> }
   >();
   // Each camera-only phase's pieces, cut when first needed: a few per
   // doubling of zoom, bounded by the phase count.
@@ -502,6 +518,23 @@ export function createPhraseSampler(options: {
       });
     }
     const current = await cached.frame;
+    // While the construction is being drawn, the constructions at the
+    // curve's head move with it, as in a reveal.
+    const drawing =
+      state.reveal.construction > 0 &&
+      state.reveal.construction < 1 &&
+      !!engine.track &&
+      ridesHead(current.result);
+    let followed = drawing ? tracks.get(engine) : undefined;
+    if (drawing && followed?.value !== state.value) {
+      followed = { value: state.value, track: engine.track!(current.config) };
+      tracks.set(engine, followed);
+      const entry = followed;
+      followed.track.catch(() => {
+        if (tracks.get(engine) === entry) tracks.delete(engine);
+      });
+    }
+    const track = followed && (await followed.track);
     const position =
       probe && current.result.diagnostics && original.result.diagnostics
         ? heldCurveSample(
@@ -521,7 +554,7 @@ export function createPhraseSampler(options: {
     return {
       frame: {
         config: current.config,
-        result: revealPhrase(current.result, state.reveal),
+        result: revealPhrase(current.result, state.reveal, track),
       },
       final: original,
       camera: "current",
@@ -550,7 +583,11 @@ export function createPhraseSampler(options: {
 
 // Each role cuts the original ordered geometry independently. Existing gaps,
 // refined sample indices and real/virtual flags stay attached to their points.
-export function revealPhrase(result: Result, fractions: PhraseReveal): Result {
+export function revealPhrase(
+  result: Result,
+  fractions: PhraseReveal,
+  track?: ConstructionTrack,
+): Result {
   if (
     fractions.base === 1 &&
     fractions.construction === 1 &&
@@ -558,7 +595,7 @@ export function revealPhrase(result: Result, fractions: PhraseReveal): Result {
   )
     return result;
   const base = reveal(result, fractions.base);
-  const construction = reveal(result, fractions.construction);
+  const construction = reveal(result, fractions.construction, track);
   const derived = reveal(result, fractions.derived);
   const b = fractions.base > 0,
     c = fractions.construction > 0,

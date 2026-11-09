@@ -54,6 +54,7 @@ import {
   reveal,
   revealConfig,
   revealedThrough,
+  ridesHead,
   targetLabel,
   targetValue,
   type AnimationMode,
@@ -67,6 +68,7 @@ import {
 import {
   studyName,
   type Config,
+  type ConstructionTrack,
   type Frame,
   type ProbeQuery,
   type ViewRect,
@@ -166,6 +168,9 @@ type Session = {
   final: Frame;
   tracks: NumericTrack[];
   mode: AnimationMode;
+  // A reveal's construction track, with which the constructions at the
+  // curve's head move with it.
+  track?: ConstructionTrack;
   // Present only while tracing rays.
   timeline?: Timeline;
   camera: CameraMode;
@@ -747,7 +752,7 @@ export function AnimationPanel({
     else if (s.mode === "reveal")
       current = {
         config: s.original.config,
-        result: reveal(s.original.result, p),
+        result: reveal(s.original.result, p, s.track),
       };
     else if (s.mode === "trace")
       current = {
@@ -1302,12 +1307,20 @@ export function AnimationPanel({
               stopAtCaustic,
             )
           : undefined;
+      // Asked for once, so every frame, played, scrubbed or exported, draws
+      // the constructions at the head from it.
+      const track =
+        mode === "reveal" && ridesHead(frame.result)
+          ? await client.current.track(frame.config)
+          : undefined;
+      if (epoch.current !== token) return;
       const s: Session = {
         original: frame,
         first,
         final,
         tracks: numeric,
         mode,
+        ...(track && { track }),
         timeline,
         camera,
         heldView,
@@ -2059,7 +2072,9 @@ export function AnimationPanel({
               </Field>
               <div className="note" role="status" aria-live="off">
                 {preview && status === "idle"
-                  ? "Ready to play"
+                  ? disabled || !frame || !phraseReady
+                    ? "Not ready to play"
+                    : "Ready to play"
                   : status === "exporting"
                     ? `Exporting ${text.short}…`
                     : status === "complete"
