@@ -125,16 +125,43 @@ checkFourierFit();
   assert.equal(next.outline, undefined, "the outline returns only once");
   assert.ok(next.rms > 0.1);
   assert.match(call({ count: 9 }).error, /1–8/);
-  // A replacement that fails invalidates the fit before it.
-  const open = call({
-    source: {
-      format: "parametric",
-      curve: { x: "cos(t)", y: "sin(t)", z: "t/4", min: 0, max: 6, a: 0 },
-    },
+  // An open source returns its outline alone, lifted, and replaces the fit
+  // before it with none: a count has nothing to select from.
+  const helix = {
+    format: "parametric",
+    curve: { x: "cos(t)", y: "sin(t)", z: "t/4", min: 0, max: 6, a: 0 },
+  };
+  const open = call({ source: helix, parameter: "source", count: 8 });
+  assert.equal(open.error, undefined);
+  assert.equal(open.curve, undefined, "an open source is not fitted");
+  assert.equal(open.outline.open, true);
+  assert.equal(open.outline.closing, undefined);
+  const ends = open.outline.points;
+  assert.ok(Math.abs(ends.at(-1).z - ends[0].z - 1.5) < 1e-12);
+  assert.match(call({ count: 2 }).error, /source/);
+  // Closing it fits the same outline with its segment back to the start.
+  const closed = call({
+    source: helix,
     parameter: "source",
     count: 8,
+    close: true,
   });
-  assert.match(open.error, /open/);
+  assert.ok(
+    Math.abs(closed.joined - Math.hypot(Math.cos(6) - 1, Math.sin(6), 1.5)) <
+      1e-12,
+  );
+  assert.equal(closed.outline.closing, ends.length - 1);
+  assert.deepEqual(closed.outline.points.slice(0, -1), ends);
+  assert.deepEqual(closed.outline.points.at(-1), ends[0]);
+  assert.equal(call({ count: 3 }).curve.terms.length, 3);
+  // A failed replacement invalidates the fit before it.
+  const gap = call({
+    source: { ...helix, curve: { ...helix.curve, z: "sqrt(sin(t+0.3))" } },
+    parameter: "source",
+    count: 8,
+    close: true,
+  });
+  assert.match(gap.error, /gap/);
   assert.match(call({ count: 2 }).error, /source/);
   assert.match(globalThis.tangentGardenSpatialFit(" ".repeat(524289)), /large/);
 }

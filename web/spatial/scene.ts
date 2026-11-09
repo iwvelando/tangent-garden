@@ -7,6 +7,7 @@ import {
 } from "./geodesic-path";
 import type {
   CuspidalEdge,
+  FitSourceOutline,
   HarmonicPosition,
   HarmonicTerm,
   RefinedPath,
@@ -813,13 +814,9 @@ function buildSingleScene(result: SpatialResult) {
     "lines",
     4,
   );
-  // A fitting preview's source, as its closed polygon's edges.
+  // A fitting preview's source, as its polygon's edges.
   const fitSource = batch(
-    vertices(
-      (result.fitSource ?? []).flatMap((p, i, path) =>
-        i === 0 ? [] : [path[i - 1], p],
-      ),
-    ),
+    vertices(result.fitSource ? fitSourceEdges(result.fitSource) : []),
     "lines",
     1,
   );
@@ -1382,6 +1379,46 @@ function buildSingleScene(result: SpatialResult) {
   };
 }
 export type Scene = ReturnType<typeof buildSingleScene> & { members?: Scene[] };
+
+// A fitting preview's source outline as line pairs: every edge of the source,
+// then any closing segment in dashes, so that what closure added reads as
+// added. A dash and its gap are each 1.5% of the outline's
+// diagonal, an odd count of them starting and ending on a dash. They are
+// geometry, since the renderer's dashes belong to lines behind sheets.
+export function fitSourceEdges({ points, closing }: FitSourceOutline): Vec3[] {
+  const last = closing ?? points.length - 1;
+  const out: Vec3[] = [];
+  for (let i = 1; i <= last; i++) out.push(points[i - 1], points[i]);
+  if (closing === undefined) return out;
+  const low = { ...points[0] },
+    high = { ...points[0] };
+  for (const p of points)
+    for (const k of ["x", "y", "z"] as const) {
+      low[k] = Math.min(low[k], p[k]);
+      high[k] = Math.max(high[k], p[k]);
+    }
+  const diagonal = Math.hypot(high.x - low.x, high.y - low.y, high.z - low.z);
+  const along = (a: Vec3, b: Vec3, u: number): Vec3 =>
+    u === 0
+      ? a
+      : u === 1
+        ? b
+        : {
+            x: a.x + (b.x - a.x) * u,
+            y: a.y + (b.y - a.y) * u,
+            z: a.z + (b.z - a.z) * u,
+          };
+  for (let i = closing + 1; i < points.length; i++) {
+    const a = points[i - 1],
+      b = points[i];
+    const length = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+    const pieces =
+      2 * Math.max(1, Math.round(length / (2 * 0.015 * diagonal || 1))) + 1;
+    for (let k = 0; k < pieces; k += 2)
+      out.push(along(a, b, k / pieces), along(a, b, (k + 1) / pieces));
+  }
+  return out;
+}
 
 export function buildScene(result: SpatialResult): Scene {
   const scene: Scene = buildSingleScene(result);

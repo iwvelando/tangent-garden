@@ -1304,6 +1304,46 @@ test("the harmonic fit returns focus to its entry by click and by keyboard in We
   await expect(radius).toHaveValue("3");
 });
 
+test("an open spatial curve closes by click and by keyboard in WebKit", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "Helix · a ribbon staircase" });
+  await expect(page.locator(".spatial-stage")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entry = page.getByRole("button", {
+    name: "Fit into harmonic terms",
+    exact: true,
+  });
+  const dialog = page.locator(".harmonic-fit");
+  const close = dialog.getByRole("button", {
+    name: "Close outline",
+    exact: true,
+  });
+  const adopt = page.getByRole("button", { name: "Adopt fitted study" });
+  // Safari does not focus a clicked button: the click still closes, and
+  // Escape still leaves for the entry.
+  await entry.click();
+  await expect(dialog).toHaveAttribute("data-open", "true");
+  await expect(adopt).toBeDisabled();
+  await close.click();
+  await expect(dialog).toHaveAttribute("data-fit", /"joined"/);
+  await expect(adopt).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(entry).toBeFocused();
+  // By keyboard, focus stays on the button its own press made unavailable.
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveAttribute("data-open", "true");
+  await close.focus();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toHaveAttribute("data-fit", /"joined"/);
+  await expect(close).toBeFocused();
+  await expect(close).toHaveAttribute("aria-disabled", "true");
+});
+
 test("WebKit opens a study link made elsewhere and copies its own", async ({
   page,
 }) => {

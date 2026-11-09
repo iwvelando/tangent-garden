@@ -203,7 +203,7 @@ export class EngineClient {
   // replaces it, and a count alone selects from it.
   async spatialFit(
     q: import("./spatial/harmonic-fit").HarmonicFitRequest,
-  ): Promise<import("./spatial/harmonic-fit").HarmonicFitResult> {
+  ): Promise<import("./spatial/harmonic-fit").HarmonicFitReply> {
     return (await this.request({ action: "spatial-fit", spatialFit: q }))
       .result;
   }

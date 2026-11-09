@@ -37,7 +37,10 @@ const harmonicFitDiscontinuity = "source has a discontinuity or detail too fine 
 
 // HarmonicOutline is a transient closed approximation of a source, in its own
 // coordinates and traversal, from the first point back to it. Tolerance is the
-// sampled chord deviation, not a certified continuous bound.
+// sampled chord deviation, not a certified continuous bound. Open marks a
+// source whose ends are apart: its outline runs from the first point to the
+// last, or, closed explicitly, on along a straight segment from the source's
+// last point, at index Closing, back to the first.
 type HarmonicOutline struct {
 	Points           []Vec3  `json:"points"`
 	Tolerance        float64 `json:"tolerance"`
@@ -45,6 +48,17 @@ type HarmonicOutline struct {
 	Evaluations      int     `json:"evaluations"`
 	Length           float64 `json:"length"`
 	Extent           float64 `json:"extent"`
+	Open             bool    `json:"open,omitempty"`
+	Closing          int     `json:"closing,omitempty"`
+}
+
+// HarmonicOpenError refuses an open source that was not explicitly closed. It
+// comes only after every source check, with the admitted outline, so the
+// source can be shown as it is and closed by CloseHarmonicSource.
+type HarmonicOpenError struct{ Outline HarmonicOutline }
+
+func (e *HarmonicOpenError) Error() string {
+	return "source is open: its ends are apart; Close outline joins them with a straight segment"
 }
 
 // HarmonicFit retains one source's closed outline, its 1024 samples and its
@@ -56,6 +70,7 @@ type HarmonicFit struct {
 	center    Vec3
 	terms     []HarmonicTerm // Ranked and nonzero.
 	scale     float64
+	joined    float64 // The closing segment's length, if any.
 }
 
 // HarmonicEllipse is what one term actually traces about its joint: a turning
@@ -87,12 +102,25 @@ type HarmonicFitResult struct {
 	Extent          float64           `json:"extent"`
 	Tolerance       float64           `json:"tolerance"`
 	Evaluations     int               `json:"evaluations"`
+	Joined          float64           `json:"joined,omitempty"`
 }
 
 // FitHarmonicSource fits one direct closed base curve: a torus knot, an
 // expression curve or a harmonic study. It uses only positions, so corners and
-// cusps are admitted; it never joins a gap or closes an open path.
+// cusps are admitted; it never joins a gap or closes an open path, refusing
+// one with HarmonicOpenError.
 func FitHarmonicSource(c Request, parameter string) (*HarmonicFit, error) {
+	return fitHarmonicSource(c, parameter, false)
+}
+
+// CloseHarmonicSource fits a source as FitHarmonicSource does, except that an
+// open one is closed explicitly by the straight segment from its last point to
+// its first. A source whose ends meet gains nothing and fits identically.
+func CloseHarmonicSource(c Request, parameter string) (*HarmonicFit, error) {
+	return fitHarmonicSource(c, parameter, true)
+}
+
+func fitHarmonicSource(c Request, parameter string, close bool) (*HarmonicFit, error) {
 	if parameter != HarmonicFitArcLength && parameter != HarmonicFitSource {
 		return nil, fmt.Errorf("choose arc-length or source parameterization")
 	}
@@ -113,21 +141,47 @@ func FitHarmonicSource(c Request, parameter string) (*HarmonicFit, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The segment takes the source's mean pace over its domain, so either
+	// sampling gives it its share of the closed length, and none of its
+	// samples is an evaluation.
+	share, joined := 0.0, 0.0
+	if outline.Open {
+		if !close {
+			return nil, &HarmonicOpenError{Outline: outline}
+		}
+		end, start := outline.Points[len(outline.Points)-1], outline.Points[0]
+		joined = start.sub(end).norm()
+		share = joined / outline.Length
+		outline.Closing = len(outline.Points) - 1
+		outline.Points = append(outline.Points, start)
+		outline.Length += joined
+	}
 	var samples []Vec3
 	if parameter == HarmonicFitArcLength {
 		samples = arcLengthSamples(outline.Points, outline.Length)
 	} else {
 		samples = make([]Vec3, HarmonicFitSamples)
+		end, start := outline.Points[outline.Closing], outline.Points[0]
 		for j := range samples {
-			p := eval(lo + (hi-lo)*float64(j)/HarmonicFitSamples)
+			u := (1 + share) * float64(j) / HarmonicFitSamples
+			if u > 1 {
+				samples[j] = end.add(start.sub(end).mul((u - 1) / share))
+				continue
+			}
+			p := eval(lo + (hi-lo)*u)
 			if *failure != nil {
 				return nil, *failure
 			}
 			samples[j] = *p
+			outline.Evaluations++
 		}
-		outline.Evaluations += HarmonicFitSamples
 	}
-	return fitHarmonicSamples(samples, parameter, outline)
+	f, err := fitHarmonicSamples(samples, parameter, outline)
+	if err != nil {
+		return nil, err
+	}
+	f.joined = joined
+	return f, nil
 }
 
 // harmonicOutline samples a source by the planar procedure, on the same
@@ -191,12 +245,16 @@ func harmonicOutline(at func(float64) Vec3, lo, hi float64) (HarmonicOutline, fu
 	if out.ClosureTolerance > 1e-6*extent {
 		return stop(fmt.Errorf("source precision cannot resolve endpoint closure at this coordinate or parameter scale"))
 	}
-	if points[0].sub(*points[intervals]).norm() > out.ClosureTolerance {
-		return stop(fmt.Errorf("source is open: its ends are apart, and a spatial fit never joins them"))
+	// An open source is admitted like a closed one, leaving room for the
+	// point an explicit close adds; joining is the caller's decision.
+	out.Open = points[0].sub(*points[intervals]).norm() > out.ClosureTolerance
+	room := HarmonicFitMaxPoints - len(points)
+	if out.Open {
+		room--
 	}
 	out.Extent = extent
 	out.Tolerance = 1e-4 * extent
-	path, _ := refine.RefineFocused(points, make([]bool, len(points)), eval, space, lo, hi, out.Tolerance, HarmonicFitMaxPoints-len(points), refine.Focus[Vec3]{
+	path, _ := refine.RefineFocused(points, make([]bool, len(points)), eval, space, lo, hi, out.Tolerance, room, refine.Focus[Vec3]{
 		Tolerance: out.Tolerance / 2, Chord: extent / 32,
 		Meets: func([]*Vec3, float64) bool { return true },
 	})
@@ -267,8 +325,10 @@ func harmonicOutline(at func(float64) Vec3, lo, hi float64) (HarmonicOutline, fu
 	for j, p := range path.Points {
 		out.Points[j] = *p
 	}
-	// Only rounding-sized endpoint disagreement reaches here.
-	out.Points[len(out.Points)-1] = out.Points[0]
+	// Only rounding-sized endpoint disagreement reaches here closed.
+	if !out.Open {
+		out.Points[len(out.Points)-1] = out.Points[0]
+	}
 	out.Length = 0
 	for j := 1; j < len(out.Points); j++ {
 		out.Length += out.Points[j].sub(out.Points[j-1]).norm()
@@ -430,7 +490,7 @@ func (f *HarmonicFit) Select(count int) (HarmonicFitResult, error) {
 	r := HarmonicFitResult{
 		Curve: curve, Bounds: f.Bounds(), Parameter: f.parameter, Available: f.Available(),
 		Length: f.outline.Length, Extent: f.outline.Extent, Tolerance: f.outline.Tolerance,
-		Evaluations: f.outline.Evaluations,
+		Evaluations: f.outline.Evaluations, Joined: f.joined,
 	}
 	n := len(f.samples)
 	sum, reach := 0.0, 0.0
