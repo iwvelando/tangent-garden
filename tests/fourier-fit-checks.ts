@@ -1641,8 +1641,16 @@ export async function checkFittingKeepsControls(page: Page) {
       const parts = await row.evaluateAll((all) =>
         all.map((e) => e.getBoundingClientRect().toJSON()),
       );
-      for (const line of new Set(parts.map((p) => Math.round(p.top)))) {
-        const onLine = parts.filter((p) => Math.round(p.top) === line);
+      // Centered parts of different heights share a line if they overlap.
+      const lines: (typeof parts)[] = [];
+      for (const part of parts) {
+        const line = lines.find((l) =>
+          l.some((p) => part.top < p.bottom && p.top < part.bottom),
+        );
+        if (line) line.push(part);
+        else lines.push([part]);
+      }
+      for (const onLine of lines) {
         expect
           .soft(
             Math.min(...onLine.map((p) => p.left)) - pane.x,
@@ -2061,14 +2069,18 @@ export async function checkPreviewTrackpad(page: Page) {
   expect(await send(0, 40)).toBe(false);
   expect(await previewCamera(d)).toEqual(fitted);
 
+  // A native listener's update commits on React's own schedule, not at once.
   expect(await send(0, -20, true)).toBe(true);
+  await expect
+    .poll(async () => (await previewCamera(d)).scale)
+    .toBeGreaterThan(fitted.scale);
   const pinched = await previewCamera(d);
-  expect(pinched.scale).toBeGreaterThan(fitted.scale);
 
   expect(await send(30, 0)).toBe(true);
-  const panned = await previewCamera(d);
-  expect(panned.scale).toBe(pinched.scale);
-  expect(panned.center[0]).not.toBe(pinched.center[0]);
+  await expect
+    .poll(async () => (await previewCamera(d)).center[0])
+    .not.toBe(pinched.center[0]);
+  expect((await previewCamera(d)).scale).toBe(pinched.scale);
 }
 
 // One finger pans a zoomed preview, and two pinch it, as on the outline.
@@ -2196,4 +2208,148 @@ export async function checkFittedTouchOwnership(page: Page) {
   await d.getByRole("button", { name: "Fit preview" }).click();
   await art.scrollIntoViewIfNeeded();
   await expect(art).toHaveCSS("touch-action", "pan-y");
+}
+
+// Zooming back out by the same steps is the fit again, despite rounding: the
+// dialog gets its scroll back, and an unmoved preview follows later fits.
+export async function checkZoomReturnsToFit(page: Page) {
+  await page.goto("/");
+  await pageReady(page);
+  const d = await leafFit(page);
+  await fittedReady(d);
+  const svg = d.getByTestId("stroke-reference");
+  await svg.scrollIntoViewIfNeeded();
+  const outlineView = await svg.getAttribute("viewBox");
+  for (const [pane, zoomIn, zoomOut] of [
+    [svg, "Zoom in on outline", "Zoom out of outline"],
+    [d.locator(".fit-art"), "Zoom in on preview", "Zoom out of preview"],
+  ] as const) {
+    await expect(pane).toHaveCSS("touch-action", "pan-y");
+    for (const steps of [2, 5]) {
+      for (let i = 0; i < steps; i++) await fitButton(d, zoomIn).click();
+      await expect(pane).toHaveCSS("touch-action", "none");
+      for (let i = 0; i < steps; i++) await fitButton(d, zoomOut).click();
+      await expect(fitButton(d, zoomOut)).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+      await expect(pane).toHaveCSS("touch-action", "pan-y");
+    }
+  }
+  expect(await svg.getAttribute("viewBox")).toBe(outlineView);
+
+  // A pinch out by what it pinched in, about one anchor, is the fit as well.
+  const box = (await svg.boundingBox())!;
+  const pinch = (deltaY: number) =>
+    svg.evaluate(
+      (e, o) => {
+        e.dispatchEvent(
+          new WheelEvent("wheel", {
+            ...o,
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      },
+      {
+        deltaY,
+        clientX: box.x + box.width * 0.7,
+        clientY: box.y + box.height * 0.3,
+      },
+    );
+  await pinch(-20);
+  await expect(svg).toHaveCSS("touch-action", "none");
+  await pinch(20);
+  await expect(svg).toHaveCSS("touch-action", "pan-y");
+}
+
+// A finger still down when the outline is replaced must not outlive it. Each
+// touch has its own id, so a forgotten one would turn the next outline's first
+// drag into half of a pinch, and every drag after it.
+export async function checkReplacingDuringAHeldPress(page: Page) {
+  await page.goto("/");
+  await pageReady(page);
+  const d = await leafFit(page);
+  await fittedReady(d);
+  const client = await page.context().newCDPSession(page);
+  const touch = (
+    type: string,
+    points: { x: number; y: number; id: number }[],
+  ) =>
+    client.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: points,
+    } as any);
+  const svg = d.getByTestId("stroke-reference");
+  await svg.scrollIntoViewIfNeeded();
+  const pane = (await svg.boundingBox())!;
+  const start = { x: pane.x + 8, y: pane.y + 8, id: 1 };
+  await touch("touchStart", [start]);
+  await touch("touchMove", [{ ...start, x: start.x + 30 }]);
+  await fitButton(d, "Reset outline").evaluate((b) =>
+    (b as HTMLButtonElement).click(),
+  );
+  await touch("touchEnd", []);
+  await expect(svg).toHaveAttribute("data-point-count", "0");
+
+  await fitButton(d, "Use example leaf").click();
+  await fitButton(d, "Close outline").click();
+  await expect(fitButton(d, "Adopt fitted study")).toBeEnabled();
+  await fittedReady(d);
+  await svg.scrollIntoViewIfNeeded();
+  const polygon = svg.locator("polygon").first();
+  const original = await polygon.getAttribute("points");
+  const view = await svg.getAttribute("viewBox");
+  const handle = (await svg.locator(".fit-edit-handle").boundingBox())!;
+  const x = handle.x + handle.width / 2,
+    y = handle.y + handle.height / 2;
+  await touch("touchStart", [{ x, y, id: 2 }]);
+  for (const k of [6, 12, 18, 24])
+    await touch("touchMove", [{ x: x + k, y: y + k, id: 2 }]);
+  await touch("touchEnd", []);
+  await expect.poll(() => polygon.getAttribute("points")).not.toBe(original);
+  await fittedReady(d);
+  expect(await svg.getAttribute("viewBox")).toBe(view);
+}
+
+// The cursor says what a press does, while it is held as well as before it.
+export async function checkPaneCursors(page: Page) {
+  await page.goto("/");
+  await pageReady(page);
+  const d = await openFit(page);
+  const svg = d.getByTestId("stroke-reference"),
+    art = d.locator(".fit-art");
+  const cursor = (e: Locator) =>
+    e.evaluate((element) => getComputedStyle(element).cursor);
+  const held = async (e: Locator) => {
+    await e.scrollIntoViewIfNeeded();
+    const box = (await e.boundingBox())!;
+    await page.mouse.move(box.x + 8, box.y + 8);
+    await page.mouse.down();
+    await expect.poll(() => cursor(e)).not.toBe("");
+    const during = await cursor(e);
+    await page.mouse.move(box.x + 40, box.y + 30);
+    await page.mouse.up();
+    return during;
+  };
+  expect(await cursor(svg)).toBe("crosshair");
+  expect(await held(svg), "drawing").toBe("crosshair");
+  await fitButton(d, "Reset outline").click();
+  await fitButton(d, "Use example leaf").click();
+  await fitButton(d, "Close outline").click();
+  await expect(fitButton(d, "Adopt fitted study")).toBeEnabled();
+  await fittedReady(d);
+  for (const pane of [svg, art]) {
+    expect(await cursor(pane)).toBe("grab");
+    expect(await held(pane)).toBe("grabbing");
+  }
+  // A drag that leaves the preview pans it and selects nothing on its way.
+  await art.scrollIntoViewIfNeeded();
+  const box = (await art.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 300, box.y + box.height + 120, { steps: 6 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => getSelection()?.toString())).toBe("");
 }

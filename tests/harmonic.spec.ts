@@ -44,6 +44,9 @@ import {
   checkPreviewTouch,
   checkFittedTouchOwnership,
   checkClosedOutlineEditsInPlace,
+  checkZoomReturnsToFit,
+  checkReplacingDuringAHeldPress,
+  checkPaneCursors,
   fitDialog,
   leafFit,
   openFit,
@@ -2889,4 +2892,24 @@ test("at the fit, an edit and a pinch keep a touch from scrolling the dialog", a
   const context = await browser.newContext({ hasTouch: true });
   await checkFittedTouchOwnership(await context.newPage());
   await context.close();
+});
+
+test("zooming back out returns a pane to its fit, and the dialog's scroll", async ({
+  page,
+}) => {
+  await checkZoomReturnsToFit(page);
+});
+
+test("a finger held while the outline is replaced leaves the next drag a correction", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ hasTouch: true });
+  await checkReplacingDuringAHeldPress(await context.newPage());
+  await context.close();
+});
+
+test("each pane's cursor says what a press does, held or not", async ({
+  page,
+}) => {
+  await checkPaneCursors(page);
 });

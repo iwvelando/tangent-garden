@@ -8,7 +8,6 @@ import {
   type ButtonHTMLAttributes,
   type PointerEvent,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import { EngineClient } from "./engine-client";
 import {
@@ -81,25 +80,21 @@ const dragSlop = { touch: 8, other: 4 };
 // How near the outline a press edits rather than pans, in CSS pixels.
 const touchReach = 18,
   pointerReach = 10;
-// One pane's zoom: the readout and buttons are the same on both, and there is
-// a place for what each pane adds beside them.
+// One pane's zoom: the readout and buttons are the same on both.
 function PaneZoom({
   noun,
   view,
   available,
   onFit,
-  children,
 }: {
   noun: string;
   view: ReturnType<typeof usePaneCamera>;
   available: boolean;
   onFit: () => void;
-  children?: ReactNode;
 }) {
   const title = noun.charAt(0).toUpperCase() + noun.slice(1);
   return (
     <div className="fit-pane-zoom" role="group" aria-label={`${title} view`}>
-      {children}
       <span className="fit-zoom-readout" data-testid={`${noun}-zoom`}>
         {view.camera.zoom.toFixed(1)}×
       </span>
@@ -230,6 +225,7 @@ export function FourierFitPreview({
     previewFrame.current = drawingWindow;
     input.home();
     preview.home();
+    input.forgetPointers();
     navigating.current = false;
     panning.current = false;
     setGhost(null);
@@ -514,10 +510,10 @@ export function FourierFitPreview({
       data-point-count={visiblePoints.length}
       data-selected-point={pointIndex}
       data-source={imported ? "curve" : "drawing"}
+      data-movable={!reference && navigable ? "" : undefined}
       style={
         {
           "--outline-unit": `${(0.015 * (1000 / 6)) / (reference ? previewView.scale : inputScale)}px`,
-          cursor: navigable ? "grab" : undefined,
           touchAction: navigable
             ? atHome(input.camera)
               ? "pan-y"
@@ -890,10 +886,8 @@ export function FourierFitPreview({
               role="group"
               aria-label="Fitted preview view"
               tabIndex={frame ? 0 : undefined}
-              style={{
-                touchAction: atHome(preview.camera) ? "pan-y" : "none",
-                cursor: frame ? "grab" : undefined,
-              }}
+              data-movable={frame ? "" : undefined}
+              style={{ touchAction: atHome(preview.camera) ? "pan-y" : "none" }}
               onKeyDown={(e) => {
                 if (!frame || e.metaKey || e.ctrlKey || e.altKey) return;
                 const pan: Record<string, [number, number]> = {

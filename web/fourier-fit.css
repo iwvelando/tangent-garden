@@ -373,12 +373,17 @@ html.fourier-fit-open body {
     flex: 1 0 auto;
   }
 }
-/* Both a mouse's cursor and a held drag; focus only marks the keyboard's way. */
+/* Focus only marks the keyboard's way. */
 .fit-art:focus:not(:focus-visible) {
   outline: none;
 }
-.fit-art:active,
-.fit-capture:active {
+/* A pane that a press moves says so, though one still drawing keeps its aim. */
+.fit-art[data-movable],
+.fit-capture[data-movable] {
+  cursor: grab;
+}
+.fit-art[data-movable]:active,
+.fit-capture[data-movable]:active {
   cursor: grabbing;
 }
 .fit-draft > .hint {

@@ -29,6 +29,20 @@ const zoomRange = (c: PaneCamera) =>
     number,
   ];
 
+// Zooming back by the same steps lands within rounding of the fit, and that is
+// the fit again rather than a moved pane. An anchor comes through the SVG's
+// single-precision transform, so a pan's rounding is judged by what shows: half
+// a page unit is under a pixel. A real pan left behind stays.
+function zoomed(c: PaneCamera, k: number, u = 0, v = 0): PaneCamera {
+  const next = zoomAbout(c, k, zoomRange(c), u, v);
+  if (Math.abs(next.zoom - 1) > 1e-9) return next;
+  return {
+    zoom: 1,
+    x: Math.abs(next.x) < 0.5 ? 0 : next.x,
+    y: Math.abs(next.y) < 0.5 ? 0 : next.y,
+  };
+}
+
 export function pointsBox(points: Vec[], box?: Box): Box {
   let { minX, minY, maxX, maxY } = box ?? {
     minX: Infinity,
@@ -62,7 +76,7 @@ export function frameBox(box: Box): PaneFrame {
 }
 
 // Where a camera puts a frame. The span stays the frame's, so anything sized
-// from it keeps its length on screen as a pane zooms.
+// from it keeps its length in the plane as a pane zooms.
 export function paneView(frame: PaneFrame, c: PaneCamera): PaneFrame {
   const scale = frame.scale * c.zoom;
   return {
@@ -135,9 +149,7 @@ export function usePaneCamera(
       const { ratio, height, u, v } = panePage(svg, e.clientX, e.clientY);
       if (e.ctrlKey) {
         const step = Math.max(-pinchStep, Math.min(pinchStep, e.deltaY));
-        setCamera((c) =>
-          zoomAbout(c, Math.exp(-step * pinchRate), zoomRange(c), u, v),
-        );
+        setCamera((c) => zoomed(c, Math.exp(-step * pinchRate), u, v));
         return;
       }
       const unit =
@@ -168,7 +180,7 @@ export function usePaneCamera(
       const k = e.scale / last,
         { u, v } = panePage(svg, e.clientX, e.clientY);
       last = e.scale;
-      setCamera((c) => zoomAbout(c, k, zoomRange(c), u, v));
+      setCamera((c) => zoomed(c, k, u, v));
     };
     // A fitted pane lets a one-finger swipe scroll the page, through its
     // touch-action. Two fingers, or a finger on something to edit, are ours.
@@ -199,7 +211,12 @@ export function usePaneCamera(
     setCamera,
     gesture,
     home: () => setCamera(homeCamera),
-    zoomBy: (k: number) => setCamera((c) => zoomAbout(c, k, zoomRange(c))),
+    zoomBy: (k: number) => setCamera((c) => zoomed(c, k)),
+    // Held pointers belong to the view they began on. Once it is replaced their
+    // release may go elsewhere, and a forgotten one would be half of every pinch.
+    forgetPointers: () => {
+      gesture.current = createGesture();
+    },
     canZoomIn: camera.zoom < zoomLimits[1],
     canZoomOut: camera.zoom > zoomLimits[0],
     // A held pointer's motion: a drag pans when allowed, and a pinch always
@@ -215,14 +232,13 @@ export function usePaneCamera(
       } else if (motion?.kind === "pinch") {
         const { ratio, u, v } = panePage(svg, motion.mid.x, motion.mid.y);
         setCamera((c) =>
-          zoomAbout(
+          zoomed(
             {
               ...c,
               x: c.x + motion.dx * ratio,
               y: c.y + motion.dy * ratio,
             },
             motion.scale,
-            zoomRange(c),
             u,
             v,
           ),
