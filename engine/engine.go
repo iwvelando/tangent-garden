@@ -55,6 +55,9 @@ type Request struct {
 	// given, when set, is the curve in place of Curve's formula (see
 	// ComputeOn).
 	given curveFunc
+	// tracking records the moving constructions at every sample (see
+	// Track).
+	tracking bool
 }
 
 // View is a rectangle of the plane, from (X0, Y0) to (X1, Y1). Radius,
@@ -139,6 +142,8 @@ type Result struct {
 	// compiled, from which a probe is evaluated over a computed study.
 	curve, input curveFunc
 	diagnostic   *diagnosticCurve
+	// track is the moving constructions at every sample, when tracking.
+	track *ConstructionTrack
 }
 
 func Compute(q Request) (Result, error) {
@@ -315,6 +320,24 @@ func Compute(q Request) (Result, error) {
 			out.Warnings = append(out.Warnings, w)
 		}
 	}
+	if q.tracking {
+		out.track = &ConstructionTrack{Samples: q.Samples}
+		if epicycles != nil {
+			width := len(q.Curve.Terms) + 1
+			if q.Curve.Format == "lissajous" {
+				width = 3
+			}
+			out.track.Harmonic = newPositionTrack(q.Samples, width, false)
+		}
+		if roll != nil {
+			out.track.Roulette = newPositionTrack(q.Samples, 3, true)
+		}
+		if mv != nil {
+			out.track.Moving = newPositionTrack(q.Samples, 3, true)
+		} else if q.Kind == "rolling" {
+			out.track.Rolling = newPositionTrack(q.Samples, 3, true)
+		}
+	}
 	step := (hi - lo) / float64(q.Samples-1)
 	out.Base = make([]*Vec, q.Samples)
 	// A stack or a circle family's two branches replace the single derived
@@ -393,17 +416,31 @@ func Compute(q Request) (Result, error) {
 		}
 		if line {
 			nextLine++
+		}
+		// A track takes each position where a line would, from the same
+		// call.
+		if line || out.track != nil {
 			// The rolling circle is shown wherever the trace itself is finite,
 			// even where the construction is undefined, such as at a cusp.
 			if roll != nil && p.Valid() {
 				s := roll.state(t)
 				s.SampleIndex = j
-				out.Roulette.Positions = append(out.Roulette.Positions, s)
+				if line {
+					out.Roulette.Positions = append(out.Roulette.Positions, s)
+				}
+				if out.track != nil {
+					out.track.Roulette.put(j, s.Radius, s.Center, s.Contact, s.Point)
+				}
 			}
 			if epicycles != nil && p.Valid() {
 				s := epicycles(t)
 				s.SampleIndex = j
-				out.Harmonic.Positions = append(out.Harmonic.Positions, s)
+				if line {
+					out.Harmonic.Positions = append(out.Harmonic.Positions, s)
+				}
+				if out.track != nil {
+					out.track.Harmonic.chain(j, s)
+				}
 			}
 		}
 		stableSample, resolution := baseStencil(lo, hi).checked(f, t, dp, ddp, derivativeOrder(q))
@@ -552,6 +589,16 @@ func Compute(q Request) (Result, error) {
 		}
 		if target == nil {
 			out.Invalid++
+		}
+		// A rolling body is drawn at a line where the final branch below
+		// draws it: its body was placed and its trace is finite.
+		if out.track != nil && p.Valid() && dp.Valid() && target != nil {
+			if rolled != nil {
+				out.track.Rolling.put(j, rolled.Radius, rolled.Center, rolled.Contact, rolled.Point)
+			}
+			if placed != nil {
+				out.track.Moving.put(j, placed.Angle, placed.Origin, placed.Contact, placed.Point)
+			}
 		}
 		if line && (inv != nil || q.Kind == "involute") {
 			// A correspondence or unwinding string needs only the target

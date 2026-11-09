@@ -254,6 +254,9 @@ const holdsHelp = (story: Story) =>
 
 type Props = {
   preview?: boolean;
+  // Why a preview cannot play while Play is unavailable, in place of a
+  // general note.
+  unavailable?: string;
   frame: Frame | null;
   client: RefObject<EngineClient | null>;
   length: number;
@@ -300,6 +303,7 @@ type Props = {
 
 export function SpatialAnimationPanel({
   preview = false,
+  unavailable,
   frame,
   client,
   length,
@@ -2090,7 +2094,9 @@ export function SpatialAnimationPanel({
               </Field>
               <div className="note" role="status" aria-live="off">
                 {preview && status === "idle"
-                  ? "Ready to play"
+                  ? disabled || !frame
+                    ? (unavailable ?? "Not ready to play")
+                    : "Ready to play"
                   : status === "exporting"
                     ? `Exporting ${text.short}…`
                     : status === "complete"

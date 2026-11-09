@@ -254,6 +254,11 @@ export default function HarmonicFitPreview({
               requested={0}
               revision={curveKey}
               invalid={!fit}
+              unavailable={
+                waiting && !state.closed
+                  ? "Close the outline to play."
+                  : undefined
+              }
               error={renderError || undefined}
               onError={setRenderError}
               client={client}

@@ -15,6 +15,9 @@ declare const Go: new () => {
   run(instance: WebAssembly.Instance): Promise<void>;
 };
 declare const tangentGardenCompute: (json: string) => string;
+declare const tangentGardenTrack: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenProbe: (json: string) => string;
 declare const tangentGardenLoom: (
   json: string,
@@ -128,6 +131,9 @@ self.onmessage = async ({
   // already drawn.
   probe?: import("./types").ProbeQuery;
   probeOnly?: boolean;
+  // With compute, the reply is the study's moving constructions at every
+  // sample (engine.Track) in place of the study.
+  track?: boolean;
   // Asks Go for a surface patch described at one (u, v), at or between its
   // grid samples (see engine3.SurfaceQuery); with probeOnly, the reply
   // carries that point alone.
@@ -1210,6 +1216,11 @@ self.onmessage = async ({
       ...(data.probe && { probe: data.probe }),
       ...(data.view && { view: data.view }),
     });
+    if (data.track) {
+      const start = performance.now();
+      postLifted(data.id, tangentGardenTrack(request), start);
+      return;
+    }
     if (data.probeOnly) {
       const reply = JSON.parse(tangentGardenProbe(request));
       self.postMessage({ id: data.id, ...reply });

@@ -8,9 +8,12 @@ import {
   usesPole,
   type AttractorResult,
   type Config,
+  type ConstructionTrack,
   type Frame,
   type LevelSet,
+  type PositionTrack,
   type Result,
+  type Rolling,
 } from "./types";
 import { tiered, type Help } from "./help";
 import { backAndForthHelp, onceHelp, type Repeat } from "./timing";
@@ -695,11 +698,70 @@ export function revealConfig(
 // The last sample a reveal at progress p draws.
 export const revealedThrough = (result: Result, p: number) =>
   Math.floor(Math.max(0, Math.min(1, p)) * (result.base.length - 1));
+// Whether a study draws constructions at its curve's head, which a reveal
+// moves along with a construction track.
+export const ridesHead = (r: Result) =>
+  !!(
+    r.harmonic?.positions.length ||
+    r.roulette?.positions.length ||
+    r.rolling.length ||
+    r.moving?.positions.length
+  );
+// The constructions drawn at the curve's head, shown up to the revealed
+// sample last and then, when the head has passed the last of them, at the
+// latest sample where they are defined (`defined`), built by `at`: the
+// engine's own position there, never a blend. Not past the last one the
+// finished study shows, so the final frame is its still, and a gap holds the
+// construction where it was rather than joining across.
+type Head<T> = { defined: (j: number) => boolean; at: (j: number) => T };
+function follow<T extends { sampleIndex: number }>(
+  all: T[],
+  last: number,
+  head?: Head<T>,
+): T[] {
+  const shown = all.filter((s) => s.sampleIndex <= last);
+  const end = all.at(-1)?.sampleIndex;
+  if (!head || end === undefined) return shown;
+  const floor = shown.at(-1)?.sampleIndex ?? -1;
+  for (let j = Math.min(last, end); j > floor; j--)
+    if (head.defined(j)) return [...shown, head.at(j)];
+  return shown;
+}
+const tracked = (t: PositionTrack, j: number, k: number) => {
+  const i = 2 * (j * t.width + k);
+  return { x: t.coords[i], y: t.coords[i + 1] };
+};
+// A track's samples and its builder of one construction, when it belongs
+// to this study.
+function riding<T>(
+  t: PositionTrack | undefined,
+  build: (t: PositionTrack, j: number) => T,
+): Head<T> | undefined {
+  return t && { defined: (j) => t.defined[j], at: (j) => build(t, j) };
+}
+const rolled = (t: PositionTrack, j: number): Rolling => ({
+  sampleIndex: j,
+  center: tracked(t, j, 0),
+  radius: t.values![j],
+  contact: tracked(t, j, 1),
+  point: tracked(t, j, 2),
+});
+
 // Reveal existing numerical samples, so neither the arc-length anchor nor the
-// differentiation stencil changes while the string is being unwound.
-export function reveal(result: Result, progress: number): Result {
+// differentiation stencil changes while the string is being unwound. With
+// the study's construction track, its epicycles, rolling circles and rolling
+// curve move with the curve's head rather than waiting for the next
+// representative sample, as the pursuers' polygon does from their paths.
+export function reveal(
+  result: Result,
+  progress: number,
+  track?: ConstructionTrack | null,
+): Result {
   const p = Math.max(0, Math.min(1, progress));
   const last = revealedThrough(result, p);
+  // A track of another study (or none) moves nothing.
+  const t = track && track.samples === result.base.length ? track : undefined;
+  const chase = result.pursuit?.paths;
   // Contours have no samples: each is drawn along by the same fraction of
   // its points, and a loop stays open until it is complete.
   const along = (set: LevelSet) => ({
@@ -725,19 +787,37 @@ export function reveal(result: Result, progress: number): Result {
       points: path.points.slice(0, last + 1),
     })),
     circles: result.circles.filter((c) => c.sampleIndex <= last),
-    rolling: result.rolling.filter((s) => s.sampleIndex <= last),
+    rolling: follow(result.rolling, last, riding(t?.rolling, rolled)),
     roulette: result.roulette && {
       ...result.roulette,
-      positions: result.roulette.positions.filter((s) => s.sampleIndex <= last),
+      positions: follow(
+        result.roulette.positions,
+        last,
+        riding(t?.roulette, rolled),
+      ),
     },
     harmonic: result.harmonic && {
       ...result.harmonic,
-      positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
+      positions: follow(
+        result.harmonic.positions,
+        last,
+        riding(t?.harmonic, (h, j) => ({
+          sampleIndex: j,
+          joints: Array.from({ length: h.width - 1 }, (_, k) =>
+            tracked(h, j, k),
+          ),
+          point: tracked(h, j, h.width - 1),
+        })),
+      ),
     },
+    // Every pursuer's path holds its position at every sample.
     pursuit: result.pursuit && {
       ...result.pursuit,
       paths: result.pursuit.paths.map((path) => path.slice(0, last + 1)),
-      polygons: result.pursuit.polygons.filter((p) => p.sampleIndex <= last),
+      polygons: follow(result.pursuit.polygons, last, {
+        defined: (j) => chase!.every((path) => !!path[j]),
+        at: (j) => ({ sampleIndex: j, points: chase!.map((p) => p[j]!) }),
+      }),
     },
     // Every trajectory shares the base's sample times, so a revealed prefix
     // is the same span of time on each.
@@ -757,7 +837,17 @@ export function reveal(result: Result, progress: number): Result {
     },
     moving: result.moving && {
       ...result.moving,
-      positions: result.moving.positions.filter((s) => s.sampleIndex <= last),
+      positions: follow(
+        result.moving.positions,
+        last,
+        riding(t?.moving, (m, j) => ({
+          sampleIndex: j,
+          origin: tracked(m, j, 0),
+          angle: m.values![j],
+          contact: tracked(m, j, 1),
+          point: tracked(m, j, 2),
+        })),
+      ),
     },
     contours: contours && {
       ...contours,

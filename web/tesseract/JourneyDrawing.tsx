@@ -246,7 +246,9 @@ export default function JourneyDrawing(p: {
                 ? "Complete"
                 : motion
                   ? "Paused"
-                  : "Ready to play"}
+                  : disabled
+                    ? "Not ready to play"
+                    : "Ready to play"}
           </div>
         </div>
       </div>

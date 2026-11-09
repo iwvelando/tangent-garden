@@ -355,6 +355,29 @@ export type HarmonicResult = {
   positions: Epicycles[];
 };
 
+// One moving construction at every sample (engine.PositionTrack): width
+// points per sample as consecutive x, y pairs in coords and, for a circle or
+// a rigid motion, one value per sample, its radius or angle. defined[j] is
+// false where it has no position at sample j. A harmonic curve's points are
+// its joints and then its point; a rolling circle's its center, contact and
+// tracing point; a rolling curve's its origin, contact and tracing point.
+export type PositionTrack = {
+  width: number;
+  coords: number[];
+  values?: number[];
+  defined: boolean[];
+};
+// A study's moving constructions at every sample (engine.Track), which a
+// reveal draws where the curve's head has reached. It is asked for apart
+// from the study, whose result it leaves as it was.
+export type ConstructionTrack = {
+  samples: number;
+  harmonic?: PositionTrack;
+  roulette?: PositionTrack;
+  rolling?: PositionTrack;
+  moving?: PositionTrack;
+};
+
 // The pursuers' positions, in chase order, at a representative sample.
 export type Polygon = { sampleIndex: number; points: Vec[] };
 // Every pursuer's path, indexed like base. The chase is known from the domain

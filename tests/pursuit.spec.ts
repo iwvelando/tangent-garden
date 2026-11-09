@@ -228,7 +228,10 @@ test("reveal follows the chase; framing holds every pursuer's path", () => {
   };
   const half = reveal(result, 0.5);
   expect(half.pursuit!.paths.map((p) => p.length)).toEqual([2, 2]);
-  expect(half.pursuit!.polygons.map((p) => p.sampleIndex)).toEqual([0]);
+  // The polygon rides the head: the pursuers where the chase has reached,
+  // from their paths.
+  expect(half.pursuit!.polygons.map((p) => p.sampleIndex)).toEqual([0, 1]);
+  expect(half.pursuit!.polygons[1].points).toEqual([point(1), point(0, 38)]);
   expect(half.pursuit!.capture).toEqual(result.pursuit!.capture);
   expect(reveal(result, 1)).toEqual(result);
   expect(reveal({ ...result, pursuit: undefined }, 0.5).pursuit).toBe(

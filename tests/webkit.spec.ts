@@ -1,4 +1,10 @@
-import { test, expect, devices, type Page } from "@playwright/test";
+import {
+  test,
+  expect,
+  devices,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 import { decodePng } from "./png";
 
 for (const viewport of [
@@ -144,6 +150,21 @@ for (const title of ["A square grid, curved", "Circles through infinity"])
   }) => {
     await checkLoomPortraitPlayer(page, title);
   });
+
+// A journey step changes asynchronously. Under a loaded WebKit run, a second
+// "Next step" clicked while the first change was still under way was lost
+// (the journey stayed on step 2 of 3), so each click waits for the step it
+// reached before the next.
+async function nextSteps(dialog: Locator, count: number) {
+  const status = dialog.getByText(/^Step \d+ of \d+$/);
+  for (let i = 0; i < count; i++) {
+    const at = Number((await status.textContent())!.match(/\d+/)![0]);
+    await dialog
+      .getByRole("button", { name: "Next step", exact: true })
+      .click();
+    await expect(status).toHaveText(new RegExp(`^Step ${at + 1} of`));
+  }
+}
 
 test("construction layer labels work by click, keyboard and scalar blur at phone width in WebKit", async ({
   page,
@@ -1847,10 +1868,7 @@ for (const [title, label, value, target, adopted] of [
     await entry.press("Enter");
     const dialog = page.getByRole("dialog", { name: title, exact: true });
     await expect(dialog).not.toHaveAttribute("data-quiet", "");
-    for (let i = 0; i < 2; i++)
-      await dialog
-        .getByRole("button", { name: "Next step", exact: true })
-        .click();
+    await nextSteps(dialog, 2);
     await expect(dialog.locator(".journey-art")).toHaveAttribute(
       "aria-busy",
       "false",
@@ -1866,10 +1884,7 @@ for (const [title, label, value, target, adopted] of [
     await expect(browse).toBeFocused();
     await browse.click();
     await entry.click();
-    for (let i = 0; i < 2; i++)
-      await dialog
-        .getByRole("button", { name: "Next step", exact: true })
-        .click();
+    await nextSteps(dialog, 2);
     await input.fill(value);
     await dialog
       .getByRole("button", { name: "Open study", exact: true })
@@ -1899,10 +1914,7 @@ test("staircase journey recovers its animation after an out-of-range typing inte
     name: "A thread learns the surface",
     exact: true,
   });
-  for (let i = 0; i < 2; i++)
-    await dialog
-      .getByRole("button", { name: "Next step", exact: true })
-      .click();
+  await nextSteps(dialog, 2);
   const theta = dialog.getByLabel("Associate angle θ", { exact: true });
   await theta.fill("pi");
   await expect(dialog.locator(".journey-feedback")).toContainText(

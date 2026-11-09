@@ -191,6 +191,9 @@ test("an open curve appears as it is, and is fitted only once closed", async ({
   await expect(
     d.getByRole("button", { name: "Play animation", exact: true }),
   ).toBeDisabled();
+  // The status beside Play says why it cannot play, not that it is ready.
+  const status = d.locator(".timeline [role=status]");
+  await expect(status).toHaveText("Close the outline to play.");
   // The source itself is drawn, across a fair share of the drawing.
   const art = d.locator("#journey-artwork");
   const ink = await inkBox(art);
@@ -215,6 +218,7 @@ test("an open curve appears as it is, and is fitted only once closed", async ({
   await expect(
     d.getByRole("button", { name: "Play animation", exact: true }),
   ).toBeEnabled();
+  await expect(status).toHaveText("Ready to play");
   expect(await pixels(art)).not.toBe(open);
 });
 

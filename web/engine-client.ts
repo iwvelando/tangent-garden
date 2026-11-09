@@ -11,6 +11,7 @@ import type {
 import type {
   Bounds,
   Config,
+  ConstructionTrack,
   Frame,
   ProbePoint,
   ProbeQuery,
@@ -115,6 +116,12 @@ export class EngineClient {
       ...(options.view ? { view: options.view } : {}),
     });
     return { result, config: resolved };
+  }
+  // A planar study's moving constructions at every sample (engine.Track),
+  // asked for apart from the study, which it leaves as it was.
+  async track(config: Config): Promise<ConstructionTrack> {
+    return (await this.request({ action: "compute", config, track: true }))
+      .result;
   }
   async loom(
     q: import("./loom/model").LoomRequest,

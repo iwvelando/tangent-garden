@@ -100,6 +100,164 @@ test("tracks interpolate independently and reveal preserves gaps and sample iden
   expect(reveal(result, 1)).toEqual(result);
 });
 
+// A study of 13 samples, 0 to 12, with lines at 0, 6 and 12, whose track
+// puts each construction's points at (sample, k).
+test("a track moves each head construction to the revealed sample, holding across gaps", () => {
+  const n = 13;
+  const at = (j: number, k: number) => ({ x: j, y: k });
+  const track = (
+    width: number,
+    valued: boolean,
+    defined = (_: number) => true,
+  ) => ({
+    width,
+    coords: Array.from({ length: n }, (_, j) =>
+      Array.from({ length: width }, (_, k) =>
+        defined(j) ? [j, k] : [0, 0],
+      ).flat(),
+    ).flat(),
+    ...(valued && {
+      values: Array.from({ length: n }, (_, j) => (defined(j) ? j / 10 : 0)),
+    }),
+    defined: Array.from({ length: n }, (_, j) => defined(j)),
+  });
+  const epicycles = (j: number) => ({
+    sampleIndex: j,
+    joints: [at(j, 0), at(j, 1)],
+    point: at(j, 2),
+  });
+  const circle = (j: number) => ({
+    sampleIndex: j,
+    center: at(j, 0),
+    radius: j / 10,
+    contact: at(j, 1),
+    point: at(j, 2),
+  });
+  const placement = (j: number) => ({
+    sampleIndex: j,
+    origin: at(j, 0),
+    angle: j / 10,
+    contact: at(j, 1),
+    point: at(j, 2),
+  });
+  // The rolling circle stops after sample 8, so its last line is 6; the
+  // rolling curve has a gap at 3 and 4.
+  const stops = (j: number) => j <= 8;
+  const gap = (j: number) => j !== 3 && j !== 4;
+  const polygon = (j: number) => ({
+    sampleIndex: j,
+    points: [at(j, 0), at(j, 1)],
+  });
+  const result: Result = {
+    base: Array.from({ length: n }, (_, j) => at(j, 2)),
+    derived: Array.from({ length: n }, (_, j) => at(j, 2)),
+    virtual: Array(n).fill(false),
+    rays: [],
+    family: [],
+    circles: [],
+    rolling: [0, 6].map(circle),
+    warnings: [],
+    invalid: 0,
+    harmonic: {
+      period: 0,
+      whole: false,
+      constant: false,
+      guides: [],
+      radii: [1, 1],
+      positions: [0, 6, 12].map(epicycles),
+    },
+    roulette: {
+      roll: "line",
+      fixedRadius: 0,
+      turns: 0,
+      lobes: 0,
+      positions: [0, 6, 12].map(circle),
+    },
+    moving: { path: [], closed: false, positions: [0, 6, 12].map(placement) },
+    // Two pursuers, each at (sample, k), caught at sample 10.
+    pursuit: {
+      paths: [0, 1].map((k) =>
+        Array.from({ length: n }, (_, j) => (j <= 10 ? at(j, k) : null)),
+      ),
+      polygons: [0, 6].map(polygon),
+      capture: null,
+      exhausted: false,
+      end: 10,
+    },
+  };
+  const tracks = {
+    samples: n,
+    harmonic: track(3, false),
+    roulette: track(3, true),
+    rolling: track(3, true, stops),
+    moving: track(3, true, gap),
+  };
+  const shown = (p: number, t: typeof tracks | null = tracks) => {
+    const r = reveal(result, p, t);
+    return {
+      harmonic: r.harmonic!.positions.map((s) => s.sampleIndex),
+      roulette: r.roulette!.positions.map((s) => s.sampleIndex),
+      rolling: r.rolling.map((s) => s.sampleIndex),
+      moving: r.moving!.positions.map((s) => s.sampleIndex),
+      pursuit: r.pursuit!.polygons.map((s) => s.sampleIndex),
+    };
+  };
+  // Between lines: those shown, then each construction at the head.
+  expect(shown(5 / 12)).toEqual({
+    harmonic: [0, 5],
+    roulette: [0, 5],
+    rolling: [0, 5],
+    moving: [0, 5],
+    pursuit: [0, 5],
+  });
+  const r = reveal(result, 5 / 12, tracks);
+  expect(r.harmonic!.positions[1]).toEqual(epicycles(5));
+  expect(r.roulette!.positions[1]).toEqual(circle(5));
+  expect(r.rolling[1]).toEqual(circle(5));
+  expect(r.pursuit!.polygons[1]).toEqual(polygon(5));
+  // Within the rolling curve's gap, it holds at its last position before
+  // it.
+  expect(reveal(result, 4 / 12, tracks).moving!.positions).toEqual([
+    placement(0),
+    placement(2),
+  ]);
+  // The head is the revealed sample's, never a blend: a track agrees with
+  // the base there.
+  expect(r.harmonic!.positions[1].point).toEqual(result.base[5]);
+  // On a line, its own position, untouched; at the start, the first.
+  const on = reveal(result, 6 / 12, tracks);
+  expect(on.harmonic!.positions).toEqual([epicycles(0), epicycles(6)]);
+  expect(on.harmonic!.positions[1]).toBe(result.harmonic!.positions[1]);
+  expect(shown(0).harmonic).toEqual([0]);
+  // Never past where the finished drawing shows a construction: the rolling
+  // circle's last line is 6 and the chase's last polygon 6, though their
+  // tracks and paths go on.
+  expect(shown(9 / 12)).toEqual({
+    harmonic: [0, 6, 9],
+    roulette: [0, 6, 9],
+    rolling: [0, 6],
+    moving: [0, 6, 9],
+    pursuit: [0, 6],
+  });
+  // The final frame is the study.
+  expect(reveal(result, 1, tracks)).toEqual(result);
+  // Without a track, or with one of another study, the lines alone; the
+  // chase's paths are the study's own and need none.
+  const lines = { harmonic: [0], roulette: [0], rolling: [0], moving: [0] };
+  expect(shown(5 / 12, null)).toEqual({ ...lines, pursuit: [0, 5] });
+  expect(shown(5 / 12, { ...tracks, samples: 24 })).toEqual({
+    ...lines,
+    pursuit: [0, 5],
+  });
+  // A chase gap holds the polygon where every pursuer was last drawn.
+  const broken = structuredClone(result);
+  broken.pursuit!.paths[1][5] = null;
+  expect(
+    reveal(broken, 5 / 12).pursuit!.polygons.map((s) => s.sampleIndex),
+  ).toEqual([0, 4]);
+  expect(result.harmonic!.positions).toHaveLength(3);
+});
+
 test("unwinding holds final framing, pauses, scrubs, exports, and restores the manual view", async ({
   page,
 }) => {
@@ -824,6 +982,213 @@ test("phrase holds preserve nonbinary keys exactly and the shared sampler reuses
   expect(calls).toBe(2); // original entry geometry
   expect((await sample(11, engine)).phrase.layers).toEqual(layers);
   expect(calls).toBe(3); // bounded last-value cache, no history-sized frame collection
+});
+
+// Each construction drawn at the curve's head, the curve it rides (whose
+// drawn end is its tracing point), and how many samples the preset takes.
+for (const [title, construction, point, curve, samples] of [
+  [
+    "Epicycles, turned inside out",
+    "epicycles",
+    "harmonic-point",
+    "base-curve",
+    2000,
+  ],
+  [
+    "Hypotrochoid & its evolute",
+    "rolling-circle",
+    "tracing-point",
+    "base-curve",
+    2000,
+  ],
+  [
+    "Flower & a rolling circle",
+    "rolling-construction",
+    "rolling-construction-point",
+    "derived-curve",
+    2000,
+  ],
+  [
+    "Ellipse rolling on an ellipse",
+    "rolling-curve",
+    "rolling-construction-point",
+    "derived-curve",
+    2000,
+  ],
+  ["Seven pursuers & an evolute", "pursuit-polygon", "", "", 4000],
+] as const)
+  test(`${title}: the construction rides the curve's head between representative samples`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await choosePreset(page, { label: title });
+    await expect(page.locator(".plot-wrap")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await openAnimation(page);
+    await page
+      .getByRole("combobox", { name: "Animation camera", exact: true })
+      .selectOption("current");
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)", exact: true })
+      .fill("30");
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    const seek = page.getByRole("slider", {
+      name: "Animation progress",
+      exact: true,
+    });
+    const art = page.locator("#artwork");
+    const head = page.getByTestId(construction).last();
+    const end = async () => {
+      const d = (await page.getByTestId(curve).getAttribute("d"))!.trim();
+      const [x, y] = d
+        .slice(d.lastIndexOf(" ") + 2)
+        .split(",")
+        .map(Number);
+      return { x, y };
+    };
+    let previous = -1;
+    // Off every representative sample, a little apart.
+    for (const p of [0.371, 0.374, 0.619]) {
+      await seek.fill(String(p));
+      await expect(art).toHaveAttribute("data-animation-progress", String(p));
+      const through = Math.floor(p * (samples - 1));
+      await expect(head).toHaveAttribute("data-sample", String(through));
+      expect(through).toBeGreaterThan(previous);
+      previous = through;
+      if (!point) continue;
+      const tip = page.getByTestId(point);
+      const at = {
+        x: Number(await tip.getAttribute("cx")),
+        y: Number(await tip.getAttribute("cy")),
+      };
+      const drawn = await end();
+      expect(Math.abs(at.x - drawn.x)).toBeLessThan(0.002);
+      expect(Math.abs(at.y - drawn.y)).toBeLessThan(0.002);
+    }
+  });
+
+test("a phrase's construction stage moves the head constructions, asking for each value's track once", async () => {
+  const { compilePhrase, createPhraseSampler } = await import("../web/phrase");
+  const config = structuredClone(presets[2].config);
+  const layers = {
+    base: true,
+    derived: true,
+    lines: true,
+    incident: true,
+    virtual: true,
+    axes: false,
+  };
+  // The guides are drawn in the second phase, at the opening value, and the
+  // value moves in the third while they are drawn again from nothing.
+  const phrase = compilePhrase(
+    config,
+    layers,
+    0.8,
+    {
+      target: "sourceX",
+      opening: { base: 1, construction: 0, derived: 1 },
+      phases: [
+        { name: "Hold", duration: 1, pace: "steady" },
+        {
+          name: "Guides",
+          duration: 1,
+          pace: "steady",
+          reveal: { construction: 1 },
+        },
+        {
+          name: "Move",
+          duration: 1,
+          pace: "steady",
+          key: "0.3",
+          reveal: { construction: 0 },
+        },
+        {
+          name: "Again",
+          duration: 1,
+          pace: "steady",
+          reveal: { construction: 1 },
+        },
+      ],
+    },
+    [0.3],
+  );
+  const n = 13;
+  const chain = (j: number) => ({
+    sampleIndex: j,
+    joints: [{ x: 0, y: 0 }],
+    point: { x: j, y: 1 },
+  });
+  const original = {
+    config,
+    result: {
+      base: Array.from({ length: n }, (_, j) => ({ x: j, y: 1 })),
+      derived: Array(n).fill(null),
+      virtual: Array(n).fill(false),
+      rays: [],
+      family: [],
+      circles: [],
+      rolling: [],
+      warnings: [],
+      invalid: 0,
+      harmonic: {
+        period: 0,
+        whole: false,
+        constant: false,
+        guides: [],
+        radii: [1],
+        positions: [0, 6, 12].map(chain),
+      },
+    } as Result,
+  };
+  const asked: number[] = [];
+  const engine = {
+    compute: async (c: any) => ({ ...original, config: c }),
+    track: async (c: any) => {
+      asked.push(c.source.position.x);
+      return {
+        samples: n,
+        harmonic: {
+          width: 2,
+          coords: Array.from({ length: n }, (_, j) => [0, 0, j, 1]).flat(),
+          defined: Array(n).fill(true),
+        },
+      };
+    },
+  };
+  const sample = createPhraseSampler({
+    phrase,
+    original,
+    view: { cx: 0, cy: 0, scale: 100, span: 2 },
+    stop: true,
+  });
+  const head = async (t: number) =>
+    (await sample(t, engine)).frame.result.harmonic!.positions.map(
+      (s) => s.sampleIndex,
+    );
+  // Before the stage, and once it is complete, no track is needed.
+  expect(await head(0.5)).toEqual([]);
+  expect(await head(2)).toEqual([0, 6, 12]);
+  expect(asked).toEqual([]);
+  // Midway, the chain is at the head's sample.
+  expect(await head(1 + 5.5 / 12)).toEqual([0, 5]);
+  expect(await head(1 + 9.5 / 12)).toEqual([0, 6, 9]);
+  expect(asked).toEqual([1]);
+  // The value moves while the guides are drawn again: its own track.
+  expect(await head(3 + 5.5 / 12)).toEqual([0, 5]);
+  expect(asked).toEqual([1, 0.3]);
+  expect(await head(3 + 7.5 / 12)).toEqual([0, 6, 7]);
+  expect(asked).toEqual([1, 0.3]);
+  // An engine without tracks draws the representative samples alone.
+  expect(
+    (
+      await sample(1 + 5.5 / 12, { compute: engine.compute })
+    ).frame.result.harmonic!.positions.map((s) => s.sampleIndex),
+  ).toEqual([0]);
 });
 
 test("phrase camera keys share phase boundaries with inputs and reveal, about one reference fit", async () => {

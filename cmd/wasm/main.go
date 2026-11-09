@@ -16,6 +16,7 @@ func main() {
 	registerFourierFit()
 	registerSpatialFit()
 	registerHarmonicChains()
+	registerTrack()
 	registerLoom()
 	registerGarden()
 	registerLace()
