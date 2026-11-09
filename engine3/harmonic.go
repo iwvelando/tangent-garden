@@ -145,6 +145,19 @@ func (h HarmonicCurve) chain(u float64) HarmonicPosition {
 	return s
 }
 
+// sampleChain is the chain at base sample i of n on [lo, hi]. A closed curve's
+// last sample is its first. It is the one definition of the chain at a sample:
+// the representative positions, the probe's diagnostics and a reveal's track.
+func (h HarmonicCurve) sampleChain(i, n int, lo, hi float64, closed bool) HarmonicPosition {
+	u := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
+	if closed && i == n {
+		u = lo
+	}
+	s := h.chain(u)
+	s.SampleIndex = i
+	return s
+}
+
 // harmonicGeometry returns the vector chains at the representative samples
 // (and at every sample when the curve probe asks for diagnostics) and, for
 // framing, each term's joints and the axis extents of its ellipse around
@@ -155,18 +168,9 @@ func harmonicGeometry(c Request, lo, hi float64) (*HarmonicResult, [][]*Vec3) {
 	n := c.Samples
 	out := &HarmonicResult{Center: h.Center, Terms: h.Terms, Positions: make([]HarmonicPosition, 0, c.Lines)}
 	out.Period, out.Whole, out.Closed = h.closure()
-	chain := func(i int) HarmonicPosition {
-		u := lo*(1-float64(i)/float64(n)) + hi*float64(i)/float64(n)
-		if out.Closed && i == n {
-			u = lo
-		}
-		s := h.chain(u)
-		s.SampleIndex = i
-		return s
-	}
 	families := make([][]*Vec3, 2*len(h.Terms))
 	for line := 0; line < c.Lines; line++ {
-		s := chain(line * n / (c.Lines - 1))
+		s := h.sampleChain(line*n/(c.Lines-1), n, lo, hi, out.Closed)
 		for k, term := range h.Terms {
 			families[2*k] = append(families[2*k], &s.Joints[k])
 			reach := Vec3{math.Hypot(term.Cosine.X, term.Sine.X), math.Hypot(term.Cosine.Y, term.Sine.Y), math.Hypot(term.Cosine.Z, term.Sine.Z)}
@@ -180,8 +184,41 @@ func harmonicGeometry(c Request, lo, hi float64) (*HarmonicResult, [][]*Vec3) {
 	if c.Diagnostics {
 		out.Chains = make([]HarmonicPosition, n+1)
 		for i := range out.Chains {
-			out.Chains[i] = chain(i)
+			out.Chains[i] = h.sampleChain(i, n, lo, hi, out.Closed)
 		}
 	}
 	return out, families
+}
+
+// HarmonicChainTrack is the chain at every sample of a harmonic study, for a
+// reveal to draw at each sample it reaches: sample i's Terms joints and then
+// its point start at Points[i*(Terms+1)]. It is separate from the study's
+// result, which it leaves as it was, and has at most 2401 × 9 points.
+type HarmonicChainTrack struct {
+	Samples int    `json:"samples"`
+	Terms   int    `json:"terms"`
+	Points  []Vec3 `json:"points"`
+}
+
+// HarmonicChains evaluates the track of a study's chain through the same
+// definition as its positions, so every shared sample agrees in every bit.
+func HarmonicChains(c Request) (HarmonicChainTrack, error) {
+	if c.Format != "harmonic" {
+		return HarmonicChainTrack{}, fmt.Errorf("chains belong to a harmonic curve")
+	}
+	if c.Samples < 240 || c.Samples > 2400 {
+		return HarmonicChainTrack{}, fieldErr("samples", "use 240–2400 samples and 12–240 rulings")
+	}
+	_, lo, hi, closed, err := compile(c, nil)
+	if err != nil {
+		return HarmonicChainTrack{}, err
+	}
+	h := c.Harmonic
+	n := c.Samples
+	track := HarmonicChainTrack{Samples: n, Terms: len(h.Terms), Points: make([]Vec3, 0, (n+1)*(len(h.Terms)+1))}
+	for i := 0; i <= n; i++ {
+		s := h.sampleChain(i, n, lo, hi, closed)
+		track.Points = append(append(track.Points, s.Joints...), s.Point)
+	}
+	return track, nil
 }

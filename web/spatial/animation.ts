@@ -16,6 +16,8 @@ import type {
   Frame,
   Vec3,
   Bounds3,
+  HarmonicChainTrack,
+  HarmonicPosition,
   SpatialHarmonicResult,
   SurfaceSheet,
 } from "./types";
@@ -1074,7 +1076,23 @@ function revealShadow(
   };
 }
 
-export function reveal(result: SpatialResult, p: number): SpatialResult {
+// The chain at one sample of a track, in the study's own bits.
+function trackedChain(track: HarmonicChainTrack, i: number): HarmonicPosition {
+  const from = i * (track.terms + 1);
+  return {
+    sampleIndex: i,
+    joints: track.points.slice(from, from + track.terms),
+    point: track.points[from + track.terms],
+  };
+}
+
+// With a harmonic study's chain track, the chain follows the curve's head
+// through every sample rather than waiting for the next representative one.
+export function reveal(
+  result: SpatialResult,
+  p: number,
+  chains?: HarmonicChainTrack | null,
+): SpatialResult {
   if (p >= 1 && (result.members?.length || result.shadow?.family?.length))
     return result;
   if (result.implicit)
@@ -1166,9 +1184,17 @@ export function reveal(result: SpatialResult, p: number): SpatialResult {
       (c) => c.sampleIndex <= last,
     ),
   };
+  const representative = result.harmonic?.positions.filter(
+    (s) => s.sampleIndex <= last,
+  );
   const harmonic = result.harmonic && {
     ...result.harmonic,
-    positions: result.harmonic.positions.filter((s) => s.sampleIndex <= last),
+    positions:
+      chains &&
+      chains.samples === result.base.length - 1 &&
+      representative!.at(-1)?.sampleIndex !== last
+        ? [...representative!, trackedChain(chains, last)]
+        : representative!,
   };
   // A refined curve shows its points up to the last revealed sample.
   const shown = (path: RefinedPath | undefined) => revealRefined(path, last);

@@ -8,9 +8,11 @@ import { nextHarmonicTerm } from "../web/spatial/harmonic";
 import { spatialPresets } from "../web/spatial/presets";
 import type { SpatialResult } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { changedPixels, choosePreset } from "./helpers";
 import { readFile } from "node:fs/promises";
-import { probe, decodeVideo } from "./video";
+import { deflateRawSync } from "node:zlib";
+import { presetStudy } from "../web/spatial/link";
+import { probe, decodeVideo, decodedFrame } from "./video";
 import { curveMesh } from "./curve-mesh";
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
@@ -365,6 +367,167 @@ test("harmonic reveal keeps positions up to the tip and frames the vectors", () 
   const empty = reveal({ ...input, harmonic: undefined }, 1);
   expect(empty.harmonic).toBeUndefined();
   expect(empty.bounds.radius).toBeLessThan(1);
+});
+
+test("a reveal draws the exact chain at its sample, and only with a track", () => {
+  const origin = { x: 0, y: 0, z: 0 };
+  const position = (i: number) => ({
+    sampleIndex: i,
+    joints: [{ x: i, y: 0, z: 0 }],
+    point: { x: i, y: 1, z: 0 },
+  });
+  const input: SpatialResult = {
+    base: Array.from({ length: 13 }, () => origin),
+    minus: [],
+    plus: [],
+    mesh: curveMesh(),
+    rulings: [],
+    breaks: Array.from({ length: 13 }, () => false),
+    bounds: { center: origin, radius: 1 },
+    radius: 1,
+    invalid: 0,
+    omitted: 0,
+    harmonic: {
+      center: origin,
+      terms: [
+        {
+          frequency: 1,
+          cosine: { x: 1, y: 0, z: 0 },
+          sine: { x: 0, y: 1, z: 0 },
+        },
+      ],
+      period: 2 * Math.PI,
+      whole: true,
+      closed: true,
+      positions: [0, 6, 12].map(position),
+    },
+  };
+  const track = {
+    samples: 12,
+    terms: 1,
+    points: Array.from({ length: 13 }, (_, i) => [
+      { x: i, y: 0, z: 0 },
+      { x: i, y: 1, z: 0 },
+    ]).flat(),
+  };
+  const positions = (p: number, chains?: typeof track) =>
+    reveal(input, p, chains).harmonic!.positions;
+  // Between representative samples: those shown, then the chain at the tip.
+  expect(positions(5 / 12, track)).toEqual([position(0), position(5)]);
+  // On one, nothing is added or replaced: it is that sample's own chain.
+  const on = positions(6 / 12, track);
+  expect(on).toEqual([position(0), position(6)]);
+  expect(on[1]).toBe(input.harmonic!.positions[1]);
+  expect(positions(1, track)).toEqual(input.harmonic!.positions);
+  // At the start, the first chain.
+  expect(positions(0, track)).toEqual([position(0)]);
+  // Without a track, or with one of another study, the representatives alone.
+  expect(positions(5 / 12)).toEqual([position(0)]);
+  expect(positions(5 / 12, { ...track, samples: 24 })).toEqual([position(0)]);
+  expect(input.harmonic!.positions).toHaveLength(3);
+});
+
+// The curve alone, at the fewest lines, with the fan of chains hidden: frames
+// apart by less than a representative step differ by a little more curve, and,
+// when the chain moves, by the chain and its ellipses.
+async function chainOnly(page: Page) {
+  const study = presetStudy(+trefoil);
+  study.config = {
+    ...study.config,
+    construction: "none",
+    samples: 240,
+    lines: 12,
+  };
+  study.layers = { ...study.layers, vectors: false };
+  study.animation = { ...study.animation, mode: "reveal", camera: "hold" };
+  const token = deflateRawSync(
+    Buffer.from(JSON.stringify({ v: 1, notebook: "3d", study })),
+  ).toString("base64url");
+  await page.goto(`/?study=3d#s=${token}`);
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  await settled(page);
+  await openAnimation(page);
+}
+test("the chain moves between representative samples, as play, scrub and resume show it", async ({
+  page,
+}) => {
+  await chainOnly(page);
+  await page.getByLabel("Duration (seconds)").fill("5");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const at = async (p: number) => {
+    await slider.fill(String(p));
+    await expect(stage(page)).toHaveAttribute("data-progress", String(p));
+    return pixels(page);
+  };
+  // Both within the representative step from 3/11 to 4/11.
+  const a = 0.3,
+    b = 0.32;
+  const first = await at(a),
+    second = await at(b);
+  expect(await changedPixels(page, first, second)).toBeGreaterThan(1500);
+  // Scrubbing back draws that sample's chain again.
+  expect(await at(a)).toBe(first);
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect
+    .poll(async () => +(await stage(page).getAttribute("data-progress"))!)
+    .toBeGreaterThan(a);
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  expect(await at(b)).toBe(second);
+});
+
+test("the study's still and final frame are untouched by the chain", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, trefoil);
+  await settled(page);
+  const still = await pixels(page);
+  await openAnimation(page);
+  await page.getByLabel("Duration (seconds)").fill("0.2");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Replay", exact: true }),
+  ).toBeEnabled();
+  await expect.poll(() => pixels(page)).toBe(still);
+});
+
+test("a movie carries the moving chain, frame by frame", async ({ page }) => {
+  await chainOnly(page);
+  await page.getByLabel("Duration (seconds)").fill("2");
+  await page.locator("#spatial-export-settings > summary").click();
+  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("1");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export MP4/ }).click();
+  const path = (await (await download).path())!;
+  const data = probe(path);
+  test.skip(!data, "ffmpeg reads the frames");
+  expect(data!.frames).toBe(30);
+  // Frames 8 and 9 fall within one representative step of 1/11.
+  const frame = (k: number) =>
+    decodedFrame(path, data!.width, data!.height, k)!;
+  expect(Math.floor((8 / 29) * 11)).toBe(Math.floor((9 / 29) * 11));
+  const one = frame(8),
+    two = frame(9);
+  let moved = 0;
+  for (let i = 0; i < one.length; i += 3)
+    if (
+      Math.abs(one[i] - two[i]) +
+        Math.abs(one[i + 1] - two[i + 1]) +
+        Math.abs(one[i + 2] - two[i + 2]) >
+      32
+    )
+      moved++;
+  expect(moved).toBeGreaterThan(500);
 });
 
 test("harmonic tracks target terms by number and leave the base study intact", () => {

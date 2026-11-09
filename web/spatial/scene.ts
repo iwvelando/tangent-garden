@@ -804,13 +804,24 @@ function buildSingleScene(result: SpatialResult) {
     1,
   );
   // A harmonic curve's chained generating vectors at every representative
-  // sample, and, at the last one shown, that chain again with each turning
-  // term's ellipse around its joint and a cross at c₀.
+  // sample, and, at the last position (during a reveal, the exact chain at the
+  // revealed sample), that chain again with each turning term's ellipse around
+  // its joint and a cross at c₀.
   const h = result.harmonic;
   const vectors = batch(
     vertices((h?.positions ?? []).flatMap(harmonicChain)),
     "lines",
     4,
+  );
+  // A fitting preview's source, as its closed polygon's edges.
+  const fitSource = batch(
+    vertices(
+      (result.fitSource ?? []).flatMap((p, i, path) =>
+        i === 0 ? [] : [path[i - 1], p],
+      ),
+    ),
+    "lines",
+    1,
   );
   const current = h?.positions.at(-1);
   const ellipses = batch(
@@ -1304,6 +1315,7 @@ function buildSingleScene(result: SpatialResult) {
     4,
   );
   return {
+    fitSource,
     geodesicThreads,
     selectedThread,
     transportRoute,
@@ -1507,6 +1519,8 @@ export function scenePasses(
   add("polygons", layers.polygons, false, s.polygons);
   add("trajectories", layers.trajectories, false, s.trajectories);
   add("base", true, false, s.base);
+  // Only a fitting preview has this pass, so no other study's passes move.
+  add("base", s.fitSource.data.length > 0, false, s.fitSource);
   add("seeds", layers.seeds, false, s.seeds);
   add("seam", layers.seam, false, s.seam);
   add("pole", layers.pole, false, s.pole);

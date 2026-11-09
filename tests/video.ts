@@ -287,13 +287,13 @@ export function frameCoverage(
   return coverage;
 }
 
-export function frameDifference(
+// One decoded frame as RGB bytes, or null without ffmpeg.
+export function decodedFrame(
   path: string,
   width: number,
   height: number,
   index: number,
-  reference: ArrayLike<number>,
-): { meanDifference: number; unmatchedInk: number } | null {
+): Buffer | null {
   if (!available) return null;
   const pixels = execFileSync(
     "ffmpeg",
@@ -316,7 +316,18 @@ export function frameDifference(
   );
   if (pixels.length !== width * height * 3)
     throw new Error("Frame parity dimensions differ");
-  return pixelDifference(pixels, 3, width, height, reference);
+  return pixels;
+}
+
+export function frameDifference(
+  path: string,
+  width: number,
+  height: number,
+  index: number,
+  reference: ArrayLike<number>,
+): { meanDifference: number; unmatchedInk: number } | null {
+  const pixels = decodedFrame(path, width, height, index);
+  return pixels && pixelDifference(pixels, 3, width, height, reference);
 }
 
 // The same parity for a frame already decoded, such as an animated WebP

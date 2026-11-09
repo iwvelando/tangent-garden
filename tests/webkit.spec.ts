@@ -102,6 +102,8 @@ import { exportTiming } from "../web/export-quality";
 import { namedViews } from "../web/named-views";
 import { deflateRawSync } from "node:zlib";
 import { spatialPresets } from "../web/spatial/presets";
+import { harmonicFitStudy } from "../web/spatial/harmonic-fit";
+import { initialView } from "../web/spatial/scene";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultSight, strokeWidth } from "../web/spatial/sight";
 import { lineColor, palette } from "../web/spatial/palette";
@@ -520,6 +522,89 @@ for (const [preset, name] of [
     expect(video.duration).toBeCloseTo(0.4, 3);
     expect(video.first.hash).not.toBe(video.last.hash);
   });
+
+test("a link to a fitted study opens with its turn in WebKit", async ({
+  page,
+}) => {
+  const view = { ...initialView, yaw: 1.1, pitch: 0.4 };
+  const study = harmonicFitStudy(
+    {
+      center: { x: 0, y: 0, z: 0 },
+      min: 0,
+      max: 2 * Math.PI,
+      terms: [
+        {
+          frequency: 2,
+          cosine: { x: 2, y: 0, z: 0 },
+          sine: { x: 0, y: 2, z: 0 },
+        },
+        {
+          frequency: 3,
+          cosine: { x: 0, y: 0, z: 1 },
+          sine: { x: 0, y: 0, z: 0 },
+        },
+      ],
+    },
+    view,
+  );
+  const token = deflateRawSync(
+    Buffer.from(JSON.stringify({ v: 1, notebook: "3d", study })),
+  ).toString("base64url");
+  await page.goto(`/?study=3d#s=${token}`);
+  await expect(page.locator(".spatial-stage")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await open(page, "#spatial-animation-section");
+  await expect(
+    page.getByLabel("Animation camera", { exact: true }),
+  ).toHaveValue("path");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("an adopted harmonic fit plays its turn and exports through WebKit WebGL and H.264", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await page
+    .getByRole("button", { name: "Fit into harmonic terms", exact: true })
+    .click();
+  const dialog = page.locator(".harmonic-fit");
+  await expect(dialog).toHaveAttribute("data-pending", "false");
+  await expect(dialog.locator("#journey-artwork")).toBeVisible();
+  // The preview's own reveal runs in Safari's engine.
+  await dialog.getByRole("button", { name: "Play animation" }).click();
+  await dialog.getByRole("button", { name: "Pause", exact: true }).click();
+  await dialog.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+  await page.getByRole("button", { name: "Adopt fitted study" }).click();
+  await expect
+    .poll(
+      async () => JSON.parse((await stage.getAttribute("data-config"))!).format,
+    )
+    .toBe("harmonic");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await open(page, "#spatial-animation-section");
+  await expect(
+    page.getByLabel("Animation camera", { exact: true }),
+  ).toHaveValue("path");
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await open(page, "#spatial-export-settings");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("0.5");
+  const path = (await save(page))!;
+  const data = probe(path);
+  if (data) {
+    expect(data.frames).toBe(6);
+    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(400);
+  }
+  const video = await decodeVideo(page, await readFile(path));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.ink).toBeLessThan(video.last.ink);
+});
 
 test("the cut plane draws, exports and peels through WebKit WebGL and H.264", async ({
   page,
@@ -1177,6 +1262,48 @@ test("flower controls, pole selection and paired still work after click and blur
   await expect(amp).toHaveCount(0);
 });
 
+test("the harmonic fit returns focus to its entry by click and by keyboard in WebKit", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await expect(page.locator(".spatial-stage")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entry = page.getByRole("button", {
+    name: "Fit into harmonic terms",
+    exact: true,
+  });
+  const dialog = page.locator(".harmonic-fit");
+  const back = page.getByRole("button", { name: "Back to your study" });
+  // Safari does not focus a clicked button; the excursion still takes focus
+  // and restores it.
+  await entry.click();
+  await expect(dialog).toBeVisible();
+  await expect(back).toBeFocused();
+  await back.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(entry).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await expect(back).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(entry).toBeFocused();
+  // A scalar still being entered settles before the excursion begins.
+  const radius = page.getByRole("textbox", {
+    name: "Major radius R",
+    exact: true,
+  });
+  await radius.fill("3");
+  await entry.click();
+  await expect(dialog).toHaveAttribute("data-pending", "false");
+  const fit = JSON.parse((await dialog.getAttribute("data-fit"))!);
+  expect(fit.curve.terms[0].cosine.x).toBe(3);
+  await back.click();
+  await expect(radius).toHaveValue("3");
+});
+
 test("WebKit opens a study link made elsewhere and copies its own", async ({
   page,
 }) => {
@@ -1224,6 +1351,44 @@ test("WebKit opens a study link made elsewhere and copies its own", async ({
 const { defaultBrowserType: _, ...iPhone } = devices["iPhone 16 Pro Max"];
 test.describe("on an iPhone", () => {
   test.use(iPhone);
+  test("the harmonic fit's sampling help and view controls leave the study alone", async ({
+    page,
+  }) => {
+    await page.goto("/?study=3d");
+    await expect(page.locator(".spatial-stage")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await page
+      .getByRole("button", { name: "Fit into harmonic terms", exact: true })
+      .click();
+    const dialog = page.locator(".harmonic-fit");
+    await expect(dialog).toHaveAttribute("data-pending", "false");
+    const chosen = await dialog.getAttribute("data-fit");
+    // The two choices keep their places as the help opens beneath them.
+    const choices = [
+      page.getByRole("radio", { name: /Source parameter/ }),
+      page.getByRole("radio", { name: /Even pace/ }),
+    ];
+    const where = () => Promise.all(choices.map((c) => c.boundingBox()));
+    const before = await where();
+    await page.getByRole("button", { name: /how the source is sampled/ }).tap();
+    await expect(dialog.getByText(/can recover a finite sum/)).toBeVisible();
+    expect(await where()).toEqual(before);
+    // The named views and Reset view turn the drawing and nothing else.
+    const art = dialog.locator("#journey-artwork");
+    await expect(art).toBeVisible();
+    const pixels = () => art.evaluate((c: HTMLCanvasElement) => c.toDataURL());
+    const opening = await pixels();
+    const front = dialog.getByRole("button", { name: "Front", exact: true });
+    await front.scrollIntoViewIfNeeded();
+    await front.tap();
+    await expect.poll(pixels).not.toBe(opening);
+    await dialog.getByRole("button", { name: "Reset view" }).tap();
+    await expect.poll(pixels).toBe(opening);
+    expect(await dialog.getAttribute("data-fit")).toBe(chosen);
+  });
+
   for (const [study, setup] of [
     ["2d", async () => {}],
     [

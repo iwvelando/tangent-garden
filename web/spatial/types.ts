@@ -58,6 +58,16 @@ export type HarmonicCurve = {
   max: number;
 };
 export const maxHarmonicTerms = 8;
+// A transient comparison outline: a closed polygon that a fitting preview draws
+// beneath its fit. Never in a study, link or ordinary result.
+// A harmonic study's chain at every sample, for a reveal: sample i's terms'
+// joints and then its point start at points[i * (terms + 1)].
+export type HarmonicChainTrack = {
+  samples: number;
+  terms: number;
+  points: Vec3[];
+};
+export type FitSourceOutline = Vec3[];
 // A frame (T, U, V) along the curve: rotation-minimizing (parallel transport)
 // or the Frenet frame as a diagnostic. N₀ (`reference`), projected onto the
 // normal plane where each unbroken stretch begins, sets U there. The offset
@@ -455,6 +465,8 @@ export type CurveMesh = {
 };
 export const meshStride = 7;
 export type SpatialResult = {
+  // A fitting preview's transient source outline, from no engine result.
+  fitSource?: FitSourceOutline;
   // Additional constructions in source order; all surfaces share mesh.
   members?: SpatialResult[];
   unavailable?: string;

@@ -40,6 +40,104 @@ const { instance } = await WebAssembly.instantiate(
 );
 void go.run(instance);
 checkFourierFit();
+// A harmonic study's chain at every sample is a separate, typed, on-demand
+// reply, in the bits of the study's own positions.
+{
+  const study = {
+    format: "harmonic",
+    construction: "none",
+    samples: 1200,
+    lines: 48,
+    harmonic: {
+      center: { x: 0.5, y: 0, z: -1 },
+      min: 0,
+      max: 2 * Math.PI,
+      terms: [
+        {
+          frequency: 2,
+          cosine: { x: 2, y: 0, z: 0 },
+          sine: { x: 0, y: 2, z: 0 },
+        },
+        {
+          frequency: -3,
+          cosine: { x: 0.75, y: 0, z: 0.2 },
+          sine: { x: 0, y: 0.75, z: 0 },
+        },
+      ],
+    },
+  };
+  const raw = globalThis.tangentGardenHarmonicChains(JSON.stringify(study));
+  assert.equal(typeof raw, "object", "chains must use typed transport");
+  assert.equal(raw.lifted.floats.length, 1201 * 3 * 3);
+  assert.ok(replyBytes(raw) < raw.lifted.floats.byteLength + 1024);
+  const track = lifted(raw);
+  assert.equal(track.samples, 1200);
+  assert.equal(track.terms, 2);
+  assert.equal(track.points.length, 1201 * 3);
+  const refused = JSON.parse(
+    globalThis.tangentGardenHarmonicChains(
+      JSON.stringify({ ...study, samples: 12 }),
+    ),
+  );
+  assert.match(refused.error, /240–2400/);
+  assert.match(
+    globalThis.tangentGardenHarmonicChains("not json"),
+    /error/,
+    "an unreadable request is refused",
+  );
+  assert.match(
+    globalThis.tangentGardenHarmonicChains("x".repeat(524289)),
+    /too large/,
+  );
+}
+// A spatial fit caches its source; a count-only request selects from it. Its
+// outline leaves the JSON, as every spatial array does.
+{
+  const call = (q) => {
+    const raw = globalThis.tangentGardenSpatialFit(JSON.stringify(q));
+    return typeof raw === "string" ? JSON.parse(raw) : lifted(raw);
+  };
+  const source = {
+    format: "torus",
+    p: 2,
+    q: 3,
+    radius: 2,
+    tube: 0.75,
+  };
+  const raw = globalThis.tangentGardenSpatialFit(
+    JSON.stringify({ source, parameter: "source", count: 8 }),
+  );
+  assert.equal(typeof raw, "object", "a spatial fit must use typed transport");
+  assert.ok(raw.lifted.floats.length > 300);
+  assert.ok(replyBytes(raw) < raw.lifted.floats.byteLength + 8192);
+  const first = lifted(raw);
+  assert.equal(first.available, 4);
+  assert.deepEqual(
+    first.curve.terms.map((t) => t.frequency),
+    [2, 3, 1, 5],
+  );
+  assert.ok(first.rms < 1e-12);
+  assert.ok(first.outline.points.length > 100);
+  // The knot's own reach: its widest points leave the torus at R + r.
+  assert.ok(first.bounds.radius > 2.74 && first.bounds.radius < 3.2);
+  const next = call({ count: 2 });
+  assert.equal(next.curve.terms.length, 2);
+  assert.equal(next.outline, undefined, "the outline returns only once");
+  assert.ok(next.rms > 0.1);
+  assert.match(call({ count: 9 }).error, /1–8/);
+  // A replacement that fails invalidates the fit before it.
+  const open = call({
+    source: {
+      format: "parametric",
+      curve: { x: "cos(t)", y: "sin(t)", z: "t/4", min: 0, max: 6, a: 0 },
+    },
+    parameter: "source",
+    count: 8,
+  });
+  assert.match(open.error, /open/);
+  assert.match(call({ count: 2 }).error, /source/);
+  assert.match(globalThis.tangentGardenSpatialFit(" ".repeat(524289)), /large/);
+}
 // Complex loom uses the same lifted transport as spatial/4D replies.
 {
   const q = {
