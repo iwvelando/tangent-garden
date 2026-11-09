@@ -227,6 +227,12 @@ Preset fingerprints cover definitions, not numerical or rendering output, so unc
 - Do not stack a block field's bottom margin with the next pair's child top margins. The atlas's Parameter pair field has zero margins and owns 16px of trailing padding; Grid size/Framing children have zero margins. This gives the same 16px gap as the following range boundary, instead of 14px + 14px. Help outside a `.field`, such as atlas-entry help, also needs an explicit 8px control-to-help margin; `.field .hint` styles only help inside a Field. Compare its brief and expanded forms with an ordinary field at both widths.
 - Check both boundaries immediately after opening, before focusing or opening a native control, and after portrait/landscape transitions. `tests/webkit.spec.ts` covers these atlas gaps, including a constructed stylesheet that suppresses the preceding pair's child bottom margins. That controlled reproduction proves spacing no longer depends on them; it does not replace checking the first paint on an actual phone over HTTPS.
 
+## Button pictures
+
+These buttons carry a small picture from `web/icons.tsx`, and a new one in any of these groups needs its own: buttons that open a workspace or excursion from the study (the atlas, **Draw a loop**, the complex loom), the 2D construction tabs, and guided journeys. A journey declares `icon` in its descriptor, and the tab list is typed against the icon names, so neither compiles without one; `tests/gallery.spec.ts` covers all three groups.
+
+Draw the subject's real geometry rather than a generic symbol, in a 24 × 24 box. The source curve uses the base ink (`.b`) and its result the derived ink (`.d`), so the picture follows the color scheme; construction lines use the text color (`.m`). Judge it at button size, in both themes. The picture is `aria-hidden`, so the button's words remain its accessible name. It sits outside the drawing, so it does not change thumbnails or exports.
+
 ## Adding a preset
 
 - A new 2D or 3D preset needs its engine's copy of the presets regenerated, `engine/testdata/presets.json` and `engine3/testdata/presets.json`: run `make preset-fixtures`.

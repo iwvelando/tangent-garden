@@ -1,3 +1,4 @@
+import { Icon, type IconName } from "./icons";
 import { LoomContext, type LoomEntry } from "./loom/Context";
 import { GardenContext, type GardenEntry } from "./garden/Context";
 import { presetGarden } from "./garden/model";
@@ -263,7 +264,7 @@ const attractorDescription = (map: AttractorMap) => ({
   formula: mapFormulas[map],
 });
 // One tab per family; the pole constructions share a tab and a selector.
-const tabs: Kind[] = [
+const tabs = [
   "evolute",
   "involute",
   "catacaustic",
@@ -273,7 +274,7 @@ const tabs: Kind[] = [
   "rolling",
   "envelope",
   "inversion",
-];
+] as const satisfies (Kind & IconName)[];
 const inputOptions: Record<ConstructionInput, string> = {
   curve: "The curve itself",
   evolute: "Its evolute",
@@ -1803,11 +1804,13 @@ function App({
                       !!atlasBudget(config, 3, atlasFacts(frame, config)).error
                     }
                     aria-describedby={atlasHelp.open ? atlasHelp.id : undefined}
+                    className="with-icon"
                     onClick={(e) => {
                       setAtlasWaiting(e.detail === 0 ? "keyboard" : "pointer");
                       setAtlasNotice("Waiting for your study’s inputs…");
                     }}
                   >
+                    <Icon name="atlas" />
                     Explore parameter atlas
                   </button>
                   <HelpToggle topic="parameter atlas" help={atlasHelp} />
@@ -1831,11 +1834,13 @@ function App({
                     type="button"
                     disabled={animationRunning}
                     aria-describedby={fitHelp.open ? fitHelp.id : undefined}
+                    className="with-icon"
                     onClick={(e) => {
                       setFitWaiting(e.detail === 0 ? "keyboard" : "pointer");
                       setFitNotice("Waiting for your study’s inputs…");
                     }}
                   >
+                    <Icon name="loop" />
                     Draw a loop
                   </button>
                   <HelpToggle topic="Draw a loop" help={fitHelp} />
@@ -1864,6 +1869,7 @@ function App({
                       })
                     }
                     aria-describedby={loomHelp.open ? loomHelp.id : undefined}
+                    className="with-icon"
                     onClick={(e) => {
                       setLoomWaiting({
                         via: e.detail === 0 ? "keyboard" : "pointer",
@@ -1871,6 +1877,7 @@ function App({
                       setLoomNotice("Waiting for your study’s inputs…");
                     }}
                   >
+                    <Icon name="loom" />
                     Open complex loom
                   </button>
                   <HelpToggle topic="complex loom" help={loomHelp} />
@@ -1923,6 +1930,7 @@ function App({
                         }));
                       }}
                     >
+                      <Icon name={k} />
                       {k}
                     </button>
                   );

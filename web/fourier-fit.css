@@ -117,7 +117,8 @@
     calc(var(--outline-unit, 0.015) * 2.33);
   opacity: 0.7;
 }
-.fit-draft {
+.fit-draft,
+.fit-result {
   container-type: inline-size;
 }
 .fit-actions {
@@ -284,10 +285,6 @@ html.fourier-fit-open body {
   stroke: var(--derived-ink);
   stroke-width: var(--outline-unit);
 }
-.fit-correction button[aria-pressed="true"] {
-  border-color: var(--base-ink);
-  box-shadow: inset 0 0 0 1px var(--base-ink);
-}
 
 /* Recomputing keeps the established action visually steady; it remains
    disabled until its current fit is ready. Initial unavailable fits stay dim. */
@@ -299,23 +296,90 @@ html.fourier-fit-open body {
 .fit-footer button[aria-busy="true"]:hover {
   filter: brightness(0.95);
 }
-/* One row directly under the input, its view track reserved whether or not
-   correction is on, so turning correction on moves no button. */
+/* One row directly under each drawing, whatever the state of its outline, so
+   nothing beside it moves as one is drawn, closed or fitted. */
 .fit-canvas-tools {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 8px 12px;
   padding-top: 12px;
 }
-.fit-outline-zoom {
-  grid-column: 2;
-  display: grid;
-  grid-template-columns: repeat(3, 40px);
-  gap: 6px;
+.fit-reach {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.fit-outline-zoom button {
+.fit-reach label {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.fit-reach select {
+  width: auto;
+}
+.fit-pane-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.fit-pane-zoom button {
+  width: 40px;
   padding-inline: 0;
+}
+.fit-zoom-readout {
+  min-width: 3.5em;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--muted);
+}
+.fit-match {
+  white-space: nowrap;
+}
+/* Too narrow for one line, the outline's row becomes two whole ones: the view
+   directly beneath the drawing, as under the preview, then the reach. */
+@container (max-width: 520px) {
+  .fit-draft .fit-pane-zoom {
+    order: -1;
+    flex: 1 0 100%;
+    margin-left: 0;
+  }
+  .fit-draft .fit-pane-zoom button {
+    flex: 1;
+  }
+  .fit-reach {
+    flex: 1 0 100%;
+  }
+  .fit-reach select {
+    flex: 1;
+    min-width: 0;
+  }
+}
+/* The preview's row holds both ends, however narrow; wider buttons fill it. */
+@container (max-width: 520px) {
+  .fit-result .fit-pane-zoom {
+    flex: 1;
+    margin-left: 0;
+  }
+  .fit-result .fit-pane-zoom button {
+    flex: 1;
+  }
+  .fit-result .fit-zoom-readout {
+    min-width: 2.6em;
+  }
+  .fit-match {
+    flex: 1 0 auto;
+  }
+}
+/* Both a mouse's cursor and a held drag; focus only marks the keyboard's way. */
+.fit-art:focus:not(:focus-visible) {
+  outline: none;
+}
+.fit-art:active,
+.fit-capture:active {
+  cursor: grabbing;
 }
 .fit-draft > .hint {
   margin: 8px 0 0;
@@ -327,6 +391,7 @@ html.fourier-fit-open body {
   margin-top: 8px;
 }
 .fit-outline-view-note .note {
+  flex: 1;
   margin: 0;
 }
 /* Unavailable but still focusable: dimmed exactly as a disabled button. */

@@ -26,6 +26,7 @@ Finish an assignment by linking its merged result, durable documentation, verifi
 
 Before making one of these changes, read its section of `docs/contributing.md`. Each section lists the files the change touches and the tests it needs:
 
+- adding an entry button, a 2D construction or a guided journey, which needs a picture (button pictures);
 - adding a preset;
 - adding a numeric field or a validation error;
 - adding or renaming a configuration, layer or animation field (study links);

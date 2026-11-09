@@ -1,3 +1,4 @@
+import type { IconName } from "./icons";
 import { setIn } from "./config-path";
 import { overlayJourney, type OverlayJourney } from "./overlay-journeys";
 export { overlayJourney, overlayJourneyStudy } from "./overlay-journeys";
@@ -73,6 +74,7 @@ export type ShapeJourneyStep = {
 export type StudyJourney = {
   kind?: undefined;
   title: string;
+  icon: IconName;
   steps: JourneyStep[];
 };
 export type Journey = StudyJourney | OverlayJourney;
@@ -260,6 +262,7 @@ const across = (
 
 export const lightJourney = {
   title: "Light finding a cusp",
+  icon: "cusp" as const,
   steps: [
     step(
       "Light inside a circle",
@@ -288,6 +291,7 @@ export const lightJourney = {
 
 export const threadsJourney: StudyJourney = {
   title: "Threads becoming surfaces",
+  icon: "threads",
   steps: [
     across(
       "3d",
@@ -317,6 +321,7 @@ export const threadsJourney: StudyJourney = {
 };
 export const orderJourney: StudyJourney = {
   title: "Order inside apparent chaos",
+  icon: "order",
   steps: [
     step(
       "Clifford attractor",
@@ -350,6 +355,7 @@ export const orderJourney: StudyJourney = {
 };
 export const dimensionsJourney: StudyJourney = {
   title: "A glimpse of four dimensions",
+  icon: "tesseract",
   steps: [
     across(
       "4d",
@@ -379,6 +385,7 @@ export const dimensionsJourney: StudyJourney = {
 };
 export const shadowJourney: StudyJourney = {
   title: "What a shadow leaves out",
+  icon: "shadow",
   steps: [
     across(
       "4d",
@@ -409,6 +416,7 @@ export const shadowJourney: StudyJourney = {
 
 export const surfaceJourney: StudyJourney = {
   title: "A thread learns the surface",
+  icon: "geodesic",
   steps: [
     across(
       "3d",
@@ -439,6 +447,7 @@ export const surfaceJourney: StudyJourney = {
 
 export const hopfJourney: StudyJourney = {
   title: "Every point owns a circle",
+  icon: "hopf",
   steps: [
     shapeStep(
       "A circle over every point",

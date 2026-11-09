@@ -26,9 +26,32 @@ type FourierFitResult struct {
 	Length      float64 `json:"length"`
 }
 
-// PreviewRadius bounds every prefix's rotating circles about the origin,
-// including the DC circle, without changing the frame when terms change.
-func (f *FourierFit) PreviewRadius() float64 {
+// Bounds is an axis-aligned box in model coordinates.
+type Bounds struct {
+	MinX float64 `json:"minX"`
+	MinY float64 `json:"minY"`
+	MaxX float64 `json:"maxX"`
+	MaxY float64 `json:"maxY"`
+}
+
+// PreviewBounds contains every prefix's rotating circles at every parameter,
+// so choosing terms or playing never needs a new frame. The translation's
+// circle is centered on the origin; every later circle stays within the sum of
+// the remaining radii of the translation's far end.
+func (f *FourierFit) PreviewBounds() Bounds {
+	terms := f.terms[:maxTerms]
+	first := terms[0]
+	c := Vec{first.Radius * math.Cos(first.Phase), first.Radius * math.Sin(first.Phase)}
+	reach := f.previewReach() - first.Radius
+	return Bounds{
+		MinX: math.Min(-first.Radius, c.X-reach),
+		MinY: math.Min(-first.Radius, c.Y-reach),
+		MaxX: math.Max(first.Radius, c.X+reach),
+		MaxY: math.Max(first.Radius, c.Y+reach),
+	}
+}
+
+func (f *FourierFit) previewReach() float64 {
 	var r float64
 	for _, t := range f.terms[:maxTerms] {
 		r += t.Radius

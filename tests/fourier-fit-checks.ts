@@ -329,8 +329,9 @@ export async function checkCurrentCurveReturn(page: Page) {
     d.getByRole("heading", { name: "1. Original curve", exact: true }),
   ).toBeVisible();
   const art = d.getByTestId("stroke-reference");
+  // A swipe scrolls the dialog; a pinch zooms this drawing, not the page.
   expect(await art.evaluate((e) => getComputedStyle(e).touchAction)).toBe(
-    "pan-y pinch-zoom",
+    "pan-y",
   );
   await d.getByLabel("Show target outline in preview", { exact: true }).check();
   await d.getByLabel("Preview position", { exact: true }).fill("0.5");
@@ -493,10 +494,6 @@ export async function checkOutlineCorrection(page: Page) {
     .getAttribute("points");
   const art = await d.locator("#fit-artwork").innerHTML();
   const residual = await d.getByTestId("fit-residuals").textContent();
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
-  await expect(
-    d.getByRole("button", { name: "Correct outline", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
   await capture.focus();
   await capture.press("ArrowRight");
   await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
@@ -538,8 +535,9 @@ export async function checkOutlineCorrection(page: Page) {
   ]) {
     await page.setViewportSize(size);
     await capture.scrollIntoViewIfNeeded();
+    // A fitted drawing leaves a vertical swipe to the page.
     expect(await capture.evaluate((e) => getComputedStyle(e).touchAction)).toBe(
-      "none",
+      "pan-y",
     );
     const handle = capture.locator(".fit-edit-handle");
     const box = (await handle.boundingBox())!;
@@ -574,9 +572,7 @@ export async function checkOutlineCorrection(page: Page) {
   expect(await page.locator("#artwork").innerHTML()).toBe(before);
   await expect(raw).toHaveValue("2*pi");
   await openFit(page);
-  await expect(
-    d.getByRole("button", { name: "Correct outline", exact: true }),
-  ).toBeDisabled();
+  await expect(d.locator(".fit-edit-handle")).toHaveCount(0);
 }
 
 export async function checkCorrectionStability(page: Page) {
@@ -597,7 +593,6 @@ export async function checkCorrectionStability(page: Page) {
   );
   const d = await leafFit(page),
     capture = d.getByTestId("stroke-reference");
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await capture.focus();
   await capture.press("ArrowRight");
   await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
@@ -689,7 +684,6 @@ export async function checkOutlineZoom(page: Page) {
   );
   const d = await leafFit(page),
     svg = d.getByTestId("stroke-reference");
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   const original = await svg.locator("polygon").first().getAttribute("points");
   const preview = await d.locator("#fit-artwork").innerHTML();
   const view = await svg.getAttribute("viewBox");
@@ -791,10 +785,13 @@ export async function checkOutlineZoom(page: Page) {
   await expect(
     d.getByRole("button", { name: "Zoom out of outline", exact: true }),
   ).toBeDisabled();
+  // Nothing else takes a zoomed view away.
   await zoomIn.click();
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
-  expect(await svg.getAttribute("viewBox")).toBe(view);
+  const zoomed = await svg.getAttribute("viewBox");
+  expect(zoomed).not.toBe(view);
+  await d.getByLabel("Total terms", { exact: true }).selectOption("6");
+  await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+  expect(await svg.getAttribute("viewBox")).toBe(zoomed);
 }
 
 export async function checkOutlineOpenSpacePan(page: Page) {
@@ -812,7 +809,6 @@ export async function checkOutlineOpenSpacePan(page: Page) {
   await expect(
     d.getByRole("button", { name: "Adopt fitted study", exact: true }),
   ).toBeEnabled();
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await svg.scrollIntoViewIfNeeded();
   const original = await svg.locator("polygon").first().getAttribute("points");
   const preview = await d.locator("#fit-artwork").innerHTML();
@@ -909,7 +905,6 @@ export async function checkOutlineOpenSpacePan(page: Page) {
   await expect(
     d.getByRole("button", { name: "Adopt fitted study", exact: true }),
   ).toBeEnabled();
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await svg.scrollIntoViewIfNeeded();
   const leaf = await svg.locator("polygon").first().getAttribute("points");
   const leafView = await svg.getAttribute("viewBox");
@@ -974,7 +969,6 @@ async function checkClosingSegmentBends(
 ) {
   const svg = d.getByTestId("stroke-reference"),
     polygon = svg.locator("polygon").first();
-  await fitButton(d, "Correct outline").click();
   await svg.scrollIntoViewIfNeeded();
   const points = async () => (await polygon.getAttribute("points"))!.split(" ");
   const original = await points();
@@ -999,7 +993,6 @@ async function checkClosingSegmentBends(
   await fitButton(d, "Undo correction").click();
   await fitSettled(d);
   expect(await points()).toEqual(original);
-  await fitButton(d, "Correct outline").click();
 }
 
 // A drawn stroke's closing segment corrects the same way as a source's.
@@ -1042,7 +1035,6 @@ export async function checkKeyboardPointStepping(page: Page) {
     svg = d.getByTestId("stroke-reference");
   await fitButton(d, "Use current curve").click();
   await expect(fitButton(d, "Adopt fitted study")).toBeEnabled();
-  await fitButton(d, "Correct outline").click();
   await expect(d.getByLabel("Outline point", { exact: true })).toHaveCount(0);
   const polygon = svg.locator("polygon").first();
   const original = await polygon.getAttribute("points");
@@ -1142,7 +1134,6 @@ export async function checkDrawingFocusRing(page: Page) {
     await page.mouse.up();
     await expect(svg).toBeFocused();
   };
-  await fitButton(d, "Correct outline").click();
   await press();
   expect(await outline(), "press after pointer use").toBe("none");
   // The keyboard brings the ring back at its first key.
@@ -1175,7 +1166,28 @@ export async function checkOpenCurveImport(page: Page) {
   expect(open!.split(" ").length).toBeGreaterThan(256);
   await expect(d.getByRole("alert")).toHaveCount(0);
   await expect(adopt).toBeDisabled();
-  await expect(fitButton(d, "Correct outline")).toBeDisabled();
+  await expect(d.locator(".fit-edit-handle")).toHaveCount(0);
+  // Nothing can be corrected before closing, so a drag from the open outline
+  // only pans it, however near the line it starts.
+  const openPane = d.getByTestId("stroke-reference");
+  const openPoints = await openPane.locator("polyline").getAttribute("points");
+  const openView = await openPane.getAttribute("viewBox");
+  const start = await openPane.locator("polyline").evaluate((line) => {
+    const e = line as SVGPolylineElement,
+      p = e.points.getItem(Math.floor(e.points.length / 2)),
+      at = new DOMPoint(p.x, p.y).matrixTransform(e.getScreenCTM()!);
+    return { x: at.x, y: at.y };
+  });
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 24, start.y - 18);
+  await page.mouse.up();
+  expect(await openPane.getAttribute("viewBox")).not.toBe(openView);
+  expect(await openPane.locator("polyline").getAttribute("points")).toBe(
+    openPoints,
+  );
+  await fitButton(d, "Fit outline").click();
+  expect(await openPane.getAttribute("viewBox")).toBe(openView);
   await expect(d.locator(".fit-art svg")).toHaveCount(0);
   // The explanation sits right under the action that resolves it.
   const note = d.getByTestId("open-source-note");
@@ -1221,7 +1233,6 @@ export async function checkOpenCurveImport(page: Page) {
   expect(terms).toHaveLength(12);
   await checkClosingSegmentBends(page, d, before.length);
   // Correction, history and Reset all treat it as an ordinary outline.
-  await fitButton(d, "Correct outline").click();
   await capture.focus();
   await capture.press("ArrowRight");
   await fitSettled(d);
@@ -1232,7 +1243,6 @@ export async function checkOpenCurveImport(page: Page) {
   await fitButton(d, "Undo correction").click();
   await fitSettled(d);
   expect((await closed.getAttribute("points"))!.split(" ")).toEqual(vertices);
-  await fitButton(d, "Correct outline").click();
   await adopt.click();
   await pageReady(page);
   await expect(fitDialog(page)).toHaveCount(0);
@@ -1286,6 +1296,17 @@ export async function checkFitErrorsBesideActions(page: Page) {
     const alert = d.getByRole("alert");
     await expect(alert).toContainText("gap");
     await expect(alert).toHaveClass(/field-error/);
+    // A refused import is still an import: a press does not start a drawing.
+    const refused = (await d.getByTestId("stroke-reference").boundingBox())!;
+    await page.mouse.move(refused.x + 40, refused.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(refused.x + 90, refused.y + 90);
+    await page.mouse.up();
+    await expect(d.getByTestId("stroke-reference")).toHaveAttribute(
+      "data-point-count",
+      "0",
+    );
+    await expect(alert).toContainText("gap");
     const box = await contentBox(alert),
       button = await contentBox(current);
     expect(box.y - button.y - button.height).toBeGreaterThanOrEqual(0);
@@ -1347,7 +1368,6 @@ export async function checkOutlineTrackpad(page: Page) {
     svg = d.getByTestId("stroke-reference");
   const original = await svg.locator("polygon").first().getAttribute("points");
   const preview = await d.locator("#fit-artwork").innerHTML();
-  await fitButton(d, "Correct outline").click();
   await svg.scrollIntoViewIfNeeded();
   // A native listener's update commits on React's own schedule, not at once.
   const committed = () =>
@@ -1415,7 +1435,7 @@ export async function checkOutlineTrackpad(page: Page) {
   const held = await modelAt(0.3, 0.7);
   // Within the single precision an SVG transform carries.
   expect(Math.hypot(held.x - anchor.x, held.y - anchor.y)).toBeLessThan(1e-5);
-  await expect(d.locator(".fit-outline-view-note")).toContainText("1.2×");
+  await expect(d.getByTestId("outline-zoom")).toContainText("1.2×");
   // A wheel notch held with Ctrl sends a far larger delta, yet stays a step.
   const before = await span();
   await wheel({ dy: -100, ctrl: true });
@@ -1427,13 +1447,18 @@ export async function checkOutlineTrackpad(page: Page) {
   await wheel({ dy: 100, ctrl: true });
   expect(await svg.getAttribute("viewBox")).toBe(view);
 
-  // Two-finger scroll moves the content the way the fingers push it.
-  const start = await vertex();
+  // At the fit a scroll belongs to the dialog; zoomed, it moves the content
+  // the way the fingers push it.
+  expect(await wheel({ dx: 30, dy: -40 })).toBe(false);
+  expect(await svg.getAttribute("viewBox")).toBe(view);
+  await wheel({ dy: -20, ctrl: true });
+  const start = await vertex(),
+    zoomedSpan = await span();
   expect(await wheel({ dx: 30, dy: -40 })).toBe(true);
   let moved = await vertex();
   expect(moved.x - start.x).toBeCloseTo(-30, 3);
   expect(moved.y - start.y).toBeCloseTo(40, 3);
-  expect(await span()).toBeCloseTo(full, 9);
+  expect(await span()).toBeCloseTo(zoomedSpan, 9);
   // A wheel that counts in lines is scaled to pixels.
   await wheel({ dy: 2, mode: 1 });
   const lines = await vertex();
@@ -1519,39 +1544,42 @@ export async function checkOutlineTrackpad(page: Page) {
   const area = (await svg.boundingBox())!;
   await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2);
   const scroll = await d.evaluate((e) => e.scrollTop);
+  await wheel({ dy: -20, ctrl: true });
   const real = await vertex();
   await page.mouse.wheel(0, 40);
   await expect.poll(async () => (await vertex()).y).not.toBe(real.y);
   expect(await d.evaluate((e) => e.scrollTop)).toBe(scroll);
   await fitButton(d, "Fit outline").click();
 
-  // Outside correction the dialog keeps its ordinary scrolling.
-  await fitButton(d, "Correct outline").click();
+  // A fitted drawing keeps the dialog's ordinary scrolling.
   const quiet = await svg.getAttribute("viewBox");
+  expect(await wheel({ dy: 40 })).toBe(false);
+  expect(await svg.getAttribute("viewBox")).toBe(quiet);
+
+  // With no outline yet, the pane has no view to move.
+  await fitButton(d, "Reset outline").click();
+  const empty = await svg.getAttribute("viewBox");
   expect(await wheel({ dy: 40 })).toBe(false);
   expect(await wheel({ dy: -20, ctrl: true })).toBe(false);
   expect(await gesture("gesturestart", 1)).toBe(false);
   await gesture("gesturechange", 2);
-  expect(await svg.getAttribute("viewBox")).toBe(quiet);
+  expect(await svg.getAttribute("viewBox")).toBe(empty);
 }
 
-// Turning correction on adds only what it needs, without moving any button.
-export async function checkCorrectionToggleKeepsControls(page: Page) {
+// Fitting adds only what it needs, without moving any control above it.
+export async function checkFittingKeepsControls(page: Page) {
   await page.goto("/");
   await pageReady(page);
-  const d = await leafFit(page),
+  const d = await openFit(page),
     svg = d.getByTestId("stroke-reference");
-  const toggle = fitButton(d, "Correct outline");
   const steady = [
     svg,
-    toggle,
+    fitButton(d, "Zoom in on outline"),
+    fitButton(d, "Fit outline"),
     fitButton(d, "Use current curve"),
     fitButton(d, "Use example leaf"),
     fitButton(d, "Reset outline"),
     fitButton(d, "Close outline"),
-    fitButton(d, "Undo correction"),
-    fitButton(d, "Redo correction"),
-    fitButton(d, "Restore original outline"),
   ];
   for (const size of [
     { width: 1440, height: 900 },
@@ -1565,9 +1593,15 @@ export async function checkCorrectionToggleKeepsControls(page: Page) {
     { width: 568, height: 320 },
   ]) {
     await page.setViewportSize(size);
+    await fitButton(d, "Use example leaf").click();
+    await d.evaluate((e) => e.scrollTo(0, 0));
     const before = await Promise.all(steady.map(contentBox));
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await fitButton(d, "Close outline").click();
+    await expect(d.locator(".fit-result")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(fitButton(d, "Adopt fitted study")).toBeEnabled();
     const during = await Promise.all(steady.map(contentBox));
     for (const [i, box] of during.entries())
       for (const key of ["x", "y", "width", "height"] as const)
@@ -1577,24 +1611,51 @@ export async function checkCorrectionToggleKeepsControls(page: Page) {
             `${size.width}px: control ${i} ${key} stays put`,
           )
           .toBeLessThan(0.5);
-    // The view controls share the toggle's row, directly under the canvas.
-    const canvas = before[0],
-      switcher = before[1];
-    expect(switcher.y - canvas.y - canvas.height).toBeLessThanOrEqual(16);
-    for (const name of [
-      "Zoom in on outline",
-      "Zoom out of outline",
-      "Fit outline",
-    ]) {
-      const box = await contentBox(fitButton(d, name));
-      expect
-        .soft(
-          Math.abs(box.y + box.height / 2 - switcher.y - switcher.height / 2),
-          `${size.width}px: ${name} beside the toggle`,
-        )
-        .toBeLessThan(1);
-      expect.soft(box.width).toBeGreaterThanOrEqual(40);
-      expect.soft(box.x).toBeGreaterThan(switcher.x + switcher.width);
+    // Each drawing's view controls sit in the row directly beneath it.
+    const canvas = before[0];
+    for (const [pane, row] of [
+      [canvas, before[1]],
+      [
+        await contentBox(d.locator(".fit-art")),
+        await contentBox(fitButton(d, "Zoom in on preview")),
+      ],
+    ] as const) {
+      expect.soft(row.width).toBeGreaterThanOrEqual(40);
+      expect.soft(row.y).toBeGreaterThan(pane.y + pane.height);
+    }
+    expect(before[1].y - canvas.y - canvas.height).toBeLessThanOrEqual(24);
+    // A row beneath a drawing either holds everything or is stacked on purpose:
+    // nothing is left stranded at one end of a line of its own.
+    for (const [name, control, pane] of [
+      ["reach", d.getByLabel("Correction reach", { exact: true }), canvas],
+      ["outline zoom", fitButton(d, "Fit outline"), canvas],
+      [
+        "preview zoom",
+        fitButton(d, "Fit preview"),
+        await contentBox(d.locator(".fit-art")),
+      ],
+    ] as const) {
+      const row = control.locator(
+        "xpath=ancestor::*[contains(concat(' ', @class, ' '), ' fit-canvas-tools ')]/*",
+      );
+      const parts = await row.evaluateAll((all) =>
+        all.map((e) => e.getBoundingClientRect().toJSON()),
+      );
+      for (const line of new Set(parts.map((p) => Math.round(p.top)))) {
+        const onLine = parts.filter((p) => Math.round(p.top) === line);
+        expect
+          .soft(
+            Math.min(...onLine.map((p) => p.left)) - pane.x,
+            `${size.width}px: ${name} row reaches its pane's left edge`,
+          )
+          .toBeLessThan(2);
+        expect
+          .soft(
+            pane.x + pane.width - Math.max(...onLine.map((p) => p.right)),
+            `${size.width}px: ${name} row reaches its pane's right edge`,
+          )
+          .toBeLessThan(2);
+      }
     }
     expect(await d.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(true);
     // Every button here is one height, none wrapped onto a second line.
@@ -1606,16 +1667,10 @@ export async function checkCorrectionToggleKeepsControls(page: Page) {
     const usual = heights.find(([name]) => name === "Reset outline")![1];
     for (const [name, height] of heights)
       expect.soft(height, `${size.width}px: ${name} height`).toBe(usual);
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await expect(fitButton(d, "Fit outline")).toHaveCount(0);
-    const after = await Promise.all(steady.map(contentBox));
-    for (const [i, box] of after.entries())
-      expect.soft(Math.abs(box.y - before[i].y)).toBeLessThan(0.5);
+    await fitButton(d, "Reset outline").click();
   }
 }
 
-// A button that its own press makes unavailable keeps the keyboard's place.
 export async function checkDisablingKeepsFocus(page: Page) {
   await page.addInitScript(() => {
     const Native = Worker;
@@ -1633,7 +1688,6 @@ export async function checkDisablingKeepsFocus(page: Page) {
   const d = await leafFit(page),
     svg = d.getByTestId("stroke-reference");
   const focused = (locator: Locator) => expect(locator).toBeFocused();
-  await fitButton(d, "Correct outline").click();
   const edit = async () => {
     await svg.focus();
     await svg.press("ArrowRight");
@@ -1677,7 +1731,6 @@ export async function checkDisablingKeepsFocus(page: Page) {
   await expect(out).toBeDisabled();
   await focused(out);
 
-  await fitButton(d, "Correct outline").click();
   const reset = fitButton(d, "Reset outline");
   await reset.focus();
   await page.keyboard.press("Enter");
@@ -1705,7 +1758,6 @@ export async function checkCorrectionDragThreshold(page: Page) {
   await pageReady(page);
   const d = await leafFit(page),
     svg = d.getByTestId("stroke-reference");
-  await fitButton(d, "Correct outline").click();
   await svg.scrollIntoViewIfNeeded();
   const polygon = svg.locator("polygon").first();
   const original = await polygon.getAttribute("points");
@@ -1843,4 +1895,305 @@ export async function checkCorrectionDragThreshold(page: Page) {
     await fitSettled(d);
     expect(await polygon.getAttribute("points")).toBe(original);
   }
+}
+
+// The screen box of an element's drawn geometry, as a fraction of its pane.
+async function drawnBox(pane: Locator, geometry: string) {
+  return pane.evaluate((root, selector) => {
+    const box = root.getBoundingClientRect();
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const e of root.querySelectorAll(selector)) {
+      const r = (e as SVGGraphicsElement).getBoundingClientRect();
+      if (!r.width && !r.height) continue;
+      x0 = Math.min(x0, r.left);
+      y0 = Math.min(y0, r.top);
+      x1 = Math.max(x1, r.right);
+      y1 = Math.max(y1, r.bottom);
+    }
+    return {
+      left: (x0 - box.left) / box.width,
+      right: (x1 - box.left) / box.width,
+      top: (y0 - box.top) / box.height,
+      bottom: (y1 - box.top) / box.height,
+    };
+  }, geometry);
+}
+
+const fittedReady = (d: Locator) =>
+  expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
+
+async function cycloidFit(page: Page) {
+  await page.goto("/");
+  await pageReady(page);
+  await choosePreset(page, { label: "Cycloid & its evolute" });
+  const d = await openFit(page);
+  await d.getByRole("button", { name: "Use current curve" }).click();
+  await d.getByRole("button", { name: "Close outline" }).click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await fittedReady(d);
+  return d;
+}
+
+const previewCamera = (d: Locator) =>
+  d.locator("#fit-artwork").evaluate((svg) => ({
+    scale: Number(svg.getAttribute("data-camera-scale")),
+    center: svg.getAttribute("data-camera-center")!.split(",").map(Number),
+  }));
+
+// Each pane fits what it shows, whatever the source's distance from the origin.
+export async function checkPanesFitTheirContent(page: Page) {
+  const d = await cycloidFit(page);
+  const input = await drawnBox(
+    d.getByTestId("stroke-reference"),
+    "polygon:not(.fit-original)",
+  );
+  expect(Math.abs((input.left + input.right) / 2 - 0.5)).toBeLessThan(0.01);
+  expect(Math.abs((input.top + input.bottom) / 2 - 0.5)).toBeLessThan(0.01);
+  expect(
+    Math.max(input.right - input.left, input.bottom - input.top),
+  ).toBeGreaterThan(0.85);
+  // The whole chain stays in view and well spread across its pane.
+  const preview = await drawnBox(d.locator(".fit-art"), "#fit-artwork circle");
+  expect(preview.left).toBeGreaterThanOrEqual(0);
+  expect(preview.right).toBeLessThanOrEqual(1);
+  expect(preview.top).toBeGreaterThanOrEqual(0);
+  expect(preview.bottom).toBeLessThanOrEqual(1);
+  expect(
+    Math.max(preview.right - preview.left, preview.bottom - preview.top),
+  ).toBeGreaterThan(0.6);
+}
+
+// The controls belong to each pane all along, with no mode to enter or leave.
+export async function checkPaneViewsAreIndependentAndKept(page: Page) {
+  const d = await cycloidFit(page);
+  await expect(
+    d.getByRole("button", { name: "Correct outline", exact: true }),
+  ).toHaveCount(0);
+  const svg = d.getByTestId("stroke-reference");
+  const inputView = await svg.getAttribute("viewBox");
+  const camera = await previewCamera(d);
+
+  await d.getByRole("button", { name: "Zoom in on preview" }).click();
+  const zoomed = await previewCamera(d);
+  expect(zoomed.scale).toBeCloseTo(camera.scale * 1.6, 6);
+  expect(await svg.getAttribute("viewBox")).toBe(inputView);
+
+  await d.getByRole("button", { name: "Zoom in on outline" }).click();
+  const closeUp = await svg.getAttribute("viewBox");
+  expect(closeUp).not.toBe(inputView);
+  expect((await previewCamera(d)).scale).toBe(zoomed.scale);
+
+  // A completed fit from another term count moves neither view.
+  await d.getByLabel("Total terms", { exact: true }).selectOption("12");
+  await fittedReady(d);
+  expect(await svg.getAttribute("viewBox")).toBe(closeUp);
+  expect((await previewCamera(d)).scale).toBe(zoomed.scale);
+
+  // Nor does an edit: a moved view is held until Fit, on both panes.
+  const heldPreview = await previewCamera(d);
+  await svg.focus();
+  await svg.press("ArrowUp");
+  await fittedReady(d);
+  await expect(
+    d.getByRole("button", { name: "Undo correction" }),
+  ).toBeEnabled();
+  expect(await svg.getAttribute("viewBox")).toBe(closeUp);
+  expect(await previewCamera(d)).toEqual(heldPreview);
+  await d.getByRole("button", { name: "Undo correction" }).click();
+  await fittedReady(d);
+
+  await d.getByRole("button", { name: "Match outline" }).click();
+  const [x, y, width, height] = closeUp!.split(" ").map(Number);
+  const matched = await previewCamera(d);
+  expect(matched.scale).toBeCloseTo(1000 / width, 6);
+  expect(matched.center[0]).toBeCloseTo(x + width / 2, 6);
+  expect(matched.center[1]).toBeCloseTo(-(y + height / 2), 6);
+  // The overlay shows what the preview shows.
+  await d.getByLabel("Show target outline in preview", { exact: true }).check();
+  expect(await d.getByTestId("fit-reference").getAttribute("viewBox")).toBe(
+    closeUp,
+  );
+
+  await d.getByRole("button", { name: "Fit preview" }).click();
+  expect((await previewCamera(d)).scale).toBeCloseTo(camera.scale, 9);
+  await d.getByRole("button", { name: "Fit outline" }).click();
+  expect(await svg.getAttribute("viewBox")).toBe(inputView);
+
+  // Replacing the source starts both views afresh.
+  await d.getByRole("button", { name: "Zoom in on preview" }).click();
+  await d.getByRole("button", { name: "Zoom in on outline" }).click();
+  await d.getByRole("button", { name: "Use current curve" }).click();
+  await d.getByRole("button", { name: "Close outline" }).click();
+  await expect(
+    d.getByRole("button", { name: "Adopt fitted study" }),
+  ).toBeEnabled();
+  await fittedReady(d);
+  expect(await svg.getAttribute("viewBox")).toBe(inputView);
+  expect((await previewCamera(d)).scale).toBeCloseTo(camera.scale, 9);
+}
+
+// A fitted pane leaves a scroll to the dialog; a zoomed one has somewhere to go.
+export async function checkPreviewTrackpad(page: Page) {
+  const d = await cycloidFit(page);
+  const art = d.locator(".fit-art");
+  const box = (await art.boundingBox())!;
+  const at = { x: box.x + box.width * 0.7, y: box.y + box.height * 0.3 };
+  await page.mouse.move(at.x, at.y);
+  const fitted = await previewCamera(d);
+  const send = (deltaX: number, deltaY: number, ctrlKey = false) =>
+    art.evaluate(
+      (e, o) => {
+        const event = new WheelEvent("wheel", {
+          ...o,
+          bubbles: true,
+          cancelable: true,
+        });
+        e.dispatchEvent(event);
+        return event.defaultPrevented;
+      },
+      { deltaX, deltaY, ctrlKey, clientX: at.x, clientY: at.y },
+    );
+  expect(await send(0, 40)).toBe(false);
+  expect(await previewCamera(d)).toEqual(fitted);
+
+  expect(await send(0, -20, true)).toBe(true);
+  const pinched = await previewCamera(d);
+  expect(pinched.scale).toBeGreaterThan(fitted.scale);
+
+  expect(await send(30, 0)).toBe(true);
+  const panned = await previewCamera(d);
+  expect(panned.scale).toBe(pinched.scale);
+  expect(panned.center[0]).not.toBe(pinched.center[0]);
+}
+
+// One finger pans a zoomed preview, and two pinch it, as on the outline.
+export async function checkPreviewTouch(page: Page) {
+  const d = await cycloidFit(page);
+  const client = await page.context().newCDPSession(page);
+  const art = d.locator(".fit-art");
+  await art.scrollIntoViewIfNeeded();
+  const box = (await art.boundingBox())!;
+  const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const touch = (
+    type: string,
+    points: { x: number; y: number; id: number }[],
+  ) =>
+    client.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: points,
+    } as any);
+  const before = await previewCamera(d);
+  const a = { x: mid.x - 30, y: mid.y, id: 1 },
+    b = { x: mid.x + 30, y: mid.y, id: 2 };
+  await touch("touchStart", [a]);
+  await touch("touchStart", [a, b]);
+  await touch("touchMove", [
+    { ...a, x: mid.x - 60 },
+    { ...b, x: mid.x + 60 },
+  ]);
+  await touch("touchEnd", []);
+  const pinched = await previewCamera(d);
+  expect(pinched.scale).toBeCloseTo(before.scale * 2, 6);
+  await expect(art).toHaveCSS("touch-action", "none");
+  await touch("touchStart", [{ x: mid.x, y: mid.y, id: 3 }]);
+  await touch("touchMove", [{ x: mid.x + 25, y: mid.y + 15, id: 3 }]);
+  await touch("touchEnd", []);
+  const panned = await previewCamera(d);
+  expect(panned.scale).toBe(pinched.scale);
+  expect(panned.center[0]).toBeLessThan(pinched.center[0]);
+  expect(panned.center[1]).toBeGreaterThan(pinched.center[1]);
+}
+
+// With no mode, a closed outline is edited in place, and only a Reset starts over.
+export async function checkClosedOutlineEditsInPlace(page: Page) {
+  await page.goto("/");
+  await pageReady(page);
+  const d = await leafFit(page);
+  await fittedReady(d);
+  const svg = d.getByTestId("stroke-reference");
+  const points = () => svg.locator("polygon").first().getAttribute("points");
+  const original = await points();
+  const pane = (await svg.boundingBox())!;
+  // Open space pans and leaves the outline alone.
+  const view = await svg.getAttribute("viewBox");
+  await page.mouse.move(pane.x + 8, pane.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(pane.x + 40, pane.y + 30);
+  await page.mouse.up();
+  expect(await svg.getAttribute("viewBox")).not.toBe(view);
+  expect(await points()).toBe(original);
+  await d.getByRole("button", { name: "Fit outline" }).click();
+  // A drag from the outline moves it, and a refit follows.
+  const handle = (await svg.locator(".fit-edit-handle").boundingBox())!;
+  const x = handle.x + handle.width / 2,
+    y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + 20, y + 16);
+  await page.mouse.up();
+  await fittedReady(d);
+  await expect.poll(async () => (await points()) !== original).toBe(true);
+  await d.getByRole("button", { name: "Reset outline" }).click();
+  await expect(svg.locator("polygon, polyline")).toHaveAttribute("points", "");
+}
+
+// At the fit a one-finger swipe scrolls the dialog, but a finger on the outline
+// edits and two fingers zoom, whichever way they move.
+export async function checkFittedTouchOwnership(page: Page) {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const d = await cycloidFit(page);
+  const client = await page.context().newCDPSession(page);
+  const touch = (
+    type: string,
+    points: { x: number; y: number; id: number }[],
+  ) =>
+    client.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: points,
+    } as any);
+  const svg = d.getByTestId("stroke-reference");
+  await svg.scrollIntoViewIfNeeded();
+  const pts = () => svg.locator("polygon").first().getAttribute("points");
+  const original = await pts();
+
+  const handle = (await svg.locator(".fit-edit-handle").boundingBox())!;
+  const x = handle.x + handle.width / 2,
+    y = handle.y + handle.height / 2;
+  const scroll = await d.evaluate((e) => e.scrollTop);
+  await touch("touchStart", [{ x, y, id: 1 }]);
+  for (const dy of [4, 8, 12, 16, 24])
+    await touch("touchMove", [{ x, y: y + dy, id: 1 }]);
+  await touch("touchEnd", []);
+  await expect.poll(pts).not.toBe(original);
+  await fittedReady(d);
+  expect(await d.evaluate((e) => e.scrollTop)).toBe(scroll);
+
+  const art = d.locator(".fit-art");
+  await art.scrollIntoViewIfNeeded();
+  const before = await previewCamera(d);
+  const box = (await art.boundingBox())!;
+  const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const top = { x: mid.x, y: mid.y - 20, id: 2 },
+    bottom = { x: mid.x, y: mid.y + 20, id: 3 };
+  const atStart = await d.evaluate((e) => e.scrollTop);
+  await touch("touchStart", [top]);
+  await touch("touchStart", [top, bottom]);
+  for (const k of [10, 20, 30])
+    await touch("touchMove", [
+      { ...top, y: top.y - k },
+      { ...bottom, y: bottom.y + k },
+    ]);
+  await touch("touchEnd", []);
+  expect((await previewCamera(d)).scale).toBeGreaterThan(before.scale * 1.5);
+  expect(await d.evaluate((e) => e.scrollTop)).toBe(atStart);
+
+  // Fitted again, one finger belongs to the dialog once more.
+  await d.getByRole("button", { name: "Fit preview" }).click();
+  await art.scrollIntoViewIfNeeded();
+  await expect(art).toHaveCSS("touch-action", "pan-y");
 }

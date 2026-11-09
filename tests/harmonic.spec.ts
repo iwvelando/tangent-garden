@@ -34,10 +34,16 @@ import {
   checkOpenCurveImport,
   checkFitErrorsBesideActions,
   checkOutlineTrackpad,
-  checkCorrectionToggleKeepsControls,
+  checkFittingKeepsControls,
   checkDisablingKeepsFocus,
   checkCorrectionDragThreshold,
   checkCorrectionStability,
+  checkPanesFitTheirContent,
+  checkPaneViewsAreIndependentAndKept,
+  checkPreviewTrackpad,
+  checkPreviewTouch,
+  checkFittedTouchOwnership,
+  checkClosedOutlineEditsInPlace,
   fitDialog,
   leafFit,
   openFit,
@@ -167,9 +173,6 @@ for (const input of [
       ).toBeEnabled();
     }
     if (input.startsWith("corrected")) {
-      await dialog
-        .getByRole("button", { name: "Correct outline", exact: true })
-        .click();
       const capture = dialog.getByTestId("stroke-reference");
       await capture.focus();
       await capture.press("ArrowRight");
@@ -1618,9 +1621,20 @@ test("current-curve import preserves model units, restores the source, and adopt
     .locator("#fit-artwork")
     .getAttribute("data-camera-scale");
   await d.getByLabel("Show target outline in preview", { exact: true }).check();
-  expect(await d.getByTestId("fit-reference").getAttribute("viewBox")).toBe(
-    await d.getByTestId("stroke-reference").getAttribute("viewBox"),
-  );
+  // The overlay is drawn in the preview's own view, not the input's.
+  const overlay = (await d
+    .getByTestId("fit-reference")
+    .getAttribute("viewBox"))!
+    .split(" ")
+    .map(Number);
+  expect(overlay[2]).toBeCloseTo(1000 / Number(before), 9);
+  const [centerX, centerY] = (await d
+    .locator("#fit-artwork")
+    .getAttribute("data-camera-center"))!
+    .split(",")
+    .map(Number);
+  expect(overlay[0] + overlay[2] / 2).toBeCloseTo(centerX, 9);
+  expect(overlay[1] + overlay[3] / 2).toBeCloseTo(-centerY, 9);
   for (const size of [
     { width: 1440, height: 700 },
     { width: 390, height: 844 },
@@ -1767,7 +1781,7 @@ test("an open source publishes its outline without a fit until explicitly closed
                 maxResidual: 0,
                 sampleCount: 1024,
                 length: 5,
-                previewRadius: 1,
+                previewBounds: { minX: -1, minY: -1, maxX: 1, maxY: 1 },
                 ...(closing && { closedPoints: divided }),
               };
         },
@@ -1970,7 +1984,7 @@ test("only a small current curve shortens the fitted offset, so its normals neve
     tolerance: 1e-4 * d,
     evaluations: 100,
     closureTolerance: 1e-14,
-    previewRadius: d,
+    previewBounds: { minX: -d, minY: -d, maxX: d, maxY: d },
   });
   const terms = [
     { frequency: 0, radius: 0, phase: 0 },
@@ -2183,7 +2197,7 @@ test("outline corrections own bounded history, exact coordinates and stale repli
     maxResidual: 0.2,
     sampleCount: 1024,
     length: 3,
-    previewRadius: 2,
+    previewBounds: { minX: -2, minY: -2, maxX: 2, maxY: 2 },
     ...(points && { editedPoints: points }),
   });
   const flush = async () => {
@@ -2291,7 +2305,6 @@ test("pending corrections keep keyboard scroll stable and undo rejects the cance
   await settled(page);
   const d = await leafFit(page),
     capture = d.getByTestId("stroke-reference");
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   const original = await capture
     .locator("polygon")
     .first()
@@ -2335,9 +2348,7 @@ test("pending corrections keep keyboard scroll stable and undo rejects the cance
   await page.evaluate(() => {
     for (const release of (window as any).heldCorrections) release();
   });
-  await expect(
-    d.getByRole("button", { name: "Correct outline", exact: true }),
-  ).toBeDisabled();
+  await expect(d.locator(".fit-edit-handle")).toHaveCount(0);
   await expect(capture).toHaveAttribute("data-point-count", "0");
 });
 
@@ -2363,7 +2374,6 @@ test("a refused imported correction retains original coordinates, provenance and
     .first()
     .getAttribute("points");
   const metadata = await d.getByTestId("source-sampling").textContent();
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await capture.focus();
   await capture.press("ArrowRight");
   await expect(d.locator(".fit-correction").getByRole("alert")).toContainText(
@@ -2452,7 +2462,6 @@ test("a large imported outline keeps its original through correction and palette
   const terms = JSON.parse(
     (await d.locator("#fit-artwork desc").textContent())!,
   ).curve.terms;
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   const ready = [];
   for (const reach of ["0.05", "0.1", "0.2"]) {
     await d.getByLabel("Correction reach", { exact: true }).selectOption(reach);
@@ -2544,7 +2553,6 @@ test("the preview outline follows the corrected fitting target while retaining t
     .locator("polygon")
     .first()
     .getAttribute("points");
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await capture.focus();
   await capture.press("Shift+ArrowRight");
   await expect(d.locator(".fit-result")).toHaveAttribute("aria-busy", "false");
@@ -2608,8 +2616,8 @@ test("a trackpad pinches and pans the outline view as fingers do", async ({
   await checkOutlineTrackpad(page);
 });
 
-test("turning correction on moves no button", async ({ page }) => {
-  await checkCorrectionToggleKeepsControls(page);
+test("fitting an outline moves no control above it", async ({ page }) => {
+  await checkFittingKeepsControls(page);
 });
 
 test("a button its own press disables keeps keyboard focus", async ({
@@ -2632,9 +2640,6 @@ test.describe("on a touch screen", () => {
     await page.goto("/");
     await settled(page);
     const d = await leafFit(page);
-    await d
-      .getByRole("button", { name: "Correct outline", exact: true })
-      .click();
     const hint = d.locator(".fit-outline-view-note .note");
     await expect(hint).toContainText("Pinch to zoom · two fingers to pan");
     await expect(hint).not.toContainText("scroll");
@@ -2647,9 +2652,8 @@ test("the outline view's hint names a scroll wheel with a fine pointer", async (
   await page.goto("/");
   await settled(page);
   const d = await leafFit(page);
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await expect(d.locator(".fit-outline-view-note .note")).toContainText(
-    "Pinch or Ctrl+scroll to zoom · scroll to pan",
+    "Pinch or Ctrl+scroll to zoom · drag to pan",
   );
 });
 
@@ -2674,7 +2678,6 @@ test("native touch pinch anchors the outline and makes an equal pixel correction
   await settled(page);
   const d = await leafFit(page),
     svg = d.getByTestId("stroke-reference");
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await svg.scrollIntoViewIfNeeded();
   const original = await svg.locator("polygon").first().getAttribute("points");
   const first = () =>
@@ -2787,7 +2790,6 @@ test("native one-finger open-space pan switches safely into pinch navigation", a
   await expect(
     d.getByRole("button", { name: "Adopt fitted study", exact: true }),
   ).toBeEnabled();
-  await d.getByRole("button", { name: "Correct outline", exact: true }).click();
   await svg.scrollIntoViewIfNeeded();
   const original = await svg.locator("polygon").first().getAttribute("points");
   const preview = await d.locator("#fit-artwork").innerHTML();
@@ -2844,4 +2846,47 @@ test("native one-finger open-space pan switches safely into pinch navigation", a
   await expect(
     d.getByRole("button", { name: "Undo correction", exact: true }),
   ).toBeDisabled();
+});
+
+test("each drawing pane centers and fills with what it shows, far from the origin", async ({
+  page,
+}) => {
+  await checkPanesFitTheirContent(page);
+});
+
+test("each drawing pane keeps its own zoom, with no correction mode to leave", async ({
+  page,
+}) => {
+  await checkPaneViewsAreIndependentAndKept(page);
+});
+
+test("a fitted preview leaves scrolling to the dialog until a trackpad zooms it", async ({
+  page,
+}) => {
+  await checkPreviewTrackpad(page);
+});
+
+test("the preview pinches and pans by touch as the outline does", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 1200, height: 900 },
+  });
+  await checkPreviewTouch(await context.newPage());
+  await context.close();
+});
+
+test("a closed outline edits in place: open space pans, and Reset starts over", async ({
+  page,
+}) => {
+  await checkClosedOutlineEditsInPlace(page);
+});
+
+test("at the fit, an edit and a pinch keep a touch from scrolling the dialog", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ hasTouch: true });
+  await checkFittedTouchOwnership(await context.newPage());
+  await context.close();
 });

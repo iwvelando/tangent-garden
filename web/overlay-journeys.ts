@@ -1,3 +1,4 @@
+import type { IconName } from "./icons";
 import type { PlanarStudy } from "./planar-link";
 import { loomPresets, presetLoom, maps } from "./loom/model";
 import { gardenPresets, presetGarden } from "./garden/model";
@@ -14,6 +15,7 @@ export type OverlayJourneyStep = {
 export type OverlayJourney = {
   kind: "overlay";
   title: string;
+  icon: IconName;
   steps: OverlayJourneyStep[];
 };
 
@@ -55,6 +57,7 @@ export const overlayJourneyPaneLabels = (step: OverlayJourneyStep) =>
 export const overlayJourney: OverlayJourney = {
   kind: "overlay",
   title: "Rules that grow a garden",
+  icon: "garden",
   steps: [
     {
       overlay: "loom",

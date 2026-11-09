@@ -70,7 +70,6 @@ func registerFourierFit() {
 				return refusal(err)
 			}
 			outline = &o
-			outline.PreviewRadius = current.PreviewRadius()
 		} else if q.Points != nil {
 			current = nil
 			var points [engine.FourierFitMaxPoints]engine.Vec
@@ -118,8 +117,8 @@ func registerFourierFit() {
 			Outline       *engine.FourierOutline `json:"outline,omitempty"`
 			EditedPoints  []engine.Vec           `json:"editedPoints,omitempty"`
 			ClosedPoints  []engine.Vec           `json:"closedPoints,omitempty"`
-			PreviewRadius float64                `json:"previewRadius"`
-		}{r, outline, edited, closed, current.PreviewRadius()})
+			PreviewBounds engine.Bounds          `json:"previewBounds"`
+		}{r, outline, edited, closed, current.PreviewBounds()})
 		if err != nil {
 			return refusal(err)
 		}

@@ -120,7 +120,9 @@ import {
   checkOpenCurveImport,
   checkFitErrorsBesideActions,
   checkOutlineTrackpad,
-  checkCorrectionToggleKeepsControls,
+  checkFittingKeepsControls,
+  checkPaneViewsAreIndependentAndKept,
+  checkPreviewTrackpad,
   checkDisablingKeepsFocus,
   checkCorrectionDragThreshold,
   checkCorrectionStability,
@@ -3010,8 +3012,8 @@ test("a trackpad pinches and pans the outline view as fingers do", async ({
   await checkOutlineTrackpad(page);
 });
 
-test("turning correction on moves no button", async ({ page }) => {
-  await checkCorrectionToggleKeepsControls(page);
+test("fitting an outline moves no control above it", async ({ page }) => {
+  await checkFittingKeepsControls(page);
 });
 
 test("a button its own press disables keeps keyboard focus", async ({
@@ -3042,4 +3044,11 @@ test("outline drags pan open space and reserve nearby strokes for correction", a
   page,
 }) => {
   await checkOutlineOpenSpacePan(page);
+});
+
+test("each drawing pane keeps its own zoom and trackpad behavior in Safari's engine", async ({
+  page,
+}) => {
+  await checkPaneViewsAreIndependentAndKept(page);
+  await checkPreviewTrackpad(page);
 });
