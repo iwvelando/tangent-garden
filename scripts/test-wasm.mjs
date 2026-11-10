@@ -262,6 +262,89 @@ checkFourierFit();
       "exclusionRadius",
     );
   }
+  // The general Möbius map: (az+b)/(cz+d) in complex arithmetic written
+  // here, its pole reported with the result, the identity at s = 0 and the
+  // conditioning refusal on its own field.
+  {
+    const coefficients = {
+      a: { x: 2, y: 1 },
+      b: { x: 0, y: -1 },
+      c: { x: 0, y: -1 },
+      d: { x: 2, y: 1 },
+    };
+    const request = {
+      ...q,
+      map: "fractional",
+      coefficients,
+      mapParameter: 1,
+      exclusionRadius: 0.025,
+      source: { ...q.source, kind: "concentric", radius: 2.4 },
+    };
+    const raw = globalThis.tangentGardenLoom(JSON.stringify(request));
+    assert.equal(typeof raw, "object");
+    const result = lifted(raw);
+    assert.deepEqual(result.pole, { x: 1, y: -2 });
+    const mul = (u, v) => ({
+      x: u.x * v.x - u.y * v.y,
+      y: u.x * v.y + u.y * v.x,
+    });
+    const add = (u, v) => ({ x: u.x + v.x, y: u.y + v.y });
+    let drawn = 0;
+    for (const m of result.members)
+      for (let i = 0; i < m.at.length; i++) {
+        const p = m.source[i],
+          w = m.image[i];
+        if (!p || !w) continue;
+        drawn++;
+        const n = add(mul(coefficients.a, p), coefficients.b),
+          d = add(mul(coefficients.c, p), coefficients.d),
+          dd = d.x * d.x + d.y * d.y,
+          want = {
+            x: (n.x * d.x + n.y * d.y) / dd,
+            y: (n.y * d.x - n.x * d.y) / dd,
+          };
+        assert.ok(
+          Math.hypot(w.x - want.x, w.y - want.y) <
+            1e-12 * Math.max(1, Math.hypot(want.x, want.y)),
+        );
+      }
+    assert.ok(drawn > 8 * 32);
+    assert.deepEqual(
+      JSON.parse(globalThis.tangentGardenLoomPoint(JSON.stringify(request)))
+        .marker,
+      result.marker,
+    );
+    const identity = lifted(
+      globalThis.tangentGardenLoom(
+        JSON.stringify({ ...request, mapParameter: 0 }),
+      ),
+    );
+    assert.equal(identity.pole, undefined);
+    for (const m of identity.members) assert.deepEqual(m.image, m.source);
+    assert.equal(
+      JSON.parse(
+        globalThis.tangentGardenLoom(
+          JSON.stringify({
+            ...request,
+            coefficients: {
+              ...coefficients,
+              a: { x: 1, y: 0 },
+              d: { x: -1, y: 0 },
+            },
+          }),
+        ),
+      ).field,
+      "coefficients",
+    );
+    assert.equal(
+      JSON.parse(
+        globalThis.tangentGardenLoom(
+          JSON.stringify({ ...request, mapParameter: 2 }),
+        ),
+      ).field,
+      "mapParameter",
+    );
+  }
   // Powers: z^n against the polar form, the critical zero and degree refusal.
   for (const degree of [3, 6]) {
     const request = { ...q, map: "power", degree };

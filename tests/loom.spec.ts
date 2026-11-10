@@ -2046,7 +2046,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(9);
+  await expect(cards).toHaveCount(11);
   await expect(gallery.locator("[data-example]")).toHaveCount(72);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();
@@ -2782,4 +2782,292 @@ test("a base-study curve leaving the exponential window breaks with a clipped ga
   expect(near(await loomPoint(d, "image"), exp({ x: 1, y: 0.1 }), 3)).toBe(
     true,
   );
+});
+
+// The general Möbius map, written here in complex arithmetic. Its flow is
+// computed in Go; the expectations below use closed forms of each frame.
+type C = { x: number; y: number };
+const cmul = (a: C, b: C) => ({
+  x: a.x * b.x - a.y * b.y,
+  y: a.x * b.y + a.y * b.x,
+});
+const cadd = (a: C, b: C) => ({ x: a.x + b.x, y: a.y + b.y });
+const cdiv = (a: C, b: C) => {
+  const d = b.x * b.x + b.y * b.y;
+  return { x: (a.x * b.x + a.y * b.y) / d, y: (a.y * b.x - a.x * b.y) / d };
+};
+const real = (x: number) => ({ x, y: 0 });
+const fractional = ([a, b, c, d]: C[], z: C) =>
+  cdiv(cadd(cmul(a, z), b), cadd(cmul(c, z), d));
+// Rotation by 2φ about ±i: [[cos φ, sin φ], [−sin φ, cos φ]].
+const quarter = (phi: number) => [
+  real(Math.cos(phi)),
+  real(Math.sin(phi)),
+  real(-Math.sin(phi)),
+  real(Math.cos(phi)),
+];
+
+test("general Möbius loom flows through the identity, follows edited coefficients and saves vector metadata", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).loomCopied = value;
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A grid turned about two fixed points");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes"),
+    progress = d.getByLabel("Motion progress", { exact: true });
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = (az + b)/(cz + d)",
+  );
+  await expect(d.getByLabel("Complex map", { exact: true })).toHaveValue(
+    "fractional",
+  );
+  // (1 + z)/(1 − z) turns a quarter turn about ±i. The preset opens at its
+  // inverse, s = −1, on the line Re z = 1 from 1 − 2i.
+  const z = await loomPoint(d, "source");
+  expect(z).toEqual({ x: 1, y: -2 });
+  const at = async (s: number, scale = 1) =>
+    near(
+      await loomPoint(d, "image"),
+      fractional(quarter((s * Math.PI) / 4), z),
+      scale,
+    );
+  expect(await at(-1)).toBe(true);
+  // The inverse's pole −1 lies on the grid: excluded, with its circle.
+  await expect(d.locator('[data-pane="source"] [data-exclusion]')).toHaveCount(
+    1,
+  );
+  await expect(d.locator("[data-gaps]")).toContainText("excluded");
+  // The flow passes exactly through the identity, with no pole.
+  await progress.fill("0.5");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect.poll(() => loomPoint(d, "image")).toEqual(z);
+  await expect(d.locator("[data-exclusion]")).toHaveCount(0);
+  await expect(d.locator("[data-gaps]")).toContainText("No gaps");
+  // s = 1/2 is an eighth turn, and s = 1 the entered map: (1 + z)/(1 − z).
+  await progress.fill("0.75");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect.poll(() => at(0.5)).toBe(true);
+  await expect(d.locator(".animation-values")).toContainText("s = 0.500000");
+  await progress.fill("1");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect.poll(() => at(1)).toBe(true);
+  // Editing a coefficient redraws the map: (z + 2)/(−z + 1).
+  await d.getByText("Map settings", { exact: true }).click();
+  for (const [name, value] of [
+    ["Re a", "1"],
+    ["Im a", "0"],
+    ["Re b", "1"],
+    ["Re c", "-1"],
+    ["Re d", "1"],
+  ])
+    await expect(d.getByLabel(name, { exact: true })).toHaveValue(value);
+  await d.getByLabel("Re b", { exact: true }).fill("2");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const edited = [real(1), real(2), real(-1), real(1)];
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), fractional(edited, z)))
+    .toBe(true);
+  // ad − bc = 0 names no single coefficient: the refusal shows under the
+  // one changed last, and correcting it recovers.
+  await d.getByLabel("Re d", { exact: true }).fill("-2");
+  await expect(d.getByLabel("Re d", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(d.getByRole("alert")).toContainText("|ad − bc|");
+  await expect(d.getByRole("alert")).toHaveCount(1);
+  await d.getByLabel("Re d", { exact: true }).fill("1");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await d.getByLabel("Im c", { exact: true }).fill("2000000");
+  await expect(d.getByLabel("Im c", { exact: true })).toHaveAttribute(
+    "aria-invalid",
+    "true",
+  );
+  await expect(d.getByRole("alert")).toContainText("Im c must be within");
+  await d.getByLabel("Im c", { exact: true }).fill("0");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), fractional(edited, z)))
+    .toBe(true);
+  const download = page.waitForEvent("download");
+  await loomImage(d, "SVG");
+  expect((await download).suggestedFilename()).toBe("complex-fractional.svg");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  for (const text of [
+    '"map":"fractional"',
+    '"formula":"w = (az + b)/(cz + d)"',
+    '"coefficients":{"a":{"x":1,"y":0},"b":{"x":2,"y":0},"c":{"x":-1,"y":0},"d":{"x":1,"y":0}}',
+    '"mapParameter":1',
+    "|ad−bc|",
+  ])
+    expect(svg).toContain(text);
+  expect(svg).not.toMatch(/<text|<image/);
+  // Another map keeps the coefficients for a return to this one.
+  await d.getByLabel("Complex map", { exact: true }).selectOption("square");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Re b", { exact: true })).toHaveCount(0);
+  await d.getByLabel("Complex map", { exact: true }).selectOption("fractional");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Re b", { exact: true })).toHaveValue("2");
+  // Choosing the map again opens on the map itself, s = 1, with point
+  // traversal; map motion then grows the map out of the identity.
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveValue("point");
+  await d.getByLabel("Motion", { exact: true }).selectOption("map");
+  await expect(d.getByLabel("Map motion from", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(d.getByLabel("Map motion to", { exact: true })).toHaveValue("1");
+  await d.getByLabel("Motion", { exact: true }).selectOption("point");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), fractional(edited, z)))
+    .toBe(true);
+  const image = await d
+    .locator('[data-pane="image"] [data-member="12"]')
+    .getAttribute("d");
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => (window as any).loomCopied as string);
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  expect(saved.loom.map).toBe("fractional");
+  expect(saved.loom.coefficients.b).toEqual({ x: 2, y: 0 });
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await page.goto(link);
+  await expect(page).not.toHaveURL(/#s=/);
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Complex map", { exact: true })).toHaveValue(
+    "fractional",
+  );
+  expect(
+    await d.locator('[data-pane="image"] [data-member="12"]').getAttribute("d"),
+  ).toBe(image);
+});
+
+test("a decoded general Möbius flow film matches direct seeks, with its moving pole", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "Circles whirled between two fixed points");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes"),
+    progress = d.getByLabel("Motion progress", { exact: true });
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  // The exclusion circle follows each frame's pole, Mˢ's own: at s = ±1
+  // it is −d/c and a/c of M = [[1+2i, 1−2i], [1−2i, 1+2i]].
+  const exclusion = d.locator('[data-pane="source"] [data-exclusion]');
+  const centers: string[] = [];
+  const seeks: number[][] = [];
+  for (const p of [0, 0.5, 1]) {
+    await progress.fill(String(p));
+    await expect(art).toHaveAttribute("aria-busy", "false");
+    await expect(exclusion).toHaveCount(p === 0.5 ? 0 : 1);
+    if (p !== 0.5)
+      centers.push(
+        `${await exclusion.getAttribute("cx")},${await exclusion.getAttribute("cy")}`,
+      );
+    seeks.push(
+      await d.locator('[data-pane="image"]').evaluate(async (e) => {
+        const svg = e.cloneNode(true) as SVGSVGElement;
+        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        svg.setAttribute("width", "500");
+        svg.setAttribute("height", "380");
+        const url = URL.createObjectURL(
+          new Blob([new XMLSerializer().serializeToString(svg)], {
+            type: "image/svg+xml",
+          }),
+        );
+        try {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+          const canvas = Object.assign(document.createElement("canvas"), {
+            width: 500,
+            height: 380,
+          });
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(image, 0, 0);
+          return Array.from(ctx.getImageData(0, 0, 500, 380).data);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }),
+    );
+  }
+  // −d/c = −(1+2i)/(1−2i) = (3 − 4i)/5 and a/c = −(3 − 4i)/5: the poles of
+  // the map and its inverse, opposite across zero on the drawing.
+  const [x0, y0] = centers[0].split(",").map(Number),
+    [x1, y1] = centers[1].split(",").map(Number);
+  const [cx, cy] = await d.locator('[data-pane="source"]').evaluate((svg) => {
+    const b = (svg as SVGSVGElement).viewBox.baseVal;
+    return [b.x + b.width / 2, b.y + b.height / 2];
+  });
+  expect(x0 + x1).toBeCloseTo(2 * cx, 6);
+  expect(y0 + y1).toBeCloseTo(2 * cy, 6);
+  // The drawing's y axis points down: 3 − 4i lies right and below.
+  expect((x1 - cx) / (y1 - cy)).toBeCloseTo(3 / 4, 6);
+  expect(x1).toBeGreaterThan(cx);
+  await progress.fill("0");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await openLoomExportSettings(d);
+  await d.getByLabel("Traversal duration", { exact: true }).fill(".2");
+  await loomResolution(d, 0.5);
+  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+  await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  const download = page.waitForEvent("download");
+  await loomMovieAction(d).click();
+  expect((await download).suggestedFilename()).toBe(
+    "tangent-garden-complex-fractional.mp4",
+  );
+  const path = (await (await download).path())!,
+    bytes = await readFile(path);
+  for (const text of ['"map":"fractional"', '"mode":"map"', '"coefficients"'])
+    expect(bytes.includes(Buffer.from(text))).toBe(true);
+  const timing = videoProbe(path);
+  expect(timing?.frames).toBe(3);
+  expect(timing?.durations.reduce((a, b) => a + b, 0)).toBe(200);
+  const frames = execFileSync(
+    "ffmpeg",
+    ["-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    { maxBuffer: 4 * 1024 * 1024 },
+  );
+  expect(frames.length).toBe(3 * 1000 * 380 * 3);
+  for (let f = 0; f < 3; f++) {
+    const errors = seeks.map((expected) => {
+      let error = 0;
+      for (let y = 0; y < 380; y++)
+        for (let x = 0; x < 500; x++)
+          for (let c = 0; c < 3; c++)
+            error += Math.abs(
+              frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
+                expected[(y * 500 + x) * 4 + c],
+            );
+      return error / (500 * 380 * 3);
+    });
+    // Thin circles crowd into a fan near each frame's pole, and its last,
+    // predicted frame compresses a little less faithfully than the
+    // rational film's (2.2 against 1.7 observed; at a 20% fuzz the frame
+    // and its seek differ in 4 pixels). The relative check below is what
+    // tells the frames apart.
+    expect(errors[f], `frame ${f}: ${errors}`).toBeLessThan(3);
+    for (let other = 0; other < 3; other++)
+      if (other !== f)
+        expect(
+          errors[f],
+          `frame ${f} must match its own seek: ${errors}`,
+        ).toBeLessThan(errors[other] * 0.7);
+  }
 });

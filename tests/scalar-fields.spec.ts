@@ -74,6 +74,46 @@ test("loom map, exclusion and motion endpoints share Go scalar expressions", asy
   ).toBe(0.1 + (phi / 2 - 0.1) / 2);
 });
 
+test("general Möbius coefficients share Go scalar expressions", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "loom" && !q.pointOnly)
+        (window as any).loomScalarRequest = q.loom;
+      return send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await page
+    .getByRole("button", { name: "Open complex loom", exact: true })
+    .click();
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await d.getByLabel("Complex map", { exact: true }).selectOption("fractional");
+  await d.getByText("Map settings", { exact: true }).click();
+  for (const [name, text] of [
+    ["Im a", "phi"],
+    ["Re b", "-pi/4"],
+    ["Im c", "e/10"],
+    ["Re d", "sqrt(2)"],
+  ])
+    await d.getByRole("textbox", { name, exact: true }).fill(text);
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).loomScalarRequest.coefficients),
+    )
+    .toEqual({
+      a: { x: 2, y: phi },
+      b: { x: -Math.PI / 4, y: -1 },
+      c: { x: 0, y: Math.E / 10 },
+      d: { x: Math.SQRT2, y: 1 },
+    });
+});
+
 type Case = { name: string; text: string; value: number; path: string[] };
 const studies: {
   preset: string;

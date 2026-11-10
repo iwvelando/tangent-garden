@@ -93,7 +93,11 @@ export async function loomMovie(o: {
     },
     draw: ({ request, result, marker }) => {
       const geometry = result ? { result } : {};
-      const exclusion = poleExclusion(request, o.study.showExclusion ?? true);
+      const exclusion = poleExclusion(
+        request,
+        o.study.showExclusion ?? true,
+        result ?? o.source.result,
+      );
       return new XMLSerializer().serializeToString(
         pairedSVG(
           { ...o.source, ...geometry, exclusion, marker },

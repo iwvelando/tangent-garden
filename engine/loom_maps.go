@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"math/cmplx"
 	"slices"
 )
 
@@ -56,8 +57,15 @@ func (q LoomRequest) validateMap() error {
 		if !finite(q.MapParameter) || q.MapParameter < 0 || q.MapParameter > 1 {
 			return fieldErr("mapParameter", "rational parameter must be 0–1")
 		}
+	case "fractional":
+		if err := q.Coefficients.validate(); err != nil {
+			return err
+		}
+		if !finite(q.MapParameter) || math.Abs(q.MapParameter) > 1 {
+			return fieldErr("mapParameter", "Möbius flow s must be −1–1")
+		}
 	default:
-		return fieldErr("map", "choose squaring, a power zⁿ, the exponential, Möbius or z + λ/z")
+		return fieldErr("map", "choose squaring, a power zⁿ, the exponential, a Möbius map or z + λ/z")
 	}
 	if !finite(q.ExclusionRadius) || q.ExclusionRadius < 1e-6 || q.ExclusionRadius > 1e6 {
 		return fieldErr("exclusionRadius", "pole exclusion radius must be 0.000001–1000000 source units")
@@ -66,6 +74,9 @@ func (q LoomRequest) validateMap() error {
 }
 
 func (q LoomRequest) pole() *Vec {
+	if q.Map == "fractional" {
+		return q.mobius().pole
+	}
 	if q.MapParameter == 0 {
 		return nil
 	}
@@ -130,6 +141,17 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 			return nil
 		}
 		return loomExp(p)
+	case "fractional":
+		f := q.mobius()
+		if f.identity {
+			return point(p)
+		}
+		if f.pole != nil && p.Sub(*f.pole).Norm() <= q.ExclusionRadius {
+			return nil
+		}
+		z := complex(p.X, p.Y)
+		w := (f.a*z + f.b) / (f.c*z + f.d)
+		return point(Vec{real(w), imag(w)})
 	}
 	if q.MapParameter == 0 {
 		return point(p)
@@ -354,4 +376,127 @@ func (q LoomRequest) critical(p Vec) bool {
 		return math.Hypot(u, v) <= 8*0x1p-52*(p.Dot(p)+q.MapParameter)
 	}
 	return false
+}
+
+// A general Möbius map's coefficients are refused beyond this conditioning
+// ratio, (|a|² + |b|² + |c|² + |d|²)/(2|ad − bc|).
+const LoomMobiusConditioning = 1e6
+
+func (c *LoomCoefficients) components() [4]complex128 {
+	return [4]complex128{complex(c.A.X, c.A.Y), complex(c.B.X, c.B.Y), complex(c.C.X, c.C.Y), complex(c.D.X, c.D.Y)}
+}
+
+// normalized divides the coefficients by the power of two at their largest
+// component, which is exact and leaves the map unchanged; zero stays zero.
+func (c *LoomCoefficients) normalized() [4]complex128 {
+	m := c.components()
+	largest := 0.0
+	for _, v := range m {
+		largest = max(largest, math.Abs(real(v)), math.Abs(imag(v)))
+	}
+	if largest == 0 {
+		return m
+	}
+	_, e := math.Frexp(largest)
+	for i, v := range m {
+		m[i] = complex(math.Ldexp(real(v), -e), math.Ldexp(imag(v), -e))
+	}
+	return m
+}
+
+func (c *LoomCoefficients) validate() error {
+	if c == nil {
+		return fieldErr("coefficients", "enter the coefficients a, b, c and d")
+	}
+	for _, f := range []struct {
+		path, name string
+		v          float64
+	}{{"a.x", "Re a", c.A.X}, {"a.y", "Im a", c.A.Y}, {"b.x", "Re b", c.B.X}, {"b.y", "Im b", c.B.Y}, {"c.x", "Re c", c.C.X}, {"c.y", "Im c", c.C.Y}, {"d.x", "Re d", c.D.X}, {"d.y", "Im d", c.D.Y}} {
+		if !finite(f.v) || math.Abs(f.v) > 1e6 {
+			return fieldErr("coefficients."+f.path, "%s must be within ±1000000", f.name)
+		}
+	}
+	m := c.normalized()
+	size := 0.0
+	for _, v := range m {
+		size += real(v)*real(v) + imag(v)*imag(v)
+	}
+	// Also refuses all zero (0/0) and ad − bc = 0, a constant map.
+	if size == 0 || !(size <= 2*LoomMobiusConditioning*cmplx.Abs(m[0]*m[3]-m[1]*m[2])) {
+		return fieldErr("coefficients", "the coefficients are too nearly degenerate: |ad − bc| must be at least (|a|² + |b|² + |c|² + |d|²)/2000000")
+	}
+	return nil
+}
+
+// loomMobius is one frame Mˢ of the general Möbius map's flow.
+type loomMobius struct {
+	a, b, c, d complex128
+	identity   bool
+	pole       *Vec
+}
+
+// mobius returns the frame prepared for this request, or prepares it.
+func (q LoomRequest) mobius() *loomMobius {
+	if q.flow != nil {
+		return q.flow
+	}
+	return q.Coefficients.flow(q.MapParameter)
+}
+
+// positive chooses between N and −N, which are one map, by the sign of the
+// first nonzero value: Re tr N > 0 puts the flow on the principal branch.
+// A trace with zero real part lies on its cut, where a turn by π either
+// way reaches the map; the rest of N then picks the way, so the choice
+// depends on the map alone, not on how its coefficients were scaled.
+func positive(values ...complex128) bool {
+	for _, v := range values {
+		for _, x := range []float64{real(v), imag(v)} {
+			if x != 0 {
+				return x > 0
+			}
+		}
+	}
+	return true
+}
+
+// flow is Mˢ for validated coefficients and −1 ≤ s ≤ 1: exactly the
+// identity at s = 0 and for a scalar matrix, the normalized entered map at
+// s = 1, and otherwise exp(s log N) for N = M/√(ad − bc), with the sign of
+// N chosen so that Re tr N ≥ 0 (positive). With cosh μ = tr N / 2 (the
+// principal acosh, so |Im μ| ≤ π/2),
+//
+//	Nˢ = cosh(sμ) I + (sinh(sμ)/sinh μ)(N − cosh μ I).
+//
+// The flow keeps the fixed points, keeps c = 0 (an affine map stays
+// affine), reaches the inverse at s = −1 and never worsens conditioning.
+func (c *LoomCoefficients) flow(s float64) *loomMobius {
+	m := c.normalized()
+	f := &loomMobius{a: m[0], b: m[1], c: m[2], d: m[3]}
+	if s == 0 || m[1] == 0 && m[2] == 0 && m[0] == m[3] {
+		f.identity = true
+		return f
+	}
+	if s != 1 {
+		r := cmplx.Sqrt(m[0]*m[3] - m[1]*m[2])
+		a, b, cc, d := m[0]/r, m[1]/r, m[2]/r, m[3]/r
+		tau := (a + d) / 2
+		if !positive(tau, (a-d)/2, b, cc) {
+			a, b, cc, d, tau = -a, -b, -cc, -d, -tau
+		}
+		// Both coefficients below are even in μ, so the sign acosh gives a
+		// zero trace (±iπ/2) does not matter.
+		mu := cmplx.Acosh(tau)
+		sc := complex(s, 0)
+		ratio := sc * (1 + (sc*sc-1)*mu*mu/6)
+		if cmplx.Abs(mu) > 1e-4 {
+			ratio = cmplx.Sinh(sc*mu) / cmplx.Sinh(mu)
+		}
+		ch, half := cmplx.Cosh(sc*mu), (a-d)/2
+		f.a, f.b, f.c, f.d = ch+ratio*half, ratio*b, ratio*cc, ch-ratio*half
+	}
+	if f.c != 0 {
+		p := -f.d / f.c
+		f.pole = point(Vec{real(p), imag(p)})
+	}
+	return f
 }

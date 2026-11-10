@@ -25,8 +25,12 @@ type LoomSource struct {
 type LoomRequest struct {
 	Map string `json:"map"`
 	// Degree n of the power map z^n, 2–6; categorical, never interpolated.
-	Degree          int        `json:"degree,omitempty"`
-	MapParameter    float64    `json:"mapParameter,omitempty"`
+	Degree       int     `json:"degree,omitempty"`
+	MapParameter float64 `json:"mapParameter,omitempty"`
+	// The general Möbius map's coefficients; every other map ignores them.
+	Coefficients *LoomCoefficients `json:"coefficients,omitempty"`
+	// The prepared general Möbius frame; computed once per request.
+	flow            *loomMobius
 	ExclusionRadius float64    `json:"exclusionRadius,omitempty"`
 	Source          LoomSource `json:"source"`
 	Samples         int        `json:"samples"`
@@ -34,6 +38,15 @@ type LoomRequest struct {
 	Tolerance float64 `json:"tolerance"`
 	Selected  int     `json:"selected"`
 	Parameter float64 `json:"parameter"`
+}
+
+// LoomCoefficients are a, b, c and d of w = (az + b)/(cz + d), each a
+// complex number (x, y) = (real, imaginary).
+type LoomCoefficients struct {
+	A Vec `json:"a"`
+	B Vec `json:"b"`
+	C Vec `json:"c"`
+	D Vec `json:"d"`
 }
 type LoomInterval struct {
 	From   float64 `json:"from"`
@@ -68,6 +81,9 @@ type LoomResult struct {
 	Evaluations    int          `json:"evaluations"`
 	NumericEntries int          `json:"numericEntries"`
 	Exhausted      bool         `json:"exhausted"`
+	// The general Möbius frame's pole, absent for an affine frame, the
+	// identity and every other map.
+	Pole *Vec `json:"pole,omitempty"`
 }
 
 const LoomMaxPoints = 500000
@@ -201,7 +217,17 @@ func LoomPoint(q LoomRequest) (LoomMarker, error) {
 	if err != nil {
 		return LoomMarker{}, err
 	}
+	q = q.prepared()
 	return q.marker(cs[q.Selected], q.Selected, q.Parameter), nil
+}
+
+// prepared computes a validated general Möbius request's frame once, rather
+// than at every evaluation.
+func (q LoomRequest) prepared() LoomRequest {
+	if q.Map == "fractional" {
+		q.flow = q.Coefficients.flow(q.MapParameter)
+	}
+	return q
 }
 func ComputeLoom(q LoomRequest) (LoomResult, error) {
 	return computeLoom(q, loomLimits{LoomMaxPoints, LoomMaxEvaluations, LoomMaxDepth})
@@ -246,7 +272,11 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	if err != nil {
 		return LoomResult{}, err
 	}
+	q = q.prepared()
 	r := LoomResult{Members: make([]LoomMember, 0, len(cs))}
+	if q.Map == "fractional" {
+		r.Pole = q.pole()
+	}
 	// One global budget includes pilot samples, probes and the marker.
 	r.Marker = q.marker(cs[q.Selected], q.Selected, q.Parameter)
 	r.Evaluations = 1

@@ -951,6 +951,7 @@ function loomStudy(value: unknown): LoomStudy {
   const camera: SchemaOf<PlotCamera> = {
     fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
   };
+  const complex: SchemaOf<Vec> = { fields: { x: "number", y: "number" } };
   const out = conform<LoomStudy>(
     value,
     {
@@ -962,11 +963,19 @@ function loomStudy(value: unknown): LoomStudy {
             exp: true,
             mobius: true,
             joukowski: true,
+            fractional: true,
           },
         },
         degree: { optional: { range: [2, 6] } },
         mapParameter: { optional: "number" },
         exclusionRadius: { optional: { range: [0.000001, 1000000] } },
+        // Go refuses components beyond ±1,000,000 and degenerate matrices,
+        // under their own fields, as when they are typed.
+        coefficients: {
+          optional: {
+            fields: { a: complex, b: complex, c: complex, d: complex },
+          },
+        },
         showExclusion: { optional: "boolean" },
         motion: {
           optional: {
@@ -1055,6 +1064,11 @@ function loomStudy(value: unknown): LoomStudy {
       throw new LinkError(
         "loom.exclusionRadius",
         "Enter a positive exclusion radius.",
+      );
+    if ("coefficients" in maps[out.map] && !out.coefficients)
+      throw new LinkError(
+        "loom.coefficients",
+        "Enter the Möbius coefficients a, b, c and d.",
       );
     if (
       out.motion &&

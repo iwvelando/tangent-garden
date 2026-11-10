@@ -15,12 +15,16 @@ export type LoomSource = {
   input: Config["input"];
   curve: Config["curve"];
 };
+// a, b, c and d of the general Möbius map, each (real, imaginary).
+export type LoomCoefficients = { a: Vec; b: Vec; c: Vec; d: Vec };
 export type LoomRequest = {
-  map: "square" | "power" | "exp" | "mobius" | "joukowski";
+  map: "square" | "power" | "exp" | "mobius" | "joukowski" | "fractional";
   // The power map's whole-number degree, 2–6. Categorical: never animated.
   degree?: number;
   mapParameter?: number;
   exclusionRadius?: number;
+  // The general Möbius map's coefficients; other maps keep but ignore them.
+  coefficients?: LoomCoefficients;
   source: LoomSource;
   samples: number;
   tolerance: number;
@@ -140,10 +144,51 @@ export const maps = {
     pole: (lambda: number): Vec | undefined =>
       lambda ? { x: 0, y: 0 } : undefined,
   },
+  // The map parameter s follows the map's own flow Mˢ, computed in Go:
+  // identity at 0, the entered map at 1, its inverse at −1. Go reports
+  // each frame's pole, so the exclusion circle follows the flow.
+  fractional: {
+    label: "Möbius (az + b)/(cz + d)",
+    formula: "w = (az + b)/(cz + d)",
+    parameterized: true,
+    degree: undefined,
+    exportDomain:
+      "Coefficients a, b, c, d scaled exactly; refused when (|a|²+|b|²+|c|²+|d|²)/(2|ad−bc|) exceeds 1000000. Map parameter s follows the map's flow: 0 identity, 1 the map, −1 its inverse. Closed source disk omitted at each frame's pole; none for an affine frame. Image radius above 100000000 clipped. Finite expression sampling is not certified topology.",
+    symbol: "s",
+    range: [-1, 1],
+    initial: 1,
+    // Map motion grows the map out of the identity along its flow.
+    motionFrom: 0,
+    parameterHelp: tiered(
+      "−1–1: 1 applies the map, 0 the identity, −1 its inverse.",
+      "Between them s follows the map's flow, which keeps its fixed points and turns the shorter way about them: circles through both fixed points carry each point from one toward the other, or around one.",
+    ),
+    coefficients: {
+      a: { x: 2, y: 1 },
+      b: { x: 0, y: -1 },
+      c: { x: 0, y: -1 },
+      d: { x: 2, y: 1 },
+    },
+    note: "Circles become circles or lines. Scaling a, b, c and d together changes nothing; c = 0 is affine, with no pole.",
+    imageLabel: "Möbius image plane",
+    imageHeading: "Image plane · w",
+    imageNoun: "image",
+    keywords:
+      " möbius mobius fractional linear affine flow loxodromic elliptic spiral fixed points",
+    traversalHelp: rationalTraversal,
+    // Go's reported pole of the frame drawn, absent when it is affine.
+    pole: (_s: number, result?: { pole?: Vec }): Vec | undefined =>
+      result?.pole,
+  },
 } as const;
+export const coefficientHelp = (k: string) =>
+  tiered(
+    `Real and imaginary parts of ${k}, each within ±1,000,000.`,
+    "Scaling all four together changes nothing. Refused when |a|² + |b|² + |c|² + |d|² exceeds 2,000,000 |ad − bc|, which includes ad = bc, a constant map. c = 0 makes the map affine, with no pole.",
+  );
 export const mapHelp = tiered(
-  "Squaring and powers zⁿ multiply angles, eᶻ wraps strips into rings, Möbius keeps circles, z + λ/z makes ellipses.",
-  "z² and zⁿ, n = 2–6, are critical at zero. eᶻ repeats every 2πi, has no critical point, and clips sources beyond |Re z| ≤ 18.42 or |Im z| ≤ 8π. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, has pole 1/b; z+λ/z, 0≤λ≤1, has pole 0 and critical ±√λ. Both are identity at zero. Poles exclude source disks; critical images stay drawable.",
+  "Squaring and powers zⁿ multiply angles, eᶻ wraps strips into rings, Möbius maps keep circles, z + λ/z makes ellipses.",
+  "z² and zⁿ, n = 2–6, are critical at zero. eᶻ repeats every 2πi and clips sources beyond |Re z| ≤ 18.42 or |Im z| ≤ 8π. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, has pole 1/b; z+λ/z, 0≤λ≤1, pole 0 and critical ±√λ; (az+b)/(cz+d), pole −d/c. All three are identity at zero. Poles exclude source disks.",
 );
 export const degreeHelp = tiered(
   "Whole number 2–6; the image multiplies angles about zero by n.",
@@ -188,6 +233,22 @@ export function replaceMap(
           : degree.initial,
     };
   if (!maps[map].parameterized) return { ...rest, map };
+  const info = maps[map];
+  // Valid retained coefficients survive map changes, as the degree does.
+  const coefficients =
+    "coefficients" in info &&
+    !(
+      s.coefficients &&
+      Object.values(s.coefficients).every(
+        (v) =>
+          Number.isFinite(v.x) &&
+          Number.isFinite(v.y) &&
+          Math.abs(v.x) <= 1e6 &&
+          Math.abs(v.y) <= 1e6,
+      )
+    )
+      ? structuredClone(info.coefficients)
+      : undefined;
   const size =
     s.source.kind === "grid"
       ? Math.max(s.source.xMax - s.source.xMin, s.source.yMax - s.source.yMin) /
@@ -198,6 +259,7 @@ export function replaceMap(
   return {
     ...rest,
     map,
+    ...(coefficients && { coefficients }),
     mapParameter: maps[map].initial,
     exclusionRadius:
       s.exclusionRadius &&
@@ -230,10 +292,15 @@ export function loomFrame(s: LoomStudy, progress: number): LoomRequest {
       progress <= 0 ? from : progress >= 1 ? to : from + (to - from) * progress,
   };
 }
-export function poleExclusion(q: LoomRequest, visible = true) {
+// The frame's result supplies the pole where Go computes it.
+export function poleExclusion(
+  q: LoomRequest,
+  visible = true,
+  result?: { pole?: Vec },
+) {
   const center =
     visible && q.exclusionRadius && q.mapParameter !== undefined
-      ? maps[q.map].pole(q.mapParameter)
+      ? maps[q.map].pole(q.mapParameter, result)
       : undefined;
   return center && { center, radius: q.exclusionRadius! };
 }
@@ -259,6 +326,8 @@ export type LoomMember = {
 };
 export type LoomResult = {
   members: LoomMember[];
+  // The general Möbius frame's pole, when it has one.
+  pole?: Vec;
   marker: LoomMarker;
   points: number;
   evaluations: number;
@@ -360,6 +429,47 @@ export const loomPresets = [
     radius: 6,
     selected: 31,
   },
+  // Opens at s = −1, the inverse, on 24 concentric circles to radius 2.4.
+  // The map is loxodromic, (w − 1)/(w + 1) = 2i (z − 1)/(z + 1): fixed
+  // points ±1, multiplier 2i. Its flow turns each circle about the fixed
+  // points as it carries it from one toward the other; the moving pole
+  // opens circles into lines on the way through the identity at s = 0.
+  {
+    title: "Circles whirled between two fixed points",
+    note: "A loxodromic Möbius flow swirls nested circles from one fixed point toward the other",
+    kind: "concentric",
+    map: "fractional",
+    count: 24,
+    radius: 2.4,
+    selected: 5,
+    coefficients: {
+      a: { x: 1, y: 2 },
+      b: { x: 1, y: -2 },
+      c: { x: 1, y: -2 },
+      d: { x: 1, y: 2 },
+    },
+    motion: { from: -1, to: 1 },
+  },
+  // Opens at s = −1 on a 17 × 17 grid over [−2, 2]². (1 + z)/(1 − z) is
+  // elliptic: a quarter turn about its fixed points ±i. Its flow turns the
+  // grid a quarter turn back and forth through the identity; every line
+  // becomes a circle, and the line through each frame's pole a line.
+  {
+    title: "A grid turned about two fixed points",
+    note: "An elliptic Möbius flow turns a square grid into circles about two fixed points",
+    kind: "grid",
+    map: "fractional",
+    lines: 17,
+    extent: 2,
+    selected: 12,
+    coefficients: {
+      a: { x: 1, y: 0 },
+      b: { x: 1, y: 0 },
+      c: { x: -1, y: 0 },
+      d: { x: 1, y: 0 },
+    },
+    motion: { from: -1, to: 1 },
+  },
 ] as const satisfies readonly {
   title: string;
   note: string;
@@ -374,6 +484,7 @@ export const loomPresets = [
   count?: number;
   radius?: number;
   selected?: number;
+  coefficients?: LoomCoefficients;
   motion?: { from: number; to: number };
 }[];
 export function presetLoom(index: number, config: Config): LoomStudy {
@@ -404,6 +515,24 @@ export function presetLoom(index: number, config: Config): LoomStudy {
       radius: definition.radius,
     }),
   };
+  // A general Möbius preset opens on its own family at the start of its
+  // flow, with the rational presets' reference framing and exclusion.
+  if ("coefficients" in definition) {
+    return {
+      ...replaceMap(study, definition.map),
+      coefficients: structuredClone(definition.coefficients),
+      source,
+      selected: definition.selected,
+      parameter: memberInterval(source, definition.selected)[0],
+      mapParameter: definition.motion.from,
+      exclusionRadius: 0.04,
+      motion: { mode: "map" as const, ...definition.motion },
+      framing: {
+        source: { cx: 0, cy: 0, scale: 120 },
+        image: { cx: 0, cy: 0, scale: 120 },
+      },
+    };
+  }
   // Maps without a parameter open at a point, without map motion.
   if ("map" in definition && !("motion" in definition)) {
     const selected = "selected" in definition ? definition.selected : 0;
@@ -504,6 +633,8 @@ export function loomRequest(s: LoomStudy): LoomRequest {
     map: s.map,
     // Squaring and the rational maps keep their previous request.
     ...(maps[s.map].degree && { degree: s.degree }),
+    // Only the general Möbius map sends its coefficients.
+    ...("coefficients" in maps[s.map] && { coefficients: s.coefficients }),
     ...(s.mapParameter !== undefined && { mapParameter: s.mapParameter }),
     ...(s.exclusionRadius !== undefined && {
       exclusionRadius: s.exclusionRadius,

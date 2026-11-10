@@ -35,6 +35,7 @@ import {
   mapHelp,
   mapText,
   degreeHelp,
+  coefficientHelp,
   replaceMap,
   loomFrame,
   poleExclusion,
@@ -49,6 +50,7 @@ import {
   type LoomMarker,
   type LoomSource,
   type LoomRequest,
+  type LoomCoefficients,
 } from "./model";
 import type { LoomEntry } from "./Context";
 import { LoomSession } from "./session";
@@ -59,6 +61,12 @@ const labels: Record<string, string> = {
   degree: "Degree",
   mapParameter: "Map parameter",
   exclusionRadius: "Pole exclusion radius",
+  ...Object.fromEntries(
+    ["a", "b", "c", "d"].flatMap((k) => [
+      [`coefficients.${k}.x`, `Re ${k}`],
+      [`coefficients.${k}.y`, `Im ${k}`],
+    ]),
+  ),
   "source.count": "Circle count",
   "source.xCount": "Vertical lines",
   "source.yCount": "Horizontal lines",
@@ -98,6 +106,9 @@ function gapSummary(result: LoomResult) {
   ].filter(Boolean);
   return `${result.exhausted ? "Refinement ran out of budget. " : ""}${parts.length ? `Gaps: ${parts.join(", ")}.` : "No gaps."}`;
 }
+// Coefficients count only for the map that reads them.
+const usedCoefficients = (s: LoomRequest) =>
+  "coefficients" in maps[s.map] ? s.coefficients : undefined;
 const geometryKey = (s: LoomRequest) =>
   JSON.stringify([
     s.map,
@@ -107,6 +118,7 @@ const geometryKey = (s: LoomRequest) =>
     s.source,
     s.samples,
     s.tolerance,
+    usedCoefficients(s),
   ]);
 export function LoomPreview({
   entry,
@@ -157,6 +169,9 @@ export function LoomPreview({
     message: "",
   });
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
+  // A degenerate coefficient matrix names no single component; its error
+  // shows under the coefficient changed last.
+  const lastCoefficient = useRef<string | undefined>(undefined);
   const scalarClient = useRef<EngineClient | null>(null),
     generation = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
@@ -181,6 +196,7 @@ export function LoomPreview({
       s.selected,
       s.motion,
       s.motion ? s.parameter : s.mapParameter,
+      usedCoefficients(s),
     ]);
   const [playing, setPlaying] = useState(false),
     [exporting, setExporting] = useState(false),
@@ -557,7 +573,7 @@ export function LoomPreview({
     scheme: theme.scheme,
     weight,
     imageLabel: text.imageLabel,
-    exclusion: poleExclusion(applied, study.showExclusion ?? true),
+    exclusion: poleExclusion(applied, study.showExclusion ?? true, result),
     onCamera: (c) =>
       setStudy((s) => ({ ...s, views: { ...s.views, [pane]: c } })),
     onSelect: select,
@@ -568,6 +584,7 @@ export function LoomPreview({
     ...(mapInfo.degree && { degree: study.degree }),
     formula: text.formula,
     mapParameter: study.mapParameter,
+    ...("coefficients" in mapInfo && { coefficients: study.coefficients }),
     exclusionRadius: study.exclusionRadius,
     showExclusion: study.showExclusion,
     exclusion: mapInfo.exportDomain,
@@ -677,9 +694,11 @@ export function LoomPreview({
         ? "Traversal duration"
         : motionError
           ? motionLabel
-          : activeError.field
-            ? labels[activeError.field]
-            : undefined);
+          : activeError.field === "coefficients"
+            ? lastCoefficient.current
+            : activeError.field
+              ? labels[activeError.field]
+              : undefined);
   const [claimed, setClaimed] = useState(false);
   const claim = useCallback((_key: string, on: boolean) => setClaimed(on), []);
   const target = useMemo(
@@ -998,7 +1017,11 @@ export function LoomPreview({
                       <p className="note">{mapInfo.note}</p>
                       <Field
                         label="Map parameter"
-                        help={`${mapInfo.range[0]}–${mapInfo.range[1]}. Zero gives the identity map.`}
+                        help={
+                          "parameterHelp" in mapInfo
+                            ? mapInfo.parameterHelp
+                            : `${mapInfo.range[0]}–${mapInfo.range[1]}. Zero gives the identity map.`
+                        }
                       >
                         <ScalarInput
                           name="Map parameter"
@@ -1009,6 +1032,44 @@ export function LoomPreview({
                           }}
                         />
                       </Field>
+                      {"coefficients" in mapInfo &&
+                        (["a", "b", "c", "d"] as const).map((k) => (
+                          <div className="pair" key={k}>
+                            {(["x", "y"] as const).map((part) => {
+                              const name = `${part === "x" ? "Re" : "Im"} ${k}`;
+                              return (
+                                <Field
+                                  key={part}
+                                  label={name}
+                                  help={
+                                    part === "x"
+                                      ? coefficientHelp(k)
+                                      : undefined
+                                  }
+                                >
+                                  <ScalarInput
+                                    name={name}
+                                    value={study.coefficients![k][part]}
+                                    onChange={(v) => {
+                                      pause();
+                                      lastCoefficient.current = name;
+                                      setStudy((s) => ({
+                                        ...s,
+                                        coefficients: {
+                                          ...s.coefficients!,
+                                          [k]: {
+                                            ...s.coefficients![k],
+                                            [part]: v,
+                                          },
+                                        } as LoomCoefficients,
+                                      }));
+                                    }}
+                                  />
+                                </Field>
+                              );
+                            })}
+                          </div>
+                        ))}
                       <Field
                         label="Pole exclusion radius"
                         help={tiered(
@@ -1305,15 +1366,18 @@ export function LoomPreview({
                                       pause();
                                       setStudy((s) => {
                                         const { motion: _motion, ...rest } = s;
+                                        const info = maps[s.map];
                                         return mode === "map"
                                           ? {
                                               ...s,
                                               motion: {
                                                 mode: "map",
                                                 from:
-                                                  s.mapParameter ??
-                                                  maps[s.map].initial,
-                                                to: maps[s.map].range[1],
+                                                  "motionFrom" in info
+                                                    ? info.motionFrom
+                                                    : (s.mapParameter ??
+                                                      info.initial),
+                                                to: info.range[1],
                                               },
                                             }
                                           : rest;
