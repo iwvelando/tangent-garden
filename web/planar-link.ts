@@ -3,6 +3,7 @@ import {
   memberCount,
   memberInterval,
   supportedSource,
+  loomPaths,
   type LoomStudy,
 } from "./loom/model";
 import { defaultFamilyAnimation } from "./family-motion";
@@ -1006,6 +1007,9 @@ function loomStudy(value: unknown): LoomStudy {
             radius: "number",
             input: config.fields.input,
             curve: config.fields.curve,
+            // Required below only by a path that reads them.
+            pole: { optional: complex },
+            distance: { optional: { range: [-100000, 100000] } },
           },
         },
         samples: { range: [4, 1024] },
@@ -1112,7 +1116,17 @@ function loomStudy(value: unknown): LoomStudy {
   if (out.source.kind === "curve" && !supportedSource(out.source))
     throw new LinkError(
       "loom.source.curve.format",
-      "This selected source is unsupported; choose a direct ordinary curve.",
+      "This selected source is unsupported; choose a parametric, Cartesian, polar, roulette, Lissajous or Fourier curve.",
+    );
+  const setting = loomPaths[out.source.input].setting;
+  if (
+    out.source.kind === "curve" &&
+    setting &&
+    out.source[setting] === undefined
+  )
+    throw new LinkError(
+      `loom.source.${setting}`,
+      `This path needs its ${setting === "pole" ? "pole" : "offset distance"}.`,
     );
   return out;
 }

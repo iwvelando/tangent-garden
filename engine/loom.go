@@ -7,8 +7,9 @@ import (
 	"strconv"
 )
 
-// LoomSource is a frozen direct curve or an analytic family. Member IDs are
-// source order, never deduplicated by image position. Input must be curve.
+// LoomSource is a frozen curve, one of its derived paths (Input, with the
+// Pole or Distance it reads), or an analytic family. Member IDs are source
+// order, never deduplicated by image position.
 type LoomSource struct {
 	Kind   string  `json:"kind"`
 	Count  int     `json:"count"`
@@ -21,6 +22,10 @@ type LoomSource struct {
 	Radius float64 `json:"radius"`
 	Input  string  `json:"input"`
 	Curve  Curve   `json:"curve"`
+	// The pedal family's pole and the offset's signed distance, for a
+	// derived curve source; every other source ignores them.
+	Pole     Vec     `json:"pole"`
+	Distance float64 `json:"distance"`
 }
 type LoomRequest struct {
 	Map string `json:"map"`
@@ -73,6 +78,8 @@ type LoomMarker struct {
 	// The exponential's other source points z + 2πik in its window, k ≠ 0,
 	// all with this marker's image; absent for every other map.
 	Translates []Vec `json:"translates,omitempty"`
+	// A derived source's base point r(t); absent for every other source.
+	Base *Vec `json:"base,omitempty"`
 }
 type LoomResult struct {
 	Members        []LoomMember `json:"members"`
@@ -84,6 +91,8 @@ type LoomResult struct {
 	// The general Möbius frame's pole, absent for an affine frame, the
 	// identity and every other map.
 	Pole *Vec `json:"pole,omitempty"`
+	// A derived source's base curve, unmapped; absent for every other source.
+	Base *LoomBase `json:"base,omitempty"`
 }
 
 const LoomMaxPoints = 500000
@@ -96,6 +105,28 @@ type loomCurve struct {
 	name     string
 	min, max float64
 	at       curveFunc
+	// A derived source's evaluator, nil for every other source; its nodes
+	// cost LoomDerivedCharge evaluations, all others one.
+	derived *loomDerived
+	// The base reference of a derived source, refined in the source plane
+	// alone: its image is its source.
+	reference bool
+}
+
+func (c loomCurve) cost() int {
+	if c.derived != nil {
+		return LoomDerivedCharge
+	}
+	return 1
+}
+
+// point evaluates the curve at t, with a derived node's base and tangent.
+func (c loomCurve) point(t float64) (*Vec, loomAux) {
+	if c.derived != nil {
+		g, aux := c.derived.at(t)
+		return point(g), aux
+	}
+	return point(c.at(t)), loomAux{}
 }
 
 func (q LoomRequest) sources() ([]loomCurve, error) {
@@ -109,8 +140,10 @@ func (q LoomRequest) sources() ([]loomCurve, error) {
 		return nil, fieldErr("tolerance", "refinement tolerance must be 0.000001–0.05")
 	}
 	s := q.Source
-	if s.Kind == "curve" && s.Input != "curve" {
-		return nil, fieldErr("source.input", "the loom accepts direct curves only; derived inputs are unsupported")
+	if s.Kind == "curve" {
+		if err := s.validateDerived(); err != nil {
+			return nil, err
+		}
 	}
 	var out []loomCurve
 	switch s.Kind {
@@ -124,7 +157,11 @@ func (q LoomRequest) sources() ([]loomCurve, error) {
 		if err != nil {
 			return nil, within("source.curve", err)
 		}
-		out = append(out, loomCurve{"Selected curve", s.Curve.Min, s.Curve.Max, f})
+		c := loomCurve{name: "Selected curve", min: s.Curve.Min, max: s.Curve.Max, at: f}
+		if name, ok := loomDerivedNames[s.Input]; ok {
+			c.name, c.derived = name, s.derivedSource(f)
+		}
+		out = append(out, c)
 	case "grid":
 		if s.XCount < 1 || s.XCount > 32 {
 			return nil, fieldErr("source.xCount", "vertical lines must be 1–32")
@@ -154,11 +191,11 @@ func (q LoomRequest) sources() ([]loomCurve, error) {
 		}
 		for i := 0; i < s.XCount; i++ {
 			x := position(s.XMin, s.XMax, i, s.XCount)
-			out = append(out, loomCurve{"Vertical " + strconv.Itoa(i+1), s.YMin, s.YMax, func(t float64) Vec { return Vec{x, t} }})
+			out = append(out, loomCurve{name: "Vertical " + strconv.Itoa(i+1), min: s.YMin, max: s.YMax, at: func(t float64) Vec { return Vec{x, t} }})
 		}
 		for i := 0; i < s.YCount; i++ {
 			y := position(s.YMin, s.YMax, i, s.YCount)
-			out = append(out, loomCurve{"Horizontal " + strconv.Itoa(i+1), s.XMin, s.XMax, func(t float64) Vec { return Vec{t, y} }})
+			out = append(out, loomCurve{name: "Horizontal " + strconv.Itoa(i+1), min: s.XMin, max: s.XMax, at: func(t float64) Vec { return Vec{t, y} }})
 		}
 	case "concentric", "rosette":
 		if s.Count < 1 || s.Count > 32 {
@@ -170,7 +207,7 @@ func (q LoomRequest) sources() ([]loomCurve, error) {
 		for i := 0; i < s.Count; i++ {
 			radius := s.Radius * float64(i+1) / float64(s.Count)
 			alpha := 2 * math.Pi * float64(i) / float64(s.Count)
-			out = append(out, loomCurve{"Circle " + strconv.Itoa(i+1), 0, 2 * math.Pi, func(t float64) Vec {
+			out = append(out, loomCurve{name: "Circle " + strconv.Itoa(i+1), min: 0, max: 2 * math.Pi, at: func(t float64) Vec {
 				if s.Kind == "concentric" {
 					return Vec{radius * math.Cos(t), radius * math.Sin(t)}
 				}
@@ -200,8 +237,15 @@ func (q LoomRequest) sources() ([]loomCurve, error) {
 }
 func loomSquare(p Vec) *Vec { return point(Vec{p.X*p.X - p.Y*p.Y, 2 * p.X * p.Y}) }
 func (q LoomRequest) marker(c loomCurve, id int, t float64) LoomMarker {
-	p := point(c.at(t))
+	p, aux := c.point(t)
 	m := LoomMarker{Member: id, Parameter: t, Source: p}
+	if c.derived != nil {
+		// The base point, even where the derived path is undefined.
+		m.Base = point(c.derived.base(t))
+		if p != nil {
+			m.Base = point(aux.base)
+		}
+	}
 	if p != nil {
 		m.Image = q.image(*p)
 		m.Critical = m.Image != nil && q.critical(*p)
@@ -241,6 +285,7 @@ type loomNode struct {
 	p, w    *Vec
 	missing bool
 	reason  string
+	aux     loomAux
 }
 
 // A segment of one member awaits judgment at its depth; mid, when set, is
@@ -279,19 +324,26 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	}
 	// One global budget includes pilot samples, probes and the marker.
 	r.Marker = q.marker(cs[q.Selected], q.Selected, q.Parameter)
-	r.Evaluations = 1
+	r.Evaluations = cs[q.Selected].cost()
+	// A derived source also refines its base curve, last, as a reference
+	// in the source plane under the same budgets.
+	if d := cs[0].derived; d != nil {
+		cs = append(cs, loomCurve{name: "Base", min: cs[0].min, max: cs[0].max, at: d.base, reference: true})
+	}
 	// A boundary node is an exact crossing of the exponential's closed
 	// window, drawn although rounding may put its source just outside.
 	evalAt := func(c loomCurve, t float64, boundary bool) loomNode {
 		n := loomNode{t: t}
-		if r.Evaluations >= limits.evaluations {
+		if r.Evaluations+c.cost() > limits.evaluations {
 			r.Exhausted = true
 			n.missing = true
 			return n
 		}
-		r.Evaluations++
-		n.p = point(c.at(t))
-		if n.p != nil {
+		r.Evaluations += c.cost()
+		n.p, n.aux = c.point(t)
+		if n.p != nil && c.reference {
+			n.w = n.p
+		} else if n.p != nil {
 			n.w = q.image(*n.p)
 			if boundary {
 				n.w = loomExp(*n.p)
@@ -352,7 +404,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 			// most a few hundred samples to an analytic member. An interval
 			// leaving the window is divided as finely as one across it, so
 			// a curve mostly outside still measures its tolerance there.
-			if k := len(pilot) - 1; q.Map == "exp" && k >= 0 && n.p != nil && pilot[k].p != nil && (n.w != nil || pilot[k].w != nil) {
+			if k := len(pilot) - 1; q.Map == "exp" && !c.reference && k >= 0 && n.p != nil && pilot[k].p != nil && (n.w != nil || pilot[k].w != nil) {
 				a := pilot[k]
 				if steps := min(math.Ceil(n.p.Sub(*a.p).Norm()/loomExpPilotStep), loomExpPilotPieces); steps > 1 {
 					for j := 1; j < int(steps); j++ {
@@ -384,7 +436,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	// afford reports whether bisecting a segment fits the budget; otherwise
 	// it settles the segment as exhausted.
 	afford := func(s loomSegment, evaluations int) bool {
-		if r.Evaluations+evaluations > limits.evaluations || reserved+4 > limits.points {
+		if r.Evaluations+evaluations*cs[s.member].cost() > limits.evaluations || reserved+4 > limits.points {
 			r.Exhausted = true
 			settle(s, "exhausted")
 			return false
@@ -436,7 +488,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 				if s.mid != nil {
 					need = 2
 				}
-				if r.Evaluations+need > limits.evaluations {
+				if r.Evaluations+need*c.cost() > limits.evaluations {
 					r.Exhausted = true
 					settle(s, "exhausted")
 					continue
@@ -452,14 +504,22 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 					valid = valid && defined(n)
 				}
 				if valid {
-					accept = q.domainSafe(*s.a.p, *s.b.p, probes)
+					accept = c.reference || q.domainSafe(*s.a.p, *s.b.p, probes)
 					for _, n := range probes {
 						accept = accept && plane.Distance(*n.w, *s.a.w, *s.b.w) <= imageTolerance[s.member] && plane.Distance(*n.p, *s.a.p, *s.b.p) <= sourceTolerance[s.member]
 					}
 				}
+				// A derived path is never joined where it may jump or run
+				// through infinity between neighboring nodes.
+				singular := false
+				if d := c.derived; valid && d != nil {
+					singular = d.singular(s.a, probes[0]) || d.singular(probes[0], probes[1]) || d.singular(probes[1], probes[2]) || d.singular(probes[2], s.b)
+				}
 				switch {
-				case valid && accept:
+				case valid && accept && !singular:
 					settle(s, "")
+				case !split && singular:
+					settle(s, "singular")
 				case !split && !valid:
 					reason := "invalid"
 					for _, n := range probes {
@@ -482,8 +542,13 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	for id, c := range cs {
 		m := LoomMember{ID: id, Name: c.name, Min: c.min, Max: c.max, Intervals: []LoomInterval{}}
 		gap := false
+		// A base-reference entry delivers its source point alone.
+		size := 2
+		if c.reference {
+			size = 1
+		}
 		emit := func(n loomNode) {
-			if r.Points+2 > limits.points {
+			if r.Points+size > limits.points {
 				r.Exhausted = true
 				return
 			}
@@ -496,8 +561,8 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 			m.At = append(m.At, n.t)
 			m.Source = append(m.Source, n.p)
 			m.Image = append(m.Image, n.w)
-			m.Critical = append(m.Critical, n.p != nil && n.w != nil && q.critical(*n.p))
-			r.Points += 2
+			m.Critical = append(m.Critical, !c.reference && n.p != nil && n.w != nil && q.critical(*n.p))
+			r.Points += size
 		}
 		segments := settled[id]
 		slices.SortFunc(segments, func(x, y loomSettled) int { return cmp.Compare(x.a.t, y.a.t) })
@@ -516,6 +581,11 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 			if s.b.p != nil || s.b.w != nil {
 				emit(s.b)
 			}
+		}
+		if c.reference {
+			r.Base = &LoomBase{m.At, m.Source}
+			r.NumericEntries += 3*len(m.At) + 2
+			continue
 		}
 		r.NumericEntries += 6*len(m.At) + 2*len(m.Intervals) + 3
 		r.Members = append(r.Members, m)

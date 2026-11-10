@@ -12,8 +12,14 @@ export type LoomSource = {
   yMin: number;
   yMax: number;
   radius: number;
+  // The path of the frozen curve the loom maps: the curve itself or one of
+  // its derived curves (loomPaths), with the base study's pole and offset
+  // distance frozen alongside. Absent settings in older links read as the
+  // origin and zero; only a path that reads one requires it.
   input: Config["input"];
   curve: Config["curve"];
+  pole?: Vec;
+  distance?: number;
 };
 // a, b, c and d of the general Möbius map, each (real, imaginary).
 export type LoomCoefficients = { a: Vec; b: Vec; c: Vec; d: Vec };
@@ -312,6 +318,8 @@ export type LoomMarker = {
   critical: boolean;
   // The exponential's other source points with this image, z + 2πik.
   translates?: Vec[];
+  // A derived path's base point r(t), at the same base parameter.
+  base?: Vec | null;
 };
 export type LoomMember = {
   id: number;
@@ -328,6 +336,8 @@ export type LoomResult = {
   members: LoomMember[];
   // The general Möbius frame's pole, when it has one.
   pole?: Vec;
+  // A derived path's base curve in the source plane, unmapped; null breaks.
+  base?: { at: number[]; points: (Vec | null)[] };
   marker: LoomMarker;
   points: number;
   evaluations: number;
@@ -454,6 +464,65 @@ export const loomPresets = [
   // elliptic: a quarter turn about its fixed points ±i. Its flow turns the
   // grid a quarter turn back and forth through the identity; every line
   // becomes a circle, and the line through each frame's pole a line.
+  // Opens on the inward offset, d = 1/4, of the five-lobed star
+  // r = 1 + 0.3 cos 5θ, raised to the fourth power. The offset runs back
+  // through a swallowtail at each lobe, where 1 − dκ < 0; five is prime to
+  // four, so the image keeps five petals, each tipped by its swallowtail.
+  {
+    title: "A star's offset raised to the fourth power",
+    note: "A star's inner parallel curve, with swallowtails at its points, opens into five petals under z⁴",
+    kind: "curve",
+    map: "power",
+    degree: 4,
+    path: {
+      input: "offset",
+      distance: 0.25,
+      curve: { format: "polar", r: "1+0.3*cos(5*t)", min: 0, max: 2 * Math.PI },
+    },
+  },
+  // Opens on the evolute of the five-cusped hypocycloid (fixed radius 5,
+  // rolling radius 1), a larger hypocycloid turned a tenth of a turn,
+  // squared. It starts at the vertex θ = π/5, since every derived path is
+  // undefined at the base's cusps, where it breaks.
+  {
+    title: "A hypocycloid's evolute squared into a star",
+    note: "The centers of curvature of a five-cusped hypocycloid square into a crossed five-pointed star",
+    kind: "curve",
+    map: "square",
+    path: {
+      input: "evolute",
+      curve: {
+        format: "roulette",
+        roulette: {
+          roll: "inside",
+          fixedRadius: 5,
+          radius: 1,
+          arm: 1,
+          phase: 0,
+        },
+        min: Math.PI / 5,
+        max: Math.PI / 5 + 2 * Math.PI,
+      },
+    },
+  },
+  // Opens at λ = 1 on the same star's offset, folded by z + λ/z about the
+  // critical circle |z| = √λ that it crosses: its lobes and swallowtails
+  // interlace into lace. Map motion unfolds it to λ = 0, the identity,
+  // where the image is the offset itself, with fixed reference framing.
+  {
+    title: "A star's offset folded into lace",
+    note: "z + λ/z folds a star's parallel curve across its critical circle into interlaced loops",
+    kind: "curve",
+    map: "joukowski",
+    motion: { from: 1, to: 0 },
+    // The source stands still, so it is framed larger than the image.
+    scale: { source: 260, image: 150 },
+    path: {
+      input: "offset",
+      distance: 0.25,
+      curve: { format: "polar", r: "1+0.3*cos(5*t)", min: 0, max: 2 * Math.PI },
+    },
+  },
   {
     title: "A grid turned about two fixed points",
     note: "An elliptic Möbius flow turns a square grid into circles about two fixed points",
@@ -486,13 +555,33 @@ export const loomPresets = [
   selected?: number;
   coefficients?: LoomCoefficients;
   motion?: { from: number; to: number };
+  // A derived path of the preset's own frozen curve, and for a derived
+  // performance each pane's fixed reference scale.
+  path?: PresetPath;
+  scale?: { source: number; image: number };
 }[];
+type PresetPath = {
+  input: LoomSource["input"];
+  curve: Partial<Config["curve"]>;
+  pole?: Vec;
+  distance?: number;
+};
 export function presetLoom(index: number, config: Config): LoomStudy {
   const study = defaultLoom(config);
   const definition = loomPresets[index];
+  const path: PresetPath | undefined =
+    "path" in definition ? definition.path : undefined;
   const source = {
     ...study.source,
     kind: definition.kind,
+    // A derived preset carries its own curve and path, frozen like the
+    // notebook's; the notebook's other curve fields ride along unused.
+    ...(path && {
+      input: path.input,
+      curve: { ...study.source.curve, ...path.curve },
+      ...(path.pole && { pole: { ...path.pole } }),
+      ...(path.distance !== undefined && { distance: path.distance }),
+    }),
     ...("lines" in definition && {
       xCount: definition.lines,
       yCount: "yLines" in definition ? definition.yLines : definition.lines,
@@ -515,6 +604,25 @@ export function presetLoom(index: number, config: Config): LoomStudy {
       radius: definition.radius,
     }),
   };
+  // A derived performance opens on its own path at its motion's start,
+  // with fixed reference framing so the map's change of scale shows.
+  if (path && "motion" in definition) {
+    const scale =
+      "scale" in definition ? definition.scale : { source: 120, image: 120 };
+    return {
+      ...replaceMap(study, definition.map),
+      source,
+      selected: 0,
+      parameter: memberInterval(source, 0)[0],
+      mapParameter: definition.motion.from,
+      exclusionRadius: 0.04,
+      motion: { mode: "map" as const, ...definition.motion },
+      framing: {
+        source: { cx: 0, cy: 0, scale: scale.source },
+        image: { cx: 0, cy: 0, scale: scale.image },
+      },
+    };
+  }
   // A general Möbius preset opens on its own family at the start of its
   // flow, with the rational presets' reference framing and exclusion.
   if ("coefficients" in definition) {
@@ -564,14 +672,25 @@ export function presetLoom(index: number, config: Config): LoomStudy {
     parameter: memberInterval(source, 0)[0],
   };
 }
-// What a preset draws, without the notebook's curve it carries.
+// What a preset draws, without the notebook's curve, pole and distance it
+// carries; a derived preset draws its own curve and path.
 export function presetDefinition(index: number) {
   const { source, ...rest } = presetLoom(index, {
     input: "curve",
     curve: {},
   } as unknown as Config);
-  const { input: _input, curve: _curve, ...family } = source;
-  return { ...rest, source: family };
+  const {
+    input: _input,
+    curve: _curve,
+    pole: _pole,
+    distance: _distance,
+    ...family
+  } = source;
+  const definition = loomPresets[index];
+  return {
+    ...rest,
+    source: "path" in definition ? { ...family, ...definition.path } : family,
+  };
 }
 export const supportedFormats = [
   "parametric",
@@ -581,7 +700,9 @@ export const supportedFormats = [
   "lissajous",
   "fourier",
 ] as const;
-// The loom on the notebook's own curve, which must be supported.
+// The loom on the notebook's own curve, which must be supported, on the
+// path the study's construction acts on: the curve itself, as the loom
+// always opened, or a derived input. Path reaches the others.
 export function curveLoom(config: Config): LoomStudy {
   const study = defaultLoom(config);
   return {
@@ -605,6 +726,8 @@ export function defaultLoom(config: Config): LoomStudy {
       radius: 1,
       input: config.input,
       curve: structuredClone(config.curve),
+      pole: { ...config.pole },
+      distance: config.distance,
     },
     samples: 32,
     tolerance: 0.0005,
@@ -615,8 +738,134 @@ export function defaultLoom(config: Config): LoomStudy {
   };
 }
 export const supportedSource = (s: Pick<LoomSource, "input" | "curve">) =>
-  s.input === "curve" &&
+  Object.hasOwn(loomPaths, s.input) &&
   (supportedFormats as readonly string[]).includes(s.curve.format);
+type Segment = [Vec, Vec];
+// A path's representative construction at one point: solid and dashed
+// segments, and the points they start from, marked.
+export type Construction = (
+  r: Vec,
+  g: Vec,
+  pole: Vec,
+) => { solid: Segment[]; dashed: Segment[]; points: Vec[] };
+const midpoint = (a: Vec, b: Vec) => ({
+  x: (a.x + b.x) / 2,
+  y: (a.y + b.y) / 2,
+});
+// From the base point r alone, as for the evolute and the offset.
+const fromBase: Construction = (r, g) => ({
+  solid: [[r, g]],
+  dashed: [],
+  points: [r],
+});
+// From r along the tangent or normal line, and from the pole P across it.
+const fromPole: Construction = (r, g, pole) => ({
+  solid: [
+    [r, g],
+    [pole, g],
+  ],
+  dashed: [],
+  points: [r, pole],
+});
+// The paths of the frozen curve the loom can map. Go evaluates each at the
+// base parameter t with the notebook's own derived-input evaluator, so a
+// path's parameter is the base curve's. `construction` is the notebook's
+// representative construction at the selected point, from the base point r
+// and the pole P to the path's point g; components draw it without naming
+// the path. `setting` names the frozen value a path reads.
+export const loomPaths = {
+  curve: {
+    label: "The curve itself",
+    noun: "curve",
+    setting: undefined,
+    construction: undefined,
+  },
+  // The radius of curvature, from r to the center.
+  evolute: {
+    label: "Its evolute",
+    noun: "evolute",
+    setting: undefined,
+    construction: fromBase,
+  },
+  pedal: {
+    label: "Its pedal curve",
+    noun: "pedal curve",
+    setting: "pole",
+    construction: fromPole,
+  },
+  contrapedal: {
+    label: "Its contrapedal",
+    noun: "contrapedal",
+    setting: "pole",
+    construction: fromPole,
+  },
+  // P reflected across the tangent: the foot H = (P + Q)/2 lies on it,
+  // and the reflected half H→Q is dashed, as in the notebook.
+  orthotomic: {
+    label: "Its orthotomic",
+    noun: "orthotomic",
+    setting: "pole",
+    construction: (r, g, pole) => {
+      const h = midpoint(pole, g);
+      return {
+        solid: [
+          [r, h],
+          [pole, h],
+        ],
+        dashed: [[h, g]],
+        points: [r, pole],
+      };
+    },
+  },
+  // The normal segment of length |d|.
+  offset: {
+    label: "Its offset",
+    noun: "offset",
+    setting: "distance",
+    construction: fromBase,
+  },
+} as const satisfies Record<
+  LoomSource["input"],
+  {
+    label: string;
+    noun: string;
+    setting: "pole" | "distance" | undefined;
+    construction: Construction | undefined;
+  }
+>;
+// Whether two curve definitions are the same, whatever their key order: a
+// loom's frozen curve is the base study's own unless an example brought it.
+export function sameCurve(a: Config["curve"], b: Config["curve"]) {
+  const canonical = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(canonical)
+      : v && typeof v === "object"
+        ? Object.fromEntries(
+            Object.keys(v)
+              .sort()
+              .map((k) => [k, canonical((v as Record<string, unknown>)[k])]),
+          )
+        : v;
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+}
+// The frozen path in words, for the curve source's note: of the base
+// study's own curve, or of the curve an example brought.
+export function pathNote(s: LoomSource, own: boolean) {
+  const path = loomPaths[s.input];
+  const n = (v: number) => String(+v.toPrecision(6));
+  const setting =
+    path.setting === "pole" && s.pole
+      ? ` about the pole (${n(s.pole.x)}, ${n(s.pole.y)})`
+      : path.setting === "distance" && s.distance !== undefined
+        ? ` at distance ${n(s.distance)}`
+        : "";
+  const curve = own
+    ? `a frozen copy of your base study’s ${s.curve.format} curve`
+    : `the example’s own ${s.curve.format} curve`;
+  return path.construction
+    ? `The loom maps the ${path.noun}${setting} of ${curve}, drawn faintly beneath it.`
+    : `This is ${curve}.`;
+}
 export function memberInterval(s: LoomSource, id: number): [number, number] {
   return s.kind === "curve"
     ? [s.curve.min, s.curve.max]

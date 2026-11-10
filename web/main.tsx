@@ -1888,8 +1888,8 @@ function App({
                 </div>
                 <HelpText help={loomHelp}>
                   {tiered(
-                    "Square this study's curve, w = z², in paired planes with corresponding moving points.",
-                    "Available for parametric, Cartesian, polar, roulette, Lissajous and Fourier curves with direct input. The loom keeps a frozen copy of the curve; Return restores your study. Its rosette, grid and concentric circles are under Complex maps in the examples. Links, still images and traversal movies save the paired composition.",
+                    "Map this study's curve or its derived curve through complex maps, in paired planes with corresponding points.",
+                    "Available for parametric, Cartesian, polar, roulette, Lissajous and Fourier curves. It opens on the curve your construction acts on; Path switches to its evolute, pedal family or offset. Return restores your study. Families are under Complex maps in the examples. Links and exports save the pairing.",
                   )}
                 </HelpText>
                 {loomNotice && (

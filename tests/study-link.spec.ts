@@ -3380,6 +3380,64 @@ test("loom links conform complete settings and keep older planar links unchanged
   );
 });
 
+// A derived path of the frozen curve saves its path and the setting it
+// reads. An older loom link, with neither pole nor distance, opens as it
+// did; a path that reads a setting must have it, finite.
+test("loom links carry derived paths with the pole or distance they read", async () => {
+  const { defaultLoom, curveLoom, supportedSource } =
+    await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  for (const input of [
+    "evolute",
+    "pedal",
+    "contrapedal",
+    "orthotomic",
+    "offset",
+  ] as const) {
+    const loom = defaultLoom(ordinary.config);
+    loom.source = {
+      ...loom.source,
+      kind: "curve",
+      input,
+      pole: { x: 0.4, y: -0.25 },
+      distance: 0.3,
+    };
+    loom.parameter = loom.source.curve.min;
+    assert.equal(supportedSource(loom.source), true);
+    const saved = planarStudy({ ...ordinary, loom });
+    assert.deepEqual(saved.loom, loom);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).loom, loom);
+  }
+  const older = defaultLoom(ordinary.config);
+  older.source = { ...older.source, kind: "curve" };
+  delete older.source.pole;
+  delete older.source.distance;
+  assert.deepEqual(planarStudy({ ...ordinary, loom: older }).loom, older);
+  const bad = (source: object, field: RegExp) =>
+    assert.throws(
+      () =>
+        planarStudy({
+          ...ordinary,
+          loom: { ...older, source: { ...older.source, ...source } as any },
+        }),
+      (e: unknown) => e instanceof LinkError && field.test(e.field),
+    );
+  bad({ input: "pedal" }, /loom\.source\.pole/);
+  bad({ input: "offset" }, /loom\.source\.distance/);
+  bad({ input: "offset", distance: 1e6 }, /loom\.source\.distance/);
+  bad({ input: "orthotomic", pole: { x: 1, y: "2" } }, /loom\.source\.pole/);
+  // The loom opens on the path the study's construction acts on: the curve
+  // itself, as it always did, or a derived input.
+  const at = (patch: object) =>
+    curveLoom({ ...ordinary.config, ...patch } as typeof ordinary.config).source
+      .input;
+  assert.equal(at({ kind: "evolute", input: "curve" }), "curve");
+  assert.equal(at({ kind: "orthotomic", input: "curve" }), "curve");
+  assert.equal(at({ kind: "pedal", input: "evolute" }), "evolute");
+  assert.equal(at({ kind: "inversion", input: "offset" }), "offset");
+});
+
 test("garden links conform settings, selection and view without geometry, and older planar links stay unchanged", async () => {
   const { presetGarden, gardenPresets } = await import("../web/garden/model");
   const ordinary = planarPreset(0);

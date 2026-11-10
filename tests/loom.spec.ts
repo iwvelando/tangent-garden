@@ -1280,7 +1280,9 @@ test("complex loom uses shared export actions and inherits appearance without du
   await page
     .getByRole("button", { name: "About complex loom", exact: true })
     .click();
-  await expect(page.getByText(/Square this study.s curve/)).toBeVisible();
+  await expect(
+    page.getByText(/Map this study.s curve or its derived curve/),
+  ).toBeVisible();
   await openLoomExample(page);
   const d = page.getByRole("dialog", { name: "The complex loom" });
   await expect(
@@ -2015,7 +2017,7 @@ test("the loom button is unavailable for unsupported sources and says why", asyn
   await expect(button).toBeEnabled();
   for (const label of [
     "Cassini ovals & the lemniscate",
-    "An ellipse's pedal, inverted",
+    "Seven pursuers & an evolute",
   ]) {
     await choosePreset(page, { label });
     await settled(page);
@@ -2046,7 +2048,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(11);
+  await expect(cards).toHaveCount(14);
   await expect(gallery.locator("[data-example]")).toHaveCount(72);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();
@@ -3070,4 +3072,500 @@ test("a decoded general Möbius flow film matches direct seeks, with its moving 
           `frame ${f} must match its own seek: ${errors}`,
         ).toBeLessThan(errors[other] * 0.7);
   }
+});
+
+const nearPoint = (
+  got: { x: number; y: number },
+  want: { x: number; y: number },
+  tolerance = 1e-9,
+) =>
+  expect(
+    Math.hypot(got.x - want.x, got.y - want.y),
+    `${JSON.stringify(got)} near ${JSON.stringify(want)}`,
+  ).toBeLessThan(tolerance * Math.max(1, Math.hypot(want.x, want.y)));
+const square = (z: { x: number; y: number }) => power(z, 2);
+
+// The default study is an ellipse x = 2 cos t, y = 3 sin t with its evolute,
+// E(t) = (−(5/2) cos³t, (5/3) sin³t), centers of curvature. The loom opens on
+// the ellipse, as it always did; Path takes it to the evolute, drawn over the
+// faint ellipse with the radius of curvature at the point, and on through
+// the frozen study's other paths.
+test("Path takes the loom from a study's curve to its derived curves, with their base and construction", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await page
+    .getByRole("button", { name: "Open complex loom", exact: true })
+    .click();
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes"),
+    path = d.getByLabel("Path", { exact: true });
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(path).toHaveValue("curve");
+  await expect(d.locator('[data-pane="source"] [data-base]')).toHaveCount(0);
+  await path.selectOption("evolute");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator("[data-path-note]")).toContainText(
+    "maps the evolute of a frozen copy of your base study’s parametric curve",
+  );
+  const source = d.locator('[data-pane="source"]');
+  await expect(source.locator("[data-base]")).toHaveCount(1);
+  await expect(d.locator('[data-pane="image"] [data-base]')).toHaveCount(0);
+  nearPoint(await loomPoint(d, "source"), { x: -2.5, y: 0 });
+  nearPoint(await loomPoint(d, "image"), { x: 6.25, y: 0 });
+  const construction = source.locator("[data-construction]");
+  await expect(construction.locator("line")).toHaveCount(1);
+  nearPoint(
+    JSON.parse(
+      (await construction.locator("circle").getAttribute("data-point"))!,
+    ),
+    { x: 2, y: 0 },
+    1e-12,
+  );
+  await expect(d.locator(".loom-correspondence")).toContainText(
+    "Base point (2.0000, 0.0000);",
+  );
+  await expect(d.locator("[data-gaps]")).toContainText("No gaps.");
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("pi/2");
+  await expect
+    .poll(async () => (await loomPoint(d, "source")).y)
+    .toBeCloseTo(5 / 3, 9);
+  nearPoint(
+    await loomPoint(d, "image"),
+    square(await loomPoint(d, "source")),
+    1e-12,
+  );
+  // The pedal about the study's pole, the origin: at t = 0 the tangent is
+  // vertical through (2, 0), so the foot is the base point itself.
+  await path.selectOption("pedal");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator("[data-path-note]")).toContainText(
+    "pedal curve about the pole (0, 0)",
+  );
+  await expect
+    .poll(async () => {
+      const z = await loomPoint(d, "source");
+      return Math.hypot(z.x - 2, z.y) < 1e-9;
+    })
+    .toBe(true);
+  await expect(construction.locator("line")).toHaveCount(2);
+  await expect(construction.locator("circle")).toHaveCount(2);
+  // The orthotomic reflects the pole across the tangent: solid from r and P
+  // to the foot H = (P + Q)/2, and the reflected half H→Q dashed, ending at
+  // the marker.
+  await path.selectOption("orthotomic");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const dashed = construction.locator("line[stroke-dasharray]");
+  await expect(dashed).toHaveCount(1);
+  await expect(construction.locator("line")).toHaveCount(3);
+  const marker = source.locator("[data-marker]");
+  for (const [end, at] of [
+    ["x2", "cx"],
+    ["y2", "cy"],
+  ])
+    expect(Number(await dashed.getAttribute(end))).toBeCloseTo(
+      Number(await marker.getAttribute(at)),
+      6,
+    );
+  await path.selectOption("curve");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(source.locator("[data-base]")).toHaveCount(0);
+  await expect(source.locator("[data-construction]")).toHaveCount(0);
+  await expect(d.locator(".loom-correspondence")).not.toContainText(
+    "Base point",
+  );
+  nearPoint(await loomPoint(d, "image"), { x: 4, y: 0 });
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await expect(d).toBeHidden();
+  await expect(page.getByLabel("x(t)", { exact: true })).toHaveValue(
+    "2*cos(t)",
+  );
+});
+
+// A study whose construction acts on a derived input, which the loom used to
+// refuse, opens on that input; one on the curve itself opens on the curve.
+test("the loom opens on a construction's derived input, and on the curve otherwise", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  const button = page.getByRole("button", {
+      name: "Open complex loom",
+      exact: true,
+    }),
+    d = page.getByRole("dialog", { name: "The complex loom" });
+  for (const [label, path] of [
+    ["An ellipse's pedal, inverted", "pedal"],
+    ["Flower & its offset", "curve"],
+    ["Offsets of an evolute", "evolute"],
+  ]) {
+    await choosePreset(page, { label });
+    await settled(page);
+    await expect(button, label).toBeEnabled();
+    await button.click();
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect(d.getByLabel("Path", { exact: true }), label).toHaveValue(
+      path,
+    );
+    await expect(d.getByRole("alert")).toHaveCount(0);
+    await d
+      .getByRole("button", { name: "Return to study", exact: true })
+      .click();
+    await expect(d).toBeHidden();
+  }
+});
+
+// The five-cusped hypocycloid's evolute breaks at each base cusp, where the
+// tangent reverses; a copied link restores the path, and the vector export
+// records it with the base curve and construction as geometry only.
+test("a derived loom preset breaks at its cusps, a copied link restores its path and SVG records it", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).loomCopied = value;
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A hypocycloid's evolute squared into a star");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Path", { exact: true })).toHaveValue("evolute");
+  await expect(d.locator("[data-gaps]")).toContainText("singular");
+  await expect(d.locator("[data-gaps]")).not.toContainText("budget");
+  await expect(d.locator(".loom-correspondence")).toContainText("Base point");
+  nearPoint(
+    await loomPoint(d, "image"),
+    square(await loomPoint(d, "source")),
+    1e-12,
+  );
+  const image = await d
+    .locator('[data-pane="image"] [data-member]')
+    .getAttribute("d");
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => (window as any).loomCopied as string);
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  expect(saved.loom.source.input).toBe("evolute");
+  expect(saved.loom.source.curve.format).toBe("roulette");
+  const download = page.waitForEvent("download");
+  await loomImage(d, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('"input":"evolute"');
+  expect(svg).toContain("data-base");
+  expect(svg).toContain("data-construction");
+  expect(svg).not.toMatch(/<text|<image/);
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await page.goto(link);
+  await expect(page).not.toHaveURL(/#s=/);
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Path", { exact: true })).toHaveValue("evolute");
+  expect(
+    await d.locator('[data-pane="image"] [data-member]').getAttribute("d"),
+  ).toBe(image);
+});
+
+// The star's offset under z⁴: frames at p = 0, 1/2 and 1 are θ = 0, π and
+// 2π, each matching a direct seek's markers in both panes.
+test("a decoded derived traversal film matches direct seeks in both panes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A star's offset raised to the fourth power");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Path", { exact: true })).toHaveValue("offset");
+  const centers: { source: number[]; image: number[] }[] = [];
+  for (const at of ["0", "pi"]) {
+    await d.getByLabel("Exact source parameter", { exact: true }).fill(at);
+    await expect(art).toHaveAttribute("aria-busy", "false");
+    await expect
+      .poll(
+        async () =>
+          (await d
+            .locator(".loom-correspondence")
+            .getAttribute("data-parameter"))!,
+      )
+      .toBe(at === "0" ? "0" : String(Math.PI));
+    nearPoint(
+      await loomPoint(d, "image"),
+      power(await loomPoint(d, "source"), 4),
+      1e-12,
+    );
+    const read = async (pane: string) => {
+      const c = d.locator(`[data-pane="${pane}"] [data-marker]`);
+      return [
+        Number(await c.getAttribute("cx")),
+        Number(await c.getAttribute("cy")),
+      ];
+    };
+    centers.push({ source: await read("source"), image: await read("image") });
+  }
+  expect(centers[0].image).not.toEqual(centers[1].image);
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("0");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await openLoomExportSettings(d);
+  await d.getByLabel("Traversal duration", { exact: true }).fill("0.2");
+  await loomResolution(d, 0.5);
+  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+  await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  const movie = page.waitForEvent("download");
+  await loomMovieAction(d).click();
+  const moviePath = (await (await movie).path())!;
+  const bytes = await readFile(moviePath);
+  expect(bytes.includes(Buffer.from('"input":"offset"'))).toBe(true);
+  const timing = videoProbe(moviePath);
+  if (timing) expect(timing.frames).toBe(3);
+  const frames = execFileSync(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-i",
+      moviePath,
+      "-f",
+      "rawvideo",
+      "-pix_fmt",
+      "rgb24",
+      "-",
+    ],
+    { maxBuffer: 4 * 1024 * 1024 },
+  );
+  const pink = (frame: number, cx: number, cy: number) => {
+    let found = 0;
+    for (let y = Math.round(cy) - 8; y <= Math.round(cy) + 8; y++)
+      for (let x = Math.round(cx) - 8; x <= Math.round(cx) + 8; x++) {
+        const i = frame * 1000 * 380 * 3 + (y * 1000 + x) * 3;
+        const [r, g, b] = frames.subarray(i, i + 3);
+        if (r > 70 && r > g * 1.3 && b > g * 1.2) found++;
+      }
+    return found;
+  };
+  const at = (frame: number, seek: number, hit: boolean) => {
+    const { source, image } = centers[seek];
+    const n = (v: number) => (hit ? v > 0 : v === 0);
+    expect(n(pink(frame, source[0] / 2, source[1] / 2))).toBe(true);
+    expect(n(pink(frame, 500 + image[0] / 2, image[1] / 2))).toBe(true);
+  };
+  for (const frame of [0, 2]) {
+    at(frame, 0, true);
+    at(frame, 1, false);
+  }
+  at(1, 1, true);
+  at(1, 0, false);
+});
+
+// The derived performance opens at λ = 1, where each image point is
+// z + 1/z of its source point on the star's offset; map motion ends at the
+// identity, where the image is the offset itself, point for point.
+test("a derived performance folds its path by z + λ/z and unfolds it to the identity", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A star's offset folded into lace");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Path", { exact: true })).toHaveValue("offset");
+  await expect(d.getByLabel("Complex map", { exact: true })).toHaveValue(
+    "joukowski",
+  );
+  const fold = (z: { x: number; y: number }, lambda: number) => {
+    const r = z.x * z.x + z.y * z.y;
+    return { x: z.x + (lambda * z.x) / r, y: z.y - (lambda * z.y) / r };
+  };
+  const z = await loomPoint(d, "source");
+  nearPoint(await loomPoint(d, "image"), fold(z, 1), 1e-12);
+  const member = d.locator('[data-pane="source"] [data-member="0"]');
+  const image = d.locator('[data-pane="image"] [data-member="0"]');
+  const lace = await image.getAttribute("d");
+  await d.getByLabel("Motion progress", { exact: true }).fill("1");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect.poll(() => image.getAttribute("d")).not.toBe(lace);
+  nearPoint(await loomPoint(d, "image"), z, 1e-15);
+  // Each pane keeps its own fixed reference scale, 260 for the still source
+  // and 150 for the image, about one center: the identity's image is its
+  // source, chord for chord.
+  const plane = async (path: typeof image, scale: number) =>
+    [
+      ...(await path.getAttribute("d"))!.matchAll(/([ML])([-\d.]+),([-\d.]+)/g),
+    ].map(
+      ([, move, x, y]) =>
+        [move, (+x - 500) / scale, (380 - +y) / scale] as const,
+    );
+  const drawn = await plane(image, 150),
+    source = await plane(member, 260);
+  expect(drawn.length).toBe(source.length);
+  drawn.forEach(([move, x, y], i) => {
+    expect(move).toBe(source[i][0]);
+    expect(Math.abs(x - source[i][1])).toBeLessThan(1e-5);
+    expect(Math.abs(y - source[i][2])).toBeLessThan(1e-5);
+  });
+  await expect(d.locator("[data-path-note]")).toHaveText(
+    "The loom maps the offset at distance 0.25 of the example’s own polar curve, drawn faintly beneath it.",
+  );
+  await expect(
+    d.getByLabel("Source family", { exact: true }).locator("option:checked"),
+  ).toHaveText("The example’s curve");
+});
+
+// An older loom link froze no pole or distance; a derived path chosen from
+// it takes them from the study beneath it, here the pedal study's pole.
+test("an older loom link's derived path takes its pole from the study beneath it", async ({
+  page,
+}) => {
+  const { presets } = await import("../web/presets");
+  const { presetStudy } = await import("../web/planar-link");
+  const { curveLoom } = await import("../web/loom/model");
+  const base = presetStudy(
+    presets.findIndex((p) => p.title === "Ellipse & its pedal"),
+  );
+  const loom = curveLoom(base.config);
+  delete loom.source.pole;
+  delete loom.source.distance;
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: { ...base, loom } }),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Path", { exact: true })).toHaveValue("curve");
+  await d.getByLabel("Path", { exact: true }).selectOption("pedal");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator("[data-path-note]")).toContainText(
+    "pedal curve about the pole (1.65, 0.3)",
+  );
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  const pole = d.locator('[data-pane="source"] [data-construction] circle');
+  await expect(pole).toHaveCount(2);
+  expect(JSON.parse((await pole.nth(1).getAttribute("data-point"))!)).toEqual({
+    x: 1.65,
+    y: 0.3,
+  });
+});
+
+// A degree retained from the power map rides along under maps that ignore
+// it; traversal must keep playing rather than mistake the frames it shows
+// for stale geometry.
+test("traversal keeps playing under a map that ignores a retained degree", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const { curveLoom, replaceMap } = await import("../web/loom/model");
+  const base = presetStudy(0);
+  const loom = {
+    ...replaceMap(curveLoom(base.config), "exp"),
+    degree: 3,
+    duration: 4,
+  };
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: { ...base, loom } }),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await d.getByRole("button", { name: "Play traversal", exact: true }).click();
+  const parameter = () =>
+    d
+      .locator(".loom-correspondence")
+      .getAttribute("data-parameter")
+      .then(Number);
+  await expect.poll(parameter).toBeGreaterThan(1);
+  await expect(
+    d.getByRole("button", { name: "Pause traversal", exact: true }),
+  ).toBeVisible();
+});
+
+// Scrubbing map motion changes the map parameter frame by frame; Play stays
+// available throughout rather than blinking while each frame computes.
+test("scrubbing map motion never disables Play", async ({ page }) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "Circles through infinity");
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  const play = d.getByRole("button", { name: "Play map motion", exact: true });
+  await play.evaluate((button) => {
+    (window as any).playDisabled = 0;
+    new MutationObserver(() => {
+      if ((button as HTMLButtonElement).disabled)
+        (window as any).playDisabled++;
+    }).observe(button, { attributes: true });
+  });
+  const slider = d.getByLabel("Motion progress", { exact: true });
+  const box = (await slider.boundingBox())!;
+  await page.mouse.move(box.x + 5, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 0; i <= 30; i++) {
+    await page.mouse.move(
+      box.x + 5 + ((box.width - 10) * i) / 30,
+      box.y + box.height / 2,
+    );
+    await page.waitForTimeout(25);
+  }
+  await page.mouse.up();
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  expect(await page.evaluate(() => (window as any).playDisabled)).toBe(0);
+  await expect(play).toBeEnabled();
+});
+
+// Play may start while a scrubbed map parameter's frame is on its way, since
+// playback recomputes every frame; a still or a movie must wait for it, or
+// the saved drawing would pair the previous map's geometry with this one's
+// parameter and marker.
+test("a pending map-motion frame keeps Play available but holds back exports", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    const held: (() => void)[] = [];
+    (window as any).holdGeometry = false;
+    (window as any).releaseGeometry = () => held.splice(0).forEach((f) => f());
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "loom" && !q.pointOnly && (window as any).holdGeometry)
+        held.push(() => send.call(this, q, ...rest));
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "Circles through infinity");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const play = d.getByRole("button", { name: "Play map motion", exact: true });
+  const image = d.getByRole("button", { name: "Export image", exact: false });
+  const movie = loomMovieAction(d);
+  await expect(image).toBeEnabled();
+  await expect(movie).toBeEnabled();
+  await page.evaluate(() => ((window as any).holdGeometry = true));
+  const slider = d.getByLabel("Motion progress", { exact: true });
+  await slider.focus();
+  await slider.press("ArrowRight");
+  await expect(art).toHaveAttribute("aria-busy", "true");
+  await expect(play).toBeEnabled();
+  await expect(image).toBeDisabled();
+  await expect(movie).toBeDisabled();
+  await page.evaluate(() => {
+    (window as any).holdGeometry = false;
+    (window as any).releaseGeometry();
+  });
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(image).toBeEnabled();
+  await expect(movie).toBeEnabled();
 });

@@ -417,6 +417,66 @@ checkFourierFit();
       result.marker,
     );
   }
+  // A derived path: the ellipse (2 cos t, 3 sin t)'s evolute, with its base
+  // curve as lifted points beside the member and the base point on the
+  // marker; its refused settings name their own fields.
+  {
+    const request = {
+      ...q,
+      source: {
+        kind: "curve",
+        input: "evolute",
+        curve: {
+          format: "parametric",
+          x: "2*cos(t)",
+          y: "3*sin(t)",
+          min: 0,
+          max: 2 * Math.PI,
+        },
+        pole: { x: 0, y: 0 },
+        distance: 0.5,
+      },
+      parameter: 0,
+    };
+    const raw = globalThis.tangentGardenLoom(JSON.stringify(request));
+    assert.equal(typeof raw, "object");
+    const result = lifted(raw);
+    assert.equal(result.members[0].name, "Evolute");
+    assert.ok(result.base.points.length >= 32);
+    assert.equal(result.base.points.length, result.base.at.length);
+    for (let i = 0; i < result.base.at.length; i++) {
+      const t = result.base.at[i],
+        p = result.base.points[i];
+      assert.ok(
+        Math.hypot(p.x - 2 * Math.cos(t), p.y - 3 * Math.sin(t)) < 1e-14,
+      );
+    }
+    for (let i = 0; i < result.members[0].at.length; i++) {
+      const t = result.members[0].at[i],
+        p = result.members[0].source[i];
+      assert.ok(
+        Math.hypot(
+          p.x + 2.5 * Math.cos(t) ** 3,
+          p.y - (5 / 3) * Math.sin(t) ** 3,
+        ) < 1e-6,
+      );
+    }
+    assert.ok(Math.abs(result.marker.source.x + 2.5) < 1e-6);
+    assert.deepEqual(result.marker.base, { x: 2, y: 0 });
+    assert.deepEqual(
+      JSON.parse(globalThis.tangentGardenLoomPoint(JSON.stringify(request)))
+        .marker,
+      result.marker,
+    );
+    const offset = {
+      ...request,
+      source: { ...request.source, input: "offset", distance: 1e6 },
+    };
+    assert.equal(
+      JSON.parse(globalThis.tangentGardenLoom(JSON.stringify(offset))).field,
+      "source.distance",
+    );
+  }
   console.log(
     `Loom: typed paired geometry, correspondence and point-only bridge passed (${replyBytes(raw)} bytes)`,
   );

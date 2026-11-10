@@ -6,7 +6,7 @@ import type { ColorScheme } from "../color-schemes";
 import { plotPalette } from "../palette";
 import { svgStroke, type LineWeight } from "../line-weight";
 import type { Vec } from "../types";
-import type { LoomResult, LoomMarker } from "./model";
+import type { Construction, LoomResult, LoomMarker } from "./model";
 export type Pane = "source" | "image";
 // The zoom range of each pane's manual camera.
 const zoomRange: [number, number] = [0.1, 100];
@@ -59,6 +59,10 @@ export type DrawingProps = {
   scheme: ColorScheme;
   weight: LineWeight;
   exclusion?: { center: Vec; radius: number };
+  // A derived path's representative construction and pole (loomPaths),
+  // drawn in the source pane at the marker's base point and source point,
+  // with the result's base curve.
+  path?: { construction?: Construction; pole: Vec };
   imageLabel?: string;
   onCamera?: (c: PlotCamera) => void;
   onSelect?: (id: number) => void;
@@ -140,6 +144,14 @@ export function PaneDrawing(p: DrawingProps) {
     return () => svg.removeEventListener("wheel", wheel);
   }, [!!p.onCamera]);
   const point = p.marker[p.pane];
+  const base = p.pane === "source" ? p.result.base?.points : undefined;
+  const construction =
+    p.pane === "source" &&
+    p.path?.construction &&
+    p.marker.base &&
+    p.marker.source
+      ? p.path.construction(p.marker.base, p.marker.source, p.path.pole)
+      : undefined;
   return (
     <svg
       ref={svgRef}
@@ -248,6 +260,15 @@ export function PaneDrawing(p: DrawingProps) {
             {...stroke(1.25)}
           />
         )}
+        {base && (
+          <path
+            data-base="true"
+            d={pathData(base, xy)}
+            stroke={palette.base}
+            opacity={0.55}
+            {...stroke(1)}
+          />
+        )}
         {p.result.members.map((m) => (
           <path
             key={m.id}
@@ -288,6 +309,42 @@ export function PaneDrawing(p: DrawingProps) {
               fill="none"
             />
           ))}
+        {construction && (
+          <g data-construction="true" stroke={palette.line}>
+            {construction.solid.map(([a, b], i) => (
+              <line
+                key={`s${i}`}
+                x1={xy(a).x}
+                y1={xy(a).y}
+                x2={xy(b).x}
+                y2={xy(b).y}
+                {...stroke(1.2)}
+              />
+            ))}
+            {construction.dashed.map(([a, b], i) => (
+              <line
+                key={`d${i}`}
+                x1={xy(a).x}
+                y1={xy(a).y}
+                x2={xy(b).x}
+                y2={xy(b).y}
+                strokeDasharray="5 4"
+                {...stroke(1.2)}
+              />
+            ))}
+            {construction.points.map((c, i) => (
+              <circle
+                key={`p${i}`}
+                data-point={JSON.stringify(c)}
+                cx={xy(c).x}
+                cy={xy(c).y}
+                r={3.5}
+                fill={palette.line}
+                stroke="none"
+              />
+            ))}
+          </g>
+        )}
         {point && (
           <circle
             data-marker="true"

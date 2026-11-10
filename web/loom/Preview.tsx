@@ -45,6 +45,9 @@ import {
   memberInterval,
   sourceChoices,
   supportedSource,
+  loomPaths,
+  pathNote,
+  sameCurve,
   type LoomStudy,
   type LoomResult,
   type LoomMarker,
@@ -85,13 +88,16 @@ const labels: Record<string, string> = {
 const phoneLayout =
   "(max-width: 700px), (orientation: landscape) and (max-height: 500px)";
 // Gaps by reason, in the engine's terms: undefined (invalid), still beyond
-// tolerance at the depth limit (unresolved), or out of budget (exhausted).
+// tolerance at the depth limit (unresolved), a derived path's stationary
+// base point or run through infinity (singular), or out of budget
+// (exhausted).
 function gapSummary(result: LoomResult) {
   const count = {
     invalid: 0,
     excluded: 0,
     clipped: 0,
     unresolved: 0,
+    singular: 0,
     exhausted: 0,
   };
   for (const m of result.members)
@@ -101,18 +107,21 @@ function gapSummary(result: LoomResult) {
     count.excluded && `${count.excluded.toLocaleString()} excluded`,
     count.clipped && `${count.clipped.toLocaleString()} clipped`,
     count.invalid && `${count.invalid.toLocaleString()} undefined`,
+    count.singular && `${count.singular.toLocaleString()} singular`,
     count.unresolved && `${count.unresolved.toLocaleString()} unresolved`,
     count.exhausted && `${count.exhausted.toLocaleString()} out of budget`,
   ].filter(Boolean);
   return `${result.exhausted ? "Refinement ran out of budget. " : ""}${parts.length ? `Gaps: ${parts.join(", ")}.` : "No gaps."}`;
 }
-// Coefficients count only for the map that reads them.
+// Coefficients and the degree count only for the map that reads them, as
+// loomRequest sends them: a retained degree under eᶻ must not make the frames
+// playback shows look stale.
 const usedCoefficients = (s: LoomRequest) =>
   "coefficients" in maps[s.map] ? s.coefficients : undefined;
 const geometryKey = (s: LoomRequest) =>
   JSON.stringify([
     s.map,
-    s.degree,
+    maps[s.map].degree ? s.degree : undefined,
     s.mapParameter,
     s.exclusionRadius,
     s.source,
@@ -219,6 +228,8 @@ export function LoomPreview({
   const [applied, setApplied] = useState<LoomRequest>(loomRequest(study));
   const mapInfo = maps[study.map],
     text = mapText(study);
+  // An example's derived path brings its own curve, not the base study's.
+  const ownCurve = sameCurve(study.source.curve, entry.study.config.curve);
   const markerKey = JSON.stringify([key, study.selected, study.parameter]);
   const activeError =
     error.request && error.request !== markerKey
@@ -226,7 +237,7 @@ export function LoomPreview({
       : error;
   const sourceError =
     study.source.kind === "curve" && !supportedSource(study.source)
-      ? "This source is unsupported. Choose a direct parametric, Cartesian, polar, roulette, Lissajous or Fourier curve."
+      ? "This source is unsupported. Choose a parametric, Cartesian, polar, roulette, Lissajous or Fourier curve."
       : "";
   const durationError =
     !Number.isFinite(study.duration) ||
@@ -261,9 +272,15 @@ export function LoomPreview({
   // Point intent may be newer than the displayed marker. Keep its controls
   // usable; captures explicitly resolve that intent before drawing it.
   const interval = memberInterval(study.source, study.selected);
-  const canAct =
+  // Map motion recomputes geometry for every frame it plays, so a scrubbed
+  // map parameter whose frame is still on its way does not hold Play back.
+  // Stills, movies and links still wait for it: they save the drawing shown.
+  const scrubbedMap =
+    !!study.motion &&
+    !!resultKey &&
+    resultKey === geometryKey({ ...study, mapParameter: applied.mapParameter });
+  const actionable =
     !!result &&
-    resultKey === key &&
     !sourceError &&
     !durationError &&
     !motionError &&
@@ -272,6 +289,8 @@ export function LoomPreview({
     Number.isFinite(study.parameter) &&
     study.parameter >= interval[0] &&
     study.parameter <= interval[1];
+  const canAct = actionable && resultKey === key;
+  const canPlay = actionable && (resultKey === key || scrubbedMap);
   const scalarStatus = useMemo(
     () => ({
       client: scalarClient,
@@ -456,7 +475,11 @@ export function LoomPreview({
       const selected = 0;
       return {
         ...s,
-        framing: source.kind === s.source.kind ? s.framing : undefined,
+        // A new family or path starts fresh reference fits.
+        framing:
+          source.kind === s.source.kind && source.input === s.source.input
+            ? s.framing
+            : undefined,
         source,
         selected,
         parameter: memberInterval(source, selected)[0],
@@ -518,7 +541,7 @@ export function LoomPreview({
     setScrubProgress(null);
   };
   const start = () => {
-    if (!canAct) return;
+    if (!canPlay) return;
     scrubOwner.current = null;
     const frozen = structuredClone(study);
     if (playbackActive) revealDrawing(panes.current, playback.current);
@@ -574,6 +597,12 @@ export function LoomPreview({
     weight,
     imageLabel: text.imageLabel,
     exclusion: poleExclusion(applied, study.showExclusion ?? true, result),
+    ...(applied.source.kind === "curve" && {
+      path: {
+        construction: loomPaths[applied.source.input].construction,
+        pole: applied.source.pole ?? { x: 0, y: 0 },
+      },
+    }),
     onCamera: (c) =>
       setStudy((s) => ({ ...s, views: { ...s.views, [pane]: c } })),
     onSelect: select,
@@ -771,7 +800,7 @@ export function LoomPreview({
     >
       <div className="animation-buttons">
         <button
-          disabled={(!canAct && !playing) || exporting}
+          disabled={(!canPlay && !playing) || exporting}
           onClick={() => (playing ? pause() : start())}
         >
           {playing
@@ -1126,17 +1155,49 @@ export function LoomPreview({
                     >
                       {Object.entries(sourceChoices).map(([v, label]) => (
                         <option key={v} value={v}>
-                          {label}
+                          {v === "curve" && !ownCurve
+                            ? "The example’s curve"
+                            : label}
                         </option>
                       ))}
                     </select>
                   </Field>
                   {study.source.kind === "curve" && (
                     <>
-                      <p className="note">
-                        This is a frozen copy of your base study’s{" "}
-                        {study.source.curve.format} curve. Return to study, edit
-                        the curve, then reopen the loom to update the copy.
+                      <Field
+                        label="Path"
+                        help={tiered(
+                          "Map the curve itself or one of its derived curves, at the base curve's parameter t.",
+                          "Derived paths use your study's pole and offset distance, frozen when the loom opened. Each is undefined where the curve stops or has no tangent, and the evolute also where it runs to infinity at an inflection; those gaps stay open in both planes.",
+                        )}
+                      >
+                        <select
+                          value={study.source.input}
+                          onChange={(e) => {
+                            const input = e.currentTarget
+                              .value as LoomSource["input"];
+                            const { pole, distance } = entry.study.config;
+                            setSource((s) => ({
+                              ...s,
+                              input,
+                              // An older link froze neither setting; the
+                              // base study beneath it supplies them.
+                              pole: s.pole ?? { ...pole },
+                              distance: s.distance ?? distance,
+                            }));
+                          }}
+                        >
+                          {Object.entries(loomPaths).map(([v, path]) => (
+                            <option key={v} value={v}>
+                              {path.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                      <p className="note" data-path-note>
+                        {pathNote(study.source, ownCurve)}
+                        {ownCurve &&
+                          " Return to study, edit the curve, then reopen the loom to update the copy."}
                       </p>
                     </>
                   )}
@@ -1261,7 +1322,7 @@ export function LoomPreview({
                         label="Refinement tolerance"
                         help={tiered(
                           "Relative chord error in both panes: 0.000001–0.05.",
-                          "Each source interval is tested in the mapped image and source. Refinement stops at depth 16, 500,000 delivered points across both panes or 1,000,000 map evaluations. Unresolved and invalid intervals remain gaps; finite sampling cannot certify topology.",
+                          "Each source interval is tested in the mapped image and source. Refinement stops at depth 16, 500,000 delivered points across both panes or 1,000,000 evaluations, 22 for each point of a derived path. Unresolved and invalid intervals remain gaps; finite sampling cannot certify topology.",
                         )}
                       >
                         <ScalarInput
@@ -1331,6 +1392,8 @@ export function LoomPreview({
                         >
                           {marker.source && marker.image ? (
                             <p>
+                              {marker.base &&
+                                `Base point (${marker.base.x.toPrecision(5)}, ${marker.base.y.toPrecision(5)}); `}
                               z = ({marker.source.x.toPrecision(5)},{" "}
                               {marker.source.y.toPrecision(5)}) → w = (
                               {marker.image.x.toPrecision(5)},{" "}
