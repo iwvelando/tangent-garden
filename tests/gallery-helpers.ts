@@ -116,14 +116,24 @@ export async function observeAtlasWorkers(page: Page, delay = 0) {
   );
 }
 
+// The atlas button is disabled while a study computes, and, as for Copy
+// link above, settled() can return just before an action's computation
+// starts (after Adopt variant, say). Under load a click checked against the
+// enabled button then landed on it disabled and the atlas never opened, so
+// click again until the dialog appears. A repeated click only asks again.
 export async function openAtlas(page: Page) {
-  await page
-    .getByRole("button", { name: "Explore parameter atlas", exact: true })
-    .click();
+  const button = page.getByRole("button", {
+    name: "Explore parameter atlas",
+    exact: true,
+  });
   const dialog = page.getByRole("dialog", {
     name: "A field of possible flowers",
     exact: true,
   });
-  await expect(dialog).toBeVisible();
+  await expect(async () => {
+    if (!(await dialog.isVisible()))
+      await button.click({ timeout: 2_000 }).catch(() => {});
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
   return dialog;
 }
