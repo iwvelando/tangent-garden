@@ -274,15 +274,13 @@ export function LoomPreview({
   const interval = memberInterval(study.source, study.selected);
   // Map motion recomputes geometry for every frame it plays, so a scrubbed
   // map parameter whose frame is still on its way does not hold Play back.
-  const current =
-    resultKey === key ||
-    (!!study.motion &&
-      !!resultKey &&
-      resultKey ===
-        geometryKey({ ...study, mapParameter: applied.mapParameter }));
-  const canAct =
+  // Stills, movies and links still wait for it: they save the drawing shown.
+  const scrubbedMap =
+    !!study.motion &&
+    !!resultKey &&
+    resultKey === geometryKey({ ...study, mapParameter: applied.mapParameter });
+  const actionable =
     !!result &&
-    current &&
     !sourceError &&
     !durationError &&
     !motionError &&
@@ -291,6 +289,8 @@ export function LoomPreview({
     Number.isFinite(study.parameter) &&
     study.parameter >= interval[0] &&
     study.parameter <= interval[1];
+  const canAct = actionable && resultKey === key;
+  const canPlay = actionable && (resultKey === key || scrubbedMap);
   const scalarStatus = useMemo(
     () => ({
       client: scalarClient,
@@ -541,7 +541,7 @@ export function LoomPreview({
     setScrubProgress(null);
   };
   const start = () => {
-    if (!canAct) return;
+    if (!canPlay) return;
     scrubOwner.current = null;
     const frozen = structuredClone(study);
     if (playbackActive) revealDrawing(panes.current, playback.current);
@@ -800,7 +800,7 @@ export function LoomPreview({
     >
       <div className="animation-buttons">
         <button
-          disabled={(!canAct && !playing) || exporting}
+          disabled={(!canPlay && !playing) || exporting}
           onClick={() => (playing ? pause() : start())}
         >
           {playing

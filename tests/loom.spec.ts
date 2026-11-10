@@ -3523,3 +3523,49 @@ test("scrubbing map motion never disables Play", async ({ page }) => {
   expect(await page.evaluate(() => (window as any).playDisabled)).toBe(0);
   await expect(play).toBeEnabled();
 });
+
+// Play may start while a scrubbed map parameter's frame is on its way, since
+// playback recomputes every frame; a still or a movie must wait for it, or
+// the saved drawing would pair the previous map's geometry with this one's
+// parameter and marker.
+test("a pending map-motion frame keeps Play available but holds back exports", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    const held: (() => void)[] = [];
+    (window as any).holdGeometry = false;
+    (window as any).releaseGeometry = () => held.splice(0).forEach((f) => f());
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "loom" && !q.pointOnly && (window as any).holdGeometry)
+        held.push(() => send.call(this, q, ...rest));
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "Circles through infinity");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const play = d.getByRole("button", { name: "Play map motion", exact: true });
+  const image = d.getByRole("button", { name: "Export image", exact: false });
+  const movie = loomMovieAction(d);
+  await expect(image).toBeEnabled();
+  await expect(movie).toBeEnabled();
+  await page.evaluate(() => ((window as any).holdGeometry = true));
+  const slider = d.getByLabel("Motion progress", { exact: true });
+  await slider.focus();
+  await slider.press("ArrowRight");
+  await expect(art).toHaveAttribute("aria-busy", "true");
+  await expect(play).toBeEnabled();
+  await expect(image).toBeDisabled();
+  await expect(movie).toBeDisabled();
+  await page.evaluate(() => {
+    (window as any).holdGeometry = false;
+    (window as any).releaseGeometry();
+  });
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(image).toBeEnabled();
+  await expect(movie).toBeEnabled();
+});
