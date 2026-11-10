@@ -520,7 +520,7 @@ test("complex loom help fits both tiers in every source family", async ({
   const d = page.getByRole("dialog", { name: "The complex loom" });
   await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
   await d.getByText("Sampling and limits", { exact: true }).click();
-  for (const map of ["square", "power", "mobius", "joukowski"]) {
+  for (const map of ["square", "power", "exp", "mobius", "joukowski"]) {
     await d.getByLabel("Complex map", { exact: true }).selectOption(map);
     await expect(d.locator(".loom-panes")).toHaveAttribute(
       "aria-busy",

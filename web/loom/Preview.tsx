@@ -1277,6 +1277,8 @@ export function LoomPreview({
                               {marker.critical
                                 ? "Critical point: derivative zero; no regular conformality."
                                 : "Regular map point."}
+                              {!!marker.translates?.length &&
+                                ` ${marker.translates.length} other source ${marker.translates.length === 1 ? "point" : "points"} in the window, z\u00a0+\u00a02πik, share this image (hollow markers).`}
                             </p>
                           ) : (
                             <p>

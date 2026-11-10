@@ -956,7 +956,13 @@ function loomStudy(value: unknown): LoomStudy {
     {
       fields: {
         map: {
-          options: { square: true, power: true, mobius: true, joukowski: true },
+          options: {
+            square: true,
+            power: true,
+            exp: true,
+            mobius: true,
+            joukowski: true,
+          },
         },
         degree: { optional: { range: [2, 6] } },
         mapParameter: { optional: "number" },

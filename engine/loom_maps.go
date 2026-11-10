@@ -1,6 +1,9 @@
 package engine
 
-import "math"
+import (
+	"math"
+	"slices"
+)
 
 // Rational images outside this disk are deliberately omitted. The fixed
 // image-plane fence bounds coordinates before SVG fitting/clipping; it is
@@ -13,9 +16,31 @@ const LoomImageLimit = 1e8
 // (|z| ≤ √2·10⁶, so |z⁶| < 10³⁷) lies strictly inside it.
 const LoomPowerImageLimit = 1e100
 
+// The exponential's declared source window is the closed rectangle
+// |Re z| ≤ ln 10⁸, |Im z| ≤ 8π. Since |exp z| = e^Re z, its images (and its
+// derivative, which is the map itself) lie in the annulus 10⁻⁸ ≤ |w| ≤ 10⁸,
+// the rational maps' fence; the imaginary bound admits eight periods, so the
+// window bounds every analytic member's pilot work. Points beyond it are
+// clipped in the source, before evaluation.
+const LoomExpRealLimit = 8 * math.Ln10
+const LoomExpImagLimit = 8 * math.Pi
+
+// Pilot samples of the exponential are at most this far apart in the
+// source, an eighth of a period, so no turn of an image can alias between
+// them. A chord spanning more than a quarter period is never accepted.
+const loomExpPilotStep = math.Pi / 4
+
+// Subdividing one pilot interval never takes more pieces than a chord
+// across the whole window needs, so an interval reaching far outside it
+// costs no more than one inside it.
+var loomExpPilotPieces = math.Ceil(2 * math.Hypot(LoomExpRealLimit, LoomExpImagLimit) / loomExpPilotStep)
+
 func (q LoomRequest) validateMap() error {
 	switch q.Map {
 	case "square":
+		return nil
+	case "exp":
+		// No parameter, pole, exclusion or critical point.
 		return nil
 	case "power":
 		// Categorical configuration: no parameter, pole or exclusion.
@@ -32,7 +57,7 @@ func (q LoomRequest) validateMap() error {
 			return fieldErr("mapParameter", "rational parameter must be 0–1")
 		}
 	default:
-		return fieldErr("map", "choose squaring, a power zⁿ, Möbius or z + λ/z")
+		return fieldErr("map", "choose squaring, a power zⁿ, the exponential, Möbius or z + λ/z")
 	}
 	if !finite(q.ExclusionRadius) || q.ExclusionRadius < 1e-6 || q.ExclusionRadius > 1e6 {
 		return fieldErr("exclusionRadius", "pole exclusion radius must be 0.000001–1000000 source units")
@@ -63,6 +88,9 @@ func (q LoomRequest) imageLimit() float64 {
 		return math.Inf(1)
 	case "power":
 		return LoomPowerImageLimit
+	case "exp":
+		// The source window already bounds the image.
+		return math.Inf(1)
 	}
 	return LoomImageLimit
 }
@@ -97,6 +125,11 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 	case "power":
 		// Never the rational identity limit: MapParameter is ignored here.
 		return loomPower(p, q.Degree)
+	case "exp":
+		if !inExpWindow(p) {
+			return nil
+		}
+		return loomExp(p)
 	}
 	if q.MapParameter == 0 {
 		return point(p)
@@ -115,6 +148,103 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 		return point(Vec{p.X + q.MapParameter*p.X/d, p.Y - q.MapParameter*p.Y/d})
 	}
 	return nil
+}
+
+func inExpWindow(p Vec) bool {
+	return math.Abs(p.X) <= LoomExpRealLimit && math.Abs(p.Y) <= LoomExpImagLimit
+}
+
+// loomExp is e^x (cos y, sin y), without the window: an exact crossing of
+// the closed window is drawn even when rounding puts its source just outside.
+func loomExp(p Vec) *Vec {
+	r := math.Exp(p.X)
+	return point(Vec{r * math.Cos(p.Y), r * math.Sin(p.Y)})
+}
+
+// translates lists the exponential's other source points z + 2πik, k ≠ 0,
+// inside its window: every one has the same image as z.
+func (q LoomRequest) translates(p Vec) []Vec {
+	if q.Map != "exp" || !inExpWindow(p) {
+		return nil
+	}
+	var out []Vec
+	lo := int(math.Ceil((-LoomExpImagLimit - p.Y) / (2 * math.Pi)))
+	hi := int(math.Floor((LoomExpImagLimit - p.Y) / (2 * math.Pi)))
+	for k := lo; k <= hi; k++ {
+		if y := p.Y + 2*math.Pi*float64(k); k != 0 && math.Abs(y) <= LoomExpImagLimit {
+			out = append(out, Vec{p.X, y})
+		}
+	}
+	return out
+}
+
+// windowCuts are the parameters where an analytic member crosses the
+// exponential's window, inserted as pilot samples so that the boundary is
+// drawn exactly and an arc narrower than the pilot spacing is not missed.
+// Selected curves use one-sided bisection instead.
+func (q LoomRequest) windowCuts(id int) []float64 {
+	if q.Map != "exp" || q.Source.Kind == "curve" {
+		return nil
+	}
+	X, Y := LoomExpRealLimit, LoomExpImagLimit
+	s := q.Source
+	if s.Kind == "grid" {
+		vertical := id < s.XCount
+		n, a, b, index := s.XCount, s.XMin, s.XMax, id
+		if !vertical {
+			n, a, b, index = s.YCount, s.YMin, s.YMax, id-s.XCount
+		}
+		fixed := a/2 + b/2
+		if n > 1 {
+			fixed = a + (b-a)*float64(index)/float64(n-1)
+		}
+		// A vertical line x = c crosses y = ±Y; a horizontal one x = ±X.
+		if vertical && math.Abs(fixed) <= X {
+			return []float64{-Y, Y}
+		}
+		if !vertical && math.Abs(fixed) <= Y {
+			return []float64{-X, X}
+		}
+		return nil
+	}
+	center, radius, phase := Vec{}, s.Radius*float64(id+1)/float64(s.Count), 0.0
+	if s.Kind == "rosette" {
+		radius = s.Radius
+		phase = 2 * math.Pi * float64(id) / float64(s.Count)
+		center = Vec{radius * math.Cos(phase), radius * math.Sin(phase)}
+	}
+	// The point at angle φ = θ + phase is center + radius·e^{iφ}. A circle
+	// also meets the lines through the edges beyond the window's corners;
+	// only crossings on the closed edges themselves are kept, allowing the
+	// rounding of the crossing's other coordinate.
+	var out []float64
+	slack := 1e-15 * (radius + math.Abs(center.X) + math.Abs(center.Y))
+	wrap := func(phi, along, limit float64) {
+		if math.Abs(along) > limit+slack {
+			return
+		}
+		t := math.Mod(phi-phase, 2*math.Pi)
+		if t < 0 {
+			t += 2 * math.Pi
+		}
+		out = append(out, t)
+	}
+	for _, edge := range []float64{-X, X} {
+		if c := (edge - center.X) / radius; math.Abs(c) <= 1 {
+			for _, phi := range []float64{math.Acos(c), -math.Acos(c)} {
+				wrap(phi, center.Y+radius*math.Sin(phi), Y)
+			}
+		}
+	}
+	for _, edge := range []float64{-Y, Y} {
+		if v := (edge - center.Y) / radius; math.Abs(v) <= 1 {
+			for _, phi := range []float64{math.Asin(v), math.Pi - math.Asin(v)} {
+				wrap(phi, center.X+radius*math.Cos(phi), X)
+			}
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func (q LoomRequest) domain(p Vec) string {
@@ -187,6 +317,16 @@ func (q LoomRequest) poleCuts(id int) []float64 {
 // chords and their measured deviation to clear the excluded disk. A chord
 // passing through it must subdivide even when its image probes are collinear.
 func (q LoomRequest) domainSafe(a, b Vec, probes [3]loomNode) bool {
+	if q.Map == "exp" {
+		// Probes a whole period apart agree in the image; a chord whose
+		// source, with its measured deviation, spans more than a quarter
+		// period must subdivide even when its image probes lie along it.
+		deviation := 0.0
+		for _, n := range probes {
+			deviation = math.Max(deviation, plane.Distance(*n.p, a, b))
+		}
+		return b.Sub(a).Norm()+2*deviation <= 2*loomExpPilotStep
+	}
 	pole := q.pole()
 	if pole == nil {
 		return true
