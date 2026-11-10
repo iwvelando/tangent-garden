@@ -301,6 +301,52 @@ func TestLoomExpWindowBoundariesOnAnalyticFamilies(t *testing.T) {
 	}
 }
 
+// A circle meets the lines through the window's edges beyond its corners
+// too. Those crossings are outside the closed window: nothing there is drawn,
+// so no image leaves the annulus and a circle wholly outside stays one
+// clipped interval.
+func TestLoomExpCrossingsBeyondTheCornersAreClipped(t *testing.T) {
+	for _, c := range []struct {
+		kind   string
+		radius float64
+		count  int
+	}{
+		// |z| = 40 exceeds the corner distance, about 31.16, everywhere,
+		// yet the circle meets x = ±ln 10⁸ and y = ±8π.
+		{"concentric", 40, 1},
+		// The circle centered at 20i meets y = 8π at |x| ≈ 19.33 and
+		// x = ±ln 10⁸ at y ≈ 27.79, both beyond the corner.
+		{"rosette", 20, 4},
+	} {
+		q := expLoom(c.kind)
+		q.Source.Count, q.Source.Radius, q.Samples, q.Tolerance = c.count, c.radius, 32, .05
+		r, err := ComputeLoom(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range r.Members {
+			for j, p := range m.Source {
+				w := m.Image[j]
+				if p == nil || w == nil {
+					continue
+				}
+				if math.Abs(p.X) > expReal*(1+1e-14) || math.Abs(p.Y) > expImag*(1+1e-14) {
+					t.Fatalf("%s %s: %v beyond the window drawn as %v", c.kind, m.Name, *p, *w)
+				}
+				if w.Norm() > 1e8*(1+1e-12) || w.Norm() < 1e-8*(1-1e-12) {
+					t.Fatalf("%s %s: image radius %g outside the annulus", c.kind, m.Name, w.Norm())
+				}
+			}
+		}
+		if c.kind == "concentric" {
+			m := r.Members[0]
+			if len(m.Intervals) != 1 || m.Intervals[0].From != m.Min || m.Intervals[0].To != m.Max || m.Intervals[0].Reason != "clipped" {
+				t.Fatalf("circle wholly outside the window is not one clipped interval: %+v", m.Intervals)
+			}
+		}
+	}
+}
+
 // The window is closed: lines on its edges are drawn whole.
 func TestLoomExpWindowIsClosed(t *testing.T) {
 	q := expLoom("grid")

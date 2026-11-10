@@ -213,9 +213,16 @@ func (q LoomRequest) windowCuts(id int) []float64 {
 		phase = 2 * math.Pi * float64(id) / float64(s.Count)
 		center = Vec{radius * math.Cos(phase), radius * math.Sin(phase)}
 	}
-	// The point at angle φ = θ + phase is center + radius·e^{iφ}.
+	// The point at angle φ = θ + phase is center + radius·e^{iφ}. A circle
+	// also meets the lines through the edges beyond the window's corners;
+	// only crossings on the closed edges themselves are kept, allowing the
+	// rounding of the crossing's other coordinate.
 	var out []float64
-	wrap := func(phi float64) {
+	slack := 1e-15 * (radius + math.Abs(center.X) + math.Abs(center.Y))
+	wrap := func(phi, along, limit float64) {
+		if math.Abs(along) > limit+slack {
+			return
+		}
 		t := math.Mod(phi-phase, 2*math.Pi)
 		if t < 0 {
 			t += 2 * math.Pi
@@ -224,14 +231,16 @@ func (q LoomRequest) windowCuts(id int) []float64 {
 	}
 	for _, edge := range []float64{-X, X} {
 		if c := (edge - center.X) / radius; math.Abs(c) <= 1 {
-			wrap(math.Acos(c))
-			wrap(-math.Acos(c))
+			for _, phi := range []float64{math.Acos(c), -math.Acos(c)} {
+				wrap(phi, center.Y+radius*math.Sin(phi), Y)
+			}
 		}
 	}
 	for _, edge := range []float64{-Y, Y} {
 		if v := (edge - center.Y) / radius; math.Abs(v) <= 1 {
-			wrap(math.Asin(v))
-			wrap(math.Pi - math.Asin(v))
+			for _, phi := range []float64{math.Asin(v), math.Pi - math.Asin(v)} {
+				wrap(phi, center.X+radius*math.Cos(phi), X)
+			}
 		}
 	}
 	slices.Sort(out)
