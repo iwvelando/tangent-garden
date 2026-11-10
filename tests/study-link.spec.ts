@@ -4150,3 +4150,115 @@ test("exponential loom presets open a strip and a nautilus over the base curve",
   ].entries())
     assert.equal(model.presetLoom(i, base).map, map);
 });
+
+test("general Möbius loom links carry their coefficients and flow, and older loom links keep their requests", async () => {
+  const model = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const square = model.defaultLoom(ordinary.config);
+  const general = model.replaceMap(square, "fractional");
+  assert.equal(general.map, "fractional");
+  // Opens on the map itself, s = 1, with the loxodromic default and the
+  // rational maps' generated exclusion radius.
+  assert.equal(general.mapParameter, 1);
+  assert.deepEqual(general.coefficients, {
+    a: { x: 2, y: 1 },
+    b: { x: 0, y: -1 },
+    c: { x: 0, y: -1 },
+    d: { x: 2, y: 1 },
+  });
+  assert.equal(
+    general.exclusionRadius,
+    model.replaceMap(square, "mobius").exclusionRadius,
+  );
+  // Only the general map sends coefficients, though other maps retain them.
+  assert.deepEqual(
+    model.loomRequest(general).coefficients,
+    general.coefficients,
+  );
+  for (const map of [
+    "square",
+    "power",
+    "exp",
+    "mobius",
+    "joukowski",
+  ] as const) {
+    const other = model.replaceMap(general, map);
+    assert.deepEqual(other.coefficients, general.coefficients, map);
+    assert.equal("coefficients" in model.loomRequest(other), false, map);
+  }
+  // Edited coefficients survive a round trip through another map.
+  const edited = {
+    ...general,
+    coefficients: { ...general.coefficients!, b: { x: 3, y: -0.5 } },
+  };
+  assert.deepEqual(
+    model.replaceMap(model.replaceMap(edited, "exp"), "fractional")
+      .coefficients,
+    edited.coefficients,
+  );
+  // Invalid retained coefficients start again from the default.
+  assert.deepEqual(
+    model.replaceMap(
+      {
+        ...model.replaceMap(edited, "square"),
+        coefficients: { ...edited.coefficients, a: { x: 2e6, y: 0 } },
+      },
+      "fractional",
+    ).coefficients,
+    general.coefficients,
+  );
+  const motion = { mode: "map" as const, from: -1, to: 1 };
+  const saved = planarStudy({ ...ordinary, loom: { ...edited, motion } });
+  assert.deepEqual(saved.loom, { ...edited, motion });
+  const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+  assert.deepEqual(planarStudy(decoded.study).loom, { ...edited, motion });
+  // The flow parameter and motion endpoints are −1–1; coefficients are
+  // required for the general map.
+  for (const loom of [
+    { ...edited, mapParameter: 1.5 },
+    { ...edited, motion: { ...motion, to: 1.5 } },
+    { ...edited, coefficients: undefined },
+    { ...edited, coefficients: { ...edited.coefficients, d: { x: 1 } } },
+  ])
+    assert.throws(() => planarStudy({ ...ordinary, loom }), LinkError);
+  // An older link with no coefficients field opens exactly as before.
+  const legacy = model.replaceMap(square, "mobius");
+  assert.equal("coefficients" in legacy, false);
+  assert.deepEqual(planarStudy({ ...ordinary, loom: legacy }).loom, legacy);
+  assert.equal(model.mapText(general).formula, "w = (az + b)/(cz + d)");
+  assert.equal(model.mapText(general).kind, "fractional");
+});
+
+test("general Möbius loom presets open their flow at the inverse over the base curve", async () => {
+  const model = await import("../web/loom/model");
+  const base = planarPreset(0).config;
+  for (const [title, kind] of [
+    ["Circles whirled between two fixed points", "concentric"],
+    ["A grid turned about two fixed points", "grid"],
+  ] as const) {
+    const index = model.loomPresets.findIndex((p) => p.title === title);
+    assert.ok(index >= 0, `${title} is missing`);
+    const s = model.presetLoom(index, base);
+    assert.equal(s.map, "fractional");
+    assert.equal(s.source.kind, kind);
+    assert.equal(s.mapParameter, -1);
+    assert.deepEqual(s.motion, { mode: "map", from: -1, to: 1 });
+    assert.ok(s.coefficients && s.exclusionRadius);
+    assert.deepEqual(s.source.curve, base.curve);
+    assert.equal(s.parameter, model.memberInterval(s.source, s.selected)[0]);
+    assert.deepEqual(planarStudy({ ...planarPreset(0), loom: s }).loom, s);
+  }
+  // Existing presets are unchanged by the general Möbius entries.
+  for (const [i, map] of [
+    "square",
+    "square",
+    "square",
+    "mobius",
+    "joukowski",
+    "power",
+    "power",
+    "exp",
+    "exp",
+  ].entries())
+    assert.equal(model.presetLoom(i, base).map, map);
+});
