@@ -528,7 +528,7 @@ func TestLoomInvalidExhaustionAndBounds(t *testing.T) {
 	}
 	for _, change := range []func(*LoomRequest){
 		func(q *LoomRequest) { q.Source.Kind = "unsupported" },
-		func(q *LoomRequest) { q.Source.Input = "evolute" },
+		func(q *LoomRequest) { q.Source.Input = "involute" },
 		func(q *LoomRequest) { q.Source.Curve.Format = "implicit" },
 		func(q *LoomRequest) { q.Source.Radius = 0; q.Source.Kind = "rosette" },
 		func(q *LoomRequest) { q.Source.XCount = 33; q.Source.Kind = "grid" },
