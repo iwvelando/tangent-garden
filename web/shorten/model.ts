@@ -322,7 +322,7 @@ export const shortenHelp = {
   ),
   depth: tiered(
     `How far petals reach, as a fraction of the radius.`,
-    `Petal and ruffle depths together are at most ${shortenLimits.depths}; 0 without petals. Petals deeper than 1/(k² − 1) make the loop nonconvex. Too deep for the resolution is refused, as is a loop whose tangents come within atan(1/10) of its rays.`,
+    `Petal and ruffle depths together are at most ${shortenLimits.depths}; 0 without petals. Without ruffles, petals deeper than 1/(k² + 1) make the loop nonconvex. Too deep for the resolution is refused, as is a loop whose tangents come within atan(1/10) of its rays.`,
   ),
   ruffles: tiered(
     `Fine ripples around the loop: 0 (none) or ${shortenLimits.ruffles[0]}–${shortenLimits.ruffles[1]}.`,

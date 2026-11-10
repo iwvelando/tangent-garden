@@ -14,7 +14,7 @@ const LoomImageLimit = 1e8
 // Power images outside this disk are omitted. A polynomial has no pole, so
 // this fence only keeps arithmetic finite: squares of retained coordinates
 // stay far below float64 overflow, and every admitted analytic family
-// (|z| ≤ √2·10⁶, so |z⁶| < 10³⁷) lies strictly inside it.
+// (|z| ≤ 2·10⁶, so |z⁶| < 10³⁸) lies strictly inside it.
 const LoomPowerImageLimit = 1e100
 
 // The exponential's declared source window is the closed rectangle
