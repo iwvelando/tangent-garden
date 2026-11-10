@@ -272,9 +272,10 @@ export function LoomPreview({
   // Point intent may be newer than the displayed marker. Keep its controls
   // usable; captures explicitly resolve that intent before drawing it.
   const interval = memberInterval(study.source, study.selected);
-  // Map motion recomputes geometry for every frame it plays, so a scrubbed
-  // map parameter whose frame is still on its way does not hold Play back.
-  // Stills, movies and links still wait for it: they save the drawing shown.
+  // A scrubbed map parameter whose frame is still on its way holds no action
+  // back, so no button blinks while the thumb moves. Playback and movies
+  // compute every frame, a link saves the study rather than the drawing, and
+  // a still computes the scrubbed frame before drawing it.
   const scrubbedMap =
     !!study.motion &&
     !!resultKey &&
@@ -289,8 +290,7 @@ export function LoomPreview({
     Number.isFinite(study.parameter) &&
     study.parameter >= interval[0] &&
     study.parameter <= interval[1];
-  const canAct = actionable && resultKey === key;
-  const canPlay = actionable && (resultKey === key || scrubbedMap);
+  const canAct = actionable && (resultKey === key || scrubbedMap);
   const scalarStatus = useMemo(
     () => ({
       client: scalarClient,
@@ -541,7 +541,7 @@ export function LoomPreview({
     setScrubProgress(null);
   };
   const start = () => {
-    if (!canPlay) return;
+    if (!canAct) return;
     scrubOwner.current = null;
     const frozen = structuredClone(study);
     if (playbackActive) revealDrawing(panes.current, playback.current);
@@ -585,8 +585,11 @@ export function LoomPreview({
       fail: (e) => fail(e as Error),
     });
   };
-  const props = (pane: Pane): DrawingProps => ({
-    result: result!,
+  const props = (
+    pane: Pane,
+    shown = { result: result!, request: applied },
+  ): DrawingProps => ({
+    result: shown.result,
     marker: marker!,
     pane,
     selected: marker!.member,
@@ -596,11 +599,15 @@ export function LoomPreview({
     scheme: theme.scheme,
     weight,
     imageLabel: text.imageLabel,
-    exclusion: poleExclusion(applied, study.showExclusion ?? true, result),
-    ...(applied.source.kind === "curve" && {
+    exclusion: poleExclusion(
+      shown.request,
+      study.showExclusion ?? true,
+      shown.result,
+    ),
+    ...(shown.request.source.kind === "curve" && {
       path: {
-        construction: loomPaths[applied.source.input].construction,
-        pole: applied.source.pole ?? { x: 0, y: 0 },
+        construction: loomPaths[shown.request.source.input].construction,
+        pole: shown.request.source.pole ?? { x: 0, y: 0 },
       },
     }),
     onCamera: (c) =>
@@ -637,16 +644,31 @@ export function LoomPreview({
     pause();
     const id = ++exportGeneration.current;
     try {
+      // A scrubbed map frame may still be on its way: compute it, and show
+      // it too, since this request supersedes the scrub's.
+      const request = loomRequest(study);
+      const frame =
+        resultKey === key ? undefined : await session.current!.frame(request);
+      if (id !== exportGeneration.current) return;
+      if (frame && frame.numericEntries > 2000000)
+        throw new Error("The loom exceeded its retained geometry budget.");
+      if (frame) {
+        setApplied(request);
+        setResult(frame);
+        setResultKey(key);
+      }
       const marker =
-        placed?.key === markerKey
+        frame?.marker ??
+        (placed?.key === markerKey
           ? placed.marker
-          : await session.current!.point(loomRequest(study));
+          : await session.current!.point(request));
       if (id !== exportGeneration.current) return;
       setPlaced({ key: markerKey, marker });
+      const shown = frame && { result: frame, request };
       await loomStill(
         kind as "svg" | "png",
-        { ...props("source"), marker, selected: study.selected },
-        { ...props("image"), marker, selected: study.selected },
+        { ...props("source", shown), marker, selected: study.selected },
+        { ...props("image", shown), marker, selected: study.selected },
         metadata(),
         () => id === exportGeneration.current,
         settings,
@@ -663,6 +685,7 @@ export function LoomPreview({
   }
   async function movie() {
     if (!canAct) return;
+    const pending = resultKey !== key || placed?.key !== markerKey;
     pause();
     setExporting(true);
     setExportProgress(0);
@@ -694,7 +717,12 @@ export function LoomPreview({
     } catch (e) {
       if (id === exportGeneration.current) fail(e as Error);
     } finally {
-      if (id === exportGeneration.current) setExporting(false);
+      if (id === exportGeneration.current) {
+        setExporting(false);
+        // The movie's requests superseded a scrubbed frame or point that
+        // was on its way; ask for it again.
+        if (pending) setSessionVersion((v) => v + 1);
+      }
     }
   }
   useEffect(() => {
@@ -800,7 +828,7 @@ export function LoomPreview({
     >
       <div className="animation-buttons">
         <button
-          disabled={(!canPlay && !playing) || exporting}
+          disabled={(!canAct && !playing) || exporting}
           onClick={() => (playing ? pause() : start())}
         >
           {playing
