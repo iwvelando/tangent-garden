@@ -3491,44 +3491,66 @@ test("traversal keeps playing under a map that ignores a retained degree", async
   ).toBeVisible();
 });
 
-// Scrubbing map motion changes the map parameter frame by frame; Play stays
-// available throughout rather than blinking while each frame computes.
-test("scrubbing map motion never disables Play", async ({ page }) => {
-  await page.goto("/");
-  await settled(page);
-  await openLoomExample(page, "Circles through infinity");
-  const d = page.getByRole("dialog", { name: "The complex loom" });
-  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
-  const play = d.getByRole("button", { name: "Play map motion", exact: true });
-  await play.evaluate((button) => {
-    (window as any).playDisabled = 0;
-    new MutationObserver(() => {
-      if ((button as HTMLButtonElement).disabled)
-        (window as any).playDisabled++;
-    }).observe(button, { attributes: true });
-  });
-  const slider = d.getByLabel("Motion progress", { exact: true });
-  const box = (await slider.boundingBox())!;
-  await page.mouse.move(box.x + 5, box.y + box.height / 2);
-  await page.mouse.down();
-  for (let i = 0; i <= 30; i++) {
-    await page.mouse.move(
-      box.x + 5 + ((box.width - 10) * i) / 30,
-      box.y + box.height / 2,
+// Scrubbing must never make a button blink. Map motion changes the geometry
+// on every scrubbed frame, and traversal only the marker; in both, Play,
+// copy-link and the exports stay enabled while each frame computes.
+for (const [example, name, label] of [
+  ["Circles through infinity", "Play map motion", "Motion progress"],
+  [undefined, "Play traversal", "Source parameter"],
+] as const)
+  test(`scrubbing never disables a button (${label})`, async ({ page }) => {
+    await page.goto("/");
+    await settled(page);
+    await openLoomExample(page, example);
+    const d = page.getByRole("dialog", { name: "The complex loom" });
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
     );
-    await page.waitForTimeout(25);
-  }
-  await page.mouse.up();
-  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
-  expect(await page.evaluate(() => (window as any).playDisabled)).toBe(0);
-  await expect(play).toBeEnabled();
-});
+    const actions = [
+      d.getByRole("button", { name, exact: true }),
+      d.getByRole("button", { name: "Copy link", exact: true }),
+      d.getByRole("button", { name: "Export image", exact: false }),
+      loomMovieAction(d),
+    ];
+    for (const action of actions) await expect(action).toBeEnabled();
+    await d.evaluate((dialog) => {
+      const blinked: string[] = ((window as any).blinked = []);
+      new MutationObserver((records) => {
+        for (const r of records) {
+          const button = r.target as HTMLButtonElement;
+          if (button.disabled) blinked.push(button.textContent ?? "");
+        }
+      }).observe(dialog, {
+        attributes: true,
+        attributeFilter: ["disabled"],
+        subtree: true,
+      });
+    });
+    const slider = d.getByRole("slider", { name: label, exact: true });
+    const box = (await slider.boundingBox())!;
+    await page.mouse.move(box.x + 5, box.y + box.height / 2);
+    await page.mouse.down();
+    for (let i = 0; i <= 30; i++) {
+      await page.mouse.move(
+        box.x + 5 + ((box.width - 10) * i) / 30,
+        box.y + box.height / 2,
+      );
+      await page.waitForTimeout(25);
+    }
+    await page.mouse.up();
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    expect(await page.evaluate(() => (window as any).blinked)).toEqual([]);
+    for (const action of actions) await expect(action).toBeEnabled();
+  });
 
-// Play may start while a scrubbed map parameter's frame is on its way, since
-// playback recomputes every frame; a still or a movie must wait for it, or
-// the saved drawing would pair the previous map's geometry with this one's
-// parameter and marker.
-test("a pending map-motion frame keeps Play available but holds back exports", async ({
+// While a scrubbed map parameter's frame is on its way, every action stays
+// available. A still saved then waits for that frame, so it never pairs the
+// previous map's geometry with this one's parameter and marker.
+test("a still saved during a pending map-motion frame draws that frame", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -3548,24 +3570,84 @@ test("a pending map-motion frame keeps Play available but holds back exports", a
   const d = page.getByRole("dialog", { name: "The complex loom" }),
     art = d.locator(".loom-panes");
   await expect(art).toHaveAttribute("aria-busy", "false");
-  const play = d.getByRole("button", { name: "Play map motion", exact: true });
-  const image = d.getByRole("button", { name: "Export image", exact: false });
-  const movie = loomMovieAction(d);
-  await expect(image).toBeEnabled();
-  await expect(movie).toBeEnabled();
+  const image = d.locator('[data-pane="image"] [data-member="0"]');
+  const before = (await image.getAttribute("d"))!;
+  const actions = [
+    d.getByRole("button", { name: "Play map motion", exact: true }),
+    d.getByRole("button", { name: "Copy link", exact: true }),
+    d.getByRole("button", { name: "Export image", exact: false }),
+    loomMovieAction(d),
+  ];
   await page.evaluate(() => ((window as any).holdGeometry = true));
   const slider = d.getByLabel("Motion progress", { exact: true });
   await slider.focus();
   await slider.press("ArrowRight");
   await expect(art).toHaveAttribute("aria-busy", "true");
-  await expect(play).toBeEnabled();
-  await expect(image).toBeDisabled();
-  await expect(movie).toBeDisabled();
+  for (const action of actions) await expect(action).toBeEnabled();
+  let saved = false;
+  const download = page.waitForEvent("download").then((f) => {
+    saved = true;
+    return f;
+  });
+  await loomImage(d, "SVG");
+  await page.waitForTimeout(300);
+  expect(saved).toBe(false);
   await page.evaluate(() => {
     (window as any).holdGeometry = false;
     (window as any).releaseGeometry();
   });
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).not.toContain(`d="${before}"`);
   await expect(art).toHaveAttribute("aria-busy", "false");
-  await expect(image).toBeEnabled();
-  await expect(movie).toBeEnabled();
+  const after = (await image.getAttribute("d"))!;
+  expect(after).not.toBe(before);
+  expect(svg).toContain(`d="${after}"`);
+  const shown = await slider.getAttribute("aria-valuetext");
+  expect(svg).toContain(`"mapParameter":${shown}`);
+  for (const action of actions) await expect(action).toBeEnabled();
+});
+
+// A movie started while a scrubbed map frame is on its way supersedes that
+// frame's request; once the movie is saved, the drawing still reaches it.
+test("a movie saved during a pending map-motion frame leaves the drawing current", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    const held: (() => void)[] = [];
+    (window as any).holdGeometry = false;
+    (window as any).releaseGeometry = () => held.splice(0).forEach((f) => f());
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "loom" && !q.pointOnly && (window as any).holdGeometry)
+        held.push(() => send.call(this, q, ...rest));
+      else send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "Circles through infinity");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await openLoomExportSettings(d);
+  await d.getByLabel("Traversal duration", { exact: true }).fill("0.2");
+  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const image = d.locator('[data-pane="image"] [data-member="0"]');
+  const before = (await image.getAttribute("d"))!;
+  await page.evaluate(() => ((window as any).holdGeometry = true));
+  const slider = d.getByLabel("Motion progress", { exact: true });
+  await slider.focus();
+  await slider.press("ArrowRight");
+  await expect(art).toHaveAttribute("aria-busy", "true");
+  await page.evaluate(() => ((window as any).holdGeometry = false));
+  const movie = page.waitForEvent("download");
+  await loomMovieAction(d).click();
+  // The movie's first request must replace the held one before it settles;
+  // its export module loads lazily first.
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => (window as any).releaseGeometry());
+  await movie;
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  expect(await image.getAttribute("d")).not.toBe(before);
 });
