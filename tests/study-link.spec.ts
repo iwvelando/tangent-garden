@@ -4073,3 +4073,80 @@ test("power loom presets open their own degree and selection over the base curve
   ].entries())
     assert.equal(model.presetLoom(i, base).map, map);
 });
+
+test("exponential loom links carry no map settings and older loom links keep their requests", async () => {
+  const model = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const square = model.defaultLoom(ordinary.config);
+  square.views.image = { x: 37, y: -19, zoom: 2 };
+  const exp = model.replaceMap(square, "exp");
+  assert.equal(exp.map, "exp");
+  assert.deepEqual(exp.source, square.source);
+  assert.deepEqual(exp.views, square.views);
+  // No degree, parameter, exclusion or motion enters the request or study.
+  assert.deepEqual(model.loomRequest(exp), {
+    ...model.loomRequest(square),
+    map: "exp",
+  });
+  for (const key of ["degree", "mapParameter", "exclusionRadius", "motion"])
+    assert.equal(key in exp, false, key);
+  const saved = planarStudy({ ...ordinary, loom: exp });
+  assert.deepEqual(saved.loom, exp);
+  const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+  assert.deepEqual(planarStudy(decoded.study).loom, exp);
+  // The exponential has no parameter to animate.
+  assert.throws(
+    () =>
+      planarStudy({
+        ...ordinary,
+        loom: { ...exp, motion: { mode: "map", from: 0, to: 1 } },
+      }),
+    LinkError,
+  );
+  // Retained settings of other maps survive a visit to the exponential.
+  const fold = model.replaceMap({ ...square, degree: 5 }, "joukowski");
+  const through = model.replaceMap(model.replaceMap(fold, "exp"), "joukowski");
+  assert.equal(through.exclusionRadius, fold.exclusionRadius);
+  assert.equal(model.replaceMap(through, "power").degree, 5);
+  assert.equal(model.mapText(exp).formula, "w = eᶻ");
+  assert.equal(model.mapText(exp).kind, "exp");
+});
+
+test("exponential loom presets open a strip and a nautilus over the base curve", async () => {
+  const model = await import("../web/loom/model");
+  const base = planarPreset(0).config;
+  for (const [title, kind] of [
+    ["A strip wrapped into rings", "grid"],
+    ["Circles curled into a nautilus", "concentric"],
+  ] as const) {
+    const index = model.loomPresets.findIndex((p) => p.title === title);
+    assert.ok(index >= 0, `${title} is missing`);
+    const s = model.presetLoom(index, base);
+    assert.equal(s.map, "exp");
+    assert.equal(s.source.kind, kind);
+    for (const key of ["degree", "mapParameter", "motion", "framing"])
+      assert.equal(key in s, false, key);
+    assert.deepEqual(s.source.curve, base.curve);
+    assert.equal(s.parameter, model.memberInterval(s.source, s.selected)[0]);
+    assert.deepEqual(planarStudy({ ...planarPreset(0), loom: s }).loom, s);
+  }
+  // The strip spans exactly one period, so its edges share their images.
+  const strip = model.presetLoom(
+    model.loomPresets.findIndex(
+      (p) => p.title === "A strip wrapped into rings",
+    ),
+    base,
+  );
+  assert.equal(strip.source.yMax - strip.source.yMin, 2 * Math.PI);
+  // Existing presets are unchanged by the exponential entries.
+  for (const [i, map] of [
+    "square",
+    "square",
+    "square",
+    "mobius",
+    "joukowski",
+    "power",
+    "power",
+  ].entries())
+    assert.equal(model.presetLoom(i, base).map, map);
+});

@@ -6,7 +6,7 @@ import {
   type ThumbnailSource,
 } from "../ExampleGallery";
 import { presets } from "../presets";
-import { loomPresets, presetDefinition } from "../loom/model";
+import { loomPresets, maps, presetDefinition } from "../loom/model";
 import { gardenPresets } from "../garden/model";
 import { lacePresets } from "../lace/model";
 import { shortenPresets } from "../shorten/model";
@@ -82,7 +82,7 @@ export const loomExamples: Example[] = loomPresets.map((p, i) => ({
   title: p.title,
   caption: p.note,
   family: "Complex maps",
-  keywords: `complex loom square squaring z² ${p.kind}${"degree" in p ? " power powers polynomial cube cubic quintic" : ""}`,
+  keywords: `complex loom square squaring z² ${p.kind}${"map" in p ? maps[p.map].keywords : ""}`,
   fingerprint: fingerprint(presetDefinition(i)),
 }));
 

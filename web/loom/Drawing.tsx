@@ -271,6 +271,23 @@ export function PaneDrawing(p: DrawingProps) {
               pointerEvents="stroke"
             />
           ))}
+        {/* The exponential's other source points with the marker's image. */}
+        {p.pane === "source" &&
+          p.marker.image &&
+          p.marker.translates?.map((t, i) => (
+            <circle
+              key={i}
+              data-translate="true"
+              data-point={JSON.stringify(t)}
+              cx={xy(t).x}
+              cy={xy(t).y}
+              r={4.5}
+              stroke={palette.probe}
+              strokeDasharray="2.5 2.5"
+              strokeWidth={1.6}
+              fill="none"
+            />
+          ))}
         {point && (
           <circle
             data-marker="true"

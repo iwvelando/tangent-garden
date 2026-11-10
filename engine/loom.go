@@ -57,6 +57,9 @@ type LoomMarker struct {
 	Source    *Vec    `json:"source"`
 	Image     *Vec    `json:"image"`
 	Critical  bool    `json:"critical"`
+	// The exponential's other source points z + 2πik in its window, k ≠ 0,
+	// all with this marker's image; absent for every other map.
+	Translates []Vec `json:"translates,omitempty"`
 }
 type LoomResult struct {
 	Members        []LoomMember `json:"members"`
@@ -186,6 +189,7 @@ func (q LoomRequest) marker(c loomCurve, id int, t float64) LoomMarker {
 	if p != nil {
 		m.Image = q.image(*p)
 		m.Critical = m.Image != nil && q.critical(*p)
+		m.Translates = q.translates(*p)
 	}
 	return m
 }
@@ -246,7 +250,9 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	// One global budget includes pilot samples, probes and the marker.
 	r.Marker = q.marker(cs[q.Selected], q.Selected, q.Parameter)
 	r.Evaluations = 1
-	eval := func(c loomCurve, t float64) loomNode {
+	// A boundary node is an exact crossing of the exponential's closed
+	// window, drawn although rounding may put its source just outside.
+	evalAt := func(c loomCurve, t float64, boundary bool) loomNode {
 		n := loomNode{t: t}
 		if r.Evaluations >= limits.evaluations {
 			r.Exhausted = true
@@ -257,6 +263,9 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 		n.p = point(c.at(t))
 		if n.p != nil {
 			n.w = q.image(*n.p)
+			if boundary {
+				n.w = loomExp(*n.p)
+			}
 			n.reason = q.domain(*n.p)
 			if q.Map != "square" && n.w == nil && n.reason == "" {
 				n.w, n.reason = nil, "clipped"
@@ -264,6 +273,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 		}
 		return n
 	}
+	eval := func(c loomCurve, t float64) loomNode { return evalAt(c, t, false) }
 	sourceTolerance := make([]float64, len(cs))
 	imageTolerance := make([]float64, len(cs))
 	first := make([]loomNode, len(cs))
@@ -278,8 +288,8 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 		for i := range at {
 			at[i] = c.min + (c.max-c.min)*float64(i)/float64(q.Samples-1)
 		}
-		cuts := q.poleCuts(id)
-		for _, t := range cuts {
+		cuts, window := q.poleCuts(id), q.windowCuts(id)
+		for _, t := range slices.Concat(cuts, window) {
 			if t >= c.min && t <= c.max {
 				at = append(at, t)
 			}
@@ -288,23 +298,42 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 		at = slices.Compact(at)
 		// At least one probe inside every analytic root interval distinguishes
 		// the inside and outside arcs, including a very narrow surviving arc.
-		if len(cuts) > 0 {
+		if len(cuts) > 0 || len(window) > 0 {
 			base := slices.Clone(at)
+			cut := func(t float64) bool { return slices.Contains(cuts, t) || slices.Contains(window, t) }
 			for i := 1; i < len(base); i++ {
-				if slices.Contains(cuts, base[i-1]) || slices.Contains(cuts, base[i]) {
+				if cut(base[i-1]) || cut(base[i]) {
 					at = append(at, base[i-1]+(base[i]-base[i-1])/2)
 				}
 			}
 			slices.Sort(at)
 			at = slices.Compact(at)
 		}
-		pilot := make([]loomNode, len(at))
-		src, img := make([]*Vec, len(at)), make([]*Vec, len(at))
-		for i := range pilot {
-			pilot[i] = eval(c, at[i])
-			if slices.Contains(cuts, at[i]) {
-				pilot[i].w, pilot[i].reason = nil, "excluded"
+		pilot := make([]loomNode, 0, len(at))
+		for _, t := range at {
+			n := evalAt(c, t, slices.Contains(window, t))
+			if slices.Contains(cuts, t) {
+				n.w, n.reason = nil, "excluded"
 			}
+			// The exponential's pilots are at most an eighth of a period
+			// apart in the source wherever both panes are defined, so
+			// whole-period aliasing can neither hide a turn nor shrink the
+			// image's tolerance. Inside the bounded window this adds at
+			// most a few hundred samples to an analytic member. An interval
+			// leaving the window is divided as finely as one across it, so
+			// a curve mostly outside still measures its tolerance there.
+			if k := len(pilot) - 1; q.Map == "exp" && k >= 0 && n.p != nil && pilot[k].p != nil && (n.w != nil || pilot[k].w != nil) {
+				a := pilot[k]
+				if steps := min(math.Ceil(n.p.Sub(*a.p).Norm()/loomExpPilotStep), loomExpPilotPieces); steps > 1 {
+					for j := 1; j < int(steps); j++ {
+						pilot = append(pilot, eval(c, a.t+(t-a.t)*float64(j)/steps))
+					}
+				}
+			}
+			pilot = append(pilot, n)
+		}
+		src, img := make([]*Vec, len(pilot)), make([]*Vec, len(pilot))
+		for i := range pilot {
 			src[i], img[i] = pilot[i].p, pilot[i].w
 		}
 		sourceTolerance[id] = q.Tolerance * studyRadius(src)

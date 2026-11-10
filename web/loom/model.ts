@@ -16,7 +16,7 @@ export type LoomSource = {
   curve: Config["curve"];
 };
 export type LoomRequest = {
-  map: "square" | "power" | "mobius" | "joukowski";
+  map: "square" | "power" | "exp" | "mobius" | "joukowski";
   // The power map's whole-number degree, 2–6. Categorical: never animated.
   degree?: number;
   mapParameter?: number;
@@ -56,6 +56,8 @@ export const maps = {
     imageLabel: "Squared image plane",
     imageHeading: "Image plane · z²",
     imageNoun: "square",
+    // Gallery search words for its presets.
+    keywords: "",
     traversalHelp:
       "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
     pole: (_parameter: number): Vec | undefined => undefined,
@@ -75,8 +77,30 @@ export const maps = {
     imageLabel: "zⁿ image plane",
     imageHeading: "Image plane · zⁿ",
     imageNoun: "image",
+    keywords: " power powers polynomial cube cubic quintic",
     traversalHelp:
       "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have z(θ) = r exp(iα)(1 + exp(iθ)), α = 2πk/N; θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero. Images beyond radius 10¹⁰⁰ are clipped.",
+    pole: (_parameter: number): Vec | undefined => undefined,
+  },
+  // No parameter, pole or critical point. Go clips sources outside the
+  // declared window and reports each marker's periodic translates.
+  exp: {
+    label: "Exponential eᶻ",
+    formula: "w = eᶻ",
+    parameterized: false,
+    degree: undefined,
+    exportDomain:
+      "Source window |Re z| ≤ ln 10⁸ ≈ 18.42, |Im z| ≤ 8π; points beyond it clipped. No pole or critical point; period 2πi. Finite expression sampling is not certified topology.",
+    symbol: "",
+    range: [0, 0],
+    initial: 0,
+    note: "Each 2π of height wraps once around zero: vertical lines become rings, horizontal lines rays.",
+    imageLabel: "eᶻ image plane",
+    imageHeading: "Image plane · eᶻ",
+    imageNoun: "image",
+    keywords: " exponential exp eᶻ periodic strip rings spiral",
+    traversalHelp:
+      "Traversal advances uniformly in the source parameter, not arc length. eᶻ repeats every 2πi: hollow markers show the other source points in the window with the same image. It has no critical point. Sources beyond |Re z| ≤ ln 10⁸ ≈ 18.42 or |Im z| ≤ 8π are clipped.",
     pole: (_parameter: number): Vec | undefined => undefined,
   },
   mobius: {
@@ -92,6 +116,7 @@ export const maps = {
     imageLabel: "Möbius image plane",
     imageHeading: "Image plane · w",
     imageNoun: "image",
+    keywords: "",
     traversalHelp: rationalTraversal,
     // At b = 0 the pole has gone to infinity.
     pole: (b: number): Vec | undefined =>
@@ -110,14 +135,15 @@ export const maps = {
     imageLabel: "z + λ/z image plane",
     imageHeading: "Image plane · w",
     imageNoun: "image",
+    keywords: "",
     traversalHelp: rationalTraversal,
     pole: (lambda: number): Vec | undefined =>
       lambda ? { x: 0, y: 0 } : undefined,
   },
 } as const;
 export const mapHelp = tiered(
-  "Squaring and powers zⁿ multiply angles, Möbius preserves circles, and z + λ/z folds circles into ellipses.",
-  "Squaring z² and powers zⁿ, n = 2–6, have a critical point at zero. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, sends circles to circles or lines; its pole is 1/b. For z+λ/z, 0≤λ≤1, zero is a pole and ±√λ are critical. Both become identity at zero. Poles exclude source disks; critical images stay drawable.",
+  "Squaring and powers zⁿ multiply angles, eᶻ wraps strips into rings, Möbius keeps circles, z + λ/z makes ellipses.",
+  "z² and zⁿ, n = 2–6, are critical at zero. eᶻ repeats every 2πi, has no critical point, and clips sources beyond |Re z| ≤ 18.42 or |Im z| ≤ 8π. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, has pole 1/b; z+λ/z, 0≤λ≤1, has pole 0 and critical ±√λ. Both are identity at zero. Poles exclude source disks; critical images stay drawable.",
 );
 export const degreeHelp = tiered(
   "Whole number 2–6; the image multiplies angles about zero by n.",
@@ -217,6 +243,8 @@ export type LoomMarker = {
   source: Vec | null;
   image: Vec | null;
   critical: boolean;
+  // The exponential's other source points with this image, z + 2πik.
+  translates?: Vec[];
 };
 export type LoomMember = {
   id: number;
@@ -303,6 +331,35 @@ export const loomPresets = [
     extent: 1,
     selected: 5,
   },
+  // Opens on a strip one period tall, −3 ≤ Re z ≤ 1/2, −π ≤ Im z ≤ π,
+  // selecting the line Re z = 0, whose image is Euler's e^{iy} on the unit
+  // circle. Vertical lines wrap into rings of radius e^x, crowding toward
+  // zero like a well, and horizontal lines open into rays; the strip's top
+  // and bottom edges share one ray.
+  {
+    title: "A strip wrapped into rings",
+    note: "The exponential wraps a strip around zero: lines become rings and rays",
+    kind: "grid",
+    map: "exp",
+    lines: 15,
+    yLines: 25,
+    xRange: [-3, 0.5],
+    yRange: [-Math.PI, Math.PI],
+    selected: 12,
+  },
+  // Opens on 32 concentric circles out to radius 6, selecting the
+  // outermost. exp(R e^{iθ}) runs from e^R out at θ = 0 to e^−R at θ = π,
+  // winding R sin θ / 2π times about zero, so circles beyond radius π
+  // cross themselves and curl into a shell.
+  {
+    title: "Circles curled into a nautilus",
+    note: "The exponential curls nested circles into a spiraling shell",
+    kind: "concentric",
+    map: "exp",
+    count: 32,
+    radius: 6,
+    selected: 31,
+  },
 ] as const satisfies readonly {
   title: string;
   note: string;
@@ -310,7 +367,12 @@ export const loomPresets = [
   map?: LoomRequest["map"];
   degree?: number;
   lines?: number;
+  yLines?: number;
   extent?: number;
+  xRange?: readonly [number, number];
+  yRange?: readonly [number, number];
+  count?: number;
+  radius?: number;
   selected?: number;
   motion?: { from: number; to: number };
 }[];
@@ -322,18 +384,32 @@ export function presetLoom(index: number, config: Config): LoomStudy {
     kind: definition.kind,
     ...("lines" in definition && {
       xCount: definition.lines,
-      yCount: definition.lines,
-      xMin: -definition.extent,
-      xMax: definition.extent,
-      yMin: -definition.extent,
-      yMax: definition.extent,
+      yCount: "yLines" in definition ? definition.yLines : definition.lines,
+      ...("extent" in definition
+        ? {
+            xMin: -definition.extent,
+            xMax: definition.extent,
+            yMin: -definition.extent,
+            yMax: definition.extent,
+          }
+        : {
+            xMin: definition.xRange[0],
+            xMax: definition.xRange[1],
+            yMin: definition.yRange[0],
+            yMax: definition.yRange[1],
+          }),
+    }),
+    ...("count" in definition && {
+      count: definition.count,
+      radius: definition.radius,
     }),
   };
-  if ("degree" in definition) {
+  // Maps without a parameter open at a point, without map motion.
+  if ("map" in definition && !("motion" in definition)) {
     const selected = "selected" in definition ? definition.selected : 0;
     return {
       ...replaceMap(study, definition.map),
-      degree: definition.degree,
+      ...("degree" in definition && { degree: definition.degree }),
       source,
       selected,
       parameter: memberInterval(source, selected)[0],

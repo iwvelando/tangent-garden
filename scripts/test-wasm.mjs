@@ -299,6 +299,41 @@ checkFourierFit();
     ).field,
     "degree",
   );
+  // The exponential: e^x(cos y, sin y), never critical, with the marker's
+  // periodic translates in the point-only reply as in the full one.
+  {
+    const request = { ...q, map: "exp" };
+    const result = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify(request)),
+    );
+    assert.deepEqual(result.marker.image, { x: 1, y: 0 });
+    assert.equal(result.marker.critical, false);
+    assert.equal(result.marker.translates.length, 8);
+    for (const t of result.marker.translates) {
+      assert.equal(t.x, 0);
+      assert.ok(Math.abs(Math.sin(t.y)) < 1e-14 * Math.abs(t.y));
+    }
+    let drawn = 0;
+    for (const m of result.members)
+      for (let i = 0; i < m.at.length; i++) {
+        const p = m.source[i],
+          w = m.image[i];
+        assert.ok(p && w);
+        assert.equal(m.critical[i], false);
+        drawn++;
+        const r = Math.exp(p.x);
+        assert.ok(
+          Math.hypot(w.x - r * Math.cos(p.y), w.y - r * Math.sin(p.y)) <
+            1e-13 * Math.max(r, 1),
+        );
+      }
+    assert.ok(drawn > 8 * 32);
+    assert.deepEqual(
+      JSON.parse(globalThis.tangentGardenLoomPoint(JSON.stringify(request)))
+        .marker,
+      result.marker,
+    );
+  }
   console.log(
     `Loom: typed paired geometry, correspondence and point-only bridge passed (${replyBytes(raw)} bytes)`,
   );
