@@ -1079,7 +1079,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         : c.weave!.family === "tori"
           ? [
               "Tori on a sphere",
-              "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or becomes a line through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
+              "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or opens into a line when it passes through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
               "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
             ]
           : [

@@ -415,15 +415,27 @@ test("a decoded looping movie matches direct seeks at 0, 2π and 4π", async ({
   }
 });
 
-// Slow replies to the study's own requests (not playback frames).
+// Slow replies to the study's own requests (not playback frames). While
+// `holdRoot` is set, requests wait in `heldRoot` until `releaseRoot()`, so a
+// test can act while a request is certainly outstanding.
 const slowStudy = (page: Page, delay: number) =>
   page.addInitScript((delay) => {
     const send = Worker.prototype.postMessage;
-    (window as any).slowRoot = 0;
+    const w = window as any;
+    w.slowRoot = 0;
+    w.holdRoot = false;
+    w.heldRoot = [];
+    w.releaseRoot = () => {
+      w.holdRoot = false;
+      for (const held of w.heldRoot.splice(0)) held.send();
+    };
     Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
       if (q.action === "tesseract" && q.tesseract?.object === "root") {
-        (window as any).slowRoot++;
-        setTimeout(() => send.call(this, q, ...rest), delay);
+        w.slowRoot++;
+        const go = () => send.call(this, q, ...rest);
+        if (w.holdRoot)
+          w.heldRoot.push({ radius: q.tesseract.root?.radius, send: go });
+        else setTimeout(go, delay);
       } else return send.call(this, q, ...rest);
     };
   }, delay);
@@ -454,9 +466,19 @@ test("slow replies never show an older edit, an example chosen meanwhile wins, a
   await settle(page);
   const edited = await meta(page);
   // An example chosen while an edit computes replaces the whole study, and
-  // the late reply is discarded.
+  // the late reply is discarded. The edit's request is held until the
+  // example is chosen, so its reply is certainly late.
+  await page.evaluate(() => ((window as any).holdRoot = true));
   await radius.fill("1.2");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).heldRoot.map((h: { radius: number }) => h.radius),
+      ),
+    )
+    .toContain(1.2);
   await choosePreset(page, { label: "A cube beyond a cube" });
+  await page.evaluate(() => (window as any).releaseRoot());
   await settle(page);
   await page.waitForTimeout(500);
   await settle(page);

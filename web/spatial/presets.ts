@@ -1399,7 +1399,7 @@ export const spatialPresets: {
   {
     name: "A gyroid, cut open",
     detail:
-      "sin x cos y + sin y cos z + sin z cos x = 0 over one period: a surface that fills space, cut open by its box and by a diagonal plane",
+      "sin x cos y + sin y cos z + sin z cos x = 0 over one period: a surface that divides space into two intertwined labyrinths, cut open by its box and by a diagonal plane",
     config: {
       ...base,
       format: "implicit",

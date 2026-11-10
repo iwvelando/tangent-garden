@@ -2951,11 +2951,12 @@ export default function SpatialApp({
         <em>envelope</em>, a canal surface. Each sphere touches it along a
         circle: the points of the sphere that the neighboring spheres share.
         With a constant radius that circle stands square to the curve, and the
-        envelope is a tube. As the radius grows it leans back along the tangent
-        and shrinks; where the radius changes as fast as the center moves, the
-        circle closes to a point, and faster still the spheres nest inside one
-        another with no envelope at all. Nothing is trimmed: a tube wider than
-        the curve can turn folds through itself, and it is drawn that way.
+        envelope is a tube. As the radius grows it slips back along the tangent,
+        still square to the curve, and shrinks; where the radius changes as fast
+        as the center moves, the circle closes to a point, and faster still the
+        spheres nest inside one another with no envelope at all. Nothing is
+        trimmed: a tube wider than the curve can turn folds through itself, and
+        it is drawn that way.
       </p>
     </StudyExplanation>
   ) : ruled ? (

@@ -407,8 +407,9 @@ export const presets: {
     config: {
       ...base,
       kind: "envelope",
-      // Folding the focus (0, 1) onto the axis point (t, 0) creases along
-      // the line through it perpendicular to (t, −1): direction atan(t).
+      // Folding the focus (0, 1) onto the directrix point (2t, −1) creases
+      // along the line through their midpoint (t, 0) perpendicular to
+      // (t, −1): direction atan(t).
       // The creases envelope the parabola x² = 4y.
       curve: {
         ...base.curve,
