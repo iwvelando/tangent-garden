@@ -955,7 +955,10 @@ function loomStudy(value: unknown): LoomStudy {
     value,
     {
       fields: {
-        map: { options: { square: true, mobius: true, joukowski: true } },
+        map: {
+          options: { square: true, power: true, mobius: true, joukowski: true },
+        },
+        degree: { optional: { range: [2, 6] } },
         mapParameter: { optional: "number" },
         exclusionRadius: { optional: { range: [0.000001, 1000000] } },
         showExclusion: { optional: "boolean" },
@@ -1021,6 +1024,16 @@ function loomStudy(value: unknown): LoomStudy {
     undefined,
     "loom",
   );
+  // A retained degree may ride along with another map; the power map needs one.
+  if (
+    out.degree !== undefined
+      ? !Number.isInteger(out.degree)
+      : maps[out.map].degree !== undefined
+  )
+    throw new LinkError(
+      "loom.degree",
+      "The power degree must be a whole number 2–6.",
+    );
   if (maps[out.map].parameterized) {
     const [lo, hi] = maps[out.map].range;
     if (

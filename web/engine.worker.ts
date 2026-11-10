@@ -292,6 +292,7 @@ self.onmessage = async ({
         ["source.count", q.source.count],
         ["source.xCount", q.source.xCount],
         ["source.yCount", q.source.yCount],
+        ...(q.degree === undefined ? [] : [["degree", q.degree] as const]),
       ] as const)
         if (!Number.isInteger(n))
           throw fieldError(path, "Enter a whole number.");

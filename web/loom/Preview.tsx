@@ -33,6 +33,8 @@ import {
   defaultLoom,
   maps,
   mapHelp,
+  mapText,
+  degreeHelp,
   replaceMap,
   loomFrame,
   poleExclusion,
@@ -54,6 +56,7 @@ import { PaneDrawing, loomFit, type DrawingProps, type Pane } from "./Drawing";
 import { loomStill, loomMovie } from "./export";
 import "./loom.css";
 const labels: Record<string, string> = {
+  degree: "Degree",
   mapParameter: "Map parameter",
   exclusionRadius: "Pole exclusion radius",
   "source.count": "Circle count",
@@ -98,6 +101,7 @@ function gapSummary(result: LoomResult) {
 const geometryKey = (s: LoomRequest) =>
   JSON.stringify([
     s.map,
+    s.degree,
     s.mapParameter,
     s.exclusionRadius,
     s.source,
@@ -169,6 +173,7 @@ export function LoomPreview({
   const scrubContext = (s: LoomStudy) =>
     JSON.stringify([
       s.map,
+      loomRequest(s).degree,
       s.exclusionRadius,
       s.source,
       s.samples,
@@ -196,7 +201,8 @@ export function LoomPreview({
   };
   const key = geometryKey(study);
   const [applied, setApplied] = useState<LoomRequest>(loomRequest(study));
-  const mapInfo = maps[study.map];
+  const mapInfo = maps[study.map],
+    text = mapText(study);
   const markerKey = JSON.stringify([key, study.selected, study.parameter]);
   const activeError =
     error.request && error.request !== markerKey
@@ -550,7 +556,7 @@ export function LoomPreview({
     dark: theme.dark,
     scheme: theme.scheme,
     weight,
-    imageLabel: mapInfo.imageLabel,
+    imageLabel: text.imageLabel,
     exclusion: poleExclusion(applied, study.showExclusion ?? true),
     onCamera: (c) =>
       setStudy((s) => ({ ...s, views: { ...s.views, [pane]: c } })),
@@ -559,12 +565,12 @@ export function LoomPreview({
   const metadata = () => ({
     kind: "complex-loom",
     map: study.map,
-    formula: mapInfo.formula,
+    ...(mapInfo.degree && { degree: study.degree }),
+    formula: text.formula,
     mapParameter: study.mapParameter,
     exclusionRadius: study.exclusionRadius,
     showExclusion: study.showExclusion,
-    exclusion:
-      "Closed source disk omitted at each actual pole; no pole for identity. Image radius above 100000000 clipped. Finite expression sampling is not certified topology.",
+    exclusion: mapInfo.exportDomain,
     motion: study.motion,
     pace: study.motion ? "uniform map parameter" : "uniform source parameter",
     layout: "source left; image right",
@@ -696,7 +702,7 @@ export function LoomPreview({
   );
   const paneHeadings = (["source", "image"] as const).map((pane) => (
     <div key={pane} className="loom-pane-heading">
-      <h3>{pane === "source" ? "Source plane · z" : mapInfo.imageHeading}</h3>
+      <h3>{pane === "source" ? "Source plane · z" : text.imageHeading}</h3>
       <button
         disabled={exporting || (!!journey && !result)}
         onClick={() =>
@@ -907,7 +913,7 @@ export function LoomPreview({
         />
         <AnimationButton section="loom-animation-section" />
         <ExportImageMenu
-          kind={`complex-${study.map}`}
+          kind={`complex-${text.kind}`}
           revision={
             markerKey +
             JSON.stringify([
@@ -925,7 +931,7 @@ export function LoomPreview({
       </AppHeader>
       <div className="loom-content">
         <div className="loom-heading">
-          <p className="eyebrow">Complex transformation · {mapInfo.formula}</p>
+          <p className="eyebrow">Complex transformation · {text.formula}</p>
           <h2 id="loom-title">The complex loom</h2>
           <p>
             Choose a thread in one plane. Find its {mapInfo.imageNoun} in the
@@ -960,6 +966,32 @@ export function LoomPreview({
                       ))}
                     </select>
                   </Field>
+                  {mapInfo.degree && (
+                    <Field label="Degree" help={degreeHelp}>
+                      <select
+                        value={study.degree}
+                        onChange={(e) => {
+                          const degree = +e.currentTarget.value;
+                          pause();
+                          setStudy((s) => ({ ...s, degree }));
+                        }}
+                      >
+                        {Array.from(
+                          {
+                            length:
+                              mapInfo.degree.range[1] -
+                              mapInfo.degree.range[0] +
+                              1,
+                          },
+                          (_, i) => mapInfo.degree.range[0] + i,
+                        ).map((n) => (
+                          <option key={n} value={n}>
+                            {mapText({ map: study.map, degree: n }).formula}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
                   {mapInfo.parameterized && (
                     <details>
                       <summary>Map settings</summary>

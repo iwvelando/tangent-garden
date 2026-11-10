@@ -161,7 +161,7 @@ test("complex map help explains the three pictures and expands to their mathemat
     help.getByRole("button", { name: "Show more", exact: true }),
   ).toBeVisible();
   await help.getByRole("button", { name: "Show more", exact: true }).click();
-  for (const text of ["z²", "1/b", "±√λ", "identity", "pole"])
+  for (const text of ["z²", "zⁿ", "2–6", "1/b", "±√λ", "identity", "pole"])
     await expect(help).toContainText(text);
 });
 
@@ -2035,7 +2035,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(5);
+  await expect(cards).toHaveCount(7);
   await expect(gallery.locator("[data-example]")).toHaveCount(72);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();
@@ -2201,3 +2201,281 @@ for (const size of [
       0,
     );
   });
+
+// The power map's correspondence, read from the drawing's own markers.
+async function loomPoint(d: Locator, pane: "source" | "image") {
+  return JSON.parse(
+    (await d
+      .locator(`[data-pane="${pane}"] [data-marker]`)
+      .getAttribute("data-point"))!,
+  ) as { x: number; y: number };
+}
+const power = (z: { x: number; y: number }, n: number) => {
+  const r = Math.hypot(z.x, z.y) ** n,
+    a = n * Math.atan2(z.y, z.x);
+  return { x: r * Math.cos(a), y: r * Math.sin(a) };
+};
+
+test("power loom degree redraws both words and geometry, keeps cameras and saves vector metadata", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A quintic rosette");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = z⁵",
+  );
+  await expect(d.locator(".loom-pane-heading h3").nth(1)).toHaveText(
+    "Image plane · z⁵",
+  );
+  await expect(d.getByLabel("Degree", { exact: true })).toHaveValue("5");
+  // The rotated circle starts at z = 2, so its fifth power is 32.
+  expect(await loomPoint(d, "image")).toEqual({ x: 32, y: 0 });
+  // No pole, exclusion or map motion belongs to a power.
+  await expect(d.getByText("Map settings", { exact: true })).toHaveCount(0);
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveCount(0);
+  await expect(d.locator("[data-exclusion]")).toHaveCount(0);
+  await d.locator('[data-pane="image"]').press("+");
+  const quintic = await d
+    .locator('[data-pane="image"] [data-member="3"]')
+    .getAttribute("d");
+  await d.getByLabel("Degree", { exact: true }).selectOption("3");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect.poll(() => loomPoint(d, "image")).toEqual({ x: 8, y: 0 });
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = z³",
+  );
+  expect(
+    await d.locator('[data-pane="image"] [data-member="3"]').getAttribute("d"),
+  ).not.toBe(quintic);
+  await expect(d.locator('[data-pane="image"]')).toHaveAttribute(
+    "data-zoom",
+    "1.2",
+  );
+  await expect(d.locator("[data-gaps]")).toContainText("No gaps");
+  // The rosette's θ = π is exactly the critical zero in both panes.
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("pi");
+  await expect.poll(() => loomPoint(d, "source")).toEqual({ x: 0, y: 0 });
+  expect(await loomPoint(d, "image")).toEqual({ x: 0, y: 0 });
+  await expect(d.locator(".loom-correspondence")).toContainText(
+    "Critical point",
+  );
+  const download = page.waitForEvent("download");
+  await loomImage(d, "SVG");
+  expect((await download).suggestedFilename()).toBe("complex-power-3.svg");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  for (const text of ['"map":"power"', '"degree":3', '"formula":"w = z³"'])
+    expect(svg).toContain(text);
+  expect(svg).toContain("1e100");
+  expect(svg).not.toMatch(/<text|<image/);
+  // Squaring has no degree; a retained degree returns with the power map.
+  await d.getByLabel("Complex map", { exact: true }).selectOption("square");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Degree", { exact: true })).toHaveCount(0);
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = z²",
+  );
+  await d.getByLabel("Complex map", { exact: true }).selectOption("power");
+  await expect(d.getByLabel("Degree", { exact: true })).toHaveValue("3");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  expect(await loomPoint(d, "image")).toEqual({ x: 0, y: 0 });
+});
+
+test("changing the power degree stops traversal and a copied link restores it", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).loomCopied = value;
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A grid cubed into a star");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Selected member", { exact: true })).toHaveValue(
+    "5",
+  );
+  // The selected line x = 1/4 starts at its lower end, z = 1/4 − i.
+  expect(await loomPoint(d, "source")).toEqual({ x: 0.25, y: -1 });
+  const start = await loomPoint(d, "image");
+  expect(start.x).toBeCloseTo(power({ x: 0.25, y: -1 }, 3).x, 12);
+  expect(start.y).toBeCloseTo(power({ x: 0.25, y: -1 }, 3).y, 12);
+  await d.getByLabel("Traversal duration", { exact: true }).fill("30");
+  await d.getByRole("button", { name: "Play traversal", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Pause traversal", exact: true }),
+  ).toBeVisible();
+  await d.getByLabel("Degree", { exact: true }).selectOption("6");
+  await expect(
+    d.getByRole("button", { name: /^(Play|Resume) traversal$/ }),
+  ).toBeVisible();
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  // Whatever point playback held, the shown image is its sixth power.
+  await expect
+    .poll(async () => {
+      const z = await loomPoint(d, "source"),
+        w = await loomPoint(d, "image"),
+        want = power(z, 6);
+      return (
+        Math.hypot(w.x - want.x, w.y - want.y) <
+        1e-12 * Math.max(1, Math.hypot(want.x, want.y))
+      );
+    })
+    .toBe(true);
+  const image = await d
+    .locator('[data-pane="image"] [data-member="5"]')
+    .getAttribute("d");
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => (window as any).loomCopied as string);
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  expect(saved.loom.map).toBe("power");
+  expect(saved.loom.degree).toBe(6);
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await page.goto(link);
+  await expect(page).not.toHaveURL(/#s=/);
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByLabel("Degree", { exact: true })).toHaveValue("6");
+  expect(
+    await d.locator('[data-pane="image"] [data-member="5"]').getAttribute("d"),
+  ).toBe(image);
+});
+
+test("a decoded power traversal film matches direct seeks in both panes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A quintic rosette");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  // Direct seeks give each frame's expected marker centers in page units.
+  const centers: { source: number[]; image: number[] }[] = [];
+  for (const at of ["0", "pi"]) {
+    await d.getByLabel("Exact source parameter", { exact: true }).fill(at);
+    await expect(art).toHaveAttribute("aria-busy", "false");
+    await expect
+      .poll(
+        async () =>
+          (await d
+            .locator(".loom-correspondence")
+            .getAttribute("data-parameter"))!,
+      )
+      .toBe(at === "0" ? "0" : String(Math.PI));
+    const read = async (pane: string) => {
+      const c = d.locator(`[data-pane="${pane}"] [data-marker]`);
+      return [
+        Number(await c.getAttribute("cx")),
+        Number(await c.getAttribute("cy")),
+      ];
+    };
+    centers.push({ source: await read("source"), image: await read("image") });
+  }
+  expect(centers[0].image).not.toEqual(centers[1].image);
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("0");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await openLoomExportSettings(d);
+  await d.getByLabel("Traversal duration", { exact: true }).fill("0.2");
+  await loomResolution(d, 0.5);
+  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+  await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  const movie = page.waitForEvent("download");
+  await loomMovieAction(d).click();
+  expect((await movie).suggestedFilename()).toBe(
+    "tangent-garden-complex-power-5.mp4",
+  );
+  const moviePath = (await (await movie).path())!;
+  const bytes = await readFile(moviePath);
+  expect(bytes.includes(Buffer.from('"degree":5'))).toBe(true);
+  const timing = videoProbe(moviePath);
+  if (timing) expect(timing.frames).toBe(3);
+  const frames = execFileSync(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-i",
+      moviePath,
+      "-f",
+      "rawvideo",
+      "-pix_fmt",
+      "rgb24",
+      "-",
+    ],
+    { maxBuffer: 4 * 1024 * 1024 },
+  );
+  const pink = (frame: number, cx: number, cy: number) => {
+    let found = 0;
+    for (let y = Math.round(cy) - 8; y <= Math.round(cy) + 8; y++)
+      for (let x = Math.round(cx) - 8; x <= Math.round(cx) + 8; x++) {
+        const i = frame * 1000 * 380 * 3 + (y * 1000 + x) * 3;
+        const [r, g, b] = frames.subarray(i, i + 3);
+        if (r > 70 && r > g * 1.3 && b > g * 1.2) found++;
+      }
+    return found;
+  };
+  // Frames at p = 0, 1/2 and 1 are θ = 0, π and 2π; the half-scale film
+  // puts the source pane at x/2 and the image pane at 500 + x/2.
+  const at = (frame: number, seek: number, hit: boolean) => {
+    const { source, image } = centers[seek];
+    const n = (v: number) => (hit ? v > 0 : v === 0);
+    expect(n(pink(frame, source[0] / 2, source[1] / 2))).toBe(true);
+    expect(n(pink(frame, 500 + image[0] / 2, image[1] / 2))).toBe(true);
+  };
+  for (const frame of [0, 2]) {
+    at(frame, 0, true);
+    at(frame, 1, false);
+  }
+  at(1, 1, true);
+  at(1, 0, false);
+});
+
+test("a base-study curve crossing the power fence breaks with a clipped gap and no stray geometry", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  // |z| = 10¹⁷|t| crosses the sixth-power fence, 10^(100/6) ≈ 4.6·10¹⁶,
+  // at |t| ≈ 0.46; the rest of the curve stays inside it.
+  await page.getByLabel("x(t)", { exact: true }).fill("1e17*t");
+  await page.getByLabel("y(t)", { exact: true }).fill("0");
+  await settled(page);
+  await page
+    .getByRole("button", { name: "Open complex loom", exact: true })
+    .click();
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes");
+  await d.getByLabel("Source family", { exact: true }).selectOption("curve");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator("[data-gaps]")).toContainText("No gaps");
+  await d.getByLabel("Complex map", { exact: true }).selectOption("power");
+  await d.getByLabel("Degree", { exact: true }).selectOption("6");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator("[data-gaps]")).toContainText("clipped");
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("1");
+  await expect(d.locator(".loom-correspondence")).toContainText(
+    "Correspondence undefined, excluded or clipped",
+  );
+  await expect(d.locator('[data-pane="image"] [data-marker]')).toHaveCount(0);
+  const image = (await d
+    .locator('[data-pane="image"] [data-member="0"]')
+    .getAttribute("d"))!;
+  expect(image).not.toMatch(/NaN|Infinity/);
+  expect(image).toMatch(/M/);
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("0.1");
+  await expect(d.locator(".loom-correspondence")).toContainText(
+    "Regular map point",
+  );
+});

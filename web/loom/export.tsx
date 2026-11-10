@@ -13,6 +13,7 @@ import type { MotionExport } from "../MotionExportSettings";
 
 import {
   loomFrame,
+  mapText,
   poleExclusion,
   type LoomStudy,
   type LoomMarker,
@@ -56,7 +57,10 @@ export async function loomStill(
           record,
         );
   if (current())
-    saveFile(blob, `complex-${(metadata as { map: string }).map}.${format}`);
+    saveFile(
+      blob,
+      `complex-${mapText(metadata as Parameters<typeof mapText>[0]).kind}.${format}`,
+    );
 }
 export async function loomMovie(o: {
   study: LoomStudy;
@@ -108,6 +112,6 @@ export async function loomMovie(o: {
   if (o.current())
     saveFile(
       annotated,
-      `tangent-garden-complex-${o.study.map}.${o.options.format}`,
+      `tangent-garden-complex-${mapText(o.study).kind}.${o.options.format}`,
     );
 }

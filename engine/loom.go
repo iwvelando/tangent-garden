@@ -23,7 +23,9 @@ type LoomSource struct {
 	Curve  Curve   `json:"curve"`
 }
 type LoomRequest struct {
-	Map             string     `json:"map"`
+	Map string `json:"map"`
+	// Degree n of the power map z^n, 2–6; categorical, never interpolated.
+	Degree          int        `json:"degree,omitempty"`
 	MapParameter    float64    `json:"mapParameter,omitempty"`
 	ExclusionRadius float64    `json:"exclusionRadius,omitempty"`
 	Source          LoomSource `json:"source"`
