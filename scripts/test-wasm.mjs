@@ -4953,6 +4953,44 @@ console.log("Curved sections WASM contract passed");
   console.log(
     `24-cell WASM: ${r.emittedPoints} vertex shadows; ${(performance.now() - start).toFixed(1)} ms including parse; ${replyBytes(raw)} bytes sent`,
   );
+
+  // The perspective shadow uses the same transport. Source and rotated
+  // coordinates are unchanged; only the drawn points are projected.
+  const d = 2.05;
+  const praw = tangentGardenTesseract(
+    JSON.stringify({ ...request, mode: "perspective", distance: d }),
+  );
+  assert.equal(typeof praw, "object", "perspective must use typed transport");
+  for (const key of ["source", "rotated", "points"])
+    for (const layer of ["primal", "dual"])
+      assert.equal(JSON.parse(praw.json).polytope[layer][key], null);
+  const p = lifted(praw);
+  assert.equal(p.operation, "perspective");
+  assert.ok(
+    Math.abs(p.radius - (Math.SQRT2 * d) / Math.sqrt(d * d - 2)) < 1e-15,
+  );
+  for (const layer of ["primal", "dual"])
+    p.polytope[layer].rotated.forEach((v, i) => {
+      assert.deepEqual(
+        p.polytope[layer].source[i],
+        r.polytope[layer].source[i],
+      );
+      assert.deepEqual(v, r.polytope[layer].rotated[i]);
+      for (let j = 0; j < 3; j++)
+        assert.ok(
+          Math.abs(p.polytope[layer].points[i][j] - (d * v[j]) / (d - v[3])) <
+            1e-12,
+        );
+    });
+  assert.deepEqual(p.polytope.cellVertices, r.polytope.cellVertices);
+  assert.equal(
+    hyperResult(
+      tangentGardenTesseract(
+        JSON.stringify({ ...request, mode: "perspective", distance: 2 }),
+      ),
+    ).field,
+    "distance",
+  );
 }
 
 // Both genuine section families use the same lifted-array transport.

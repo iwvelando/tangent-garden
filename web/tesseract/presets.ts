@@ -256,6 +256,25 @@ export const tesseractPresets: {
     motion: "double",
     repeat: "loop",
   },
+  // Opens both whole crystals in perspective from an eye just beyond cell
+  // 12 (the cell centered on +e_w), turned slightly in xw so its center
+  // sits off its diagonals' midpoints. That nearest cell surrounds the rest;
+  // a seamless double rotation turns the crystal inside out at a fixed
+  // framing radius.
+  {
+    name: "Into the crystal",
+    detail:
+      "The 24-cell and its dual in perspective, seen from just beyond one cell: that octahedron surrounds all the others. Its diagonals still meet at its center, a dual vertex, though no longer halfway.",
+    config: {
+      ...objects.cell24.defaults(base),
+      mode: "perspective",
+      angles: [0, 0, 0, 0.25, 0, 0],
+      distance: 2.2,
+      cell24: { selected: 11, view: "crystal" },
+    },
+    motion: "double",
+    repeat: "loop",
+  },
   // Static central section; Play deliberately cuts to an empty plane,
   // then passes through both fixed crystals while their inks alternate.
   {

@@ -46,6 +46,14 @@ test("4D atlas catalog belongs to active object descriptors", async () => {
   expect(await ids(objects.cell24.defaults(defaultConfig))).toEqual([
     "rotation",
   ]);
+  // The 24-cell's perspective adds its eye distance; its sections none.
+  for (const [mode, pairs] of [
+    ["perspective", ["rotation", "eye"]],
+    ["section", []],
+  ] as const)
+    expect(
+      await ids({ ...objects.cell24.defaults(defaultConfig), mode }),
+    ).toEqual(pairs);
   expect(await ids(objects.root.defaults(defaultConfig))).toEqual(["rotation"]);
   for (const object of ["ball", "tube", "lift", "bypass"] as const) {
     // Dormant weave, projection and rotation fields never enable a pair.

@@ -635,7 +635,9 @@ func TestCell24Validation(t *testing.T) {
 		{"above", "cell24.selected", func() Request { return cell24Request(24, "cell", [6]float64{}) }},
 		{"view", "cell24.view", func() Request { return cell24Request(0, "wireframe", [6]float64{}) }},
 		{"stereo", "mode", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Mode = "stereo"; return q }},
-		{"perspective", "mode", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Mode = "perspective"; return q }},
+		// Perspective is admitted; its eye distance is then validated.
+		{"perspective", "distance", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Mode = "perspective"; return q }},
+		{"reference", "mode", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Mode = "reference"; return q }},
 		{"angle", "angles.2", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Angles[2] = math.NaN(); return q }},
 		{"large angle", "angles.5", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Angles[5] = 2e6; return q }},
 	} {
@@ -1052,7 +1054,7 @@ func TestCell24SectionGenericFamily(t *testing.T) {
 func TestCell24SectionTraversalAndBound(t *testing.T) {
 	angles := [6]float64{.31, .54, -.13, .81, .75, -.23}
 	for _, x := range []*complex24{primal24(), dual24()} {
-		p := x.polytope(angles, math.Sqrt2, 1)
+		p := x.polytope(angles, 0, math.Sqrt2, 1)
 		reversed := *x
 		reversed.edges = append([][2]int(nil), x.edges...)
 		slices.Reverse(reversed.edges)

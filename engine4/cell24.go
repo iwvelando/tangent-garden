@@ -38,8 +38,8 @@ type Cell24Parameters struct {
 }
 
 // Polytope24 is one configuration: its declared coordinates, the rotated
-// 4D vertices and their orthogonal xyz shadow, by vertex ID, and its edges
-// as ordered vertex-ID pairs.
+// 4D vertices and their xyz shadow (orthogonal or perspective), by vertex
+// ID, and its edges as ordered vertex-ID pairs.
 type Polytope24 struct {
 	Circumradius float64  `json:"circumradius"`
 	EdgeLength   float64  `json:"edgeLength"`
@@ -69,7 +69,7 @@ type Cell24Diagnostics struct {
 	NeighborEdges []int    `json:"neighborEdges"`
 	SharedFaces   [][3]int `json:"sharedFaces"`
 	// The shortest and longest shadow of the selected cell's edges, each √2
-	// long in four dimensions.
+	// long in four dimensions, measured in the drawn projection.
 	ShadowEdges [2]float64 `json:"shadowEdges"`
 }
 
@@ -226,7 +226,30 @@ var complexes = sync.OnceValues(func() (*complex24, *complex24) {
 func primal24() *complex24 { p, _ := complexes(); return p }
 func dual24() *complex24   { _, d := complexes(); return d }
 
-func (x *complex24) polytope(angles [6]float64, circumradius, edge float64) Polytope24 {
+// The perspective shadow's eye sits at w = d on the w axis, outside the
+// ball of radius √2 that holds both configurations. With d ≥ 2.05 every
+// denominator d − w is at least d − √2 > 0.63.
+const cell24MinDistance, cell24MaxDistance = 2.05, 20
+
+// cell24FramingRadius bounds |P| over the source ball |x| ≤ R = √2,
+// whatever the rotation: P(x) = d(x, y, z)/(d − w) is greatest on the
+// sphere at w = R²/d, where |P| = R d/√(d² − R²). The ball's image is
+// convex, so drawn edges and diagonals, chords of the hull, stay inside.
+func cell24FramingRadius(d float64) float64 {
+	return math.Sqrt2 * d / math.Sqrt(d*d-2)
+}
+
+// project24 is the drawn shadow of a rotated point: the orthogonal (x, y, z),
+// or the perspective d(x, y, z)/(d − w) when distance is positive.
+func project24(v Vec4, distance float64) Vec3 {
+	if distance == 0 {
+		return Vec3{v[0], v[1], v[2]}
+	}
+	s := distance / (distance - v[3])
+	return Vec3{s * v[0], s * v[1], s * v[2]}
+}
+
+func (x *complex24) polytope(angles [6]float64, distance, circumradius, edge float64) Polytope24 {
 	p := Polytope24{
 		Circumradius: circumradius,
 		EdgeLength:   edge,
@@ -240,20 +263,28 @@ func (x *complex24) polytope(angles [6]float64, circumradius, edge float64) Poly
 	for i := range p.Source {
 		p.Source[i] = x.source(i)
 		p.Rotated[i] = rotate(p.Source[i], angles)
-		v := p.Rotated[i]
-		p.Points[i] = Vec3{v[0], v[1], v[2]}
+		p.Points[i] = project24(p.Rotated[i], distance)
 	}
 	return p
 }
 
 func cell24(q Request, r Result) (Result, error) {
-	if q.Mode != "orthographic" && q.Mode != "section" {
-		return r, fieldErr("mode", "choose the 24-cell’s orthogonal shadow or parallel sections")
+	if q.Mode != "orthographic" && q.Mode != "perspective" && q.Mode != "section" {
+		return r, fieldErr("mode", "choose the 24-cell’s orthogonal or perspective shadow, or parallel sections")
 	}
 	for i, a := range q.Angles {
 		if !finite(a) || math.Abs(a) > 1e6 {
 			return r, fieldErr(fmt.Sprintf("angles.%d", i), "rotation angles must be finite and within ±1000000 radians")
 		}
+	}
+	// Validate the active construction only: an unfinished distance stays
+	// editable in perspective without blocking the other views.
+	distance := 0.
+	if q.Mode == "perspective" {
+		if !finite(q.Distance) || q.Distance < cell24MinDistance || q.Distance > cell24MaxDistance {
+			return r, fieldErr("distance", "4D eye distance must be between 2.05 and 20")
+		}
+		distance = q.Distance
 	}
 	c := q.Cell24
 	if c == nil {
@@ -270,8 +301,8 @@ func cell24(q Request, r Result) (Result, error) {
 	d := &Cell24Diagnostics{
 		View:         c.View,
 		Selected:     k,
-		Primal:       primal.polytope(q.Angles, math.Sqrt2, math.Sqrt2),
-		Dual:         dual.polytope(q.Angles, 1, 1),
+		Primal:       primal.polytope(q.Angles, distance, math.Sqrt2, math.Sqrt2),
+		Dual:         dual.polytope(q.Angles, distance, 1, 1),
 		CellVertices: append([]int(nil), primal.cells[k][:]...),
 		CellEdges:    append([]int(nil), primal.cellEdges[k]...),
 		ShadowEdges:  [2]float64{math.Inf(1), 0},
@@ -308,6 +339,9 @@ func cell24(q Request, r Result) (Result, error) {
 	}
 	r.Polytope = d
 	r.Radius = math.Sqrt2 // the primal's circumradius contains every rotation
+	if distance != 0 {
+		r.Radius = cell24FramingRadius(distance)
+	}
 	r.Evaluations = cell24Vertices
 	r.EmittedPoints = cell24Vertices
 	if q.Mode == "section" {

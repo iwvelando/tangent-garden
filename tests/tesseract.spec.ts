@@ -641,3 +641,55 @@ test("a completed 4D animation frees the view buttons without Back to study", as
   await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
   await expect(page.getByRole("button", { name: "Reset view" })).toBeDisabled();
 });
+
+// Section 01's menus explain the current object and view in plain words
+// behind Show more, and follow a change of either.
+test("the 4D object and view menus explain the current choice", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  await settle(page);
+  const about = async (label: string) => {
+    const toggle = page.getByRole("button", {
+      name: `About ${label}`,
+      exact: true,
+    });
+    if ((await toggle.getAttribute("aria-expanded")) !== "true")
+      await toggle.click();
+    const help = page.locator(`#${await toggle.getAttribute("aria-controls")}`);
+    const more = help.getByRole("button", { name: "Show more" });
+    if (await more.isVisible()) await more.click();
+    return help;
+  };
+  let help = await about("4D object");
+  await expect(help.locator(".hint-brief")).toContainText(
+    "Which four-dimensional subject to draw; each keeps its own settings when you switch.",
+  );
+  await expect(help.locator(".hint-more")).toContainText(
+    "four-dimensional cube",
+  );
+  help = await about("View of the tesseract");
+  await expect(help.locator(".hint-more")).toContainText("nearer parts larger");
+  await page
+    .getByRole("combobox", { name: "View of the tesseract" })
+    .selectOption("section");
+  await settle(page);
+  await expect(
+    (await about("View of the tesseract")).locator(".hint-more"),
+  ).toContainText("knife through an apple");
+  await page
+    .getByRole("combobox", { name: "4D object" })
+    .selectOption("cell24");
+  await settle(page);
+  await expect((await about("4D object")).locator(".hint-more")).toContainText(
+    "24 octahedra",
+  );
+  await page
+    .getByRole("combobox", { name: "View of the 24-cell" })
+    .selectOption("perspective");
+  await settle(page);
+  await expect(
+    (await about("View of the 24-cell")).locator(".hint-more"),
+  ).toContainText("eye placed out along the fourth direction");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});

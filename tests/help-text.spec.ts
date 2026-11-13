@@ -64,8 +64,11 @@ import { rideHelp } from "../web/spatial/ride";
 import { sightHelp } from "../web/spatial/sight";
 import { surfaceShape } from "../web/spatial/surface";
 import {
+  defaultConfig as tesseractDefaults,
+  objectHelp,
   objects,
   repeatHelp as tesseractRepeatHelp,
+  viewHelp as tesseractViewHelp,
 } from "../web/tesseract/objects";
 import { tesseractPresets } from "../web/tesseract/presets";
 import { motions } from "../web/tesseract/types";
@@ -337,6 +340,25 @@ test("every help a setting reveals keeps to the same limits", () => {
     add(`${name} slice`, object.sliceHelp);
     add(`${name} spread`, object.spreadHelp, true);
   }
+  // The 4D object and view menus explain the current choice behind Show
+  // more, for every object and each of its views.
+  const explained = new Set<string>();
+  for (const [key, object] of Object.entries(objects)) {
+    const config = object.defaults(tesseractDefaults);
+    const help = objectHelp(config);
+    add(`4D object ${key}`, help);
+    expect(isTiered(help), key).toBe(true);
+    explained.add(isTiered(help) ? help.more : "");
+    for (const mode of object.modes) {
+      const view = tesseractViewHelp({ ...config, mode });
+      add(`4D ${key} view ${mode}`, view);
+      expect(isTiered(view) && view.more.length > 0, `${key} ${mode}`).toBe(
+        true,
+      );
+    }
+    if (object.distanceHelp) add(`4D ${key} eye distance`, object.distanceHelp);
+  }
+  expect(explained.size).toBe(Object.keys(objects).length);
   for (const [name, help, paired] of helps) {
     const brief = isTiered(help) ? help.brief : help;
     expect
