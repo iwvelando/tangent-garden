@@ -113,7 +113,7 @@ export const maps = {
     exclusion: false,
     degree: { range: [2, 6], initial: 3, help: degreeHelp },
     exportDomain:
-      "No pole or excluded disk; zero is critical. Map parameter s gives w = (1 − s)z + s·zⁿ: 0 the identity, 1 zⁿ; between them critical where zⁿ⁻¹ = −(1 − s)/(sn), and sources whose zⁿ passes the overflow guard are clipped. Image radius above 1e100 clipped. Finite expression sampling is not certified topology.",
+      "No pole or excluded disk. Map parameter s gives w = (1 − s)z + s·zⁿ: 0 the identity, without critical points; 1 zⁿ, critical only at zero; between them critical where zⁿ⁻¹ = −(1 − s)/(sn), zero regular, and sources whose zⁿ passes the overflow guard are clipped. Image radius above 1e100 clipped. Finite expression sampling is not certified topology.",
     symbol: "s",
     range: [0, 1],
     initial: 1,

@@ -3529,6 +3529,13 @@ test("power map motion folds circles from the identity into a flower and z⁶, a
   ])
     expect(svg).toContain(text);
   expect(svg).not.toContain('"wrap"');
+  // Its domain words describe the family: zero is critical only at s = 1.
+  const domain = JSON.parse(
+    svg.match(/<desc>([^<]*)<\/desc>/)![1].replaceAll("&quot;", '"'),
+  ).exclusion as string;
+  expect(domain).not.toContain("zero is critical");
+  expect(domain).toContain("1 zⁿ, critical only at zero");
+  expect(domain).toContain("zero regular");
   await d.getByRole("button", { name: "Copy link", exact: true }).click();
   await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
   const link = await page.evaluate(() => (window as any).loomCopied as string);
