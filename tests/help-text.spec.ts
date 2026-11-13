@@ -524,6 +524,7 @@ test("complex loom help fits both tiers in every source family", async ({
     "square",
     "power",
     "exp",
+    "exp-power",
     "mobius",
     "joukowski",
     "fractional",

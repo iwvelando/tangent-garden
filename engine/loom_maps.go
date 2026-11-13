@@ -43,7 +43,7 @@ func (q LoomRequest) validateMap() error {
 	case "exp":
 		// No parameter, pole, exclusion or critical point.
 		return nil
-	case "power":
+	case "power", "exp-power":
 		// Categorical configuration: no parameter, pole or exclusion.
 		if q.Degree < 2 || q.Degree > 6 {
 			return fieldErr("degree", "power degree must be a whole number 2–6")
@@ -65,7 +65,7 @@ func (q LoomRequest) validateMap() error {
 			return fieldErr("mapParameter", "Möbius flow s must be −1–1")
 		}
 	default:
-		return fieldErr("map", "choose squaring, a power zⁿ, the exponential, a Möbius map or z + λ/z")
+		return fieldErr("map", "choose squaring, a power zⁿ, the exponential, exp(zⁿ), a Möbius map or z + λ/z")
 	}
 	if !finite(q.ExclusionRadius) || q.ExclusionRadius < 1e-6 || q.ExclusionRadius > 1e6 {
 		return fieldErr("exclusionRadius", "pole exclusion radius must be 0.000001–1000000 source units")
@@ -99,11 +99,34 @@ func (q LoomRequest) imageLimit() float64 {
 		return math.Inf(1)
 	case "power":
 		return LoomPowerImageLimit
-	case "exp":
-		// The source window already bounds the image.
+	case "exp", "exp-power":
+		// The exponential's window already bounds the image.
 		return math.Inf(1)
 	}
 	return LoomImageLimit
+}
+
+// periodic is where the exponential's period acts on source point p: p
+// itself under the exponential, and the intermediate point zⁿ under the
+// composite exp(zⁿ), which is nil where the power overflows. Every other
+// map has no period, and so no aliasing guard.
+func (q LoomRequest) periodic(p Vec) *Vec {
+	switch q.Map {
+	case "exp":
+		return &p
+	case "exp-power":
+		return loomPower(p, q.Degree)
+	}
+	return nil
+}
+
+// intermediate is the composite's first stage zⁿ at p, its provenance;
+// nil for every other map.
+func (q LoomRequest) intermediate(p Vec) *Vec {
+	if q.Map != "exp-power" {
+		return nil
+	}
+	return q.periodic(p)
 }
 
 func (q LoomRequest) image(p Vec) *Vec {
@@ -141,6 +164,14 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 			return nil
 		}
 		return loomExp(p)
+	case "exp-power":
+		// The exponential of the power map's own value: the source lies in
+		// the composite's domain exactly when zⁿ lies in the window.
+		u := loomPower(p, q.Degree)
+		if u == nil || !inExpWindow(*u) {
+			return nil
+		}
+		return loomExp(*u)
 	case "fractional":
 		f := q.mobius()
 		if f.identity {
@@ -176,6 +207,49 @@ func inExpWindow(p Vec) bool {
 	return math.Abs(p.X) <= LoomExpRealLimit && math.Abs(p.Y) <= LoomExpImagLimit
 }
 
+// windowDistance is the distance from u to the exponential's closed window,
+// zero inside it.
+func windowDistance(u Vec) float64 {
+	return math.Hypot(max(0, math.Abs(u.X)-LoomExpRealLimit), max(0, math.Abs(u.Y)-LoomExpImagLimit))
+}
+
+// mayEnter reports whether the segment of an analytic member from a to b,
+// clipped by the composite exp(zⁿ) at both ends, may still pass through its
+// domain, so that it must be bisected rather than settled as a gap. A grid
+// line or circle has known speed |z′| and a bound M on |z| over the segment,
+// so the intermediate moves at most L = n Mⁿ⁻¹ |z′| per unit parameter. Any
+// point of the window is at least each end's distance from that end's
+// intermediate, so the segment certainly stays outside when those distances
+// sum to more than L times its length. Selected curves have no such bound
+// and use the ordinary finite checks.
+func (q LoomRequest) mayEnter(id int, c loomCurve, a, b loomNode) bool {
+	s := q.Source
+	if q.Map != "exp-power" || c.reference || s.Kind == "curve" || a.p == nil || b.p == nil || a.reason != "clipped" || b.reason != "clipped" {
+		return false
+	}
+	ua, ub := loomPower(*a.p, q.Degree), loomPower(*b.p, q.Degree)
+	if ua == nil || ub == nil {
+		// Unreachable for families, which lie far inside the power's range.
+		return false
+	}
+	length := b.t - a.t
+	// |z| is largest at an end of the segment: it is convex along a line,
+	// constant on a concentric circle, and 2r|cos(θ/2)| on a rotated circle,
+	// which falls to zero at θ = π and rises again.
+	speed, bound := 1.0, max(a.p.Norm(), b.p.Norm())
+	switch s.Kind {
+	case "concentric":
+		speed = s.Radius * float64(id+1) / float64(s.Count)
+		bound = speed
+	case "rosette":
+		speed = s.Radius
+	}
+	n := float64(q.Degree)
+	reach := n * math.Pow(bound, n-1) * speed * length
+	// Allow for the rounding of the computed points and their powers.
+	return windowDistance(*ua)+windowDistance(*ub)-1e-12*(ua.Norm()+ub.Norm()) <= reach*(1+1e-12)
+}
+
 // loomExp is e^x (cos y, sin y), without the window: an exact crossing of
 // the closed window is drawn even when rounding puts its source just outside.
 func loomExp(p Vec) *Vec {
@@ -183,18 +257,50 @@ func loomExp(p Vec) *Vec {
 	return point(Vec{r * math.Cos(p.Y), r * math.Sin(p.Y)})
 }
 
-// translates lists the exponential's other source points z + 2πik, k ≠ 0,
-// inside its window: every one has the same image as z.
+// translates lists the other source points in the map's domain with the same
+// image as p, which the exponential's period creates. Under the exponential
+// they are its translates z + 2πik, k ≠ 0, inside the window. Under the
+// composite exp(zⁿ) they are every z′ with z′ⁿ = zⁿ + 2πik in the window:
+// first the turns z e^{2πij/n}, j = 1 … n − 1, then, for each k ≠ 0 in
+// order, the n-th roots of zⁿ + 2πik, at most 9n − 1 points in all.
 func (q LoomRequest) translates(p Vec) []Vec {
-	if q.Map != "exp" || !inExpWindow(p) {
+	u := q.periodic(p)
+	if u == nil || !inExpWindow(*u) {
 		return nil
 	}
 	var out []Vec
-	lo := int(math.Ceil((-LoomExpImagLimit - p.Y) / (2 * math.Pi)))
-	hi := int(math.Floor((LoomExpImagLimit - p.Y) / (2 * math.Pi)))
+	n := 1
+	if q.Map == "exp-power" {
+		n = q.Degree
+		// Zero is its own turns.
+		if p.X != 0 || p.Y != 0 {
+			for j := 1; j < n; j++ {
+				s, c := math.Sincos(2 * math.Pi * float64(j) / float64(n))
+				out = append(out, Vec{p.X*c - p.Y*s, p.X*s + p.Y*c})
+			}
+		}
+	}
+	lo := int(math.Ceil((-LoomExpImagLimit - u.Y) / (2 * math.Pi)))
+	hi := int(math.Floor((LoomExpImagLimit - u.Y) / (2 * math.Pi)))
 	for k := lo; k <= hi; k++ {
-		if y := p.Y + 2*math.Pi*float64(k); k != 0 && math.Abs(y) <= LoomExpImagLimit {
-			out = append(out, Vec{p.X, y})
+		y := u.Y + 2*math.Pi*float64(k)
+		if k == 0 || math.Abs(y) > LoomExpImagLimit {
+			continue
+		}
+		if n == 1 {
+			out = append(out, Vec{u.X, y})
+			continue
+		}
+		v := complex(u.X, y)
+		if v == 0 {
+			// The n-fold root of zero is one point.
+			out = append(out, Vec{})
+			continue
+		}
+		r, phase := math.Pow(cmplx.Abs(v), 1/float64(n)), cmplx.Phase(v)
+		for j := 0; j < n; j++ {
+			s, c := math.Sincos((phase + 2*math.Pi*float64(j)) / float64(n))
+			out = append(out, Vec{r * c, r * s})
 		}
 	}
 	return out
@@ -339,15 +445,18 @@ func (q LoomRequest) poleCuts(id int) []float64 {
 // chords and their measured deviation to clear the excluded disk. A chord
 // passing through it must subdivide even when its image probes are collinear.
 func (q LoomRequest) domainSafe(a, b Vec, probes [3]loomNode) bool {
-	if q.Map == "exp" {
+	if q.Map == "exp" || q.Map == "exp-power" {
 		// Probes a whole period apart agree in the image; a chord whose
-		// source, with its measured deviation, spans more than a quarter
-		// period must subdivide even when its image probes lie along it.
+		// periodic points (the source under the exponential, zⁿ under the
+		// composite), with their measured deviation, span more than a
+		// quarter period must subdivide even when its image probes lie along
+		// it. Every node here is drawn, so its periodic point is finite.
+		pa, pb := q.periodic(a), q.periodic(b)
 		deviation := 0.0
 		for _, n := range probes {
-			deviation = math.Max(deviation, plane.Distance(*n.p, a, b))
+			deviation = math.Max(deviation, plane.Distance(*q.periodic(*n.p), *pa, *pb))
 		}
-		return b.Sub(a).Norm()+2*deviation <= 2*loomExpPilotStep
+		return pb.Sub(*pa).Norm()+2*deviation <= 2*loomExpPilotStep
 	}
 	pole := q.pole()
 	if pole == nil {
@@ -364,8 +473,10 @@ func (q LoomRequest) domainSafe(a, b Vec, probes [3]loomNode) bool {
 }
 
 func (q LoomRequest) critical(p Vec) bool {
-	// (zⁿ)′ = n zⁿ⁻¹ vanishes only at zero, a finite drawable point.
-	if q.Map == "square" || q.Map == "power" {
+	// (zⁿ)′ = n zⁿ⁻¹ vanishes only at zero, a finite drawable point. The
+	// composite's derivative n zⁿ⁻¹ exp(zⁿ) inherits that zero alone, since
+	// exp′ = exp never vanishes.
+	if q.Map == "square" || q.Map == "power" || q.Map == "exp-power" {
 		return p.X == 0 && p.Y == 0
 	}
 	if q.Map == "joukowski" && q.MapParameter > 0 {

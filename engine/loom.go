@@ -80,6 +80,9 @@ type LoomMarker struct {
 	Translates []Vec `json:"translates,omitempty"`
 	// A derived source's base point r(t); absent for every other source.
 	Base *Vec `json:"base,omitempty"`
+	// The composite exp(zⁿ)'s intermediate point zⁿ, wherever the power is
+	// finite, even when it leaves the window; absent for every other map.
+	Intermediate *Vec `json:"intermediate,omitempty"`
 }
 type LoomResult struct {
 	Members        []LoomMember `json:"members"`
@@ -250,6 +253,7 @@ func (q LoomRequest) marker(c loomCurve, id int, t float64) LoomMarker {
 		m.Image = q.image(*p)
 		m.Critical = m.Image != nil && q.critical(*p)
 		m.Translates = q.translates(*p)
+		m.Intermediate = q.intermediate(*p)
 	}
 	return m
 }
@@ -398,17 +402,21 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 				n.w, n.reason = nil, "excluded"
 			}
 			// The exponential's pilots are at most an eighth of a period
-			// apart in the source wherever both panes are defined, so
-			// whole-period aliasing can neither hide a turn nor shrink the
-			// image's tolerance. Inside the bounded window this adds at
-			// most a few hundred samples to an analytic member. An interval
-			// leaving the window is divided as finely as one across it, so
-			// a curve mostly outside still measures its tolerance there.
-			if k := len(pilot) - 1; q.Map == "exp" && !c.reference && k >= 0 && n.p != nil && pilot[k].p != nil && (n.w != nil || pilot[k].w != nil) {
+			// apart in the plane its period acts on (periodic: the source,
+			// or the composite's intermediate zⁿ) wherever either pane end
+			// is drawn, so whole-period aliasing can neither hide a turn
+			// nor shrink the image's tolerance. Inside the bounded window
+			// this adds at most a few hundred samples to an analytic
+			// member. An interval leaving the window is divided as finely
+			// as one across it, so a curve mostly outside still measures
+			// its tolerance there.
+			if k := len(pilot) - 1; !c.reference && k >= 0 && n.p != nil && pilot[k].p != nil && (n.w != nil || pilot[k].w != nil) {
 				a := pilot[k]
-				if steps := min(math.Ceil(n.p.Sub(*a.p).Norm()/loomExpPilotStep), loomExpPilotPieces); steps > 1 {
-					for j := 1; j < int(steps); j++ {
-						pilot = append(pilot, eval(c, a.t+(t-a.t)*float64(j)/steps))
+				if u, v := q.periodic(*a.p), q.periodic(*n.p); u != nil && v != nil {
+					if steps := min(math.Ceil(v.Sub(*u).Norm()/loomExpPilotStep), loomExpPilotPieces); steps > 1 {
+						for j := 1; j < int(steps); j++ {
+							pilot = append(pilot, eval(c, a.t+(t-a.t)*float64(j)/steps))
+						}
 					}
 				}
 			}
@@ -464,7 +472,25 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 			case s.a.missing || s.b.missing:
 				settle(s, "exhausted")
 			case !defined(s.a) && !defined(s.b):
-				settle(s, invalidReason(s.a, s.b))
+				// The composite's grid lines and circles search a stretch
+				// clipped at both ends for a narrow arc of its domain until
+				// it certainly stays outside or reaches the depth limit.
+				if !split || !q.mayEnter(s.member, c, s.a, s.b) {
+					settle(s, invalidReason(s.a, s.b))
+					continue
+				}
+				m := s.mid
+				if m == nil {
+					if !afford(s, 1) {
+						continue
+					}
+					n := eval(c, mid)
+					m = &n
+				} else if !afford(s, 0) {
+					continue
+				}
+				reserved += 4
+				next = append(next, loomSegment{s.member, s.a, *m, nil, s.depth + 1}, loomSegment{s.member, *m, s.b, nil, s.depth + 1})
 			case !defined(s.a) || !defined(s.b):
 				// Localize where the source stops, toward the undefined end.
 				if !split {

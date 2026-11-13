@@ -29,9 +29,13 @@ export type AtlasState<F> = {
 // scale: cancellation in 1.15 - 1 leaves more uncertainty than epsilon times
 // its small result. Interpolation uses its endpoint scale for the same reason.
 // Never apply this to the source, copied/entered endpoints, or raw scalar text.
-export function roundedGenerated(value: number, scale: number) {
+// A caller whose values are themselves meaningful doubles, such as a multiple
+// of π, limits candidates to 15 significant digits, which every double
+// preserves: within an endpoint-scaled budget nearly every value has a
+// 16-digit neighbor, which would replace it rather than remove a tail.
+export function roundedGenerated(value: number, scale: number, maxDigits = 16) {
   if (!Number.isFinite(value) || value === 0) return value;
-  for (let digits = 1; digits <= 16; digits++) {
+  for (let digits = 1; digits <= maxDigits; digits++) {
     const short = Number(value.toPrecision(digits));
     if (
       Number.isFinite(short) &&

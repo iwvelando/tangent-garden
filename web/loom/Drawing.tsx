@@ -145,6 +145,24 @@ export function PaneDrawing(p: DrawingProps) {
   }, [!!p.onCamera]);
   const point = p.marker[p.pane];
   const base = p.pane === "source" ? p.result.base?.points : undefined;
+  // The geometry's path data depends on the result, framing and camera
+  // alone. Moving the marker, playback and readout updates reuse it, so a
+  // large result is not formatted again for each point: an exhausted
+  // result holds up to 500,000 points, which froze phones on every frame.
+  // Refinement can leave a source curve's vertices hundredths of a pixel
+  // apart and an image spiraling far outside the pane, which phones cannot
+  // paint while scrolling; the path data keeps a vertex only a tenth of a
+  // frame unit (a fifth of a pixel in a double-size export) from the last.
+  const fine = { tolerance: 0.1 };
+  const paths = useMemo(
+    () => ({
+      members: p.result.members.map((m) =>
+        pathData(m[p.pane], xy, undefined, undefined, fine),
+      ),
+      base: base && pathData(base, xy, undefined, undefined, fine),
+    }),
+    [p.result, p.pane, fit, p.camera.x, p.camera.y, p.camera.zoom],
+  );
   const construction =
     p.pane === "source" &&
     p.path?.construction &&
@@ -263,36 +281,38 @@ export function PaneDrawing(p: DrawingProps) {
         {base && (
           <path
             data-base="true"
-            d={pathData(base, xy)}
+            d={paths.base}
             stroke={palette.base}
             opacity={0.55}
             {...stroke(1)}
           />
         )}
-        {p.result.members.map((m) => (
+        {p.result.members.map((m, i) => (
           <path
             key={m.id}
             data-member={m.id}
             data-selected={m.id === p.selected}
-            d={pathData(m[p.pane], xy)}
+            d={paths.members[i]}
             stroke={m.id === p.selected ? palette.derived : palette.base}
             opacity={m.id === p.selected ? 1 : 0.5}
             {...stroke(m.id === p.selected ? 2.4 : 1.25)}
           />
         ))}
         {p.onSelect &&
-          p.result.members.map((m) => (
+          p.result.members.map((m, i) => (
             <path
               key={`hit-${m.id}`}
               data-hit-member={m.id}
-              d={pathData(m[p.pane], xy)}
+              d={paths.members[i]}
               stroke="transparent"
               strokeWidth={20}
               vectorEffect="non-scaling-stroke"
+              // Never painted; the stroke still takes pointer events.
+              visibility="hidden"
               pointerEvents="stroke"
             />
           ))}
-        {/* The exponential's other source points with the marker's image. */}
+        {/* Other source points with the marker's image, from the exponential's period. */}
         {p.pane === "source" &&
           p.marker.image &&
           p.marker.translates?.map((t, i) => (

@@ -1598,7 +1598,11 @@ export function pathData(
   xy: (p: Vec) => Vec,
   keep: (i: number) => boolean = () => true,
   breaks?: Set<number>,
+  // Opt-in thinning for drawings whose refinement outruns the frame, such
+  // as the complex loom's: see finePathData. Absent, the output is unchanged.
+  fine?: { tolerance: number },
 ) {
+  if (fine) return finePathData(points, xy, keep, breaks, fine.tolerance);
   let s = "",
     last: Vec | null = null;
   points.forEach((p, i) => {
@@ -1617,6 +1621,65 @@ export function pathData(
     s += `${gap ? "M" : "L"}${a.x.toFixed(3)},${a.y.toFixed(3)} `;
     last = a;
   });
+  return s;
+}
+// pathData's runs, with the same breaks, thinned for painting. A segment
+// wholly beyond one side of the frame, with a margin for the widest stroke,
+// is dropped and breaks its run, so a run reaching far outside costs
+// nothing while one crossing the frame is kept; a run of a single point,
+// which paints nothing, is dropped. Within what remains, a
+// vertex closer than the tolerance to the last one kept is skipped, so the
+// drawing moves by less than the tolerance; each run's ends are kept.
+function finePathData(
+  points: (Vec | null)[],
+  xy: (p: Vec) => Vec,
+  keep: (i: number) => boolean,
+  breaks: Set<number> | undefined,
+  tolerance: number,
+) {
+  const margin = 50;
+  const side = (a: Vec) =>
+    (a.x < -margin ? 1 : 0) |
+    (a.x > W + margin ? 2 : 0) |
+    (a.y < -margin ? 4 : 0) |
+    (a.y > H + margin ? 8 : 0);
+  let s = "",
+    run: Vec[] = [];
+  // A run of one point is a lone moveto, which is never stroked: an
+  // exhausted stretch leaves thousands, alternating with its gaps.
+  const flush = () => {
+    if (run.length > 1) {
+      let kept = run[0];
+      s += `M${kept.x.toFixed(3)},${kept.y.toFixed(3)} `;
+      for (let i = 1; i < run.length; i++) {
+        const a = run[i];
+        if (
+          i < run.length - 1 &&
+          Math.hypot(a.x - kept.x, a.y - kept.y) < tolerance
+        )
+          continue;
+        s += `L${a.x.toFixed(3)},${a.y.toFixed(3)} `;
+        kept = a;
+      }
+    }
+    run = [];
+  };
+  points.forEach((p, i) => {
+    if (breaks?.has(i)) flush();
+    if (!p || !keep(i)) return flush();
+    const a = xy(p);
+    if (Math.abs(a.x) > 1e6 || Math.abs(a.y) > 1e6) return flush();
+    const last = run.at(-1);
+    if (
+      last &&
+      (Math.hypot(a.x - last.x, a.y - last.y) > Math.max(W, H) * 0.6 ||
+        (side(a) & side(last)) !== 0)
+    )
+      // A segment wholly outside leaves its far end to start the next run.
+      flush();
+    run.push(a);
+  });
+  flush();
   return s;
 }
 // Fit each point family independently: a short base arc must not discard a

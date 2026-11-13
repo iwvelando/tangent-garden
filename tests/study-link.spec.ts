@@ -4000,6 +4000,63 @@ test("loom traversal preserves exact entered endpoints under cancellation in sub
   assert.equal(traversal(s, 1.2).parameter, 0.001);
 });
 
+// A sampled source or map parameter is generated arithmetic shown in an
+// editable field, so it carries no rounding tail (Generated numeric
+// defaults): −5/4 + (5/2)(0.676) is 0.44000000000000017 in binary, shown as
+// 0.44. Only a shorter decimal within the interpolation's own rounding,
+// scaled by the larger endpoint, replaces a value; endpoints and order are
+// kept.
+test("loom traversal and map motion samples carry no arithmetic tails", async () => {
+  const model = await import("../web/loom/model");
+  const base = planarPreset(0).config;
+  const web = model.presetLoom(
+    model.loomPresets.findIndex(
+      (p) => p.title === "A squared grid wrapped into a web",
+    ),
+    base,
+  );
+  const [a, b] = model.memberInterval(web.source, web.selected);
+  assert.deepEqual([a, b], [-1.25, 1.25]);
+  assert.equal(a + (b - a) * 0.676, 0.44000000000000017);
+  assert.equal(model.loomFrame(web, 0.676).parameter, 0.44);
+  assert.equal(model.traversal(web, 0.68).parameter, 0.45);
+  // A meaningful double has no short decimal within the budget: a quarter
+  // of the way around a circle is exactly π/2, kept.
+  const shell = model.presetLoom(
+    model.loomPresets.findIndex(
+      (p) => p.title === "A quintic rosette wrapped into a shell",
+    ),
+    base,
+  );
+  assert.equal(model.traversal(shell, 0.25).parameter, Math.PI / 2);
+  assert.equal(model.traversal(shell, 0.5).parameter, Math.PI);
+  let previous = -Infinity;
+  for (let i = 0; i <= 2000; i++) {
+    const p = i / 2000 + (i % 7) * 1e-7;
+    const raw = p >= 1 ? b : a + (b - a) * p,
+      sampled = model.traversal(web, p).parameter;
+    assert.ok(
+      Math.abs(sampled - raw) <= Number.EPSILON * Math.max(Math.abs(raw), 1.25),
+      `p = ${p}`,
+    );
+    assert.ok(sampled >= previous, `order at p = ${p}`);
+    previous = sampled;
+  }
+  assert.equal(model.traversal(web, 0).parameter, a);
+  assert.equal(model.traversal(web, 1).parameter, b);
+  // Map motion from −1 to 1: −1 + 2(0.35) is −0.30000000000000004.
+  const flow = model.presetLoom(
+    model.loomPresets.findIndex(
+      (p) => p.title === "Circles whirled between two fixed points",
+    ),
+    base,
+  );
+  assert.deepEqual(flow.motion, { mode: "map", from: -1, to: 1 });
+  assert.equal(model.loomFrame(flow, 0.35).mapParameter, -0.3);
+  assert.equal(model.loomFrame(flow, 0).mapParameter, -1);
+  assert.equal(model.loomFrame(flow, 1).mapParameter, 1);
+});
+
 test("loom replaces a timed-out worker before processing coalesced replacement work", async () => {
   const { LoomSession } = await import("../web/loom/session");
   const { defaultLoom, loomRequest } = await import("../web/loom/model");
@@ -4317,6 +4374,113 @@ test("general Möbius loom presets open their flow at the inverse over the base 
     "power",
     "exp",
     "exp",
+  ].entries())
+    assert.equal(model.presetLoom(i, base).map, map);
+});
+
+test("composite loom links carry a whole-number degree, refuse map motion, and older loom links keep their requests", async () => {
+  const model = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const square = model.defaultLoom(ordinary.config);
+  square.views.image = { x: 37, y: -19, zoom: 2 };
+  const composite = model.replaceMap(square, "exp-power");
+  assert.equal(composite.map, "exp-power");
+  assert.equal(composite.degree, 2);
+  assert.deepEqual(composite.source, square.source);
+  assert.deepEqual(composite.views, square.views);
+  // Only the degree joins the request: no parameter, exclusion or motion.
+  assert.deepEqual(model.loomRequest(composite), {
+    ...model.loomRequest(square),
+    map: "exp-power",
+    degree: 2,
+  });
+  for (const key of ["mapParameter", "exclusionRadius", "motion"])
+    assert.equal(key in composite, false, key);
+  for (const degree of [2, 6]) {
+    const study = { ...composite, degree };
+    const saved = planarStudy({ ...ordinary, loom: study });
+    assert.deepEqual(saved.loom, study);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).loom, study);
+  }
+  for (const degree of [undefined, 1, 7, 2.5, "3"]) {
+    const { degree: _d, ...rest } = composite;
+    const loom = degree === undefined ? rest : { ...rest, degree };
+    assert.throws(
+      () => planarStudy({ ...ordinary, loom }),
+      (e: unknown) =>
+        e instanceof LinkError && /degree/.test(String((e as any).field ?? e)),
+      `degree ${String(degree)}`,
+    );
+  }
+  // Neither stage has a parameter to animate.
+  assert.throws(
+    () =>
+      planarStudy({
+        ...ordinary,
+        loom: { ...composite, motion: { mode: "map", from: 2, to: 6 } },
+      }),
+    LinkError,
+  );
+  // The degree is shared with the power map in both directions.
+  assert.equal(
+    model.replaceMap(model.replaceMap(square, "power"), "exp-power").degree,
+    3,
+  );
+  assert.equal(
+    model.replaceMap({ ...composite, degree: 5 }, "power").degree,
+    5,
+  );
+  // Rational settings retained from another map survive a visit.
+  const fold = model.replaceMap(square, "joukowski");
+  const through = model.replaceMap(
+    model.replaceMap(fold, "exp-power"),
+    "joukowski",
+  );
+  assert.equal(through.exclusionRadius, fold.exclusionRadius);
+  // Words fill the degree into both stages' formula.
+  const quintic = { ...composite, degree: 5 };
+  assert.equal(model.mapText(quintic).formula, "w = exp(z⁵)");
+  assert.equal(model.mapText(quintic).imageHeading, "Image plane · exp(z⁵)");
+  assert.equal(model.mapText(quintic).kind, "exp-power-5");
+});
+
+test("composite loom presets open a shell and a web over the base curve", async () => {
+  const model = await import("../web/loom/model");
+  const base = planarPreset(0).config;
+  for (const [title, degree, kind, members] of [
+    ["A quintic rosette wrapped into a shell", 5, "rosette", 24],
+    ["A squared grid wrapped into a web", 2, "grid", 34],
+  ] as const) {
+    const index = model.loomPresets.findIndex((p) => p.title === title);
+    assert.ok(index >= 0, `${title} is missing`);
+    const s = model.presetLoom(index, base);
+    assert.equal(s.map, "exp-power");
+    assert.equal(s.degree, degree);
+    assert.equal(s.source.kind, kind);
+    assert.equal(model.memberCount(s.source), members);
+    for (const key of ["mapParameter", "motion", "framing"])
+      assert.equal(key in s, false, key);
+    assert.deepEqual(s.source.curve, base.curve);
+    assert.equal(s.parameter, model.memberInterval(s.source, s.selected)[0]);
+    assert.deepEqual(planarStudy({ ...planarPreset(0), loom: s }).loom, s);
+  }
+  // Existing presets are unchanged by the composite entries.
+  for (const [i, map] of [
+    "square",
+    "square",
+    "square",
+    "mobius",
+    "joukowski",
+    "power",
+    "power",
+    "exp",
+    "exp",
+    "fractional",
+    "power",
+    "square",
+    "joukowski",
+    "fractional",
   ].entries())
     assert.equal(model.presetLoom(i, base).map, map);
 });

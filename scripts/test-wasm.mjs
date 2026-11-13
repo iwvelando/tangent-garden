@@ -417,6 +417,56 @@ checkFourierFit();
       result.marker,
     );
   }
+  // The composite exp(zⁿ): exp of the polar power, critical only at zero,
+  // which maps to 1 with intermediate 0; its shared-image points are the
+  // cube roots of 2πik, k = ±1 … ±4, the same in the point-only reply.
+  {
+    const request = { ...q, map: "exp-power", degree: 3 };
+    const result = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify(request)),
+    );
+    assert.deepEqual(result.marker.image, { x: 1, y: 0 });
+    assert.deepEqual(result.marker.intermediate, { x: 0, y: 0 });
+    assert.equal(result.marker.critical, true);
+    assert.equal(result.marker.translates.length, 8 * 3);
+    for (const t of result.marker.translates) {
+      const r = Math.hypot(t.x, t.y) ** 3,
+        a = 3 * Math.atan2(t.y, t.x);
+      assert.ok(Math.abs(r * Math.cos(a)) < 1e-12 * r);
+      assert.ok(Math.abs(Math.sin(r * Math.sin(a))) < 1e-12 * r);
+    }
+    let drawn = 0;
+    for (const m of result.members)
+      for (let i = 0; i < m.at.length; i++) {
+        const p = m.source[i],
+          w = m.image[i];
+        assert.ok(p && w);
+        assert.equal(m.critical[i], p.x === 0 && p.y === 0);
+        drawn++;
+        const r = Math.hypot(p.x, p.y) ** 3,
+          a = 3 * Math.atan2(p.y, p.x),
+          e = Math.exp(r * Math.cos(a));
+        assert.ok(
+          Math.hypot(
+            w.x - e * Math.cos(r * Math.sin(a)),
+            w.y - e * Math.sin(r * Math.sin(a)),
+          ) <
+            1e-12 * Math.max(e, 1),
+        );
+      }
+    assert.ok(drawn > 8 * 32);
+    assert.deepEqual(
+      JSON.parse(globalThis.tangentGardenLoomPoint(JSON.stringify(request)))
+        .marker,
+      result.marker,
+    );
+    assert.equal(
+      JSON.parse(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, degree: 1 })),
+      ).field,
+      "degree",
+    );
+  }
   // A derived path: the ellipse (2 cos t, 3 sin t)'s evolute, with its base
   // curve as lifted points beside the member and the base point on the
   // marker; its refused settings name their own fields.
