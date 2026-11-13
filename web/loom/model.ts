@@ -24,8 +24,16 @@ export type LoomSource = {
 // a, b, c and d of the general Möbius map, each (real, imaginary).
 export type LoomCoefficients = { a: Vec; b: Vec; c: Vec; d: Vec };
 export type LoomRequest = {
-  map: "square" | "power" | "exp" | "mobius" | "joukowski" | "fractional";
-  // The power map's whole-number degree, 2–6. Categorical: never animated.
+  map:
+    | "square"
+    | "power"
+    | "exp"
+    | "exp-power"
+    | "mobius"
+    | "joukowski"
+    | "fractional";
+  // The degree n of the power map zⁿ and of the composite exp(zⁿ), a whole
+  // number 2–6. Categorical: never animated.
   degree?: number;
   mapParameter?: number;
   exclusionRadius?: number;
@@ -49,6 +57,14 @@ const rationalTraversal =
   "Traversal advances uniformly in the original source parameter, not arc length. Poles and their excluded source disks have no image. Critical images remain drawable, but do not claim regular conformality. Map motion keeps this point fixed while changing the map.";
 const fixedDomain =
   "Closed source disk omitted at each actual pole; no pole for identity. Image radius above 100000000 clipped. Finite expression sampling is not certified topology.";
+export const degreeHelp = tiered(
+  "Whole number 2–6; the image multiplies angles about zero by n.",
+  "Zero is a critical point, drawn but not conformal. Images beyond radius 10¹⁰⁰ are clipped; every grid and circle family fits inside, so only a selected curve can reach it.",
+);
+const compositeDegreeHelp = tiered(
+  "Whole number 2–6; the power multiplies angles about zero by n before the exponential wraps them.",
+  "Zero is a critical point, drawn but not conformal, mapping to 1. Sources are clipped where |Re zⁿ| > 18.42 or |Im zⁿ| > 8π, so higher degrees admit smaller sources: |z| ≤ 5.58 for n = 2, 1.77 for n = 6.",
+);
 // Each map's labels, help, supported parameter, degree and actual pole.
 // Components read these, through mapText for degree-dependent words,
 // instead of branching on map names.
@@ -77,7 +93,7 @@ export const maps = {
     label: "Power zⁿ",
     formula: "w = zⁿ",
     parameterized: false,
-    degree: { range: [2, 6], initial: 3 },
+    degree: { range: [2, 6], initial: 3, help: degreeHelp },
     exportDomain:
       "No pole or excluded disk; zero is critical. Image radius above 1e100 clipped. Finite expression sampling is not certified topology.",
     symbol: "",
@@ -111,6 +127,36 @@ export const maps = {
     keywords: " exponential exp eᶻ periodic strip rings spiral",
     traversalHelp:
       "Traversal advances uniformly in the source parameter, not arc length. eᶻ repeats every 2πi: hollow markers show the other source points in the window with the same image. It has no critical point. Sources beyond |Re z| ≤ ln 10⁸ ≈ 18.42 or |Im z| ≤ 8π are clipped.",
+    // The readout's words for the marker's other source points with its
+    // image, which Go reports as translates.
+    shared: "in the window, z\u00a0+\u00a02πik,",
+    pole: (_parameter: number): Vec | undefined => undefined,
+  },
+  // The composite exp(zⁿ), evaluated in Go as the exponential of the power
+  // map's own value: sources whose zⁿ leaves the exponential's window are
+  // clipped, zero is the only critical point, and the marker reports zⁿ and
+  // every other source point with its image.
+  "exp-power": {
+    label: "Composite exp(zⁿ)",
+    formula: "w = exp(zⁿ)",
+    parameterized: false,
+    degree: { range: [2, 6], initial: 2, help: compositeDegreeHelp },
+    exportDomain:
+      "Power zⁿ, then the exponential. Sources clipped where zⁿ leaves |Re| ≤ ln 10⁸ ≈ 18.42, |Im| ≤ 8π. No pole; zero is critical. Finite expression sampling is not certified topology.",
+    symbol: "",
+    range: [0, 0],
+    initial: 0,
+    note: "The power multiplies angles about zero by n; the exponential then wraps the result into rings and rays.",
+    imageLabel: "exp(zⁿ) image plane",
+    imageHeading: "Image plane · exp(zⁿ)",
+    imageNoun: "image",
+    keywords: " composite composition exponential power exp shell web",
+    traversalHelp:
+      "Traversal advances uniformly in the source parameter, not arc length. The readout gives the intermediate point zⁿ. exp(zⁿ) repeats wherever zⁿ moves by 2πi: hollow markers show the other source points with the same image. Zero is critical and maps to 1. Sources whose zⁿ leaves |Re| ≤ 18.42, |Im| ≤ 8π are clipped.",
+    shared:
+      "with zⁿ in the window, the turns of z and roots of zⁿ\u00a0+\u00a02πik,",
+    // The readout's name for the intermediate point Go reports.
+    intermediate: "zⁿ",
     pole: (_parameter: number): Vec | undefined => undefined,
   },
   mobius: {
@@ -193,12 +239,8 @@ export const coefficientHelp = (k: string) =>
     "Scaling all four together changes nothing. Refused when |a|² + |b|² + |c|² + |d|² exceeds 2,000,000 |ad − bc|, which includes ad = bc, a constant map. c = 0 makes the map affine, with no pole.",
   );
 export const mapHelp = tiered(
-  "Squaring and powers zⁿ multiply angles, eᶻ wraps strips into rings, Möbius maps keep circles, z + λ/z makes ellipses.",
-  "z² and zⁿ, n = 2–6, are critical at zero. eᶻ repeats every 2πi and clips sources beyond |Re z| ≤ 18.42 or |Im z| ≤ 8π. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, has pole 1/b; z+λ/z, 0≤λ≤1, pole 0 and critical ±√λ; (az+b)/(cz+d), pole −d/c. All three are identity at zero. Poles exclude source disks.",
-);
-export const degreeHelp = tiered(
-  "Whole number 2–6; the image multiplies angles about zero by n.",
-  "Zero is a critical point, drawn but not conformal. Images beyond radius 10¹⁰⁰ are clipped; every grid and circle family fits inside, so only a selected curve can reach it.",
+  "Squaring and zⁿ multiply angles, eᶻ wraps strips into rings, exp(zⁿ) does both, Möbius keeps circles, z+λ/z makes ellipses.",
+  "z², zⁿ and exp(zⁿ), n = 2–6, are critical at zero. eᶻ repeats every 2πi and clips sources beyond |Re z| ≤ 18.42 or |Im z| ≤ 8π; exp(zⁿ) clips where zⁿ does. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, has pole 1/b; z+λ/z, 0≤λ≤1, pole 0 and critical ±√λ; (az+b)/(cz+d), pole −d/c. All three are identity at zero. Poles exclude source disks.",
 );
 const superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 // A map's words with its degree in place of n: z³ for a cubic.
@@ -215,6 +257,10 @@ export function mapText(q: Pick<LoomRequest, "map" | "degree">) {
     imageNoun: m.imageNoun,
     // Distinguishes degrees in file names: complex-power-3.
     kind: m.degree ? `${q.map}-${q.degree}` : q.map,
+    // Readout words for the marker's other source points with its image,
+    // and the name of the composite's intermediate point.
+    shared: "shared" in m ? fill(m.shared) : undefined,
+    intermediate: "intermediate" in m ? fill(m.intermediate) : undefined,
   };
 }
 
@@ -287,16 +333,29 @@ export function replaceMap(
   };
 }
 
+// The value at progress p between two entered endpoints, exact at both. An
+// interior value is generated arithmetic shown in an editable field, so a
+// rounding tail is dropped when a shorter decimal lies within the
+// interpolation's own rounding, scaled by the larger endpoint (Generated
+// numeric defaults in docs/contributing.md): 0.44, not 0.44000000000000017.
+// Only decimals of at most 15 significant digits qualify, so a sample that
+// is a meaningful double, such as π/2 a quarter of the way around a circle,
+// is kept exactly.
+function between(a: number, b: number, p: number) {
+  if (p <= 0) return a;
+  if (p >= 1) return b;
+  return roundedGenerated(
+    a + (b - a) * p,
+    Math.max(Math.abs(a), Math.abs(b)),
+    15,
+  );
+}
 // One absolute-time sampler for direct seek, playback and movie export.
 // Point traversal leaves geometry stationary; map motion recomputes it.
 export function loomFrame(s: LoomStudy, progress: number): LoomRequest {
   if (!s.motion) return traversal(s, progress);
   const { from, to } = s.motion;
-  return {
-    ...loomRequest(s),
-    mapParameter:
-      progress <= 0 ? from : progress >= 1 ? to : from + (to - from) * progress,
-  };
+  return { ...loomRequest(s), mapParameter: between(from, to, progress) };
 }
 // The frame's result supplies the pole where Go computes it.
 export function poleExclusion(
@@ -316,8 +375,12 @@ export type LoomMarker = {
   source: Vec | null;
   image: Vec | null;
   critical: boolean;
-  // The exponential's other source points with this image, z + 2πik.
+  // The other source points with this image that the exponential's period
+  // creates: z + 2πik under eᶻ; under exp(zⁿ), the turns of z and the n-th
+  // roots of zⁿ + 2πik.
   translates?: Vec[];
+  // The composite exp(zⁿ)'s intermediate point zⁿ, even where it is clipped.
+  intermediate?: Vec;
   // A derived path's base point r(t), at the same base parameter.
   base?: Vec | null;
 };
@@ -538,6 +601,34 @@ export const loomPresets = [
       d: { x: 1, y: 0 },
     },
     motion: { from: -1, to: 1 },
+  },
+  // Opens on 24 circles through the origin, radius 0.6, under exp(z⁵). The
+  // fifth power curls each into a loop reaching |z⁵| ≤ 1.2⁵ ≈ 2.5, and the
+  // exponential wraps those loops around 1 into an interlaced shell; 24 is
+  // prime to 5, so all 24 images stay distinct.
+  {
+    title: "A quintic rosette wrapped into a shell",
+    note: "Raised to the fifth power, then wrapped by the exponential, circles through the origin interlace into a shell",
+    kind: "rosette",
+    map: "exp-power",
+    degree: 5,
+    count: 24,
+    radius: 0.6,
+  },
+  // Opens on a 17 × 17 grid over [−1.25, 1.25]² under exp(z²): squaring
+  // bends the lines into parabolas, and the exponential wraps them into a
+  // web of rings and spokes around 1. Selects the edge x = 5/4, whose
+  // square 25/16 − t² + 5it/2 wraps into the web's rim, out to e^{25/16}
+  // at t = 0 and back to the unit circle at both ends.
+  {
+    title: "A squared grid wrapped into a web",
+    note: "Squared into parabolas, then wrapped by the exponential, a square grid becomes a web of rings and spokes",
+    kind: "grid",
+    map: "exp-power",
+    degree: 2,
+    lines: 17,
+    extent: 1.25,
+    selected: 16,
   },
 ] as const satisfies readonly {
   title: string;
@@ -898,10 +989,7 @@ export function loomRequest(s: LoomStudy): LoomRequest {
 // Uniform absolute source parameter, independent of sampling density or speed.
 export function traversal(s: LoomStudy, progress: number): LoomRequest {
   const [a, b] = memberInterval(s.source, s.selected);
-  return {
-    ...loomRequest(s),
-    parameter: progress <= 0 ? a : progress >= 1 ? b : a + (b - a) * progress,
-  };
+  return { ...loomRequest(s), parameter: between(a, b, progress) };
 }
 
 // An explicit family replacement starts invalid family fields from valid

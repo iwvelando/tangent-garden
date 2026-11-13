@@ -2546,6 +2546,55 @@ test("complex loom entry, scalar blur, paired phone controls and return preserve
   ).toHaveAttribute("data-quiet", "");
 });
 
+// The loom's hit paths are hidden from painting, since Safari rasterized
+// even transparent wide strokes of large results; under pointer-events
+// stroke they must still take a tap.
+test("complex loom threads stay selectable through hidden hit paths in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await page
+    .getByRole("button", { name: "Open complex loom", exact: true })
+    .click();
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await d.getByLabel("Source family", { exact: true }).selectOption("rosette");
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  const members = d.getByLabel("Selected member", { exact: true });
+  await expect(members).toHaveValue("0");
+  for (const pane of ["source", "image"]) {
+    const hit = d.locator(`[data-pane="${pane}"] [data-hit-member="3"]`);
+    expect(await hit.evaluate((e) => getComputedStyle(e).visibility)).toBe(
+      "hidden",
+    );
+  }
+  const target = await d
+    .locator('[data-pane="image"] [data-member="3"]')
+    .evaluate((path: SVGPathElement) => {
+      path.scrollIntoView({ block: "center" });
+      const p = path.getPointAtLength(path.getTotalLength() / 5);
+      const m = path.getScreenCTM()!;
+      const x = m.a * p.x + m.c * p.y + m.e,
+        y = m.b * p.x + m.d * p.y + m.f;
+      return {
+        x,
+        y,
+        hit: document
+          .elementFromPoint(x, y)
+          ?.closest("[data-hit-member]")
+          ?.getAttribute("data-hit-member"),
+      };
+    });
+  expect(target.hit).toBeDefined();
+  expect(target.hit).not.toBe("0");
+  await page.mouse.click(target.x, target.y);
+  await expect(members).toHaveValue(target.hit!);
+});
+
 test("Apollonian garden entry, scalar blur, phone controls and return preserve focus", async ({
   page,
 }) => {

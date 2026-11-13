@@ -962,6 +962,7 @@ function loomStudy(value: unknown): LoomStudy {
             square: true,
             power: true,
             exp: true,
+            "exp-power": true,
             mobius: true,
             joukowski: true,
             fractional: true,
@@ -1043,7 +1044,8 @@ function loomStudy(value: unknown): LoomStudy {
     undefined,
     "loom",
   );
-  // A retained degree may ride along with another map; the power map needs one.
+  // A retained degree may ride along with another map; the power map and
+  // the composite exp(zⁿ) need one.
   if (
     out.degree !== undefined
       ? !Number.isInteger(out.degree)

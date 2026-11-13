@@ -34,7 +34,6 @@ import {
   maps,
   mapHelp,
   mapText,
-  degreeHelp,
   coefficientHelp,
   replaceMap,
   loomFrame,
@@ -1043,7 +1042,7 @@ export function LoomPreview({
                     </select>
                   </Field>
                   {mapInfo.degree && (
-                    <Field label="Degree" help={degreeHelp}>
+                    <Field label="Degree" help={mapInfo.degree.help}>
                       <select
                         value={study.degree}
                         onChange={(e) => {
@@ -1423,14 +1422,17 @@ export function LoomPreview({
                               {marker.base &&
                                 `Base point (${marker.base.x.toPrecision(5)}, ${marker.base.y.toPrecision(5)}); `}
                               z = ({marker.source.x.toPrecision(5)},{" "}
-                              {marker.source.y.toPrecision(5)}) → w = (
-                              {marker.image.x.toPrecision(5)},{" "}
+                              {marker.source.y.toPrecision(5)}) →{" "}
+                              {marker.intermediate &&
+                                text.intermediate &&
+                                `${text.intermediate} = (${marker.intermediate.x.toPrecision(5)}, ${marker.intermediate.y.toPrecision(5)}) → `}
+                              w = ({marker.image.x.toPrecision(5)},{" "}
                               {marker.image.y.toPrecision(5)}).{" "}
                               {marker.critical
                                 ? "Critical point: derivative zero; no regular conformality."
                                 : "Regular map point."}
                               {!!marker.translates?.length &&
-                                ` ${marker.translates.length} other source ${marker.translates.length === 1 ? "point" : "points"} in the window, z\u00a0+\u00a02πik, share this image (hollow markers).`}
+                                ` ${marker.translates.length} other source ${marker.translates.length === 1 ? "point" : "points"} ${text.shared} share this image (hollow markers).`}
                             </p>
                           ) : (
                             <p>
