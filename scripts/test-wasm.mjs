@@ -5058,4 +5058,131 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// The tesseract and its polar 16-cell use the same lifted transport: one
+// cube, its center (a 16-cell vertex) and the six cubes beside it.
+{
+  const request = {
+    object: "cell16",
+    mode: "orthographic",
+    angles: [0.3, 0.2, 0.1, 0.7, 0.5, 0.3],
+    cell16: { selected: 0, view: "cell" },
+  };
+  const start = performance.now();
+  const raw = tangentGardenTesseract(JSON.stringify(request));
+  assert.equal(typeof raw, "object", "pair vertices must use typed transport");
+  const r = lifted(raw);
+  // Arrays of at least 32 floats are lifted; the 16-cell's 8 shadow
+  // points (24 floats) are below the lift's minimum and stay in the JSON.
+  for (const key of ["source", "rotated", "points"])
+    for (const layer of ["primal", "dual"]) {
+      const floats =
+        r.polytope[layer][key].length * r.polytope[layer][key][0].length;
+      assert.equal(
+        JSON.parse(raw.json).polytope[layer][key] === null,
+        floats >= 32,
+        `${layer}.${key} lifted only at 32 floats or more`,
+      );
+    }
+  assert.equal(r.object, "cell16");
+  assert.equal(r.radius, 2);
+  const { primal, dual } = r.polytope;
+  assert.deepEqual(
+    [primal.source.length, primal.edges.length, primal.faces, primal.cells],
+    [16, 32, 24, 8],
+  );
+  assert.deepEqual(
+    [dual.source.length, dual.edges.length, dual.faces, dual.cells],
+    [8, 24, 32, 16],
+  );
+  // Cube 0 lies on x = 1; its center is the 16-cell vertex e_x.
+  assert.deepEqual(dual.source[0], [1, 0, 0, 0]);
+  assert.deepEqual(primal.source[0], [1, 1, 1, 1]);
+  assert.equal(r.polytope.cellVertices.length, 8);
+  for (const v of r.polytope.cellVertices) assert.equal(primal.source[v][0], 1);
+  for (let i = 0; i < 8; i += 2) {
+    const [a, b] = [
+      primal.points[r.polytope.cellVertices[i]],
+      primal.points[r.polytope.cellVertices[i + 1]],
+    ];
+    for (let j = 0; j < 3; j++)
+      assert.ok(Math.abs((a[j] + b[j]) / 2 - dual.points[0][j]) < 1e-12);
+  }
+  assert.equal(r.polytope.neighbors.length, 6);
+  assert.ok(r.polytope.sharedFaces.every((f) => f.length === 4));
+  assert.equal(r.polytope.cellEdges.length, 12);
+  assert.equal(
+    hyperResult(
+      tangentGardenTesseract(
+        JSON.stringify({ ...request, cell16: { selected: 8, view: "cell" } }),
+      ),
+    ).field,
+    "cell16.selected",
+  );
+  console.log(
+    `Tesseract and 16-cell WASM: ${r.emittedPoints} vertex shadows; ${(performance.now() - start).toFixed(1)} ms including parse; ${replyBytes(raw)} bytes sent`,
+  );
+
+  const d = 2.05;
+  const p = lifted(
+    tangentGardenTesseract(
+      JSON.stringify({ ...request, mode: "perspective", distance: d }),
+    ),
+  );
+  assert.ok(Math.abs(p.radius - (2 * d) / Math.sqrt(d * d - 4)) < 1e-12);
+  for (const layer of ["primal", "dual"])
+    p.polytope[layer].rotated.forEach((v, i) => {
+      assert.deepEqual(v, r.polytope[layer].rotated[i]);
+      for (let j = 0; j < 3; j++)
+        assert.ok(
+          Math.abs(p.polytope[layer].points[i][j] - (d * v[j]) / (d - v[3])) <
+            1e-12 * Math.max(1, Math.abs(p.polytope[layer].points[i][j])),
+        );
+    });
+
+  const q = {
+    ...request,
+    mode: "section",
+    angles: [0, 0, 0, 0, 0, 0],
+    slice: 0,
+    count: 1,
+    spread: 0,
+  };
+  const sraw = tangentGardenTesseract(JSON.stringify(q));
+  // The cube's 8 four-dimensional points (32 floats) are lifted; smaller
+  // arrays stay in the JSON.
+  const [cube] = JSON.parse(sraw.json).polytope.sections;
+  assert.equal(cube.fourPoints, null, "section 4D coordinates must be lifted");
+  // The cube [−1, 1]³ and the octahedron |x| + |y| + |z| ≤ 1.
+  assert.deepEqual(
+    lifted(sraw).sections.map((s) => [
+      s.dimension,
+      s.vertices,
+      s.edges,
+      s.faces,
+    ]),
+    [
+      [3, 8, 12, 6],
+      [3, 6, 12, 8],
+    ],
+  );
+  const family = lifted(
+    tangentGardenTesseract(
+      JSON.stringify({ ...q, angles: request.angles, count: 25, spread: 4 }),
+    ),
+  );
+  assert.equal(family.sections.length, 50);
+  assert.equal(family.evaluations, 24 + 25 * (32 + 8 * 12 + 24 + 16 * 6));
+  for (const [key, value] of [
+    ["count", 26],
+    ["spread", 4.1],
+    ["slice", 4.1],
+  ])
+    assert.equal(
+      hyperResult(
+        tangentGardenTesseract(JSON.stringify({ ...q, [key]: value })),
+      ).field,
+      key,
+    );
+}
+
 process.exit(0);

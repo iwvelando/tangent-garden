@@ -157,7 +157,7 @@ export type ObjectDescriptor = {
   // is shown while the drawing has such geometry (drawnInks in Drawing.tsx).
   // Without them, the legend names the four coordinate directions.
   legendItems?: LegendItem[] | ((c: Config) => LegendItem[]);
-  parameterKey?: "lift" | "bypass" | "weave" | "cell24" | "root";
+  parameterKey?: "lift" | "bypass" | "weave" | "cell24" | "cell16" | "root";
   numericFields?: {
     key:
       | keyof Lift
@@ -376,6 +376,39 @@ function correspondenceReadouts(c: Correspondence) {
       value: signed(n, 4),
     })),
   ];
+}
+// Entering a dual pair's sections or perspective reconciles only the newly
+// active fields, keeping supported edits: a link or an earlier shadow may
+// carry any inactive spread, slice, count or distance (the 24-cell's older
+// shadows saved the tesseract's spread 3.4).
+function pairEnterMode(spreadMax: number, sliceMax: number, spread: number) {
+  return (c: Config, mode: Config["mode"]): Config =>
+    mode === "section"
+      ? {
+          ...c,
+          mode,
+          spread: Number.isFinite(c.spread)
+            ? Math.max(0, Math.min(spreadMax, c.spread))
+            : spread,
+          slice: Number.isFinite(c.slice)
+            ? Math.max(-sliceMax, Math.min(sliceMax, c.slice))
+            : 0,
+          count:
+            Number.isInteger(c.count) && c.count >= 1 && c.count <= 25
+              ? c.count
+              : 1,
+        }
+      : mode === "perspective"
+        ? {
+            ...c,
+            mode,
+            // The distance is inactive in the other views, so a link may
+            // carry any number there. Keep a supported edit.
+            distance: Number.isFinite(c.distance)
+              ? Math.max(2.05, Math.min(20, c.distance))
+              : 4,
+          }
+        : { ...c, mode };
 }
 export const objects: Record<Object4, ObjectDescriptor> = {
   tesseract: {
@@ -1414,38 +1447,211 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       spread: 2.4,
       cell24: { selected: 0, view: "cell" },
     }),
-    enterMode: (c, mode) =>
-      mode === "section"
-        ? {
-            ...c,
-            mode,
-            // Earlier shadows saved the tesseract's inactive spread (3.4).
-            // Keep supported edits; reconcile only newly active invalid fields.
-            spread: Number.isFinite(c.spread)
-              ? Math.max(0, Math.min(2 * Math.SQRT2, c.spread))
-              : 2.4,
-            slice: Number.isFinite(c.slice)
-              ? Math.max(
-                  -2.025 * Math.SQRT2,
-                  Math.min(2.025 * Math.SQRT2, c.slice),
-                )
-              : 0,
-            count:
-              Number.isInteger(c.count) && c.count >= 1 && c.count <= 25
-                ? c.count
-                : 1,
-          }
-        : mode === "perspective"
-          ? {
-              ...c,
-              mode,
-              // The distance is inactive in the other views, so a link may
-              // carry any number there. Keep a supported edit.
-              distance: Number.isFinite(c.distance)
-                ? Math.max(2.05, Math.min(20, c.distance))
-                : 4,
-            }
-          : { ...c, mode },
+    enterMode: pairEnterMode(2 * Math.SQRT2, 2.025 * Math.SQRT2, 2.4),
+    motion: "double",
+  },
+  cell16: {
+    atlas: {
+      pairs: [rotationPair, eyePair],
+      samples: { 3: 64, 5: 32 },
+      points: () => 4096,
+    },
+    name: "Tesseract and its dual",
+    noun: "tesseract and 16-cell",
+    about:
+      "Unlike the 24-cell, the tesseract's dual is a different shape: the 16-cell, with one corner at the center of each of the tesseract's eight cubes, joined wherever two cubes share a square. Its own sixteen cells are tetrahedra, one for each corner of the tesseract.",
+    controls: "polytope",
+    parameterKey: "cell16",
+    choicesFirst: true,
+    sectionMotion: {
+      value: "crystal",
+      label: "A tesseract meeting its dual",
+      loops: true,
+      help: tiered(
+        "Pass one plane through both, alternating their emphasis.",
+        "The selected cube's section and crossings of its center's edges stay accented. Source scale, rotation and camera stay fixed. Ends are empty; repeating joins them without a cut in the geometry.",
+      ),
+    },
+    modes: ["orthographic", "perspective", "section"],
+    rotations: true,
+    viewLabel: "View of the tesseract and 16-cell",
+    selectorNote:
+      "16 vertices · 32 edges · 24 squares · 8 cubes; the 16-cell 8 · 24 · 32 triangles · 16 tetrahedra",
+    constructionNumber: "03",
+    radiusFields: [],
+    distanceHelp: tiered(
+      "From 2.05 to 20; the eye stays outside the sphere of radius 2 holding both.",
+      "A nearer eye enlarges the near side more. The drawing frames radius 2d/√(d² − 4), which depends on d alone, so rotation never rescales it.",
+    ),
+    support: () => 2,
+    familyPassage: true,
+    passageHelp:
+      "Both meet the same w = h plane after the same rotation. A 2.5% margin beyond the tesseract's circumradius 2, plus half the family spread, leaves every endpoint empty.",
+    sliceHelp:
+      "Shared plane w = h, within ±4.05; outside either solid gives an empty section.",
+    spreadHelp: tiered(
+      "Distance from first to last plane, 0 to 4.",
+      "One plane ignores the spread. Up to 25 parallel planes intersect both objects under one combined work budget. They share xyz coordinates, without artificial spacing.",
+    ),
+    sectionDetail: tesseractSectionDetail,
+    legend: "threads",
+    legendItems: (c) =>
+      c.mode === "section"
+        ? [
+            { label: "Tesseract section", family: 0 },
+            { label: "Selected cube's section", family: 1 },
+            { label: "16-cell section", family: 2 },
+            { label: "Edges from the selected center, sliced", family: 3 },
+          ]
+        : [
+            { label: "Tesseract", family: 0 },
+            { label: "Selected cube", family: 1 },
+            { label: "16-cell vertices and edges", family: 2 },
+            { label: "The cube's center, a 16-cell vertex", family: 3 },
+          ],
+    choices: [
+      {
+        key: "view",
+        label: "Show",
+        visible: (c) => c.mode !== "section",
+        help: tiered(
+          "One cube and its center, or both whole polytopes.",
+          "One cube draws its 12 edges, its 4 diagonals, its center and the 16-cell's edges to the centers of the six cubes beside it. Both whole adds every other edge of each, fainter.",
+        ),
+        values: [
+          { value: "cell", label: "One cube and its center" },
+          { value: "crystal", label: "Both whole polytopes" },
+        ],
+      },
+      {
+        key: "view",
+        label: "Show",
+        visible: (c) => c.mode === "section",
+        help: tiered(
+          "Selected correspondence, or both complete sections.",
+          "The tesseract's accent is the selected cube intersected by the plane. The 16-cell's accents mark intersections of edges from that cube's center, a 16-cell vertex, which itself need not lie in the slice.",
+        ),
+        values: [
+          { value: "cell", label: "Selected correspondence" },
+          { value: "crystal", label: "Both complete sections" },
+        ],
+      },
+    ],
+    selection: {
+      label: "Selected cube",
+      help: (c) =>
+        tiered(
+          "Which of the tesseract's 8 cubes is selected, from 1 to 8.",
+          c.mode === "section"
+            ? "Press [ or ] on the drawing to step. Its section and intersections of edges from its center, a 16-cell vertex, are accented; either can be absent at this plane."
+            : "Tap a cube's center, a 16-cell vertex, to select it, or press [ or ] on the drawing. Tapping again where centers coincide steps through them; the field and center readouts tell them apart.",
+        ),
+      visible: () => true,
+      count: () => 8,
+      get: (c) => c.cell16!.selected,
+      set: (c, index) => ({ ...c, cell16: { ...c.cell16!, selected: index } }),
+      itemOf: cellOf,
+      cycleCoincident: true,
+      instructions: (c) =>
+        c.mode === "section"
+          ? " [ and ] step the selected cube."
+          : " Tap a cube center to select it; [ and ] step the selected cube.",
+    },
+    layerOptions: (c) => [
+      { key: "edges", label: "Tesseract" },
+      { key: "guides", label: "16-cell" },
+      ...(c.mode === "section" && c.count === 1
+        ? [{ key: "faces" as const, label: "Translucent section faces" }]
+        : []),
+    ],
+    viewingHelp: (c) =>
+      c.mode === "section"
+        ? "Shared plane w = h · [ and ] select a cube · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom"
+        : `${c.mode === "perspective" ? "Perspective" : "Orthographic"} · tap a center to select its cube · [ and ] step · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom`,
+    viewingLabel: () =>
+      "Interactive tesseract and its dual 16-cell. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom.",
+    readouts: (r) => {
+      const p = r.polytope;
+      if (!p) return [];
+      return [
+        ...(p.sections
+          ? p.sections.flatMap((s, i) => {
+              const name = `${s.object === "primal" ? "Tesseract" : "16-cell"}${p.sections!.length > 2 ? ` ${Math.floor(i / 2) + 1}` : ""}`;
+              return [
+                {
+                  label: name,
+                  value:
+                    s.dimension < 0
+                      ? "Empty"
+                      : ["Point", "Segment", "Polygon", "Solid"][s.dimension],
+                },
+                {
+                  label: `${name} V/E/F`,
+                  value: `${s.points.length}/${s.edges.length}/${s.facets.length}`,
+                },
+              ];
+            })
+          : []),
+        { label: "Selected cube", value: `${p.selected + 1} of 8` },
+        ...p.dual.source[p.selected].map((n, i) => ({
+          label: `Center ${"xyzw"[i]}`,
+          value: rational(n),
+        })),
+        ...(!p.sections
+          ? [
+              {
+                label: "Shortest shadow edge",
+                value: p.shadowEdges[0].toFixed(3),
+              },
+              {
+                label: "Longest shadow edge",
+                value: p.shadowEdges[1].toFixed(3),
+              },
+              { label: "Cube edges in 4D", value: "2" },
+            ]
+          : []),
+      ];
+    },
+    diagnostics: (r) =>
+      r.polytope?.sections
+        ? `${r.polytope.sections.length / 2} shared ${r.polytope.sections.length === 2 ? "plane" : "planes"} through the tesseract and its 16-cell. Selected cube ${r.polytope.selected + 1} of 8.`
+        : r.polytope
+          ? `Cube ${r.polytope.selected + 1} of 8 and its center, a vertex of the 16-cell${r.polytope.view === "crystal" ? ", in both whole polytopes" : ""}.`
+          : "",
+    colorNote: (c) =>
+      c.mode === "section"
+        ? "Inks distinguish both sections and the selected correspondence; multiple slices overlay their real coordinates. The section of a dual is generally not the dual of the section."
+        : `Inks mark roles, not coordinate directions. The cube's four dashed diagonals cross at its center in every shadow${c.mode === "perspective" ? ", though perspective moves it off their midpoints" : ""}. ${c.cell16!.view === "crystal" ? "The rest of both polytopes is drawn fainter. " : ""}Coinciding shadows of distinct vertices are not merged.`,
+    explanation: (c) =>
+      c.mode === "section"
+        ? [
+            "A tesseract meeting its dual",
+            "One plane passes through both rotated polytopes. Each cube and tetrahedron contributes its actual intersection; a whole cube lying in the plane is a solid region. Unrotated, the central plane cuts a cube and an octahedron, which are 3D duals. Move the plane and the cube stays while the octahedron shrinks: the section of the dual is not the dual of the section.",
+            "RC ∩ {w = h},   RC° ∩ {w = h}",
+          ]
+        : c.mode === "perspective"
+          ? [
+              "Looking into the tesseract",
+              "An eye on the w axis, at distance d from the center, looks at both rotated polytopes: the familiar cube within a cube, threaded by the 16-cell joining the cubes' centers. Lines stay straight: the selected cube's four diagonals still cross at its center, a 16-cell vertex, though no longer at their midpoints. Every tesseract edge is still 2 long in four dimensions.",
+              "P(x, y, z, w) = d(x, y, z) / (d − w),   2.05 ≤ d ≤ 20",
+            ]
+          : [
+              "Eight cubes, eight centers",
+              "The tesseract [−1, 1]⁴ is bounded by eight cubes, each in a hyperplane u · x = 1 for one of the eight vectors u = ±eᵢ. These are the vertices of its polar dual, the 16-cell, so every 16-cell vertex is the center of one cube, where its four diagonals cross. 16-cell edges join the centers of cubes that share a square.",
+              "C = { x : u · x ≤ 1 for every 16-cell vertex u },   cube u = C ∩ { u · x = 1 }",
+            ],
+    title: () => "Tangent Garden — the tesseract and its dual 16-cell",
+    limitations:
+      "exact-incidence orthogonal and perspective shadows and shared-plane sections; transparent linework; projected crossings are not incidences; perspective keeps lines straight but not lengths or midpoints; sections are not generally polar duals; only a cube's center is a vertex of the dual",
+    defaults: () => ({
+      ...structuredClone(defaultConfig),
+      object: "cell16",
+      mode: "orthographic",
+      angles: [0.3, 0.2, 0.1, 0.7, 0.5, 0.3],
+      spread: 3.4,
+      cell16: { selected: 0, view: "cell" },
+    }),
+    enterMode: pairEnterMode(4, 4.05, 3.4),
     motion: "double",
   },
   root: {

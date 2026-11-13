@@ -14,7 +14,7 @@ import {
   initialView,
   motions,
   type Bypass,
-  type Cell24,
+  type DualPair,
   type Config,
   type Layers,
   type Lift,
@@ -99,7 +99,15 @@ const cell24 = {
     view: { options: { cell: true, crystal: true } },
     emphasis: { optional: { range: [0, 0] } },
   },
-} satisfies SchemaOf<Cell24>;
+} satisfies SchemaOf<DualPair>;
+// The tesseract and its 16-cell: one of the tesseract's eight cubes.
+const cell16 = {
+  fields: {
+    selected: { range: [0, 7] },
+    view: { options: { cell: true, crystal: true } },
+    emphasis: { optional: { range: [0, 0] } },
+  },
+} satisfies SchemaOf<DualPair>;
 const config: SchemaOf<Config> = {
   fields: {
     object: {
@@ -129,6 +137,7 @@ const config: SchemaOf<Config> = {
     bypass: { optional: bypass },
     weave: { optional: weave },
     cell24: { optional: cell24 },
+    cell16: { optional: cell16 },
     root: { optional: root },
     angles: { tuple: "number", length: 6 },
     distance: "number",

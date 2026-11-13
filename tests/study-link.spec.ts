@@ -1243,6 +1243,59 @@ test("fields a link predates take the notebook's defaults", async () => {
   sectioned.config.mode = "stereo";
   sectioned.motion = "double";
   await refused(() => tesseractStudy(sectioned), "config.mode", /one of/);
+  // The tesseract and its 16-cell keep their own field: absent in every
+  // earlier link, restored with its selection and view, defaulted when
+  // missing, and refused by name beyond its eight cubes or with a
+  // transient emphasis. A 24-cell link carries no cell16 field.
+  assert.equal("cell16" in tesseractStudy(tesseract()).config, false);
+  assert.equal("cell16" in tesseractStudy(cellStudy).config, false);
+  const pairIndex = tesseractPresets.findIndex(
+    (p) => p.config.object === "cell16",
+  );
+  const pairStudy: TesseractStudy = {
+    ...tesseract(pairIndex),
+    config: {
+      ...tesseract(pairIndex).config,
+      mode: "perspective",
+      distance: 2.5,
+      cell16: { selected: 7, view: "crystal" },
+    },
+    view: { yaw: 0.8, pitch: -0.3, zoom: 1.4, panX: 6, panY: 2 },
+  };
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", pairStudy))).study,
+    ),
+    pairStudy,
+  );
+  const barePair = structuredClone(pairStudy) as any;
+  delete barePair.config.cell16;
+  assert.deepEqual(tesseractStudy(barePair).config.cell16, {
+    selected: 0,
+    view: "cell",
+  });
+  for (const [key, value] of [
+    ["selected", 8],
+    ["selected", -1],
+    ["view", "faces"],
+    ["emphasis", 0.5],
+  ] as const) {
+    const bad = structuredClone(pairStudy) as any;
+    bad.config.cell16[key] = value;
+    await refused(() => tesseractStudy(bad), `config.cell16.${key}`);
+  }
+  const pairSections = structuredClone(pairStudy) as any;
+  pairSections.config.mode = "section";
+  pairSections.config.slice = -4.05;
+  pairSections.config.spread = 4;
+  pairSections.config.count = 25;
+  pairSections.motion = "crystal";
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", pairSections))).study,
+    ),
+    pairSections,
+  );
   // The square-root journey: links before it have no root field; its link
   // restores radius, sheet, endpoints and both cameras; one without root
   // opens the object's defaults; a link never carries playback progress.

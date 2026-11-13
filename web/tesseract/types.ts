@@ -10,6 +10,7 @@ export type Object4 =
   | "bypass"
   | "weave"
   | "cell24"
+  | "cell16"
   | "root";
 // The square-root journey (engine4/root.go): z = r e^{it} and its
 // continuously followed root w = ±√r e^{it/2}, for 0 ≤ t ≤ 4π.
@@ -22,14 +23,16 @@ export type Root = {
   // Progress from `from` to `to`, which only the sampler below sets.
   trace?: number;
 };
-// The 24-cell: the selected octahedral cell (counted from 0), which is
-// also the ID of its center, a vertex of the dual, and how much to draw.
-export type Cell24 = {
+// A dual pair, the 24-cell (cell24) or the tesseract and its 16-cell
+// (cell16): the selected primal cell (counted from 0), which is also the
+// ID of its center, a vertex of the dual, and how much to draw.
+export type DualPair = {
   selected: number;
   view: "cell" | "crystal";
   // Transient presentation set only by the crystal passage; links accept 0.
   emphasis?: number;
 };
+export type Cell24 = DualPair;
 export type Weave = {
   family: "tori" | "fibers";
   alpha: number;
@@ -86,7 +89,8 @@ export type Config = {
   lift?: Lift;
   bypass?: Bypass;
   weave?: Weave;
-  cell24?: Cell24;
+  cell24?: DualPair;
+  cell16?: DualPair;
   root?: Root;
   angles: [number, number, number, number, number, number];
   distance: number;
@@ -222,19 +226,22 @@ export type Result = {
       aliases?: number[];
     };
   };
-  // The 24-cell and its polar (engine4/cell24.go). Paths and markers are
+  // A dual pair, the 24-cell and its polar (engine4/cell24.go) or the
+  // tesseract and its 16-cell (engine4/cell16.go). Paths and markers are
   // drawn from these arrays (./polytope.ts).
   polytope?: {
-    sections?: Section24[];
-    view: Cell24["view"];
+    sections?: PairSection[];
+    view: DualPair["view"];
     selected: number;
-    primal: Polytope24;
-    dual: Polytope24;
+    primal: PairPolytope;
+    dual: PairPolytope;
     cellVertices: number[];
     cellEdges: number[];
     neighbors: number[];
     neighborEdges: number[];
-    sharedFaces: [number, number, number][];
+    // The face each neighbor's cell shares with the selected one: a
+    // triangle of the 24-cell, a square of the tesseract.
+    sharedFaces: number[][];
     shadowEdges: [number, number];
   };
   root?: {
@@ -260,7 +267,7 @@ export type Result = {
   };
 };
 // Finite cell incidence; coordinates are lifted, not JSON number structs.
-export type Section24 = {
+export type PairSection = {
   id: string;
   object: "primal" | "dual";
   level: number;
@@ -272,7 +279,7 @@ export type Section24 = {
   edges: [number, number][];
   facets: { vertices: number[]; cells: number[] }[];
 };
-export type Polytope24 = {
+export type PairPolytope = {
   circumradius: number;
   edgeLength: number;
   source: [number, number, number, number][];
@@ -345,8 +352,10 @@ export function sample(
   } else if (motion === "slice" || motion === "crystal") {
     const extent = passageExtent(config);
     q.slice = extent * (2 * p - 1);
-    if (motion === "crystal" && q.cell24)
-      q.cell24.emphasis = (1 - Math.cos(2 * Math.PI * p)) / 2;
+    const key = objects[config.object].parameterKey;
+    const pair = key === "cell24" || key === "cell16" ? q[key] : undefined;
+    if (motion === "crystal" && pair)
+      pair.emphasis = (1 - Math.cos(2 * Math.PI * p)) / 2;
   } else if (objects[config.object].rotations) {
     q.angles[3] += 2 * Math.PI * p;
     if (motion === "double") q.angles[2] += 2 * Math.PI * p;

@@ -1,14 +1,16 @@
-// The 24-cell's drawing, assembled from the engine's vertex arrays and
-// incidence (engine4/cell24.go). Go computes every coordinate; this only
+// A dual pair's drawing, the 24-cell's (engine4/cell24.go) or the
+// tesseract and 16-cell's (engine4/cell16.go), assembled from the engine's
+// vertex arrays and incidence. Go computes every coordinate; this only
 // pairs the returned points by the returned vertex IDs, so the vertex
 // arrays can travel in the typed buffer rather than as one JSON path per
-// edge. Each path keeps its 4D endpoints beside their xyz shadow.
+// edge. Each path keeps its 4D endpoints beside their xyz shadow. IDs take
+// the result's object as their prefix.
 import type { Result } from "./types";
 
 type Path = Result["paths"][number];
 type Marker = NonNullable<Result["markers"]>[number];
 
-// Role inks, by family: the 24-cell, the selected cell, the dual, and the
+// Role inks, by family: the primal, the selected cell, the dual, and the
 // selected cell's center with its dual edges. Layers: the 24-cell's roles
 // draw with Edges, the dual's with Guides.
 export const polytopeFamilies = {
@@ -30,10 +32,14 @@ export const dualRoles: readonly string[] = [
 // drawn again in the crystal's.
 export const polytopePathBound = 96 + 96 + 12 + 3 + 8;
 export const polytopeMarkerBound = 24;
+// The tesseract and 16-cell: both edge sets and the selected cube's 4
+// diagonals (engine4 cell16DrawnPaths), and the 8 centers.
+export const pair16PathBound = 32 + 24 + 4;
+export const pair16MarkerBound = 8;
 
 // The selected item a source ID names: the cell centered on dual vertex k.
 export function cellOf(source: string): number | undefined {
-  const m = /^cell24\/dual\/vertex\/(\d+)$/.exec(source);
+  const m = /^cell(?:24|16)\/dual\/vertex\/(\d+)$/.exec(source);
   return m ? Number(m[1]) : undefined;
 }
 
@@ -42,7 +48,8 @@ export function expandPolytope(result: Result): Result {
   if (!p) return result;
   if (p.sections) return expandSections(result);
   const { primal, dual } = p,
-    crystal = p.view === "crystal";
+    crystal = p.view === "crystal",
+    id = result.object;
   const paths: Path[] = [],
     markers: Marker[] = [];
   const segment = (
@@ -69,36 +76,37 @@ export function expandPolytope(result: Result): Result {
   if (crystal) {
     primal.edges.forEach(([a, b], j) => {
       if (!cellEdges.has(j))
-        segment(primal, a, b, `cell24/primal/edge/${j}`, "primal", 0);
+        segment(primal, a, b, `${id}/primal/edge/${j}`, "primal", 0);
     });
     dual.edges.forEach(([a, b], j) => {
       if (!spokes.has(j))
-        segment(dual, a, b, `cell24/dual/edge/${j}`, "dual", 2);
+        segment(dual, a, b, `${id}/dual/edge/${j}`, "dual", 2);
     });
   }
   p.neighborEdges.forEach((j) => {
     const [a, b] = dual.edges[j];
     // From the center outward.
     const [from, to] = a === p.selected ? [a, b] : [b, a];
-    segment(dual, from, to, `cell24/dual/edge/${j}`, "spoke", 3);
+    segment(dual, from, to, `${id}/dual/edge/${j}`, "spoke", 3);
   });
   for (const j of p.cellEdges) {
     const [a, b] = primal.edges[j];
-    segment(primal, a, b, `cell24/primal/edge/${j}`, "cell", 1);
+    segment(primal, a, b, `${id}/primal/edge/${j}`, "cell", 1);
   }
-  for (let i = 0; i < 6; i += 2)
+  // The cell's vertices come as opposite pairs: its diagonals.
+  for (let i = 0; i < p.cellVertices.length; i += 2)
     segment(
       primal,
       p.cellVertices[i],
       p.cellVertices[i + 1],
-      `cell24/primal/cell/${p.selected}/diagonal/${i / 2}`,
+      `${id}/primal/cell/${p.selected}/diagonal/${i / 2}`,
       "diagonal",
       1,
       true,
     );
   const marker = (k: number, role: Marker["role"], family: number) =>
     markers.push({
-      id: `cell24/dual/vertex/${k}`,
+      id: `${id}/dual/vertex/${k}`,
       role,
       point: dual.points[k],
       fourPoint: dual.rotated[k],

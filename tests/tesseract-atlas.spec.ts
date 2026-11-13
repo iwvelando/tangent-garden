@@ -54,6 +54,15 @@ test("4D atlas catalog belongs to active object descriptors", async () => {
     expect(
       await ids({ ...objects.cell24.defaults(defaultConfig), mode }),
     ).toEqual(pairs);
+  // The tesseract and its 16-cell offer the same pairs as the 24-cell.
+  for (const [mode, pairs] of [
+    ["orthographic", ["rotation"]],
+    ["perspective", ["rotation", "eye"]],
+    ["section", []],
+  ] as const)
+    expect(
+      await ids({ ...objects.cell16.defaults(defaultConfig), mode }),
+    ).toEqual(pairs);
   expect(await ids(objects.root.defaults(defaultConfig))).toEqual(["rotation"]);
   for (const object of ["ball", "tube", "lift", "bypass"] as const) {
     // Dormant weave, projection and rotation fields never enable a pair.

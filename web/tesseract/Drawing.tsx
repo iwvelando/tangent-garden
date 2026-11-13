@@ -82,8 +82,8 @@ export const markerShown = (
     : dualRoles.includes(m.role) || m.role === "branch-point"
       ? layers.guides
       : layers.edges;
-// The 24-cell's roles: the whole crystals faint, the selected cell and its
-// center strong, its diagonals dashed (./polytope.ts).
+// A dual pair's roles: the whole configurations faint, the selected cell
+// and its center strong, its diagonals dashed (./polytope.ts).
 const polytopeStroke: Partial<
   Record<Result["paths"][number]["role"], { width: number; opacity: number }>
 > = {
@@ -209,10 +209,13 @@ export function Drawing({
     : [];
   // A link's permitted zero is the neutral entered still. In the
   // passage zero occurs only at its empty endpoints.
-  const emphasis =
-    result.polytope?.sections && config.cell24?.emphasis
-      ? config.cell24.emphasis
+  const pairKey = objects[config.object].parameterKey;
+  const pairEmphasis =
+    pairKey === "cell24" || pairKey === "cell16"
+      ? config[pairKey]?.emphasis
       : undefined;
+  const emphasis =
+    result.polytope?.sections && pairEmphasis ? pairEmphasis : undefined;
   const opacity = (dual: boolean) =>
     emphasis === undefined
       ? 1
@@ -307,8 +310,8 @@ export function Drawing({
                       ? `perspective: (x, y, z, w) → d(x, y, z) / (d − w), d = ${config.distance}`
                       : "orthogonal: (x, y, z, w) → (x, y, z)",
                   ids: result.polytope.sections
-                    ? "cell24/{primal|dual}/section/i/{edge|facet|vertex}/j; origins retain source vertex/edge IDs and vertexCells/facet cells retain cell IDs"
-                    : "cell24/primal/edge/j, cell24/dual/edge/j, cell24/dual/vertex/k (the center of primal cell k)",
+                    ? `${result.object}/{primal|dual}/section/i/{edge|facet|vertex}/j; origins retain source vertex/edge IDs and vertexCells/facet cells retain cell IDs`
+                    : `${result.object}/primal/edge/j, ${result.object}/dual/edge/j, ${result.object}/dual/vertex/k (the center of primal cell k)`,
                 },
               }
             : {}),

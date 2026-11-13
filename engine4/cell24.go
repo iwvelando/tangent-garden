@@ -27,8 +27,8 @@ import (
 // order. Cell k of either configuration is the cell centered on vertex k of
 // the other, so primal cell k and dual vertex k share an ID.
 
-// Cell24Parameters choose one cell and how much of the crystal to draw.
-type Cell24Parameters struct {
+// PairParameters choose one cell and how much of the crystal to draw.
+type PairParameters struct {
 	// The selected primal cell, the cell centered on dual vertex Selected.
 	Selected int `json:"selected"`
 	// "cell" draws the selected cell and its center's neighborhood;
@@ -37,10 +37,10 @@ type Cell24Parameters struct {
 	View string `json:"view"`
 }
 
-// Polytope24 is one configuration: its declared coordinates, the rotated
+// PairPolytope is one configuration: its declared coordinates, the rotated
 // 4D vertices and their xyz shadow (orthogonal or perspective), by vertex
 // ID, and its edges as ordered vertex-ID pairs.
-type Polytope24 struct {
+type PairPolytope struct {
 	Circumradius float64  `json:"circumradius"`
 	EdgeLength   float64  `json:"edgeLength"`
 	Source       []Vec4   `json:"source"`
@@ -51,23 +51,23 @@ type Polytope24 struct {
 	Cells        int      `json:"cells"`
 }
 
-// Cell24Diagnostics is the whole 24-cell study: both configurations and
+// PairDiagnostics is the whole 24-cell study: both configurations and
 // the selected cell's incidence.
-type Cell24Diagnostics struct {
-	Sections []Section24 `json:"sections,omitempty"`
-	View     string      `json:"view"`
-	Selected int         `json:"selected"`
-	Primal   Polytope24  `json:"primal"`
-	Dual     Polytope24  `json:"dual"`
+type PairDiagnostics struct {
+	Sections []PairSection `json:"sections,omitempty"`
+	View     string        `json:"view"`
+	Selected int           `json:"selected"`
+	Primal   PairPolytope  `json:"primal"`
+	Dual     PairPolytope  `json:"dual"`
 	// The selected cell's six primal vertices as three opposite pairs,
 	// whose midpoints are all dual vertex Selected, and its 12 edge IDs.
 	CellVertices []int `json:"cellVertices"`
 	CellEdges    []int `json:"cellEdges"`
 	// The eight dual vertices joined to Selected by a dual edge, ascending,
 	// with that edge's ID and the primal triangle their two cells share.
-	Neighbors     []int    `json:"neighbors"`
-	NeighborEdges []int    `json:"neighborEdges"`
-	SharedFaces   [][3]int `json:"sharedFaces"`
+	Neighbors     []int   `json:"neighbors"`
+	NeighborEdges []int   `json:"neighborEdges"`
+	SharedFaces   [][]int `json:"sharedFaces"`
 	// The shortest and longest shadow of the selected cell's edges, each √2
 	// long in four dimensions, measured in the drawn projection.
 	ShadowEdges [2]float64 `json:"shadowEdges"`
@@ -249,8 +249,8 @@ func project24(v Vec4, distance float64) Vec3 {
 	return Vec3{s * v[0], s * v[1], s * v[2]}
 }
 
-func (x *complex24) polytope(angles [6]float64, distance, circumradius, edge float64) Polytope24 {
-	p := Polytope24{
+func (x *complex24) polytope(angles [6]float64, distance, circumradius, edge float64) PairPolytope {
+	p := PairPolytope{
 		Circumradius: circumradius,
 		EdgeLength:   edge,
 		Source:       make([]Vec4, 24),
@@ -298,7 +298,7 @@ func cell24(q Request, r Result) (Result, error) {
 	}
 	primal, dual := complexes()
 	k := c.Selected
-	d := &Cell24Diagnostics{
+	d := &PairDiagnostics{
 		View:         c.View,
 		Selected:     k,
 		Primal:       primal.polytope(q.Angles, distance, math.Sqrt2, math.Sqrt2),
@@ -328,7 +328,7 @@ func cell24(q Request, r Result) (Result, error) {
 		sort.Ints(shared)
 		d.Neighbors = append(d.Neighbors, n)
 		d.NeighborEdges = append(d.NeighborEdges, e)
-		d.SharedFaces = append(d.SharedFaces, [3]int{shared[0], shared[1], shared[2]})
+		d.SharedFaces = append(d.SharedFaces, shared)
 	}
 	for _, e := range d.CellEdges {
 		ends := primal.edges[e]
