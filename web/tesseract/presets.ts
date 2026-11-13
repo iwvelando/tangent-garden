@@ -291,6 +291,54 @@ export const tesseractPresets: {
     repeat: "loop",
     pace: "ease",
   },
+  // Opens one cube of the tesseract, its four diagonals crossing at its
+  // center, a 16-cell vertex, and the 16-cell edges to the six cubes
+  // beside it, turning in a seamless double rotation.
+  {
+    name: "Eight cubes, eight centers",
+    detail:
+      "One cube of the tesseract. Its four diagonals cross at a vertex of the 16-cell, the tesseract's dual, whose edges reach the centers of the six cubes sharing a square with it.",
+    config: objects.cell16.defaults(base),
+    motion: "double",
+    repeat: "loop",
+  },
+  // Opens both whole polytopes in perspective from an eye just beyond cube
+  // 4 (the cube centered on +e_w), turned slightly in xw: the cube within a
+  // cube, threaded by the 16-cell through the cube centers. A seamless
+  // double rotation turns it inside out at a fixed framing radius.
+  {
+    name: "Cube within a cube, and its dual",
+    detail:
+      "The tesseract and its polar 16-cell in perspective. Every cube of one holds a vertex of the other; the other's tetrahedral cells match the tesseract's corners.",
+    config: {
+      ...objects.cell16.defaults(base),
+      mode: "perspective",
+      angles: [0, 0, 0, 0.25, 0, 0],
+      distance: 2.5,
+      cell16: { selected: 3, view: "crystal" },
+    },
+    motion: "double",
+    repeat: "loop",
+  },
+  // A static central section, corner first: w is turned onto the
+  // tesseract's diagonal (½, ½, ½, ½) by xw π/4, yw asin(1/√3) and zw π/6.
+  // Play cuts to an empty plane, then passes through both fixed polytopes
+  // while their inks alternate.
+  {
+    name: "A tesseract meeting its dual",
+    detail:
+      "One plane cuts the tesseract corner first: an octahedron. Its dual 16-cell gives a cuboctahedron, not the octahedron's dual cube.",
+    config: {
+      ...objects.cell16.defaults(base),
+      mode: "section",
+      angles: [0, 0, 0, Math.PI / 4, Math.asin(1 / Math.sqrt(3)), Math.PI / 6],
+      slice: 0,
+      cell16: { selected: 0, view: "crystal" },
+    },
+    motion: "crystal",
+    repeat: "loop",
+    pace: "ease",
+  },
   // Opens at t = 0 with both whole circuits and the trace of the second,
   // the circuit that has just brought w home; Follow the root loops over
   // the whole 4π journey.

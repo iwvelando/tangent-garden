@@ -81,6 +81,26 @@ func TestValidationNamesItsField(t *testing.T) {
 			return q
 		}},
 		{"24-cell angle", "angles.1", func() Request { q := cell24Request(0, "crystal", [6]float64{}); q.Angles[1] = nan; return q }},
+		{"selected cube", "cell16.selected", func() Request { return cell16Request(8, "cell", [6]float64{}) }},
+		{"16-cell view", "cell16.view", func() Request { return cell16Request(0, "faces", [6]float64{}) }},
+		{"16-cell mode", "mode", func() Request { q := cell16Request(0, "cell", [6]float64{}); q.Mode = "stereo"; return q }},
+		{"16-cell eye distance", "distance", func() Request {
+			q := cell16Request(0, "cell", [6]float64{})
+			q.Mode, q.Distance = "perspective", 20.5
+			return q
+		}},
+		{"16-cell sections", "count", func() Request { q := cell16Request(0, "cell", [6]float64{}); q.Mode, q.Count = "section", 26; return q }},
+		{"16-cell offset", "slice", func() Request {
+			q := cell16Request(0, "cell", [6]float64{})
+			q.Mode, q.Slice = "section", 4.1
+			return q
+		}},
+		{"16-cell spread", "spread", func() Request {
+			q := cell16Request(0, "cell", [6]float64{})
+			q.Mode, q.Spread = "section", 4.1
+			return q
+		}},
+		{"16-cell angle", "angles.4", func() Request { q := cell16Request(0, "crystal", [6]float64{}); q.Angles[4] = nan; return q }},
 		{"flower petals", "weave.petals", func() Request { q := paired(); q.Weave.Path = "flower"; q.Weave.Petals = new(int); return q }},
 		{"lift mode", "mode", func() Request { q := lift(); q.Mode = "stereo"; return q }},
 		{"lift center", "lift.center.1", func() Request { q := lift(); q.Lift.Center[1] = 21; return q }},

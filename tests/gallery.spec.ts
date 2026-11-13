@@ -231,7 +231,7 @@ for (const [width, height] of [
 for (const [path, count] of [
   ["/", 72],
   ["/?study=3d", 150],
-  ["/?study=4d", 20],
+  ["/?study=4d", 23],
 ] as const)
   test(`the ${path === "/" ? "2D" : path.endsWith("4d") ? "4D" : "3D"} gallery shows every example with a current thumbnail`, async ({
     page,

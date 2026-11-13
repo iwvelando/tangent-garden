@@ -27,7 +27,8 @@ type Request struct {
 	Lift     *LiftParameters   `json:"lift,omitempty"`
 	Bypass   *BypassParameters `json:"bypass,omitempty"`
 	Weave    *WeaveParameters  `json:"weave,omitempty"`
-	Cell24   *Cell24Parameters `json:"cell24,omitempty"`
+	Cell24   *PairParameters   `json:"cell24,omitempty"`
+	Cell16   *PairParameters   `json:"cell16,omitempty"`
 	Root     *RootParameters   `json:"root,omitempty"`
 }
 type Path struct {
@@ -76,7 +77,7 @@ type Result struct {
 	Markers       []Marker           `json:"markers,omitempty"`
 	Weave         *WeaveDiagnostics  `json:"weave,omitempty"`
 	Companion     *Result            `json:"companion,omitempty"`
-	Polytope      *Cell24Diagnostics `json:"polytope,omitempty"`
+	Polytope      *PairDiagnostics   `json:"polytope,omitempty"`
 	Root          *RootDiagnostics   `json:"root,omitempty"`
 }
 
@@ -157,6 +158,9 @@ func Compute(q Request) (r Result, err error) {
 	if q.Object == "cell24" {
 		return cell24(q, r)
 	}
+	if q.Object == "cell16" {
+		return cell16(q, r)
+	}
 	if q.Object == "root" {
 		return rootJourney(q, r)
 	}
@@ -164,7 +168,7 @@ func Compute(q Request) (r Result, err error) {
 		return curved(q, r)
 	}
 	if q.Object != "tesseract" {
-		return r, fieldErr("object", "choose tesseract, ball, tube, lift, bypass, weave, cell24, or root")
+		return r, fieldErr("object", "choose tesseract, ball, tube, lift, bypass, weave, cell24, cell16, or root")
 	}
 	if q.Mode != "perspective" && q.Mode != "orthographic" && q.Mode != "stereo" && q.Mode != "section" {
 		return r, fieldErr("mode", "choose a tesseract projection or section")

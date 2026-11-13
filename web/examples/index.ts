@@ -211,7 +211,7 @@ export const tesseractExamples: Example[] = tesseractPresets.map((p) => ({
   family:
     p.config.object === "bypass"
       ? "Extra-coordinate routes"
-      : p.config.object === "cell24"
+      : p.config.object === "cell24" || p.config.object === "cell16"
         ? "Polytope duality"
         : p.config.object === "root"
           ? "Complex branches"

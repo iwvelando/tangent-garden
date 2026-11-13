@@ -427,9 +427,18 @@ self.onmessage = async ({
       const weave = q.object === "weave" ? q.weave : undefined;
       if (q.object === "weave" && !weave)
         throw new Error("Enter spherical weave parameters.");
-      const polytope = q.object === "cell24" ? q.cell24 : undefined;
-      if (q.object === "cell24") {
-        if (!polytope) throw new Error("Choose a cell of the 24-cell.");
+      // A dual pair: the 24-cell, or the tesseract and its 16-cell.
+      const pair =
+        q.object === "cell24" || q.object === "cell16" ? q.object : undefined;
+      const polytope = pair ? q[pair] : undefined;
+      if (pair) {
+        const cells = pair === "cell24" ? 24 : 8;
+        if (!polytope)
+          throw new Error(
+            pair === "cell24"
+              ? "Choose a cell of the 24-cell."
+              : "Choose a cube of the tesseract.",
+          );
         for (const [i, value] of q.angles.entries())
           if (!Number.isFinite(value))
             throw fieldError(
@@ -439,8 +448,8 @@ self.onmessage = async ({
         // Go's integer decoding would refuse a fraction without naming it.
         if (!Number.isInteger(polytope.selected))
           throw fieldError(
-            "cell24.selected",
-            "Selected cell must be a whole number from 1 to 24.",
+            `${pair}.selected`,
+            `Selected ${pair === "cell24" ? "cell" : "cube"} must be a whole number from 1 to ${cells}.`,
           );
       }
       // Base sphere and fibers draws one base path: no latitude count or
@@ -687,8 +696,8 @@ self.onmessage = async ({
       // Inactive unfinished integer fields must not fail Go JSON decoding.
       const request = {
         object: q.object,
-        ...(polytope
-          ? { cell24: { selected: polytope.selected, view: polytope.view } }
+        ...(pair && polytope
+          ? { [pair]: { selected: polytope.selected, view: polytope.view } }
           : {}),
         ...(weave
           ? {
@@ -743,7 +752,7 @@ self.onmessage = async ({
           : {}),
         mode: q.mode,
         angles: lift || route ? [0, 0, 0, 0, 0, 0] : q.angles,
-        // The 24-cell's shadows have no face grid; its perspective sends
+        // A dual pair's shadows have no face grid; its perspective sends
         // only the eye distance.
         ...(lift || route || weave || root
           ? {}

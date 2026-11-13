@@ -11,10 +11,10 @@ import (
 )
 
 func cell24Request(selected int, view string, angles [6]float64) Request {
-	return Request{Object: "cell24", Mode: "orthographic", Angles: angles, Cell24: &Cell24Parameters{Selected: selected, View: view}}
+	return Request{Object: "cell24", Mode: "orthographic", Angles: angles, Cell24: &PairParameters{Selected: selected, View: view}}
 }
 
-func cell24Result(t *testing.T, q Request) (Result, *Cell24Diagnostics) {
+func cell24Result(t *testing.T, q Request) (Result, *PairDiagnostics) {
 	t.Helper()
 	r := compute(t, q)
 	if r.Polytope == nil {
@@ -449,7 +449,7 @@ func TestCell24RotatedShadow(t *testing.T) {
 	}
 	for _, c := range []struct {
 		name string
-		p    Polytope24
+		p    PairPolytope
 	}{{"primal", p.Primal}, {"dual", p.Dual}} {
 		// The Gram matrix is preserved: every distance and angle, so edges
 		// keep their length however the shadow foreshortens them.
@@ -714,12 +714,20 @@ func section24Result(t *testing.T, angles [6]float64, h float64, count int, spre
 }
 func checkSection24(t *testing.T, s section24Wire, angles [6]float64) {
 	t.Helper()
+	checkPairSection(t, s, angles, declaredPrimal(), declaredDual())
+}
+
+// checkPairSection checks one section of a dual pair against the declared
+// coordinates of both configurations: each configuration's cells are the
+// equality sets of the other's vertices as normals, n · x ≤ 1.
+func checkPairSection(t *testing.T, s section24Wire, angles [6]float64, primal, dual map[[4]float64]bool) {
+	t.Helper()
 	if len(s.Points) != len(s.FourPoints) || len(s.Points) != len(s.Origins) || len(s.Points) != len(s.VertexCells) {
 		t.Fatal("vertex provenance lengths")
 	}
-	normals := declaredDual()
+	normals := dual
 	if s.Object == "dual" {
-		normals = declaredPrimal()
+		normals = primal
 	}
 	// Inverse the declared ordered rotations, independently of rotate().
 	inverse := func(v Vec4) Vec4 {
@@ -732,9 +740,9 @@ func checkSection24(t *testing.T, s section24Wire, angles [6]float64) {
 		return v
 	}
 
-	sourceSet := declaredPrimal()
+	sourceSet := primal
 	if s.Object == "dual" {
-		sourceSet = declaredDual()
+		sourceSet = dual
 	}
 	source := make([]Vec4, 0, 24)
 	for v := range sourceSet {
@@ -764,7 +772,7 @@ func checkSection24(t *testing.T, s section24Wire, angles [6]float64) {
 		u := inverse(v)
 
 		origin := s.Origins[i]
-		if origin[0] < 0 || origin[0] > origin[1] || origin[1] >= 24 || seenOrigins[origin] {
+		if origin[0] < 0 || origin[0] > origin[1] || origin[1] >= len(source) || seenOrigins[origin] {
 			t.Fatal("invalid or duplicate source origin", origin)
 		}
 		seenOrigins[origin] = true

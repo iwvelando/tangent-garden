@@ -53,7 +53,7 @@ func TestCell24PerspectiveProjection(t *testing.T) {
 			}
 			for _, c := range []struct {
 				name     string
-				got, ort Polytope24
+				got, ort PairPolytope
 			}{{"primal", p.Primal, o.Primal}, {"dual", p.Dual, o.Dual}} {
 				for i, v := range c.got.Rotated {
 					// Source and rotated coordinates are those of the
@@ -189,7 +189,7 @@ func TestCell24PerspectiveApproachesOrthogonal(t *testing.T) {
 	for _, d := range []float64{2.05, 4, 10, 20} {
 		_, p := cell24Result(t, cell24Perspective(0, "crystal", angles, d))
 		worst := 0.
-		for _, c := range []struct{ got, ort Polytope24 }{{p.Primal, o.Primal}, {p.Dual, o.Dual}} {
+		for _, c := range []struct{ got, ort PairPolytope }{{p.Primal, o.Primal}, {p.Dual, o.Dual}} {
 			for i := range c.got.Points {
 				v := sub(c.got.Points[i], c.ort.Points[i])
 				worst = math.Max(worst, math.Sqrt(dot(v, v)))

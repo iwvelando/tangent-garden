@@ -376,6 +376,32 @@ const cases: Case[] = [
     (c) => (c.spread = 2.9),
     "Section spread",
   ],
+  // The tesseract and its 16-cell, under its own selection label and the
+  // tesseract's radius-2 limits.
+  [
+    "cell16.selected",
+    object("cell16"),
+    (c) => (c.cell16!.selected = 1.5),
+    "Selected cube",
+  ],
+  [
+    "distance",
+    (c) => c.object === "cell16" && c.mode === "perspective",
+    (c) => (c.distance = 2),
+    "4D eye distance",
+  ],
+  [
+    "slice",
+    (c) => c.object === "cell16" && c.mode === "section",
+    (c) => (c.slice = 4.1),
+    "Slice offset h",
+  ],
+  [
+    "spread",
+    (c) => c.object === "cell16" && c.mode === "section",
+    (c) => (c.spread = 4.1),
+    "Section spread",
+  ],
 ];
 
 const study = (config: Config, motion: TesseractStudy["motion"]) =>
@@ -442,6 +468,7 @@ test("every field the engine names has a control", () => {
     route: "bypass",
     cell24Request: "cell24",
     cell24Perspective: "cell24",
+    cell16Request: "cell16",
     root: "root",
   };
   for (const [, name, path, builder] of rows) {
