@@ -534,7 +534,12 @@ test("complex loom help fits both tiers in every source family", async ({
       "aria-busy",
       "false",
     );
-    if (map === "mobius" || map === "joukowski" || map === "fractional")
+    if (
+      map === "mobius" ||
+      map === "joukowski" ||
+      map === "fractional" ||
+      map === "exp-power"
+    )
       await d.getByLabel("Motion", { exact: true }).selectOption("map");
     for (const family of ["rosette", "grid", "concentric", "curve"]) {
       await d.getByLabel("Source family", { exact: true }).selectOption(family);

@@ -2049,7 +2049,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(16);
+  await expect(cards).toHaveCount(18);
   await expect(gallery.locator("[data-example]")).toHaveCount(72);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();
@@ -2811,9 +2811,15 @@ test("composite shell shows its intermediate point, shared-image points and crit
     "exp-power",
   );
   await expect(d.getByLabel("Degree", { exact: true })).toHaveValue("5");
-  // Neither stage has a pole, exclusion or map motion.
-  await expect(d.getByLabel("Motion", { exact: true })).toHaveCount(0);
-  await expect(d.getByText("Map settings", { exact: true })).toHaveCount(0);
+  // Neither stage has a pole or exclusion. The composite is s = 1 of its
+  // map motion's family, at point traversal.
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveValue("point");
+  await d.getByText("Map settings", { exact: true }).click();
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
+  await expect(d.getByText("Show pole exclusion")).toHaveCount(0);
   await expect(d.locator("[data-exclusion]")).toHaveCount(0);
   await expect(d.locator("[data-gaps]")).toContainText("No gaps");
   await expect(d.locator('[data-pane="image"] [data-member]')).toHaveCount(24);
@@ -3031,6 +3037,289 @@ test("a decoded composite traversal film matches direct seeks in both panes", as
   }
   at(1, 1, true);
   at(1, 0, false);
+});
+
+// The composite's map motion, w = s + (exp(s·zⁿ) − 1)/s, written
+// independently of the engine's evaluation.
+const grown = (z: { x: number; y: number }, n: number, s: number) => {
+  const u = power(z, n);
+  if (s === 0) return u;
+  const r = Math.exp(s * u.x);
+  return {
+    x: s + (r * Math.cos(s * u.y) - 1) / s,
+    y: (r * Math.sin(s * u.y)) / s,
+  };
+};
+
+test("composite map motion grows a squared grid's fan into the web, and its map parameter edits a frame directly", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).loomCopied = value;
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A squared grid grown into a web");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes"),
+    progress = d.getByLabel("Motion progress", { exact: true }),
+    values = d.locator(".animation-values"),
+    readout = d.locator(".loom-correspondence");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = s + (exp(s·z²) − 1)/s",
+  );
+  await expect(d.locator(".loom-pane-heading h3").nth(1)).toHaveText(
+    "Image plane · w",
+  );
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveValue("map");
+  await expect(d.getByLabel("Map motion from", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(d.getByLabel("Map motion to", { exact: true })).toHaveValue("1");
+  // It opens at s = 0 on the edge x = 5/4 from 5/4 − 5i/4, whose square is
+  // exactly −25i/8: the power map's own image.
+  const z = await loomPoint(d, "source");
+  expect(z).toEqual({ x: 1.25, y: -1.25 });
+  expect(await loomPoint(d, "image")).toEqual({ x: 0, y: -3.125 });
+  await expect(values).toContainText("s = 0.00000");
+  await expect(readout).toContainText("z² = (0.0000, -3.1250) → w = (0.0000");
+  await progress.fill("0.5");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), grown(z, 2, 0.5), 10))
+    .toBe(true);
+  await expect(values).toContainText("s = 0.500000");
+  // The intermediate point stays z², unscaled.
+  await expect(readout).toContainText("z² = (0.0000, -3.1250)");
+  await progress.fill("1");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), composite(z, 2), 10))
+    .toBe(true);
+  // The preset's own motion plays from the power to the composite.
+  await d.getByLabel("Traversal duration", { exact: true }).fill("0.4");
+  await d.getByRole("button", { name: "Stop map motion", exact: true }).click();
+  await expect(values).toContainText("s = 0.00000");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await d.getByRole("button", { name: "Play map motion", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Play map motion", exact: true }),
+  ).toBeVisible();
+  await expect(values).toContainText("s = 1.00000");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), composite(z, 2), 10))
+    .toBe(true);
+  // No pole: the map settings hold the parameter alone.
+  await d.getByText("Map settings", { exact: true }).click();
+  const parameter = d.getByLabel("Map parameter", { exact: true });
+  await expect(parameter).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
+  await expect(d.locator("[data-exclusion]")).toHaveCount(0);
+  // Point traversal keeps the frame, which the map parameter then edits.
+  await d.getByLabel("Motion", { exact: true }).selectOption("point");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = exp(z²)",
+  );
+  await parameter.fill("0.25");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), grown(z, 2, 0.25), 10))
+    .toBe(true);
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = s + (exp(s·z²) − 1)/s",
+  );
+  // Go refuses s beyond 0–1 under this field.
+  await parameter.fill("1.5");
+  await expect(parameter).toHaveAttribute("aria-invalid", "true");
+  await expect(d.getByRole("alert")).toContainText("0–1");
+  await expect(d.getByRole("alert")).toHaveCount(1);
+  await parameter.fill("0.25");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  const image = await d
+    .locator('[data-pane="image"] [data-member="16"]')
+    .getAttribute("d");
+  const download = page.waitForEvent("download");
+  await loomImage(d, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  for (const text of [
+    '"map":"exp-power"',
+    '"wrap":0.25',
+    '"formula":"w = s + (exp(s·z²) − 1)/s"',
+  ])
+    expect(svg).toContain(text);
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => (window as any).loomCopied as string);
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  expect(saved.loom.wrap).toBe(0.25);
+  expect(saved.loom.motion).toBeUndefined();
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await page.goto(link);
+  await expect(page).not.toHaveURL(/#s=/);
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  expect(
+    await d.locator('[data-pane="image"] [data-member="16"]').getAttribute("d"),
+  ).toBe(image);
+});
+
+test("an older composite link carrying another map's parameter still opens on the composite", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const { presetLoom, loomPresets } = await import("../web/loom/model");
+  const base = presetStudy(0);
+  const web = presetLoom(
+    loomPresets.findIndex(
+      (p) => p.title === "A squared grid wrapped into a web",
+    ),
+    base.config,
+  );
+  // As a study switched from z + λ/z kept them before s existed.
+  const loom = { ...web, mapParameter: 0.5, exclusionRadius: 0.1 };
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: { ...base, loom } }),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = exp(z²)",
+  );
+  const z = await loomPoint(d, "source");
+  expect(near(await loomPoint(d, "image"), composite(z, 2), 10)).toBe(true);
+  await d.getByText("Map settings", { exact: true }).click();
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
+});
+
+test("a decoded composite growth film matches direct seeks in both panes", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "A quintic rosette grown into a shell");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes"),
+    progress = d.getByLabel("Motion progress", { exact: true });
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  const seeks: number[][] = [];
+  for (const p of [0, 0.5, 1]) {
+    await progress.fill(String(p));
+    await expect(art).toHaveAttribute("aria-busy", "false");
+    seeks.push(
+      await d.locator('[data-pane="image"]').evaluate(async (e) => {
+        const svg = e.cloneNode(true) as SVGSVGElement;
+        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+        svg.setAttribute("width", "500");
+        svg.setAttribute("height", "380");
+        const url = URL.createObjectURL(
+          new Blob([new XMLSerializer().serializeToString(svg)], {
+            type: "image/svg+xml",
+          }),
+        );
+        try {
+          const image = new Image();
+          image.src = url;
+          await image.decode();
+          const canvas = Object.assign(document.createElement("canvas"), {
+            width: 500,
+            height: 380,
+          });
+          const ctx = canvas.getContext("2d")!;
+          ctx.drawImage(image, 0, 0);
+          return Array.from(ctx.getImageData(0, 0, 500, 380).data);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      }),
+    );
+  }
+  await progress.fill("0");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await openLoomExportSettings(d);
+  await d.getByLabel("Traversal duration", { exact: true }).fill(".2");
+  await loomResolution(d, 0.5);
+  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+  await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  const download = page.waitForEvent("download");
+  await loomMovieAction(d).click();
+  expect((await download).suggestedFilename()).toBe(
+    "tangent-garden-complex-exp-power-5.mp4",
+  );
+  const path = (await (await download).path())!,
+    bytes = await readFile(path);
+  for (const text of ['"map":"exp-power"', '"mode":"map"', '"degree":5'])
+    expect(bytes.includes(Buffer.from(text))).toBe(true);
+  const timing = videoProbe(path);
+  expect(timing?.frames).toBe(3);
+  expect(timing?.durations.reduce((a, b) => a + b, 0)).toBe(200);
+  const frames = execFileSync(
+    "ffmpeg",
+    ["-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    { maxBuffer: 4 * 1024 * 1024 },
+  );
+  expect(frames.length).toBe(3 * 1000 * 380 * 3);
+  for (let f = 0; f < 3; f++) {
+    const errors = seeks.map((expected) => {
+      let error = 0;
+      for (let y = 0; y < 380; y++)
+        for (let x = 0; x < 500; x++)
+          for (let c = 0; c < 3; c++)
+            error += Math.abs(
+              frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
+                expected[(y * 500 + x) * 4 + c],
+            );
+      return error / (500 * 380 * 3);
+    });
+    // Pixels where some channel differs from the seek by more than 20%:
+    // what a wrong or misplaced frame changes, and compression does not.
+    const changed = seeks.map((expected) => {
+      let count = 0;
+      for (let y = 0; y < 380; y++)
+        for (let x = 0; x < 500; x++)
+          for (let c = 0; c < 3; c++)
+            if (
+              Math.abs(
+                frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
+                  expected[(y * 500 + x) * 4 + c],
+              ) > 51
+            ) {
+              count++;
+              break;
+            }
+      return count;
+    });
+    // The final shell is the densest frame, and its predicted frame
+    // compresses least faithfully: a mean error of 2.9 on macOS and 3.2 on
+    // CI's Linux encoder, yet it differs from its own seek beyond 20% in
+    // about 500 of 190,000 pixels against over 5,000 for the other seeks.
+    // The pixel count and the relative checks tell the frames apart.
+    expect(errors[f], `frame ${f}: ${errors}`).toBeLessThan(4);
+    expect(changed[f], `frame ${f} changed pixels: ${changed}`).toBeLessThan(
+      1900,
+    );
+    for (let other = 0; other < 3; other++)
+      if (other !== f) {
+        expect(
+          errors[f],
+          `frame ${f} must match its own seek: ${errors}`,
+        ).toBeLessThan(errors[other] * 0.7);
+        expect(
+          changed[f],
+          `frame ${f} must match its own seek: ${changed}`,
+        ).toBeLessThan(changed[other] * 0.3);
+      }
+  }
 });
 
 test("a base-study curve leaving the composite's domain breaks with a clipped gap and no stray markers", async ({
@@ -4015,9 +4304,12 @@ test("traversal keeps playing under a map that ignores a retained degree", async
 // copy-link and the exports stay enabled while each frame computes.
 for (const [example, name, label] of [
   ["Circles through infinity", "Play map motion", "Motion progress"],
+  ["A squared grid grown into a web", "Play map motion", "Motion progress"],
   [undefined, "Play traversal", "Source parameter"],
 ] as const)
-  test(`scrubbing never disables a button (${label})`, async ({ page }) => {
+  test(`scrubbing never disables a button (${label}${example ? `: ${example}` : ""})`, async ({
+    page,
+  }) => {
     await page.goto("/");
     await settled(page);
     await openLoomExample(page, example);
