@@ -3281,13 +3281,44 @@ test("a decoded composite growth film matches direct seeks in both panes", async
             );
       return error / (500 * 380 * 3);
     });
-    expect(errors[f], `frame ${f}: ${errors}`).toBeLessThan(3);
+    // Pixels where some channel differs from the seek by more than 20%:
+    // what a wrong or misplaced frame changes, and compression does not.
+    const changed = seeks.map((expected) => {
+      let count = 0;
+      for (let y = 0; y < 380; y++)
+        for (let x = 0; x < 500; x++)
+          for (let c = 0; c < 3; c++)
+            if (
+              Math.abs(
+                frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
+                  expected[(y * 500 + x) * 4 + c],
+              ) > 51
+            ) {
+              count++;
+              break;
+            }
+      return count;
+    });
+    // The final shell is the densest frame, and its predicted frame
+    // compresses least faithfully: a mean error of 2.9 on macOS and 3.2 on
+    // CI's Linux encoder, yet it differs from its own seek beyond 20% in
+    // about 500 of 190,000 pixels against over 5,000 for the other seeks.
+    // The pixel count and the relative checks tell the frames apart.
+    expect(errors[f], `frame ${f}: ${errors}`).toBeLessThan(4);
+    expect(changed[f], `frame ${f} changed pixels: ${changed}`).toBeLessThan(
+      1900,
+    );
     for (let other = 0; other < 3; other++)
-      if (other !== f)
+      if (other !== f) {
         expect(
           errors[f],
           `frame ${f} must match its own seek: ${errors}`,
         ).toBeLessThan(errors[other] * 0.7);
+        expect(
+          changed[f],
+          `frame ${f} must match its own seek: ${changed}`,
+        ).toBeLessThan(changed[other] * 0.3);
+      }
   }
 });
 
