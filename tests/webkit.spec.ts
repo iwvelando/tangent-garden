@@ -3014,6 +3014,83 @@ for (const [width, height] of [
     }
   });
 
+for (const [width, height] of [
+  [1280, 600],
+  [390, 844],
+  [844, 390],
+])
+  test(`crystal journey selection, scalar blur and return focus in WebKit at ${width}x${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    const browse = page.getByRole("button", {
+      name: "Browse notebook examples",
+    });
+    await browse.click();
+    await page
+      .getByRole("dialog", { name: "Notebook examples" })
+      .getByRole("button", {
+        name: "When a crystal meets its dual",
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole("dialog", {
+      name: "When a crystal meets its dual",
+      exact: true,
+    });
+    const ready = () =>
+      expect(dialog.locator(".journey-art")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+    await ready();
+    for (const [i, label] of [
+      "Selected cell",
+      "Selected cube",
+      "Slice offset h",
+    ].entries()) {
+      const field = dialog.getByRole(i === 2 ? "textbox" : "spinbutton", {
+        name: label,
+        exact: true,
+      });
+      await field.fill(i === 2 ? "1/4" : "7");
+      await ready();
+      // Safari does not focus a heading or a clicked button. Blurring an
+      // input onto either must retain the accepted experiment.
+      await dialog.getByRole("heading", { level: 3 }).first().click();
+      await expect(field).not.toBeFocused();
+      await expect(field).toHaveValue(i === 2 ? "1/4" : "7");
+      const meta = JSON.parse(
+        (await dialog
+          .locator("svg[data-representation] > desc")
+          .textContent())!,
+      );
+      if (i < 2) {
+        expect(meta.polytope.selectedCell).toBe(6);
+        await dialog.locator("svg[data-representation]").focus();
+        await page.keyboard.press("]");
+        await expect(field).toHaveValue("8");
+        await dialog
+          .getByRole("button", { name: "Next step", exact: true })
+          .click();
+        await expect(dialog.locator(".journey-step")).toHaveText(
+          `Step ${i + 2} of 3`,
+        );
+        await ready();
+      } else expect(meta.config.slice).toBe(0.25);
+    }
+    await dialog
+      .getByRole("button", { name: "Return to my study", exact: true })
+      .click();
+    await expect(dialog).toBeHidden();
+    await expect(browse).toBeFocused();
+    await expect(page.locator(".example-picker")).toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+  });
+
 // The Hopf journey's selection and choice experiments: Safari does not
 // focus a clicked button, and a select keeps its choice after blur.
 for (const [width, height] of [

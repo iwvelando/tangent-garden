@@ -472,6 +472,33 @@ export const hopfJourney: StudyJourney = {
   ],
 };
 
+export const crystalJourney: StudyJourney = {
+  title: "When a crystal meets its dual",
+  icon: "duality",
+  steps: [
+    shapeStep(
+      "Into the crystal",
+      "The 24-cell has 24 octahedral cells. Its polar dual is another 24-cell: this is self-dual, the same kind of polytope at a different scale. Each selected cell's diagonals meet at a vertex of the dual, even in this perspective shadow.",
+      "Try Selected cell, tap a center, or press [ and ] on the drawing; then play the four-dimensional rotation.",
+      { kind: "selection" },
+    ),
+    shapeStep(
+      "Cube within a cube, and its dual",
+      "The tesseract has eight cubes; its polar 16-cell has sixteen tetrahedra. These are different kinds of polytope. A selected cube's four diagonals meet at a 16-cell vertex; the tetrahedra's centers are not tesseract vertices.",
+      "Try Selected cube, tap a center, or press [ and ]; compare the correspondence while the pair turns.",
+      { kind: "selection" },
+    ),
+    across(
+      "4d",
+      "A tesseract meeting its dual",
+      "Now one plane cuts both corner-first crystals. At the center, the tesseract gives an octahedron and the 16-cell a cuboctahedron. The octahedron's 3D dual is a cube: cutting a 4D dual pair need not give dual sections.",
+      "Try Slice offset h at 1/4. Play deliberately starts at an empty plane, then passes through both crystals.",
+      null,
+      ["slice"],
+    ),
+  ],
+};
+
 export const journeys: Journey[] = [
   lightJourney,
   threadsJourney,
@@ -481,4 +508,5 @@ export const journeys: Journey[] = [
   surfaceJourney,
   overlayJourney,
   hopfJourney,
+  crystalJourney,
 ];

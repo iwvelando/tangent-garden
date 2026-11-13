@@ -20,6 +20,7 @@ export const journeyTitles = [
   "A thread learns the surface",
   "Rules that grow a garden",
   "Every point owns a circle",
+  "When a crystal meets its dual",
 ];
 
 export async function settled(page: Page) {

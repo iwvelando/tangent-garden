@@ -232,6 +232,19 @@ const drawings = {
       />
     </>
   ),
+  // A cube with its polar octahedron joining the six face centers.
+  duality: (
+    <>
+      <path
+        className="b fine2"
+        d="M3 7L14 3L21 8L10 12ZM3 7V17L10 22L21 18V8M10 12V22M14 3V13L3 17M14 13L21 18"
+      />
+      <path
+        className="d fine2"
+        d="M12 7.5L6.5 14.5L8.5 10L17.5 10.5L15.5 15L6.5 14.5M12 7.5L8.5 10M12 7.5L17.5 10.5M12 7.5L15.5 15M12 17.5L6.5 14.5M12 17.5L8.5 10M12 17.5L17.5 10.5M12 17.5L15.5 15"
+      />
+    </>
+  ),
   shadow: (
     <>
       <path className="m dash" d="M5.5 8V19.1M18.5 8V19.1" />

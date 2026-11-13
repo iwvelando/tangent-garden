@@ -673,6 +673,7 @@ for (const title of [
   journeyTitles[4],
   journeyTitles[5],
   journeyTitles[7],
+  journeyTitles[8],
 ])
   test(`${title} retains edited studies, raw drafts, layers, animations, probes and manual cameras in all notebooks`, async ({
     page,
@@ -1169,7 +1170,12 @@ function interceptComputeReplies(page: Page, lifted = false) {
   }, lifted);
 }
 
-for (const title of [journeyTitles[4], journeyTitles[5], journeyTitles[7]]) {
+for (const title of [
+  journeyTitles[4],
+  journeyTitles[5],
+  journeyTitles[7],
+  journeyTitles[8],
+]) {
   test(`${title} keeps artwork and prose together through superseded slow steps and cancellation`, async ({
     page,
   }) => {
@@ -1202,7 +1208,9 @@ for (const title of [journeyTitles[4], journeyTitles[5], journeyTitles[7]]) {
         ? "The second time around"
         : title === journeyTitles[5]
           ? "A staircase becoming a throat"
-          : "Hopf circles, flowing forever";
+          : title === journeyTitles[7]
+            ? "Hopf circles, flowing forever"
+            : "A tesseract meeting its dual";
     await expect(
       dialog.getByRole("heading", { name: last, exact: true }),
     ).toBeVisible();
@@ -1243,7 +1251,13 @@ for (const title of [journeyTitles[4], journeyTitles[5], journeyTitles[7]]) {
     const dialog = await excursion(page, title, 2);
     await dialog
       .getByRole("textbox")
-      .fill(title === journeyTitles[4] ? "0" : "-1");
+      .fill(
+        title === journeyTitles[4]
+          ? "0"
+          : title === journeyTitles[8]
+            ? "4.1"
+            : "-1",
+      );
     await expect(dialog.getByRole("alert").first()).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: "Open study", exact: true }),
