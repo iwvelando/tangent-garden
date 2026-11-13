@@ -538,6 +538,7 @@ test("complex loom help fits both tiers in every source family", async ({
       map === "mobius" ||
       map === "joukowski" ||
       map === "fractional" ||
+      map === "exp" ||
       map === "exp-power"
     )
       await d.getByLabel("Motion", { exact: true }).selectOption("map");

@@ -507,7 +507,8 @@ func TestLoomExpNoDrawnChordSpansAQuarterPeriod(t *testing.T) {
 	}
 }
 
-// Exp has no parameter, pole, exclusion, critical point or map motion; the
+// Exp has no degree, pole, exclusion or critical point, and its own map
+// parameter is absent here (eᶻ, tested in loom_exp_motion_test.go); the
 // rational and power settings it carries are ignored.
 func TestLoomExpIgnoresOtherMapSettings(t *testing.T) {
 	q := expLoom("rosette")

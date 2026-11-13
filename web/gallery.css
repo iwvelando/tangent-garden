@@ -76,8 +76,11 @@
   border-radius: 6px;
   overflow: hidden;
 }
+.example-thumb.wide {
+  aspect-ratio: 2000 / 760;
+}
 .example-thumb-art,
-.example-thumb-art svg,
+.example-thumb-art > svg,
 .example-thumb img {
   display: block;
   width: 100%;
@@ -264,6 +267,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 18px;
+}
+/* Wide pictures, a complex map's two planes, take columns of their own about
+   twice as wide: one to a row on a phone held upright, two on its side and
+   three on a desktop, so no column is left empty beside them. */
+.gallery-grid.wide {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
 }
 .gallery-empty {
   color: var(--muted);

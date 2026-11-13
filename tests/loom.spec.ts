@@ -2049,7 +2049,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(18);
+  await expect(cards).toHaveCount(19);
   await expect(gallery.locator("[data-example]")).toHaveCount(72);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();
@@ -2534,10 +2534,15 @@ test("exponential strip shows periodic source points, keeps both edges and saves
     "Image plane · eᶻ",
   );
   await expect(d.getByLabel("Complex map", { exact: true })).toHaveValue("exp");
-  // No degree, pole, exclusion or map motion belongs to the exponential.
-  for (const label of ["Degree", "Motion"])
-    await expect(d.getByLabel(label, { exact: true })).toHaveCount(0);
-  await expect(d.getByText("Map settings", { exact: true })).toHaveCount(0);
+  // No degree, pole or exclusion belongs to the exponential. It opens on
+  // eᶻ itself, map parameter s = 1, with point traversal.
+  await expect(d.getByLabel("Degree", { exact: true })).toHaveCount(0);
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveValue("point");
+  await d.getByText("Map settings", { exact: true }).click();
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
   await expect(d.locator("[data-exclusion]")).toHaveCount(0);
   await expect(d.locator("[data-gaps]")).toContainText("No gaps");
   // The selected ring Re z = 0 starts at the strip's lower edge, −π: by
@@ -3202,125 +3207,309 @@ test("an older composite link carrying another map's parameter still opens on th
   await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
 });
 
-test("a decoded composite growth film matches direct seeks in both panes", async ({
+// F_s(z) = s + (exp(sz) − 1)/s, the exponential's family, written
+// independently: the identity at s = 0.
+const curled = (z: { x: number; y: number }, s: number) => {
+  if (s === 0) return z;
+  const r = Math.exp(s * z.x);
+  return {
+    x: s + (r * Math.cos(s * z.y) - 1) / s,
+    y: (r * Math.sin(s * z.y)) / s,
+  };
+};
+
+test("exponential map motion curls a strip from the identity into rings, and its map parameter edits a frame directly", async ({
   page,
 }) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).loomCopied = value;
+        },
+      },
+    }),
+  );
   await page.goto("/");
   await settled(page);
-  await openLoomExample(page, "A quintic rosette grown into a shell");
+  await openLoomExample(page, "A strip curled into rings");
   const d = page.getByRole("dialog", { name: "The complex loom" }),
     art = d.locator(".loom-panes"),
-    progress = d.getByLabel("Motion progress", { exact: true });
+    progress = d.getByLabel("Motion progress", { exact: true }),
+    values = d.locator(".animation-values"),
+    readout = d.locator(".loom-correspondence");
   await expect(art).toHaveAttribute("aria-busy", "false");
-  const seeks: number[][] = [];
-  for (const p of [0, 0.5, 1]) {
-    await progress.fill(String(p));
-    await expect(art).toHaveAttribute("aria-busy", "false");
-    seeks.push(
-      await d.locator('[data-pane="image"]').evaluate(async (e) => {
-        const svg = e.cloneNode(true) as SVGSVGElement;
-        svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-        svg.setAttribute("width", "500");
-        svg.setAttribute("height", "380");
-        const url = URL.createObjectURL(
-          new Blob([new XMLSerializer().serializeToString(svg)], {
-            type: "image/svg+xml",
-          }),
-        );
-        try {
-          const image = new Image();
-          image.src = url;
-          await image.decode();
-          const canvas = Object.assign(document.createElement("canvas"), {
-            width: 500,
-            height: 380,
-          });
-          const ctx = canvas.getContext("2d")!;
-          ctx.drawImage(image, 0, 0);
-          return Array.from(ctx.getImageData(0, 0, 500, 380).data);
-        } finally {
-          URL.revokeObjectURL(url);
-        }
-      }),
-    );
-  }
-  await progress.fill("0");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = s + (exp(sz) − 1)/s",
+  );
+  await expect(d.locator(".loom-pane-heading h3").nth(1)).toHaveText(
+    "Image plane · w",
+  );
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveValue("map");
+  await expect(d.getByLabel("Map motion from", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(d.getByLabel("Map motion to", { exact: true })).toHaveValue("1");
+  // It opens at s = 0, the identity, on the line Re z = 0 from −πi, drawn
+  // the same in both panes, with nothing sharing its image.
+  const z = await loomPoint(d, "source");
+  expect(z).toEqual({ x: 0, y: -Math.PI });
+  expect(await loomPoint(d, "image")).toEqual(z);
+  expect(
+    await d.locator('[data-pane="image"] [data-member="10"]').getAttribute("d"),
+  ).toBe(
+    await d
+      .locator('[data-pane="source"] [data-member="10"]')
+      .getAttribute("d"),
+  );
+  await expect(values).toContainText("s = 0.00000");
+  await expect(d.locator("[data-translate]")).toHaveCount(0);
+  await progress.fill("0.5");
   await expect(art).toHaveAttribute("aria-busy", "false");
-  await openLoomExportSettings(d);
-  await d.getByLabel("Traversal duration", { exact: true }).fill(".2");
-  await loomResolution(d, 0.5);
-  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
-  await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), curled(z, 0.5), 10))
+    .toBe(true);
+  await expect(values).toContainText("s = 0.500000");
+  await progress.fill("1");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), exp(z), 10))
+    .toBe(true);
+  // At eᶻ the point shares its image with every z + 2πik in the window:
+  // eight periods tall, it holds seven more.
+  await expect(readout).toContainText("7 other source points");
+  await expect(d.locator("[data-translate]")).toHaveCount(7);
+  // The preset's own motion plays from the identity to the exponential.
+  await d.getByLabel("Traversal duration", { exact: true }).fill("0.4");
+  await d.getByRole("button", { name: "Stop map motion", exact: true }).click();
+  await expect(values).toContainText("s = 0.00000");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await d.getByRole("button", { name: "Play map motion", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Play map motion", exact: true }),
+  ).toBeVisible();
+  await expect(values).toContainText("s = 1.00000");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), exp(z), 10))
+    .toBe(true);
+  // No pole: the map settings hold the parameter alone.
+  await d.getByText("Map settings", { exact: true }).click();
+  const parameter = d.getByLabel("Map parameter", { exact: true });
+  await expect(parameter).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
+  await expect(d.locator("[data-exclusion]")).toHaveCount(0);
+  // Point traversal keeps the frame, which the map parameter then edits.
+  await d.getByLabel("Motion", { exact: true }).selectOption("point");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = eᶻ",
+  );
+  await parameter.fill("0.25");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), curled(z, 0.25), 10))
+    .toBe(true);
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = s + (exp(sz) − 1)/s",
+  );
+  // Go refuses s beyond 0–1 under this field.
+  await parameter.fill("1.5");
+  await expect(parameter).toHaveAttribute("aria-invalid", "true");
+  await expect(d.getByRole("alert")).toContainText("0–1");
+  await expect(d.getByRole("alert")).toHaveCount(1);
+  await parameter.fill("0.25");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  const image = await d
+    .locator('[data-pane="image"] [data-member="10"]')
+    .getAttribute("d");
   const download = page.waitForEvent("download");
-  await loomMovieAction(d).click();
-  expect((await download).suggestedFilename()).toBe(
+  await loomImage(d, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  for (const text of [
+    '"map":"exp"',
+    '"wrap":0.25',
+    '"formula":"w = s + (exp(sz) − 1)/s"',
+  ])
+    expect(svg).toContain(text);
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => (window as any).loomCopied as string);
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  expect(saved.loom.wrap).toBe(0.25);
+  expect(saved.loom.motion).toBeUndefined();
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await page.goto(link);
+  await expect(page).not.toHaveURL(/#s=/);
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  expect(
+    await d.locator('[data-pane="image"] [data-member="10"]').getAttribute("d"),
+  ).toBe(image);
+});
+
+test("an older exponential link carrying another map's parameter still opens on eᶻ", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const { presetLoom, loomPresets } = await import("../web/loom/model");
+  const base = presetStudy(0);
+  const strip = presetLoom(
+    loomPresets.findIndex((p) => p.title === "A strip wrapped into rings"),
+    base.config,
+  );
+  // As a study switched from z + λ/z kept them before s existed.
+  const loom = { ...strip, mapParameter: 0.5, exclusionRadius: 0.1 };
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: { ...base, loom } }),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = eᶻ",
+  );
+  const z = await loomPoint(d, "source");
+  expect(near(await loomPoint(d, "image"), exp(z), 10)).toBe(true);
+  await d.getByText("Map settings", { exact: true }).click();
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
+});
+
+// The growth presets' movies: the composite's shell and the exponential's
+// rings, each played from s = 0 to 1.
+for (const [example, file, metadata] of [
+  [
+    "A quintic rosette grown into a shell",
     "tangent-garden-complex-exp-power-5.mp4",
-  );
-  const path = (await (await download).path())!,
-    bytes = await readFile(path);
-  for (const text of ['"map":"exp-power"', '"mode":"map"', '"degree":5'])
-    expect(bytes.includes(Buffer.from(text))).toBe(true);
-  const timing = videoProbe(path);
-  expect(timing?.frames).toBe(3);
-  expect(timing?.durations.reduce((a, b) => a + b, 0)).toBe(200);
-  const frames = execFileSync(
-    "ffmpeg",
-    ["-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
-    { maxBuffer: 4 * 1024 * 1024 },
-  );
-  expect(frames.length).toBe(3 * 1000 * 380 * 3);
-  for (let f = 0; f < 3; f++) {
-    const errors = seeks.map((expected) => {
-      let error = 0;
-      for (let y = 0; y < 380; y++)
-        for (let x = 0; x < 500; x++)
-          for (let c = 0; c < 3; c++)
-            error += Math.abs(
-              frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
-                expected[(y * 500 + x) * 4 + c],
-            );
-      return error / (500 * 380 * 3);
-    });
-    // Pixels where some channel differs from the seek by more than 20%:
-    // what a wrong or misplaced frame changes, and compression does not.
-    const changed = seeks.map((expected) => {
-      let count = 0;
-      for (let y = 0; y < 380; y++)
-        for (let x = 0; x < 500; x++)
-          for (let c = 0; c < 3; c++)
-            if (
-              Math.abs(
+    ['"map":"exp-power"', '"mode":"map"', '"degree":5'],
+  ],
+  [
+    "A strip curled into rings",
+    "tangent-garden-complex-exp.mp4",
+    ['"map":"exp"', '"mode":"map"', '"formula":"w = s + (exp(sz) − 1)/s"'],
+  ],
+] as const)
+  test(`a decoded growth film matches direct seeks in both panes (${example})`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await settled(page);
+    await openLoomExample(page, example);
+    const d = page.getByRole("dialog", { name: "The complex loom" }),
+      art = d.locator(".loom-panes"),
+      progress = d.getByLabel("Motion progress", { exact: true });
+    await expect(art).toHaveAttribute("aria-busy", "false");
+    const seeks: number[][] = [];
+    for (const p of [0, 0.5, 1]) {
+      await progress.fill(String(p));
+      await expect(art).toHaveAttribute("aria-busy", "false");
+      seeks.push(
+        await d.locator('[data-pane="image"]').evaluate(async (e) => {
+          const svg = e.cloneNode(true) as SVGSVGElement;
+          svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+          svg.setAttribute("width", "500");
+          svg.setAttribute("height", "380");
+          const url = URL.createObjectURL(
+            new Blob([new XMLSerializer().serializeToString(svg)], {
+              type: "image/svg+xml",
+            }),
+          );
+          try {
+            const image = new Image();
+            image.src = url;
+            await image.decode();
+            const canvas = Object.assign(document.createElement("canvas"), {
+              width: 500,
+              height: 380,
+            });
+            const ctx = canvas.getContext("2d")!;
+            ctx.drawImage(image, 0, 0);
+            return Array.from(ctx.getImageData(0, 0, 500, 380).data);
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        }),
+      );
+    }
+    await progress.fill("0");
+    await expect(art).toHaveAttribute("aria-busy", "false");
+    await openLoomExportSettings(d);
+    await d.getByLabel("Traversal duration", { exact: true }).fill(".2");
+    await loomResolution(d, 0.5);
+    await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+    await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+    const download = page.waitForEvent("download");
+    await loomMovieAction(d).click();
+    expect((await download).suggestedFilename()).toBe(file);
+    const path = (await (await download).path())!,
+      bytes = await readFile(path);
+    for (const text of metadata)
+      expect(bytes.includes(Buffer.from(text)), text).toBe(true);
+    const timing = videoProbe(path);
+    expect(timing?.frames).toBe(3);
+    expect(timing?.durations.reduce((a, b) => a + b, 0)).toBe(200);
+    const frames = execFileSync(
+      "ffmpeg",
+      ["-v", "error", "-i", path, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+      { maxBuffer: 4 * 1024 * 1024 },
+    );
+    expect(frames.length).toBe(3 * 1000 * 380 * 3);
+    for (let f = 0; f < 3; f++) {
+      const errors = seeks.map((expected) => {
+        let error = 0;
+        for (let y = 0; y < 380; y++)
+          for (let x = 0; x < 500; x++)
+            for (let c = 0; c < 3; c++)
+              error += Math.abs(
                 frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
                   expected[(y * 500 + x) * 4 + c],
-              ) > 51
-            ) {
-              count++;
-              break;
-            }
-      return count;
-    });
-    // The final shell is the densest frame, and its predicted frame
-    // compresses least faithfully: a mean error of 2.9 on macOS and 3.2 on
-    // CI's Linux encoder, yet it differs from its own seek beyond 20% in
-    // about 500 of 190,000 pixels against over 5,000 for the other seeks.
-    // The pixel count and the relative checks tell the frames apart.
-    expect(errors[f], `frame ${f}: ${errors}`).toBeLessThan(4);
-    expect(changed[f], `frame ${f} changed pixels: ${changed}`).toBeLessThan(
-      1900,
-    );
-    for (let other = 0; other < 3; other++)
-      if (other !== f) {
-        expect(
-          errors[f],
-          `frame ${f} must match its own seek: ${errors}`,
-        ).toBeLessThan(errors[other] * 0.7);
-        expect(
-          changed[f],
-          `frame ${f} must match its own seek: ${changed}`,
-        ).toBeLessThan(changed[other] * 0.3);
-      }
-  }
-});
+              );
+        return error / (500 * 380 * 3);
+      });
+      // Pixels where some channel differs from the seek by more than 20%:
+      // what a wrong or misplaced frame changes, and compression does not.
+      const changed = seeks.map((expected) => {
+        let count = 0;
+        for (let y = 0; y < 380; y++)
+          for (let x = 0; x < 500; x++)
+            for (let c = 0; c < 3; c++)
+              if (
+                Math.abs(
+                  frames[f * 1000 * 380 * 3 + (y * 1000 + x + 500) * 3 + c] -
+                    expected[(y * 500 + x) * 4 + c],
+                ) > 51
+              ) {
+                count++;
+                break;
+              }
+        return count;
+      });
+      // The final shell is the densest frame, and its predicted frame
+      // compresses least faithfully: a mean error of 2.9 on macOS and 3.2 on
+      // CI's Linux encoder, yet it differs from its own seek beyond 20% in
+      // about 500 of 190,000 pixels against over 5,000 for the other seeks.
+      // The pixel count and the relative checks tell the frames apart.
+      expect(errors[f], `frame ${f}: ${errors}`).toBeLessThan(4);
+      expect(changed[f], `frame ${f} changed pixels: ${changed}`).toBeLessThan(
+        1900,
+      );
+      for (let other = 0; other < 3; other++)
+        if (other !== f) {
+          expect(
+            errors[f],
+            `frame ${f} must match its own seek: ${errors}`,
+          ).toBeLessThan(errors[other] * 0.7);
+          expect(
+            changed[f],
+            `frame ${f} must match its own seek: ${changed}`,
+          ).toBeLessThan(changed[other] * 0.3);
+        }
+    }
+  });
 
 test("a base-study curve leaving the composite's domain breaks with a clipped gap and no stray markers", async ({
   page,
@@ -4305,6 +4494,7 @@ test("traversal keeps playing under a map that ignores a retained degree", async
 for (const [example, name, label] of [
   ["Circles through infinity", "Play map motion", "Motion progress"],
   ["A squared grid grown into a web", "Play map motion", "Motion progress"],
+  ["A strip curled into rings", "Play map motion", "Motion progress"],
   [undefined, "Play traversal", "Source parameter"],
 ] as const)
   test(`scrubbing never disables a button (${label}${example ? `: ${example}` : ""})`, async ({

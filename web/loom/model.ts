@@ -36,10 +36,11 @@ export type LoomRequest = {
   // number 2–6. Categorical: never animated.
   degree?: number;
   mapParameter?: number;
-  // The composite exp(zⁿ)'s own map parameter s, 0–1, which grows the
-  // power's image into the composite's: w = s + (exp(s·zⁿ) − 1)/s. Absent
-  // means s = 1, the composite, so links made before it keep their drawing
-  // even when they carry another map's retained mapParameter.
+  // The map parameter s, 0–1, of the exponential, which grows the identity
+  // into eᶻ, w = s + (exp(sz) − 1)/s, and of the composite exp(zⁿ), which
+  // grows the power's image into the composite's, w = s + (exp(s·zⁿ) − 1)/s.
+  // Absent means s = 1, the map itself, so links made before it keep their
+  // drawing even when they carry another map's retained mapParameter.
   wrap?: number;
   exclusionRadius?: number;
   // The general Möbius map's coefficients; other maps keep but ignore them.
@@ -117,20 +118,29 @@ export const maps = {
       "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have z(θ) = r exp(iα)(1 + exp(iθ)), α = 2πk/N; θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero. Images beyond radius 10¹⁰⁰ are clipped.",
     pole: (_parameter: number): Vec | undefined => undefined,
   },
-  // No parameter, pole or critical point. Go clips sources outside the
-  // declared window and reports each marker's periodic translates.
+  // No pole or critical point. Go clips sources outside the declared window
+  // and reports each marker's periodic translates. Its map parameter s, kept
+  // in the field the composite's s uses (wrap), runs the family
+  // w = s + (exp(sz) − 1)/s from the identity at s = 0 to eᶻ at s = 1, which
+  // Go evaluates exactly.
   exp: {
     label: "Exponential eᶻ",
     formula: "w = eᶻ",
-    parameterized: false,
-    parameterKey: "mapParameter",
+    parameterized: true,
+    parameterKey: "wrap",
     exclusion: false,
     degree: undefined,
     exportDomain:
-      "Source window |Re z| ≤ ln 10⁸ ≈ 18.42, |Im z| ≤ 8π; points beyond it clipped. No pole or critical point; period 2πi. Finite expression sampling is not certified topology.",
-    symbol: "",
-    range: [0, 0],
-    initial: 0,
+      "Source window |Re z| ≤ ln 10⁸ ≈ 18.42, |Im z| ≤ 8π; points beyond it clipped. Map parameter s gives w = s + (exp(sz) − 1)/s: 0 the identity, 1 eᶻ. Its window is scaled by 1/s, and images beyond 1e100 are clipped. No pole or critical point; period 2πi/s. Finite expression sampling is not certified topology.",
+    symbol: "s",
+    range: [0, 1],
+    initial: 1,
+    // Map motion grows the identity into the exponential.
+    motionFrom: 0,
+    parameterHelp: tiered(
+      "0–1: 0 draws the identity, 1 the exponential eᶻ.",
+      "Between them w = s + (exp(sz) − 1)/s curls the plane around s − 1/s into eᶻ’s rings, with zero mapping to s. Sources are clipped where |Re sz| > 18.42 or |Im sz| > 8π, so the domain grows as s falls; at s = 0 only images beyond radius 10¹⁰⁰ are clipped.",
+    ),
     note: "Each 2π of height wraps once around zero: vertical lines become rings, horizontal lines rays.",
     imageLabel: "eᶻ image plane",
     imageHeading: "Image plane · eᶻ",
@@ -141,6 +151,15 @@ export const maps = {
     // The readout's words for the marker's other source points with its
     // image, which Go reports as translates.
     shared: "in the window, z\u00a0+\u00a02πik,",
+    // Words for a frame of the family short of eᶻ, s < 1, and for a study
+    // that moves along it.
+    family: {
+      formula: "w = s + (exp(sz) − 1)/s",
+      imageHeading: "Image plane · w",
+      traversalHelp:
+        "Traversal advances uniformly in the source parameter, not arc length. w repeats every 2πi/s: hollow markers show the other source points with the same image. It has no critical point; zero maps to s. Sources whose sz leaves |Re| ≤ 18.42, |Im| ≤ 8π are clipped.",
+      shared: "with sz in the window, z\u00a0+\u00a02πik/s,",
+    },
     pole: (_parameter: number): Vec | undefined => undefined,
   },
   // The composite exp(zⁿ), evaluated in Go as the exponential of the power
@@ -281,8 +300,8 @@ export const mapHelp = tiered(
 );
 const superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 // A map's words with its degree in place of n: z³ for a cubic. A map with a
-// family of frames (the composite's) uses the family's words for a frame
-// short of its own end or for a study that moves along it.
+// family of frames (the exponential's or the composite's) uses the family's
+// words for a frame short of its own end or for a study that moves along it.
 export function mapText(
   q: Pick<LoomRequest, "map" | "degree" | "wrap"> & {
     motion?: LoomStudy["motion"];
@@ -312,7 +331,8 @@ export function mapText(
   };
 }
 // The map's parameter, in the study field it lives in: the rational maps'
-// mapParameter, or the composite's s, which is 1 when absent.
+// mapParameter, or the exponential's or composite's s, which is 1 when
+// absent.
 export function mapParameterOf(
   q: Pick<LoomRequest, "map" | "mapParameter" | "wrap">,
 ) {
@@ -331,7 +351,8 @@ export function replaceMap(
   curveSize = 1,
 ): LoomStudy {
   if (map === s.map) return s;
-  // The composite's s is not retained: entering it starts again at s = 1.
+  // The exponential's and the composite's s is not retained: entering either
+  // starts again at s = 1.
   const { motion: _motion, wrap: _wrap, ...rest } = s;
   const degree = maps[map].degree;
   // A retained valid degree survives map changes, as the radius does.
@@ -346,7 +367,9 @@ export function replaceMap(
           ? s.degree
           : degree.initial,
     };
-  if (!maps[map].parameterized) return { ...rest, map };
+  // Neither a map without a parameter nor the exponential's family has an
+  // exclusion to start.
+  if (!maps[map].parameterized || !maps[map].exclusion) return { ...rest, map };
   const info = maps[map];
   // Valid retained coefficients survive map changes, as the degree does.
   const coefficients =
@@ -511,6 +534,8 @@ export const loomPresets = [
     kind: "concentric",
     map: "joukowski",
     motion: { from: 0.5, to: 1 },
+    // Its thumbnail shows λ = 1, where the folds are deepest.
+    thumbnail: 1,
   },
   // Opens at n = 5 on the twelve rotated circles. Each circle's fifth
   // power, (2r cos(θ/2))⁵ exp(5i(α + θ/2)), winds two and a half turns into
@@ -710,6 +735,8 @@ export const loomPresets = [
       source: { cx: 0, cy: 0, scale: 240 },
       image: { cx: 2, cy: 0, scale: 60 },
     },
+    // Its thumbnail shows the shell it grows into.
+    thumbnail: 1,
   },
   // The web's grid at s = 0, squared into a fan of parabolas, selecting
   // the same edge x = 5/4. Map motion curls the fan into the web; the loom
@@ -724,6 +751,36 @@ export const loomPresets = [
     extent: 1.25,
     selected: 16,
     motion: { from: 0, to: 1 },
+    // Its thumbnail shows the web half grown, at s = 0.55, which tells it
+    // apart from the static web it ends on.
+    thumbnail: 0.55,
+  },
+  // A strip one period tall, −3 ≤ Re z ≤ 6/5, at s = 0, the identity,
+  // selecting Re z = 0. Map motion curls it into rings: w = s + (exp(sz) −
+  // 1)/s takes each vertical line to an arc of 2πs about s − 1/s, radius
+  // e^{sx}/s, which closes into a ring at s = 1, and each horizontal line to
+  // a ray from that center, which comes in from far to the left. Both panes
+  // share one fixed framing, so the opening frame matches its source; it
+  // holds the tallest frame, near s = 0.33, whose arcs reach |Im w| ≈ 3.9,
+  // and the final rings, out to e^{6/5} ≈ 3.3.
+  {
+    title: "A strip curled into rings",
+    note: "Map motion curls a strip around zero: vertical lines bend into rings, horizontal lines open into rays",
+    kind: "grid",
+    map: "exp",
+    lines: 15,
+    yLines: 25,
+    xRange: [-3, 1.2],
+    yRange: [-Math.PI, Math.PI],
+    selected: 10,
+    motion: { from: 0, to: 1 },
+    framing: {
+      source: { cx: -0.4, cy: 0, scale: 76 },
+      image: { cx: -0.4, cy: 0, scale: 76 },
+    },
+    // Its thumbnail shows the rings; the identity it opens on would draw
+    // the strip twice.
+    thumbnail: 1,
   },
 ] as const satisfies readonly {
   title: string;
@@ -747,6 +804,9 @@ export const loomPresets = [
   scale?: { source: number; image: number };
   // A composite performance's fixed reference framing, if any.
   framing?: { source: LoomFraming; image: LoomFraming };
+  // The map parameter of the frame an animated preset's gallery thumbnail
+  // shows, when not its opening one (web/examples/index.ts).
+  thumbnail?: number;
 }[];
 type PresetPath = {
   input: LoomSource["input"];
@@ -829,14 +889,19 @@ export function presetLoom(index: number, config: Config): LoomStudy {
       },
     };
   }
-  // A composite performance opens on the power map, where its motion
-  // starts, with its fixed framing or else the fit of that opening frame.
-  if ("degree" in definition && "motion" in definition) {
+  // An exponential or composite performance opens on its first frame, the
+  // identity or the power map, where its motion starts, with its fixed
+  // framing or else the fit of that opening frame.
+  if (
+    "map" in definition &&
+    "motion" in definition &&
+    maps[definition.map].parameterKey === "wrap"
+  ) {
     const selected = "selected" in definition ? definition.selected : 0;
     return withMapParameter(
       {
         ...replaceMap(study, definition.map),
-        degree: definition.degree,
+        ...("degree" in definition && { degree: definition.degree }),
         source,
         selected,
         parameter: memberInterval(source, selected)[0],
@@ -1092,7 +1157,8 @@ export function loomRequest(s: LoomStudy): LoomRequest {
     // Only the general Möbius map sends its coefficients.
     ...("coefficients" in maps[s.map] && { coefficients: s.coefficients }),
     ...(s.mapParameter !== undefined && { mapParameter: s.mapParameter }),
-    // Only the composite sends its s, and only once it leaves s = 1.
+    // Only the exponential and the composite send their s, and only once it
+    // leaves s = 1.
     ...(maps[s.map].parameterKey === "wrap" &&
       s.wrap !== undefined && { wrap: s.wrap }),
     ...(s.exclusionRadius !== undefined && {

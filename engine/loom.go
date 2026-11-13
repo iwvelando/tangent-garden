@@ -32,8 +32,9 @@ type LoomRequest struct {
 	// Degree n of the power map z^n, 2–6; categorical, never interpolated.
 	Degree       int     `json:"degree,omitempty"`
 	MapParameter float64 `json:"mapParameter,omitempty"`
-	// The composite exp(zⁿ)'s map parameter s, 0–1, which grows the power's
-	// image into the composite's; absent means 1. Every other map ignores it.
+	// The map parameter s, 0–1, of the exponential, which grows the identity
+	// into eᶻ, and of the composite exp(zⁿ), which grows the power's image
+	// into the composite's; absent means 1. Every other map ignores it.
 	Wrap *float64 `json:"wrap,omitempty"`
 	// The general Möbius map's coefficients; every other map ignores them.
 	Coefficients *LoomCoefficients `json:"coefficients,omitempty"`
@@ -78,8 +79,9 @@ type LoomMarker struct {
 	Source    *Vec    `json:"source"`
 	Image     *Vec    `json:"image"`
 	Critical  bool    `json:"critical"`
-	// The exponential's other source points z + 2πik in its window, k ≠ 0,
-	// all with this marker's image; absent for every other map.
+	// The exponential frame's other source points z + 2πik/s, k ≠ 0, with
+	// s·z in its window, all with this marker's image (the composite's are in
+	// translates); absent for every other map.
 	Translates []Vec `json:"translates,omitempty"`
 	// A derived source's base point r(t); absent for every other source.
 	Base *Vec `json:"base,omitempty"`
@@ -337,8 +339,9 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 	if d := cs[0].derived; d != nil {
 		cs = append(cs, loomCurve{name: "Base", min: cs[0].min, max: cs[0].max, at: d.base, reference: true})
 	}
-	// A boundary node is an exact crossing of the exponential's closed
-	// window, drawn although rounding may put its source just outside.
+	// A boundary node is an exact crossing of the exponential frame's closed
+	// window, drawn with the frame's map although rounding may put its source
+	// just outside.
 	evalAt := func(c loomCurve, t float64, boundary bool) loomNode {
 		n := loomNode{t: t}
 		if r.Evaluations+c.cost() > limits.evaluations {
@@ -353,7 +356,7 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 		} else if n.p != nil {
 			n.w = q.image(*n.p)
 			if boundary {
-				n.w = loomExp(*n.p)
+				n.w = q.edge(*n.p)
 			}
 			n.reason = q.domain(*n.p)
 			if q.Map != "square" && n.w == nil && n.reason == "" {

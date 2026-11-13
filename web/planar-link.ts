@@ -1059,8 +1059,9 @@ function loomStudy(value: unknown): LoomStudy {
     );
   if (maps[out.map].parameterized) {
     const [lo, hi] = maps[out.map].range;
-    // The composite's s has its own field, optional; another map's retained
-    // mapParameter rides along unread, as it did before s existed.
+    // The exponential's and the composite's s has its own field, optional;
+    // another map's retained mapParameter rides along unread, as it did
+    // before s existed.
     if (
       maps[out.map].parameterKey === "mapParameter" &&
       (out.mapParameter === undefined ||

@@ -77,13 +77,21 @@ export const planarExamples: Example[] = presets.map((p) => ({
 }));
 
 // The complex loom's authored families open the loom over the study rather
-// than replacing it. Their thumbnails show the image plane as it opens.
+// than replacing it. Their thumbnails pair the source plane with the image
+// plane, twice as wide as others, as the loom opens or, for an animated
+// preset that names one, at another map parameter of its motion.
 export const loomExamples: Example[] = loomPresets.map((p, i) => ({
   title: p.title,
   caption: p.note,
   family: "Complex maps",
   keywords: `complex loom square squaring z² ${p.kind}${"map" in p ? maps[p.map].keywords : ""}`,
-  fingerprint: fingerprint(presetDefinition(i)),
+  fingerprint: fingerprint(
+    "thumbnail" in p
+      ? { ...presetDefinition(i), thumbnail: p.thumbnail }
+      : presetDefinition(i),
+  ),
+  wide: true,
+  ...("thumbnail" in p && { thumbnailParameter: p.thumbnail }),
 }));
 
 // The Apollonian garden's authored studies likewise open over the study.

@@ -1,7 +1,9 @@
 // Draws the example gallery's thumbnails from the built site: each 2D example
-// as its plot's own SVG (a complex loom example as its image plane, an
-// Apollonian garden or hyperbolic lace as its drawing), and each 3D example as a small WebP per theme, just as
-// the example first appears. Run `make thumbnails` after adding or changing a
+// as its plot's own SVG (a complex loom example as its source and image
+// planes side by side, an Apollonian garden or hyperbolic lace as its
+// drawing), and each 3D example as a small WebP per theme, just as the
+// example first appears (or, for a loom example that names one, at another
+// map parameter of its motion). Run `make thumbnails` after adding or changing a
 // preset, look at the gallery, and commit web/examples.
 //
 // 2D thumbnails keep the drawing's geometry, rounded to whole units of the
@@ -167,13 +169,48 @@ try {
         if (name in recorded["2d"])
           throw new Error(`Two examples are named ${name}.`);
         recorded["2d"][name] = example.fingerprint;
-        const svg = await page.evaluate(planarThumbnail, {
-          name,
-          stroke,
-          roles,
-          selector: 'dialog.loom [data-pane="image"]',
+        // An animated example may show another frame of its motion, named
+        // by its map parameter, which the scrubber reaches between the
+        // motion's entered endpoints.
+        if (example.thumbnailParameter !== undefined) {
+          const value = +example.thumbnailParameter;
+          const [from, to] = await Promise.all(
+            ["Map motion from", "Map motion to"].map(async (label) =>
+              Number(
+                await loom.getByLabel(label, { exact: true }).inputValue(),
+              ),
+            ),
+          );
+          await loom
+            .getByLabel("Motion progress", { exact: true })
+            .fill(String((value - from) / (to - from)));
+          await loom
+            .locator(".animation-values", {
+              hasText: `= ${value.toPrecision(6)}`,
+            })
+            .waitFor({ timeout: 60_000 });
+          await loom
+            .locator(".loom-panes[aria-busy=false]")
+            .waitFor({ timeout: 60_000 });
+        }
+        // The hollow markers of points sharing the selected image are a
+        // readout, not part of the source's drawing.
+        await page.evaluate(() => {
+          for (const e of document.querySelectorAll(
+            "dialog.loom [data-translate]",
+          ))
+            e.remove();
         });
-        writeFileSync(`${out}/2d/${name}.svg`, svg + "\n");
+        const plane = (pane) =>
+          page.evaluate(planarThumbnail, {
+            name: `${name}-${pane}`,
+            stroke,
+            roles,
+            selector: `dialog.loom [data-pane="${pane}"]`,
+          });
+        const source = await plane("source");
+        const image = await plane("image");
+        writeFileSync(`${out}/2d/${name}.svg`, loomPair(source, image) + "\n");
         await loom
           .getByRole("button", { name: "Return to study", exact: true })
           .click();
@@ -237,6 +274,20 @@ writeFileSync(
   JSON.stringify(recorded, null, 2) + "\n",
 );
 console.log(`Wrote thumbnails and ${out}/thumbnails.json.`);
+
+// A complex map's thumbnail: its source and image planes side by side, each
+// in its own 1000 × 760 frame of a 2000 × 760 picture, with a quiet divider
+// between them and no text.
+function loomPair(source, image) {
+  const plane = (svg, x) => {
+    const inner = svg.match(
+      /^<svg[^>]*viewBox="0 0 1000 760"[^>]*>(.*)<\/svg>$/s,
+    );
+    if (!inner) throw new Error("A loom pane is not a 1000 × 760 drawing.");
+    return `<svg${x ? ` x="${x}"` : ""} width="1000" height="760" viewBox="0 0 1000 760">${inner[1].replace('<rect width="1000" height="760" class="f-bg"/>', "")}</svg>`;
+  };
+  return `<svg viewBox="0 0 2000 760" aria-hidden="true" focusable="false"><rect width="2000" height="760" class="f-bg"/>${plane(source, 0)}${plane(image, 1000)}<path d="M1000 60V700" stroke-width="3" class="s-axis"/></svg>`;
+}
 
 // Runs in the page: a lean, theme-free copy of the plot, or of the drawing
 // the selector names. The thumbnail's own viewport clips it.
