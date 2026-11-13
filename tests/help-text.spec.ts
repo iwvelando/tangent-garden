@@ -539,7 +539,8 @@ test("complex loom help fits both tiers in every source family", async ({
       map === "joukowski" ||
       map === "fractional" ||
       map === "exp" ||
-      map === "exp-power"
+      map === "exp-power" ||
+      map === "power"
     )
       await d.getByLabel("Motion", { exact: true }).selectOption("map");
     for (const family of ["rosette", "grid", "concentric", "curve"]) {

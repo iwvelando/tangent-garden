@@ -2049,7 +2049,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(19);
+  await expect(cards).toHaveCount(20);
   await expect(gallery.locator("[data-example]")).toHaveCount(72);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();
@@ -2248,9 +2248,14 @@ test("power loom degree redraws both words and geometry, keeps cameras and saves
   await expect(d.getByLabel("Degree", { exact: true })).toHaveValue("5");
   // The rotated circle starts at z = 2, so its fifth power is 32.
   expect(await loomPoint(d, "image")).toEqual({ x: 32, y: 0 });
-  // No pole, exclusion or map motion belongs to a power.
-  await expect(d.getByText("Map settings", { exact: true })).toHaveCount(0);
-  await expect(d.getByLabel("Motion", { exact: true })).toHaveCount(0);
+  // No pole or exclusion belongs to a power; its map settings hold only its
+  // map parameter, at the power itself, and the preset plays its point.
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveValue("point");
+  await d.getByText("Map settings", { exact: true }).click();
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
   await expect(d.locator("[data-exclusion]")).toHaveCount(0);
   await d.locator('[data-pane="image"]').press("+");
   const quintic = await d
@@ -3379,8 +3384,204 @@ test("an older exponential link carrying another map's parameter still opens on 
   ).toHaveCount(0);
 });
 
-// The growth presets' movies: the composite's shell and the exponential's
-// rings, each played from s = 0 to 1.
+// H_s(z) = (1 − s)z + s zⁿ, the power's family, written independently.
+const folded = (z: { x: number; y: number }, s: number, n: number) => {
+  const w = power(z, n);
+  return { x: (1 - s) * z.x + s * w.x, y: (1 - s) * z.y + s * w.y };
+};
+
+test("power map motion folds circles from the identity into a flower and z⁶, and its map parameter edits a frame directly", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).loomCopied = value;
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  await settled(page);
+  await openLoomExample(page, "Circles folded into a flower");
+  const d = page.getByRole("dialog", { name: "The complex loom" }),
+    art = d.locator(".loom-panes"),
+    progress = d.getByLabel("Motion progress", { exact: true }),
+    values = d.locator(".animation-values"),
+    readout = d.locator(".loom-correspondence");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = (1 − s)z + s·z⁶",
+  );
+  await expect(d.locator(".loom-pane-heading h3").nth(1)).toHaveText(
+    "Image plane · w",
+  );
+  await expect(d.getByLabel("Degree", { exact: true })).toHaveValue("6");
+  await expect(d.getByLabel("Motion", { exact: true })).toHaveValue("map");
+  await expect(d.getByLabel("Map motion from", { exact: true })).toHaveValue(
+    "0",
+  );
+  await expect(d.getByLabel("Map motion to", { exact: true })).toHaveValue("1");
+  // It opens at s = 0, the identity, on the circle of radius 4/5 from its
+  // rightmost point, drawn the same in both panes.
+  const z = await loomPoint(d, "source");
+  expect(z).toEqual({ x: 0.8, y: 0 });
+  expect(await loomPoint(d, "image")).toEqual(z);
+  expect(
+    await d.locator('[data-pane="image"] [data-member="15"]').getAttribute("d"),
+  ).toBe(
+    await d
+      .locator('[data-pane="source"] [data-member="15"]')
+      .getAttribute("d"),
+  );
+  await expect(values).toContainText("s = 0.00000");
+  await progress.fill("0.5");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), folded(z, 0.5, 6)))
+    .toBe(true);
+  await expect(values).toContainText("s = 0.500000");
+  await progress.fill("1");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), power(z, 6)))
+    .toBe(true);
+  // The preset's own motion plays from the identity to the power.
+  await d.getByLabel("Traversal duration", { exact: true }).fill("0.4");
+  await d.getByRole("button", { name: "Stop map motion", exact: true }).click();
+  await expect(values).toContainText("s = 0.00000");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await d.getByRole("button", { name: "Play map motion", exact: true }).click();
+  await expect(
+    d.getByRole("button", { name: "Play map motion", exact: true }),
+  ).toBeVisible();
+  await expect(values).toContainText("s = 1.00000");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), power(z, 6)))
+    .toBe(true);
+  // No pole: the map settings hold the parameter alone.
+  await d.getByText("Map settings", { exact: true }).click();
+  const parameter = d.getByLabel("Map parameter", { exact: true });
+  await expect(parameter).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
+  await expect(d.locator("[data-exclusion]")).toHaveCount(0);
+  // Point traversal keeps the frame, which the map parameter then edits.
+  await d.getByLabel("Motion", { exact: true }).selectOption("point");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = z⁶",
+  );
+  await expect(readout).toContainText("Regular map point");
+  // On the circle r⁵ = (1 − s)/6s the frame is critical at angle π/5.
+  await parameter.fill("1/(1+6*0.32768)");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = (1 − s)z + s·z⁶",
+  );
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("pi/5");
+  await expect(readout).toContainText("Critical point");
+  const s = 1 / (1 + 6 * 0.32768);
+  const c = await loomPoint(d, "source");
+  expect(
+    near(c, { x: 0.8 * Math.cos(Math.PI / 5), y: 0.8 * Math.sin(Math.PI / 5) }),
+  ).toBe(true);
+  // Its image is (1 − 1/6)(1 − s) times the point.
+  expect(
+    near(
+      await loomPoint(d, "image"),
+      {
+        x: (5 / 6) * (1 - s) * c.x,
+        y: (5 / 6) * (1 - s) * c.y,
+      },
+      10,
+    ),
+  ).toBe(true);
+  await d.getByLabel("Exact source parameter", { exact: true }).fill("0");
+  await expect(readout).toContainText("Regular map point");
+  await parameter.fill("0.25");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => near(await loomPoint(d, "image"), folded(z, 0.25, 6)))
+    .toBe(true);
+  // Go refuses s beyond 0–1 under this field.
+  await parameter.fill("1.5");
+  await expect(parameter).toHaveAttribute("aria-invalid", "true");
+  await expect(d.getByRole("alert")).toContainText("0–1");
+  await expect(d.getByRole("alert")).toHaveCount(1);
+  await parameter.fill("0.25");
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  const image = await d
+    .locator('[data-pane="image"] [data-member="15"]')
+    .getAttribute("d");
+  const download = page.waitForEvent("download");
+  await loomImage(d, "SVG");
+  expect((await download).suggestedFilename()).toBe("complex-power-6.svg");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  for (const text of [
+    '"map":"power"',
+    '"degree":6',
+    '"fold":0.25',
+    '"formula":"w = (1 − s)z + s·z⁶"',
+  ])
+    expect(svg).toContain(text);
+  expect(svg).not.toContain('"wrap"');
+  // Its domain words describe the family: zero is critical only at s = 1.
+  const domain = JSON.parse(
+    svg.match(/<desc>([^<]*)<\/desc>/)![1].replaceAll("&quot;", '"'),
+  ).exclusion as string;
+  expect(domain).not.toContain("zero is critical");
+  expect(domain).toContain("1 zⁿ, critical only at zero");
+  expect(domain).toContain("zero regular");
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => (window as any).loomCopied as string);
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  expect(saved.loom.fold).toBe(0.25);
+  expect(saved.loom.motion).toBeUndefined();
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await page.goto(link);
+  await expect(page).not.toHaveURL(/#s=/);
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  expect(
+    await d.locator('[data-pane="image"] [data-member="15"]').getAttribute("d"),
+  ).toBe(image);
+});
+
+test("an older power link carrying another map's parameter still opens on zⁿ", async ({
+  page,
+}) => {
+  const { presetStudy } = await import("../web/planar-link");
+  const { presetLoom, loomPresets } = await import("../web/loom/model");
+  const base = presetStudy(0);
+  const rosette = presetLoom(
+    loomPresets.findIndex((p) => p.title === "A quintic rosette"),
+    base.config,
+  );
+  // As a study switched from z + λ/z kept them before s existed.
+  const loom = { ...rosette, mapParameter: 0.5, exclusionRadius: 0.1 };
+  const token = deflateRawSync(
+    JSON.stringify({ v: 1, notebook: "2d", study: { ...base, loom } }),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  const d = page.getByRole("dialog", { name: "The complex loom" });
+  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
+  await expect(d.locator(".eyebrow")).toHaveText(
+    "Complex transformation · w = z⁵",
+  );
+  expect(await loomPoint(d, "image")).toEqual({ x: 32, y: 0 });
+  await d.getByText("Map settings", { exact: true }).click();
+  await expect(d.getByLabel("Map parameter", { exact: true })).toHaveValue("1");
+  await expect(
+    d.getByLabel("Pole exclusion radius", { exact: true }),
+  ).toHaveCount(0);
+});
+
+// The growth presets' movies: the composite's shell, the exponential's
+// rings and the power's flower, each played from s = 0 to 1.
 for (const [example, file, metadata] of [
   [
     "A quintic rosette grown into a shell",
@@ -3391,6 +3592,11 @@ for (const [example, file, metadata] of [
     "A strip curled into rings",
     "tangent-garden-complex-exp.mp4",
     ['"map":"exp"', '"mode":"map"', '"formula":"w = s + (exp(sz) − 1)/s"'],
+  ],
+  [
+    "Circles folded into a flower",
+    "tangent-garden-complex-power-6.mp4",
+    ['"map":"power"', '"mode":"map"', '"formula":"w = (1 − s)z + s·z⁶"'],
   ],
 ] as const)
   test(`a decoded growth film matches direct seeks in both panes (${example})`, async ({
@@ -4495,6 +4701,7 @@ for (const [example, name, label] of [
   ["Circles through infinity", "Play map motion", "Motion progress"],
   ["A squared grid grown into a web", "Play map motion", "Motion progress"],
   ["A strip curled into rings", "Play map motion", "Motion progress"],
+  ["Circles folded into a flower", "Play map motion", "Motion progress"],
   [undefined, "Play traversal", "Source parameter"],
 ] as const)
   test(`scrubbing never disables a button (${label}${example ? `: ${example}` : ""})`, async ({

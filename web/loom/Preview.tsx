@@ -65,6 +65,7 @@ const labels: Record<string, string> = {
   degree: "Degree",
   mapParameter: "Map parameter",
   wrap: "Map parameter",
+  fold: "Map parameter",
   exclusionRadius: "Pole exclusion radius",
   ...Object.fromEntries(
     ["a", "b", "c", "d"].flatMap((k) => [
@@ -125,9 +126,8 @@ const geometryKey = (s: LoomRequest) =>
     s.map,
     maps[s.map].degree ? s.degree : undefined,
     s.mapParameter,
-    // The exponential's or the composite's s, absent at 1; other maps never
-    // send it.
-    maps[s.map].parameterKey === "wrap" ? mapParameterOf(s) : undefined,
+    // A family's own s, absent at 1; other maps never send it.
+    maps[s.map].parameterKey !== "mapParameter" ? mapParameterOf(s) : undefined,
     s.exclusionRadius,
     s.source,
     s.samples,
@@ -627,7 +627,9 @@ export function LoomPreview({
     ...(mapInfo.degree && { degree: study.degree }),
     formula: text.formula,
     mapParameter: study.mapParameter,
-    ...(mapInfo.parameterKey === "wrap" && { wrap: mapParameterOf(study) }),
+    ...(mapInfo.parameterKey !== "mapParameter" && {
+      [mapInfo.parameterKey]: mapParameterOf(study),
+    }),
     ...("coefficients" in mapInfo && { coefficients: study.coefficients }),
     exclusionRadius: study.exclusionRadius,
     showExclusion: study.showExclusion,

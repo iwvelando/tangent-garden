@@ -4680,6 +4680,153 @@ test("exponential map-motion preset opens on the identity at s = 0 and curls a s
   }
 });
 
+test("power loom map motion folds the identity into zⁿ in its own field, and older power and squaring links keep their maps", async () => {
+  const model = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const square = model.defaultLoom(ordinary.config);
+  square.views.image = { x: 37, y: -19, zoom: 2 };
+  const power = model.replaceMap(square, "power");
+  // The power is s = 1 of its family, with no field written for it, so its
+  // requests and links are as before: no exclusion, no motion.
+  assert.equal(model.maps.power.parameterized, true);
+  assert.equal(model.maps.power.parameterKey, "fold");
+  assert.equal(model.maps.power.exclusion, false);
+  assert.deepEqual(model.maps.power.range, [0, 1]);
+  assert.equal(model.maps.power.motionFrom, 0);
+  assert.equal(model.mapParameterOf(power), 1);
+  assert.deepEqual(power.source, square.source);
+  assert.deepEqual(power.views, square.views);
+  assert.deepEqual(model.loomRequest(power), {
+    ...model.loomRequest(square),
+    map: "power",
+    degree: 3,
+  });
+  for (const key of ["fold", "wrap", "mapParameter", "exclusionRadius"])
+    assert.equal(key in power, false, key);
+  // Squaring is unchanged: no parameter, no family, the same request.
+  assert.equal(model.maps.square.parameterized, false);
+  assert.equal("family" in model.maps.square, false);
+  assert.deepEqual(model.loomRequest({ ...square, fold: 0.5 }), {
+    map: "square",
+    source: square.source,
+    samples: square.samples,
+    tolerance: square.tolerance,
+    selected: square.selected,
+    parameter: square.parameter,
+  });
+  // A link made before the family existed can carry another map's retained
+  // parameter and exclusion, which the power ignored; it still opens on zⁿ.
+  const lens = model.replaceMap(square, "joukowski");
+  const older = { ...lens, map: "power" as const, degree: 4 };
+  const opened = planarStudy({ ...ordinary, loom: older }).loom!;
+  assert.equal(opened.mapParameter, lens.mapParameter);
+  assert.equal(model.mapParameterOf(opened), 1);
+  assert.equal("fold" in model.loomRequest(opened), false);
+  assert.equal(model.mapText(opened).formula, "w = z⁴");
+  // So does a squaring link carrying a stray fold, which squaring ignores.
+  const stray = planarStudy({
+    ...ordinary,
+    loom: { ...square, fold: 0.25 },
+  }).loom!;
+  assert.equal("fold" in model.loomRequest(stray), false);
+  assert.equal(model.mapText(stray).formula, "w = z²");
+  // A frame or an edited parameter writes s in its own field, never in the
+  // retained rational parameter or the exponentials' s, and names the
+  // frame's own map with its degree.
+  const half = model.withMapParameter(opened, 0.5);
+  assert.equal(half.fold, 0.5);
+  assert.equal(half.mapParameter, lens.mapParameter);
+  assert.equal("wrap" in half, false);
+  assert.equal(model.loomRequest(half).fold, 0.5);
+  assert.equal(model.mapText(half).formula, "w = (1 − s)z + s·z⁴");
+  assert.equal(model.mapText(half).imageHeading, "Image plane · w");
+  assert.equal(model.mapText(half).kind, "power-4");
+  const motion = {
+    ...power,
+    motion: { mode: "map" as const, from: 0, to: 1 },
+  };
+  assert.equal(model.mapText(motion).formula, "w = (1 − s)z + s·z³");
+  assert.equal(model.loomFrame(motion, 0).fold, 0);
+  assert.equal(model.loomFrame(motion, 1).fold, 1);
+  assert.equal(model.loomFrame(motion, 0.3).fold, 0.3);
+  assert.equal("mapParameter" in model.loomFrame(motion, 0.3), false);
+  assert.equal("wrap" in model.loomFrame(motion, 0.3), false);
+  for (const study of [half, { ...motion, fold: 0 }]) {
+    const saved = planarStudy({ ...ordinary, loom: study });
+    assert.deepEqual(saved.loom, study);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).loom, study);
+  }
+  for (const [loom, field] of [
+    [{ ...power, fold: 1.5 }, "loom.fold"],
+    [{ ...power, fold: -0.1 }, "loom.fold"],
+    [{ ...motion, motion: { mode: "map", from: -0.5, to: 1 } }, "loom.motion"],
+    [{ ...motion, motion: { mode: "map", from: 0, to: 2 } }, "loom.motion"],
+  ] as const)
+    assert.throws(
+      () => planarStudy({ ...ordinary, loom }),
+      (e: unknown) => e instanceof LinkError && e.field === field,
+      field,
+    );
+  // Leaving and returning starts again from the power, keeping its degree;
+  // a motion does not carry over, and the composite's s is its own.
+  const away = model.replaceMap({ ...half, motion: motion.motion }, "square");
+  assert.equal("fold" in away, false);
+  assert.equal("motion" in away, false);
+  const back = model.replaceMap(away, "power");
+  assert.equal(model.mapParameterOf(back), 1);
+  assert.equal(back.degree, 4);
+  const composite = model.replaceMap(half, "exp-power");
+  assert.equal("fold" in composite, false);
+  assert.equal(model.mapParameterOf(composite), 1);
+  assert.equal(model.mapParameterOf(model.replaceMap(composite, "power")), 1);
+  // A degree change keeps the frame.
+  assert.equal(model.mapParameterOf({ ...half, degree: 6 }), 0.5);
+});
+
+test("power map-motion preset opens on the identity at s = 0 and folds circles into a flower", async () => {
+  const model = await import("../web/loom/model");
+  const base = planarPreset(0).config;
+  const index = model.loomPresets.findIndex(
+    (p) => p.title === "Circles folded into a flower",
+  );
+  assert.ok(index >= 0, "the preset is missing");
+  const s = model.presetLoom(index, base);
+  assert.equal(s.map, "power");
+  assert.equal(s.degree, 6);
+  assert.equal(s.source.kind, "concentric");
+  assert.equal(model.memberCount(s.source), 20);
+  // The unit circle's image stays within the unit disk at every s, so one
+  // fixed framing in both panes holds the whole motion.
+  assert.equal(s.source.radius, 1);
+  assert.deepEqual(s.framing?.source, s.framing?.image);
+  assert.equal(s.selected, 15);
+  assert.equal(s.parameter, model.memberInterval(s.source, s.selected)[0]);
+  // It opens where its motion starts, on the identity, and ends on z⁶.
+  assert.deepEqual(s.motion, { mode: "map", from: 0, to: 1 });
+  assert.equal(s.fold, 0);
+  assert.equal(model.mapParameterOf(s), 0);
+  assert.equal(model.loomFrame(s, 0).fold, 0);
+  assert.equal(model.loomFrame(s, 1).fold, 1);
+  for (const key of ["wrap", "mapParameter", "exclusionRadius"])
+    assert.equal(key in s, false, key);
+  assert.deepEqual(s.source.curve, base.curve);
+  assert.deepEqual(planarStudy({ ...planarPreset(0), loom: s }).loom, s);
+  // The static power presets keep their definitions.
+  for (const title of [
+    "A quintic rosette",
+    "A grid cubed into a star",
+    "A star's offset raised to the fourth power",
+  ]) {
+    const p = model.presetLoom(
+      model.loomPresets.findIndex((q) => q.title === title),
+      base,
+    );
+    for (const key of ["fold", "motion", "framing"])
+      assert.equal(key in p, false, `${title}: ${key}`);
+  }
+});
+
 test("composite loom presets open a shell and a web over the base curve", async () => {
   const model = await import("../web/loom/model");
   const base = planarPreset(0).config;

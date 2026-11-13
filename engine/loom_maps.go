@@ -51,6 +51,9 @@ func (q LoomRequest) validateMap() error {
 		if q.Degree < 2 || q.Degree > 6 {
 			return fieldErr("degree", "power degree must be a whole number 2–6")
 		}
+		if s := q.Fold; q.Map == "power" && s != nil && !(*s >= 0 && *s <= 1) {
+			return fieldErr("fold", "zⁿ map parameter s must be 0–1")
+		}
 		if s := q.Wrap; q.Map == "exp-power" && s != nil && !(*s >= 0 && *s <= 1) {
 			return fieldErr("wrap", "exp(zⁿ) map parameter s must be 0–1")
 		}
@@ -146,6 +149,14 @@ func (q LoomRequest) wrap() float64 {
 	return *q.Wrap
 }
 
+// fold is the power map's parameter s, 1 when absent.
+func (q LoomRequest) fold() float64 {
+	if q.Fold == nil {
+		return 1
+	}
+	return *q.Fold
+}
+
 // intermediate is the composite's first stage zⁿ at p, its provenance,
 // unscaled by s; nil for every other map.
 func (q LoomRequest) intermediate(p Vec) *Vec {
@@ -184,7 +195,19 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 		return loomSquare(p)
 	case "power":
 		// Never the rational identity limit: MapParameter is ignored here.
-		return loomPower(p, q.Degree)
+		// The family H_s's ends are evaluated explicitly: the identity at
+		// s = 0, unclipped below the fence, and the power at s = 1. Between
+		// them a source whose power passes the overflow guard is clipped, as
+		// at s = 1.
+		s := q.fold()
+		if s == 0 {
+			return point(p)
+		}
+		u := loomPower(p, q.Degree)
+		if s == 1 || u == nil {
+			return u
+		}
+		return loomFold(p, *u, s)
 	case "exp":
 		// F_s(z) = G_s(z): the source lies in the frame's domain exactly when
 		// s·z lies in the window. The ends are evaluated explicitly: the
@@ -247,6 +270,18 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 		return point(Vec{p.X + q.MapParameter*p.X/d, p.Y - q.MapParameter*p.Y/d})
 	}
 	return nil
+}
+
+// loomFold is H_s(z) = (1 − s)z + s zⁿ for 0 < s < 1, given u = zⁿ. It is
+// formed from whichever end is nearer, z + s(u − z) or u + (1 − s)(z − u),
+// where 1 − s is exact, so its error stays a few roundings of
+// (1 − s)|z| + s|u| and the fixed points 0 and 1 map to themselves exactly.
+func loomFold(z, u Vec, s float64) *Vec {
+	if s < .5 {
+		return point(Vec{z.X + s*(u.X-z.X), z.Y + s*(u.Y-z.Y)})
+	}
+	r := 1 - s
+	return point(Vec{u.X + r*(z.X-u.X), u.Y + r*(z.Y-u.Y)})
 }
 
 // loomWrap is G_s(u) = s + (e^{su} − 1)/s for 0 < s < 1, with v = su in the
@@ -577,6 +612,11 @@ func (q LoomRequest) domainSafe(a, b Vec, probes [3]loomNode) bool {
 }
 
 func (q LoomRequest) critical(p Vec) bool {
+	if q.Map == "power" {
+		if s := q.fold(); s != 1 {
+			return q.foldCritical(p, s)
+		}
+	}
 	// (zⁿ)′ = n zⁿ⁻¹ vanishes only at zero, a finite drawable point. The
 	// composite's frame has derivative n zⁿ⁻¹ e^{s zⁿ}, which inherits that
 	// zero alone, since the exponential never vanishes.
@@ -591,6 +631,28 @@ func (q LoomRequest) critical(p Vec) bool {
 		return math.Hypot(u, v) <= 8*0x1p-52*(p.Dot(p)+q.MapParameter)
 	}
 	return false
+}
+
+// foldCritical classifies p under the power's frame H_s, 0 ≤ s < 1, whose
+// derivative 1 − s + s n zⁿ⁻¹ vanishes at the n − 1 roots of
+// zⁿ⁻¹ = −(1 − s)/(s n); zero is regular, and the identity has none. Sources
+// reach those roots through trigonometry, such as a circle of their radius
+// at angle π/(n − 1), so the derivative is accepted within a few roundings of
+// its two terms, as for z + λ/z, scaled by the n − 1 multiplications that
+// form zⁿ⁻¹.
+func (q LoomRequest) foldCritical(p Vec, s float64) bool {
+	if s == 0 {
+		return false
+	}
+	v := &p
+	if q.Degree > 2 {
+		v = loomPower(p, q.Degree-1)
+		if v == nil {
+			return false
+		}
+	}
+	n := float64(q.Degree)
+	return math.Hypot(1-s+s*n*v.X, s*n*v.Y) <= 4*n*0x1p-52*(1-s+s*n*v.Norm())
 }
 
 // A general Möbius map's coefficients are refused beyond this conditioning

@@ -373,6 +373,48 @@ checkFourierFit();
         .marker,
       result.marker,
     );
+    // Its map parameter s crosses the bridge as fold: at s = 0 the frame is
+    // the identity; at s = ½ zero is regular, and the critical points lie
+    // where zⁿ⁻¹ = −1/n; s = 1 is the power.
+    const identity = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify({ ...request, fold: 0 })),
+    );
+    for (const m of identity.members)
+      for (let i = 0; i < m.at.length; i++)
+        assert.deepEqual(m.image[i], m.source[i]);
+    const half = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify({ ...request, fold: 0.5 })),
+    );
+    assert.deepEqual(half.marker.image, { x: 0, y: 0 });
+    assert.equal(half.marker.critical, false);
+    const critical = JSON.parse(
+      globalThis.tangentGardenLoomPoint(
+        JSON.stringify({
+          ...request,
+          fold: 0.5,
+          source: {
+            ...request.source,
+            kind: "concentric",
+            count: 1,
+            radius: (1 / degree) ** (1 / (degree - 1)),
+          },
+          parameter: Math.PI / (degree - 1),
+        }),
+      ),
+    ).marker;
+    assert.equal(critical.critical, true);
+    assert.deepEqual(
+      lifted(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, fold: 1 })),
+      ),
+      result,
+    );
+    assert.equal(
+      JSON.parse(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, fold: 2 })),
+      ).field,
+      "fold",
+    );
   }
   assert.equal(
     JSON.parse(
@@ -381,6 +423,11 @@ checkFourierFit();
       ),
     ).field,
     "degree",
+  );
+  // Squaring ignores fold, whatever its value.
+  assert.deepEqual(
+    lifted(globalThis.tangentGardenLoom(JSON.stringify({ ...q, fold: 7 }))),
+    r,
   );
   // The exponential: e^x(cos y, sin y), never critical, with the marker's
   // periodic translates in the point-only reply as in the full one.
