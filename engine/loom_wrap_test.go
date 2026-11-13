@@ -431,7 +431,7 @@ func TestLoomWrapValidation(t *testing.T) {
 		}
 	}
 	// Every other map ignores it.
-	for _, m := range []string{"square", "power", "exp", "mobius", "joukowski"} {
+	for _, m := range []string{"square", "power", "mobius", "joukowski"} {
 		q := wrapLoom("grid", 3, nil)
 		q.Map, q.MapParameter, q.ExclusionRadius = m, .5, .1
 		plain, err := ComputeLoom(q)

@@ -27,6 +27,14 @@ export type Example = {
   // Extra words search matches, such as the curve's format.
   keywords: string;
   fingerprint: string;
+  // A picture twice as wide as the others, such as a complex map's source
+  // and image planes side by side. A section of wide pictures tiles them
+  // with its own, wider columns.
+  wide?: boolean;
+  // The map parameter of the frame an animated complex-map example's
+  // thumbnail shows, when not its opening one; scripts/build-thumbnails.mjs
+  // reads it from the card.
+  thumbnailParameter?: number;
 };
 
 // A thumbnail is either the plot's own SVG, with colors recorded by role, or
@@ -456,7 +464,13 @@ export function ExampleGallery({
               {groups.map((g) => (
                 <section key={g.family} aria-label={g.family}>
                   <h3>{g.family}</h3>
-                  <div className="gallery-grid">
+                  <div
+                    className={
+                      g.items.every((i) => i.example.wide)
+                        ? "gallery-grid wide"
+                        : "gallery-grid"
+                    }
+                  >
                     {g.items.map(({ example, index, kind }) => (
                       <button
                         key={`${kind}${index}`}
@@ -474,6 +488,7 @@ export function ExampleGallery({
                         data-example-title={example.title}
                         data-example-slug={slug(example.title)}
                         data-fingerprint={example.fingerprint}
+                        data-thumbnail-parameter={example.thumbnailParameter}
                         aria-current={
                           kind === "curve" && index === current
                             ? "true"
@@ -575,7 +590,7 @@ function ExampleThumb({
   return (
     <span
       ref={box}
-      className="example-thumb"
+      className={example?.wide ? "example-thumb wide" : "example-thumb"}
       data-state={state}
       style={style}
       aria-hidden="true"

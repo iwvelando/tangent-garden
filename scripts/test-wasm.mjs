@@ -416,6 +416,35 @@ checkFourierFit();
         .marker,
       result.marker,
     );
+    // Its map parameter s crosses the bridge as wrap: at s = 0 the frame is
+    // the identity, with no shared-image point; at s = ½ zero maps to s and
+    // shares it with 4πik, k = ±1 … ±4; s = 1 is the exponential.
+    const identity = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 0 })),
+    );
+    for (const m of identity.members) assert.deepEqual(m.image, m.source);
+    assert.deepEqual(identity.marker.image, { x: 0, y: 0 });
+    assert.equal(identity.marker.translates, undefined);
+    const half = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 0.5 })),
+    );
+    assert.deepEqual(half.marker.image, { x: 0.5, y: 0 });
+    assert.deepEqual(
+      half.marker.translates.map((t) => [t.x, t.y / (4 * Math.PI)]),
+      [-4, -3, -2, -1, 1, 2, 3, 4].map((k) => [0, k]),
+    );
+    assert.deepEqual(
+      lifted(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 1 })),
+      ),
+      result,
+    );
+    assert.equal(
+      JSON.parse(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 2 })),
+      ).field,
+      "wrap",
+    );
   }
   // The composite exp(zⁿ): exp of the polar power, critical only at zero,
   // which maps to 1 with intermediate 0; its shared-image points are the

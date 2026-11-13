@@ -431,6 +431,120 @@ for (const [width, height] of [
     expect(grid.height).toBeGreaterThan(height * 0.4);
   });
 
+// A complex map's picture is the change it makes, so its thumbnail pairs the
+// source plane with the image plane, twice as wide as other thumbnails. An
+// animated preset may show another frame of its motion, named by its map
+// parameter: its more striking end, or a frame between that tells it apart
+// from a static example of the same map.
+const thumbnailParameters: Record<string, string> = {
+  "Circles folded into ellipses": "1",
+  "A quintic rosette grown into a shell": "1",
+  "A squared grid grown into a web": "0.55",
+  "A strip curled into rings": "1",
+};
+test("complex-map thumbnails pair the source and image planes, twice as wide", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await examplesButton(page).click();
+  const section = gallery(page).getByRole("region", { name: "Complex maps" });
+  const cards = section.locator("[data-loom-example]");
+  await expect(cards).toHaveCount(19);
+  const images: Record<string, string> = {};
+  for (const card of await cards.all()) {
+    const title = (await card.getAttribute("data-example-title"))!;
+    await card.scrollIntoViewIfNeeded();
+    const thumb = card.locator(".example-thumb");
+    await expect(thumb).toHaveAttribute("data-state", "ready");
+    const art = thumb.locator(".example-thumb-art > svg");
+    await expect(art).toHaveAttribute("viewBox", "0 0 2000 760");
+    await expect(art.locator("text")).toHaveCount(0);
+    const panes = art.locator(":scope > svg");
+    await expect(panes).toHaveCount(2);
+    expect(
+      await panes.evaluateAll((all) =>
+        all.map((p) => [
+          p.getAttribute("x") ?? "0",
+          p.getAttribute("width"),
+          p.getAttribute("viewBox"),
+        ]),
+      ),
+      title,
+    ).toEqual([
+      ["0", "1000", "0 0 1000 760"],
+      ["1000", "1000", "0 0 1000 760"],
+    ]);
+    // Each plane draws its own geometry: even the strip that opens on the
+    // identity, whose two planes would be one picture at its start.
+    const [source, image] = await panes.evaluateAll((all) =>
+      all.map((p) => p.innerHTML),
+    );
+    expect(source, title).not.toBe(image);
+    images[title] = image;
+    expect(source.length, title).toBeGreaterThan(200);
+    expect(image.length, title).toBeGreaterThan(200);
+    const box = (await thumb.boundingBox())!;
+    expect(Math.abs(box.width / box.height - 2000 / 760), title).toBeLessThan(
+      0.02,
+    );
+    expect(await card.getAttribute("data-thumbnail-parameter"), title).toBe(
+      thumbnailParameters[title] ?? null,
+    );
+  }
+  // The web's growth is not drawn as the static web it ends on.
+  expect(images["A squared grid grown into a web"]).not.toBe(
+    images["A squared grid wrapped into a web"],
+  );
+});
+
+// The wide cards tile their section evenly: one to a row on a phone held
+// upright, two on its side and three on a desktop, never leaving a column
+// empty or the page wider than the screen.
+for (const [width, height, perRow] of [
+  [1280, 800, 3],
+  [390, 844, 1],
+  [844, 390, 2],
+] as const)
+  test(`complex-map cards tile their section evenly at ${width} × ${height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await settled(page);
+    await examplesButton(page).click();
+    await gallery(page)
+      .locator(".gallery-families")
+      .getByRole("button", { name: /^Complex maps/ })
+      .click();
+    const section = gallery(page).getByRole("region", {
+      name: "Complex maps",
+    });
+    const grid = (await section.locator(".gallery-grid").boundingBox())!;
+    const boxes = await section
+      .locator("[data-loom-example]")
+      .evaluateAll((all) => all.map((c) => c.getBoundingClientRect().toJSON()));
+    expect(boxes).toHaveLength(19);
+    const rows = new Map<number, DOMRect[]>();
+    for (const b of boxes)
+      rows.set(Math.round(b.top), [...(rows.get(Math.round(b.top)) ?? []), b]);
+    const counts = [...rows.values()].map((r) => r.length);
+    expect(
+      counts.slice(0, -1).every((n) => n === perRow),
+      `${counts}`,
+    ).toBe(true);
+    expect(counts.at(-1)).toBeLessThanOrEqual(perRow);
+    // A full row reaches across the grid.
+    const first = rows.values().next().value!;
+    expect(first[0].left - grid.x).toBeLessThan(1);
+    expect(grid.x + grid.width - first.at(-1)!.right).toBeLessThan(1);
+    for (const b of boxes)
+      expect(Math.abs(b.width - first[0].width)).toBeLessThan(1);
+    expect(
+      await gallery(page).evaluate((d) => d.scrollWidth - d.clientWidth),
+    ).toBeLessThanOrEqual(0);
+  });
+
 for (const colorScheme of ["light", "dark"] as const)
   test(`the gallery fills a phone screen without sideways scrolling in ${colorScheme}`, async ({
     page,

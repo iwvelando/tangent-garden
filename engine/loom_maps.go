@@ -41,7 +41,10 @@ func (q LoomRequest) validateMap() error {
 	case "square":
 		return nil
 	case "exp":
-		// No parameter, pole, exclusion or critical point.
+		// No pole, exclusion or critical point.
+		if s := q.Wrap; s != nil && !(*s >= 0 && *s <= 1) {
+			return fieldErr("wrap", "eᶻ map parameter s must be 0–1")
+		}
 		return nil
 	case "power", "exp-power":
 		// Categorical configuration: no pole or exclusion.
@@ -102,26 +105,27 @@ func (q LoomRequest) imageLimit() float64 {
 		return math.Inf(1)
 	case "power":
 		return LoomPowerImageLimit
-	case "exp":
-		// The exponential's window already bounds the image.
-		return math.Inf(1)
-	case "exp-power":
+	case "exp", "exp-power":
 		// The power's fence, binding only near s = 0, where the scaled window
 		// no longer bounds the image; at s = 1 the window keeps every image
-		// within 10⁸.
+		// within 10⁸. Under the exponential's family only a selected curve
+		// reaches it: grids and circles lie within |z| ≤ 2·10⁶, whose images
+		// stay below 1.1·10¹³.
 		return LoomPowerImageLimit
 	}
 	return LoomImageLimit
 }
 
-// periodic is where the exponential's period acts on source point p: p
-// itself under the exponential, and s·zⁿ under the composite's family
-// G_s(zⁿ), which is nil where the power overflows. Every other map has no
-// period, and so no aliasing guard; at s = 0 every distance there is zero.
+// periodic is where the exponential's period acts on source point p: s·z
+// under the exponential's family F_s(z), and s·zⁿ under the composite's
+// family G_s(zⁿ), which is nil where the power overflows. Every other map
+// has no period, and so no aliasing guard; at s = 0 every distance there is
+// zero, and at s = 1 the point is p itself.
 func (q LoomRequest) periodic(p Vec) *Vec {
 	switch q.Map {
 	case "exp":
-		return &p
+		s := q.wrap()
+		return &Vec{s * p.X, s * p.Y}
 	case "exp-power":
 		u := loomPower(p, q.Degree)
 		if u == nil {
@@ -133,7 +137,8 @@ func (q LoomRequest) periodic(p Vec) *Vec {
 	return nil
 }
 
-// wrap is the composite's map parameter s, 1 when absent.
+// wrap is the exponential's or the composite's map parameter s, 1 when
+// absent.
 func (q LoomRequest) wrap() float64 {
 	if q.Wrap == nil {
 		return 1
@@ -181,10 +186,21 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 		// Never the rational identity limit: MapParameter is ignored here.
 		return loomPower(p, q.Degree)
 	case "exp":
-		if !inExpWindow(p) {
+		// F_s(z) = G_s(z): the source lies in the frame's domain exactly when
+		// s·z lies in the window. The ends are evaluated explicitly: the
+		// exponential at s = 1 and the identity at s = 0, where only the
+		// power's fence (imageLimit) applies.
+		s := q.wrap()
+		if s == 0 {
+			return point(p)
+		}
+		if !inExpWindow(Vec{s * p.X, s * p.Y}) {
 			return nil
 		}
-		return loomExp(p)
+		if s == 1 {
+			return loomExp(p)
+		}
+		return loomWrap(p, s)
 	case "exp-power":
 		// G_s applied to the power map's own value: the source lies in the
 		// frame's domain exactly when s·zⁿ lies in the window. The ends are
@@ -238,9 +254,14 @@ func (q LoomRequest) mapImage(p Vec) *Vec {
 // (expm1(x) cos y − 2 sin²(y/2), eˣ sin y) for v = x + iy, so its error stays
 // a few roundings of |e^v − 1| however small v is, and dividing by a small s
 // loses nothing more. G_s′(u) = e^{su} never vanishes, G_s(0) = s exactly,
-// G_s → u as s → 0 and G_1(u) = eᵘ.
+// G_s → u as s → 0 and G_1(u) = eᵘ. Where v is so small that the product s·u
+// may be subnormal, and so inexact, G_s(u) = s + u(1 + v/2 + …) is s + u to
+// working precision.
 func loomWrap(u Vec, s float64) *Vec {
 	v := Vec{s * u.X, s * u.Y}
+	if math.Abs(v.X) < 0x1p-1000 && math.Abs(v.Y) < 0x1p-1000 {
+		return point(Vec{s + u.X, u.Y})
+	}
 	sin, cos := math.Sincos(v.Y)
 	half := math.Sin(v.Y / 2)
 	return point(Vec{s + (math.Expm1(v.X)*cos-2*half*half)/s, math.Exp(v.X) * sin / s})
@@ -304,9 +325,22 @@ func loomExp(p Vec) *Vec {
 	return point(Vec{r * math.Cos(p.Y), r * math.Sin(p.Y)})
 }
 
+// edge is the exponential frame's image at an exact crossing of its scaled
+// window (windowCuts), evaluated without the window, which rounding may put
+// the source just outside: eᶻ itself at s = 1, otherwise F_s. No fence is
+// needed: a grid or circle, within |z| ≤ 2·10⁶, reaches the scaled edge
+// ln 10⁸/s only for s above 10⁻⁵, where |F_s| ≤ s + (10⁸ + 1)/s < 10¹⁴.
+func (q LoomRequest) edge(p Vec) *Vec {
+	if s := q.wrap(); s != 1 {
+		return loomWrap(p, s)
+	}
+	return loomExp(p)
+}
+
 // translates lists the other source points in the map's domain with the same
-// image as p, which the exponential's period creates. Under the exponential
-// they are its translates z + 2πik, k ≠ 0, inside the window. Under the
+// image as p, which the exponential's period creates. Under the exponential's
+// frame F_s they are its translates z + 2πik/s, k ≠ 0, with s·z in the
+// window and within the fence, at most eight; none at s = 0. Under the
 // composite's frame G_s(zⁿ) they are every z′ with z′ⁿ = zⁿ + 2πik/s and
 // s·z′ⁿ in the window: first the turns z e^{2πij/n}, j = 1 … n − 1, then,
 // for each k ≠ 0 in order, the n-th roots of zⁿ + 2πik/s within the power's
@@ -328,11 +362,9 @@ func (q LoomRequest) translates(p Vec) []Vec {
 			}
 		}
 	}
-	s := 1.0
-	if q.Map == "exp-power" {
-		if s = q.wrap(); s == 0 {
-			return out
-		}
+	s := q.wrap()
+	if s == 0 {
+		return out
 	}
 	lo := int(math.Ceil((-LoomExpImagLimit - u.Y) / (2 * math.Pi)))
 	hi := int(math.Floor((LoomExpImagLimit - u.Y) / (2 * math.Pi)))
@@ -342,7 +374,11 @@ func (q LoomRequest) translates(p Vec) []Vec {
 			continue
 		}
 		if n == 1 {
-			out = append(out, Vec{u.X, y})
+			// At s = 1 this is p + 2πik, u being p itself.
+			z := Vec{p.X, p.Y + 2*math.Pi*float64(k)/s}
+			if z.Norm() <= LoomPowerImageLimit {
+				out = append(out, z)
+			}
 			continue
 		}
 		// The root's target is zⁿ + 2πik/s; at s = 1 it is the window
@@ -370,14 +406,19 @@ func (q LoomRequest) translates(p Vec) []Vec {
 }
 
 // windowCuts are the parameters where an analytic member crosses the
-// exponential's window, inserted as pilot samples so that the boundary is
-// drawn exactly and an arc narrower than the pilot spacing is not missed.
-// Selected curves use one-sided bisection instead.
+// exponential frame's window, scaled by 1/s, inserted as pilot samples so
+// that the boundary is drawn exactly and an arc narrower than the pilot
+// spacing is not missed. Selected curves use one-sided bisection instead. At
+// s = 0 nothing is clipped; where the scaled edges overflow, their infinite
+// crossings lie outside every member's interval.
 func (q LoomRequest) windowCuts(id int) []float64 {
-	if q.Map != "exp" || q.Source.Kind == "curve" {
+	if q.Map != "exp" || q.Source.Kind == "curve" || q.wrap() == 0 {
 		return nil
 	}
 	X, Y := LoomExpRealLimit, LoomExpImagLimit
+	if s := q.wrap(); s != 1 {
+		X, Y = X/s, Y/s
+	}
 	s := q.Source
 	if s.Kind == "grid" {
 		vertical := id < s.XCount

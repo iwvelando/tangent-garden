@@ -125,7 +125,8 @@ const geometryKey = (s: LoomRequest) =>
     s.map,
     maps[s.map].degree ? s.degree : undefined,
     s.mapParameter,
-    // The composite's s, absent at 1; other maps never send it.
+    // The exponential's or the composite's s, absent at 1; other maps never
+    // send it.
     maps[s.map].parameterKey === "wrap" ? mapParameterOf(s) : undefined,
     s.exclusionRadius,
     s.source,

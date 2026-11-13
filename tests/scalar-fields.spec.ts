@@ -74,39 +74,47 @@ test("loom map, exclusion and motion endpoints share Go scalar expressions", asy
   ).toBe(0.1 + (phi / 2 - 0.1) / 2);
 });
 
-test("the composite's map parameter shares Go scalar expressions in its own field", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const send = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
-      if (q.action === "loom" && !q.pointOnly)
-        (window as any).loomScalarRequest = q.loom;
-      return send.call(this, q, ...rest);
-    };
+// The exponential and the composite keep s in their own field, wrap.
+for (const map of ["exp-power", "exp"] as const)
+  test(`the ${map === "exp" ? "exponential" : "composite"}'s map parameter shares Go scalar expressions in its own field`, async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      const send = Worker.prototype.postMessage;
+      Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+        if (q.action === "loom" && !q.pointOnly)
+          (window as any).loomScalarRequest = q.loom;
+        return send.call(this, q, ...rest);
+      };
+    });
+    await page.goto("/");
+    await settled(page);
+    await page
+      .getByRole("button", { name: "Open complex loom", exact: true })
+      .click();
+    const d = page.getByRole("dialog", { name: "The complex loom" });
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await d.getByLabel("Complex map", { exact: true }).selectOption(map);
+    await d.getByText("Map settings", { exact: true }).click();
+    await d
+      .getByRole("textbox", { name: "Map parameter", exact: true })
+      .fill("1/phi");
+    await expect(d.locator(".loom-panes")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    await expect
+      .poll(() => page.evaluate(() => (window as any).loomScalarRequest.wrap))
+      .toBe(1 / phi);
+    expect(
+      await page.evaluate(
+        () => "mapParameter" in (window as any).loomScalarRequest,
+      ),
+    ).toBe(false);
   });
-  await page.goto("/");
-  await settled(page);
-  await page
-    .getByRole("button", { name: "Open complex loom", exact: true })
-    .click();
-  const d = page.getByRole("dialog", { name: "The complex loom" });
-  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
-  await d.getByLabel("Complex map", { exact: true }).selectOption("exp-power");
-  await d.getByText("Map settings", { exact: true }).click();
-  await d
-    .getByRole("textbox", { name: "Map parameter", exact: true })
-    .fill("1/phi");
-  await expect(d.locator(".loom-panes")).toHaveAttribute("aria-busy", "false");
-  await expect
-    .poll(() => page.evaluate(() => (window as any).loomScalarRequest.wrap))
-    .toBe(1 / phi);
-  expect(
-    await page.evaluate(
-      () => "mapParameter" in (window as any).loomScalarRequest,
-    ),
-  ).toBe(false);
-});
 
 test("general Möbius coefficients share Go scalar expressions", async ({
   page,
