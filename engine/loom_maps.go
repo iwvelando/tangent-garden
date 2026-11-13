@@ -109,8 +109,8 @@ func (q LoomRequest) imageLimit() float64 {
 		// The power's fence, binding only near s = 0, where the scaled window
 		// no longer bounds the image; at s = 1 the window keeps every image
 		// within 10⁸. Under the exponential's family only a selected curve
-		// reaches it: grids and circles lie within ±2·10⁶, whose images stay
-		// below 10¹³.
+		// reaches it: grids and circles lie within |z| ≤ 2·10⁶, whose images
+		// stay below 1.1·10¹³.
 		return LoomPowerImageLimit
 	}
 	return LoomImageLimit
