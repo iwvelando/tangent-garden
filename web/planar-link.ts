@@ -970,8 +970,11 @@ function loomStudy(value: unknown): LoomStudy {
         },
         degree: { optional: { range: [2, 6] } },
         mapParameter: { optional: "number" },
-        // The composite's own s; absent is s = 1, the composite.
+        // The exponential's and the composite's own s; absent is s = 1, the
+        // map itself.
         wrap: { optional: { range: [0, 1] } },
+        // The power's own s; absent is s = 1, the power.
+        fold: { optional: { range: [0, 1] } },
         exclusionRadius: { optional: { range: [0.000001, 1000000] } },
         // Go refuses components beyond ±1,000,000 and degenerate matrices,
         // under their own fields, as when they are typed.
@@ -1059,9 +1062,9 @@ function loomStudy(value: unknown): LoomStudy {
     );
   if (maps[out.map].parameterized) {
     const [lo, hi] = maps[out.map].range;
-    // The exponential's and the composite's s has its own field, optional;
-    // another map's retained mapParameter rides along unread, as it did
-    // before s existed.
+    // A family's s (the power's, the exponential's or the composite's) has
+    // its own field, optional; another map's retained mapParameter rides
+    // along unread, as it did before s existed.
     if (
       maps[out.map].parameterKey === "mapParameter" &&
       (out.mapParameter === undefined ||

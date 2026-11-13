@@ -441,6 +441,7 @@ const thumbnailParameters: Record<string, string> = {
   "A quintic rosette grown into a shell": "1",
   "A squared grid grown into a web": "0.55",
   "A strip curled into rings": "1",
+  "Circles folded into a flower": "0.3",
 };
 test("complex-map thumbnails pair the source and image planes, twice as wide", async ({
   page,
@@ -450,7 +451,7 @@ test("complex-map thumbnails pair the source and image planes, twice as wide", a
   await examplesButton(page).click();
   const section = gallery(page).getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
-  await expect(cards).toHaveCount(19);
+  await expect(cards).toHaveCount(20);
   const images: Record<string, string> = {};
   for (const card of await cards.all()) {
     const title = (await card.getAttribute("data-example-title"))!;
@@ -524,7 +525,7 @@ for (const [width, height, perRow] of [
     const boxes = await section
       .locator("[data-loom-example]")
       .evaluateAll((all) => all.map((c) => c.getBoundingClientRect().toJSON()));
-    expect(boxes).toHaveLength(19);
+    expect(boxes).toHaveLength(20);
     const rows = new Map<number, DOMRect[]>();
     for (const b of boxes)
       rows.set(Math.round(b.top), [...(rows.get(Math.round(b.top)) ?? []), b]);

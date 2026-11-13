@@ -42,6 +42,10 @@ export type LoomRequest = {
   // Absent means s = 1, the map itself, so links made before it keep their
   // drawing even when they carry another map's retained mapParameter.
   wrap?: number;
+  // The power map's own s, 0–1, which folds the identity into zⁿ:
+  // w = (1 − s)z + s·zⁿ. Absent means s = 1, the power, so links made before
+  // it keep their drawing. Squaring ignores it.
+  fold?: number;
   exclusionRadius?: number;
   // The general Möbius map's coefficients; other maps keep but ignore them.
   coefficients?: LoomCoefficients;
@@ -65,7 +69,7 @@ const fixedDomain =
   "Closed source disk omitted at each actual pole; no pole for identity. Image radius above 100000000 clipped. Finite expression sampling is not certified topology.";
 export const degreeHelp = tiered(
   "Whole number 2–6; the image multiplies angles about zero by n.",
-  "Zero is a critical point, drawn but not conformal. Images beyond radius 10¹⁰⁰ are clipped; every grid and circle family fits inside, so only a selected curve can reach it.",
+  "At map parameter 1 zero is a critical point, drawn but not conformal. Images beyond radius 10¹⁰⁰ are clipped; every grid and circle family fits inside, so only a selected curve can reach it.",
 );
 const compositeDegreeHelp = tiered(
   "Whole number 2–6; the power multiplies angles about zero by n before the exponential wraps them.",
@@ -96,26 +100,44 @@ export const maps = {
       "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have center r exp(iα), α = 2πk/N and z(θ) = r exp(iα)(1 + exp(iθ)); θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero.",
     pole: (_parameter: number): Vec | undefined => undefined,
   },
-  // "ⁿ" in these strings becomes the chosen degree (mapText).
+  // "ⁿ" in these strings becomes the chosen degree (mapText). Its map
+  // parameter s, kept in its own field (fold), runs the family
+  // w = (1 − s)z + s·zⁿ from the identity at s = 0 to the power at s = 1,
+  // which Go evaluates exactly; Go classifies the family's moving critical
+  // points.
   power: {
     label: "Power zⁿ",
     formula: "w = zⁿ",
-    parameterized: false,
-    parameterKey: "mapParameter",
+    parameterized: true,
+    parameterKey: "fold",
     exclusion: false,
     degree: { range: [2, 6], initial: 3, help: degreeHelp },
     exportDomain:
-      "No pole or excluded disk; zero is critical. Image radius above 1e100 clipped. Finite expression sampling is not certified topology.",
-    symbol: "",
-    range: [0, 0],
-    initial: 0,
-    note: "Powers multiply angles about zero by n. Zero is drawable but critical.",
+      "No pole or excluded disk; zero is critical. Map parameter s gives w = (1 − s)z + s·zⁿ: 0 the identity, 1 zⁿ; between them critical where zⁿ⁻¹ = −(1 − s)/(sn), and sources whose zⁿ passes the overflow guard are clipped. Image radius above 1e100 clipped. Finite expression sampling is not certified topology.",
+    symbol: "s",
+    range: [0, 1],
+    initial: 1,
+    // Map motion folds the identity into the power.
+    motionFrom: 0,
+    parameterHelp: tiered(
+      "0–1: 0 draws the identity, 1 the power zⁿ.",
+      "Between them w = (1 − s)z + s·zⁿ fixes 0 and 1. Its n − 1 critical points, where zⁿ⁻¹ = −(1 − s)/(sn), come in from infinity and merge at zero at s = 1. Images beyond radius 10¹⁰⁰ are clipped, and short of s = 0 so are sources with |z| > 2·10^(100/n).",
+    ),
+    note: "Powers multiply angles about zero by n; zero is drawable but critical. Below s = 1 zero is regular, and n − 1 critical points move in from infinity.",
     imageLabel: "zⁿ image plane",
     imageHeading: "Image plane · zⁿ",
     imageNoun: "image",
     keywords: " power powers polynomial cube cubic quintic",
     traversalHelp:
       "Traversal advances uniformly in the source parameter, not arc length. Rotated circles have z(θ) = r exp(iα)(1 + exp(iθ)), α = 2πk/N; θ increases counterclockwise from the outermost point. At θ = π the point is critical, but maps to zero. Images beyond radius 10¹⁰⁰ are clipped.",
+    // Words for a frame of the family short of the power, s < 1, and for a
+    // study that moves along it.
+    family: {
+      formula: "w = (1 − s)z + s·zⁿ",
+      imageHeading: "Image plane · w",
+      traversalHelp:
+        "Traversal advances uniformly in the source parameter, not arc length. w fixes 0 and 1. Its critical points lie where zⁿ⁻¹ = −(1 − s)/(sn), on the circle |z| = ((1 − s)/(sn))^(1/(n−1)); zero is regular below s = 1. Images beyond radius 10¹⁰⁰ are clipped.",
+    },
     pole: (_parameter: number): Vec | undefined => undefined,
   },
   // No pole or critical point. Go clips sources outside the declared window
@@ -300,16 +322,20 @@ export const mapHelp = tiered(
 );
 const superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 // A map's words with its degree in place of n: z³ for a cubic. A map with a
-// family of frames (the exponential's or the composite's) uses the family's
-// words for a frame short of its own end or for a study that moves along it.
+// family of frames (the power's, the exponential's or the composite's) uses
+// the family's words for a frame short of its own end or for a study that
+// moves along it.
 export function mapText(
-  q: Pick<LoomRequest, "map" | "degree" | "wrap"> & {
+  q: Pick<LoomRequest, "map" | "degree" | "wrap" | "fold"> & {
     motion?: LoomStudy["motion"];
   },
 ) {
   const info = maps[q.map];
+  const key = info.parameterKey;
   const m =
-    "family" in info && (q.motion || (q.wrap ?? 1) !== 1)
+    "family" in info &&
+    key !== "mapParameter" &&
+    (q.motion || (q[key] ?? 1) !== 1)
       ? { ...info, ...info.family }
       : info;
   const n =
@@ -331,12 +357,13 @@ export function mapText(
   };
 }
 // The map's parameter, in the study field it lives in: the rational maps'
-// mapParameter, or the exponential's or composite's s, which is 1 when
-// absent.
+// mapParameter, or a family's own s (the power's fold, the exponential's or
+// composite's wrap), which is 1 when absent.
 export function mapParameterOf(
-  q: Pick<LoomRequest, "map" | "mapParameter" | "wrap">,
+  q: Pick<LoomRequest, "map" | "mapParameter" | "wrap" | "fold">,
 ) {
-  return maps[q.map].parameterKey === "wrap" ? (q.wrap ?? 1) : q.mapParameter;
+  const key = maps[q.map].parameterKey;
+  return key === "mapParameter" ? q.mapParameter : (q[key] ?? 1);
 }
 export function withMapParameter<T extends Pick<LoomRequest, "map">>(
   q: T,
@@ -351,9 +378,9 @@ export function replaceMap(
   curveSize = 1,
 ): LoomStudy {
   if (map === s.map) return s;
-  // The exponential's and the composite's s is not retained: entering either
-  // starts again at s = 1.
-  const { motion: _motion, wrap: _wrap, ...rest } = s;
+  // A family's own s is not retained: entering the power, the exponential
+  // or the composite starts again at s = 1.
+  const { motion: _motion, wrap: _wrap, fold: _fold, ...rest } = s;
   const degree = maps[map].degree;
   // A retained valid degree survives map changes, as the radius does.
   if (degree)
@@ -782,6 +809,34 @@ export const loomPresets = [
     // the strip twice.
     thumbnail: 1,
   },
+  // Twenty concentric circles out to the unit circle at s = 0, the
+  // identity, selecting radius 4/5. Map motion folds them under
+  // w = (1 − s)z + s·z⁶: a circle of radius r becomes the epitrochoid
+  // (1 − s)r e^{iθ} + s r⁶ e^{6iθ}, an epicycloid with five cusps on the
+  // critical circle r⁵ = (1 − s)/6s, which comes in from infinity, crosses
+  // the nest from s = 1/7 and reaches the selected circle near s = 0.34.
+  // Outside it each circle loops five times: the flower. At s = 1 the circles
+  // close into z⁶'s, each wound six times. On the unit circle |w| ≤ 1 at
+  // every s, so both panes share one fixed framing that holds the whole
+  // motion.
+  {
+    title: "Circles folded into a flower",
+    note: "Map motion folds nested circles through five cusps into a looping flower, then winds each six times around zero",
+    kind: "concentric",
+    map: "power",
+    degree: 6,
+    count: 20,
+    radius: 1,
+    selected: 15,
+    motion: { from: 0, to: 1 },
+    framing: {
+      source: { cx: 0, cy: 0, scale: 330 },
+      image: { cx: 0, cy: 0, scale: 330 },
+    },
+    // Its thumbnail shows the flower; the identity it opens on would draw
+    // the circles twice.
+    thumbnail: 0.3,
+  },
 ] as const satisfies readonly {
   title: string;
   note: string;
@@ -889,13 +944,13 @@ export function presetLoom(index: number, config: Config): LoomStudy {
       },
     };
   }
-  // An exponential or composite performance opens on its first frame, the
-  // identity or the power map, where its motion starts, with its fixed
-  // framing or else the fit of that opening frame.
+  // A power, exponential or composite performance opens on its first
+  // frame, the identity or the power map, where its motion starts, with its
+  // fixed framing or else the fit of that opening frame.
   if (
     "map" in definition &&
     "motion" in definition &&
-    maps[definition.map].parameterKey === "wrap"
+    maps[definition.map].parameterKey !== "mapParameter"
   ) {
     const selected = "selected" in definition ? definition.selected : 0;
     return withMapParameter(
@@ -1157,10 +1212,9 @@ export function loomRequest(s: LoomStudy): LoomRequest {
     // Only the general Möbius map sends its coefficients.
     ...("coefficients" in maps[s.map] && { coefficients: s.coefficients }),
     ...(s.mapParameter !== undefined && { mapParameter: s.mapParameter }),
-    // Only the exponential and the composite send their s, and only once it
-    // leaves s = 1.
-    ...(maps[s.map].parameterKey === "wrap" &&
-      s.wrap !== undefined && { wrap: s.wrap }),
+    // Only a family sends its own s (the power's fold, the exponential's or
+    // composite's wrap), and only once it leaves s = 1.
+    ...familyField(s),
     ...(s.exclusionRadius !== undefined && {
       exclusionRadius: s.exclusionRadius,
     }),
@@ -1170,6 +1224,13 @@ export function loomRequest(s: LoomStudy): LoomRequest {
     selected: s.selected,
     parameter: s.parameter,
   };
+}
+// A family's own s, in its field, when the study has left s = 1.
+function familyField(s: LoomRequest) {
+  const key = maps[s.map].parameterKey;
+  return key !== "mapParameter" && s[key] !== undefined
+    ? { [key]: s[key] }
+    : {};
 }
 // Uniform absolute source parameter, independent of sampling density or speed.
 export function traversal(s: LoomStudy, progress: number): LoomRequest {

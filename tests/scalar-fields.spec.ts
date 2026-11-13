@@ -74,9 +74,14 @@ test("loom map, exclusion and motion endpoints share Go scalar expressions", asy
   ).toBe(0.1 + (phi / 2 - 0.1) / 2);
 });
 
-// The exponential and the composite keep s in their own field, wrap.
-for (const map of ["exp-power", "exp"] as const)
-  test(`the ${map === "exp" ? "exponential" : "composite"}'s map parameter shares Go scalar expressions in its own field`, async ({
+// The exponential and the composite keep s in their own field, wrap; the
+// power keeps its s in fold.
+for (const [map, name, key] of [
+  ["exp-power", "composite", "wrap"],
+  ["exp", "exponential", "wrap"],
+  ["power", "power", "fold"],
+] as const)
+  test(`the ${name}'s map parameter shares Go scalar expressions in its own field`, async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -107,13 +112,20 @@ for (const map of ["exp-power", "exp"] as const)
       "false",
     );
     await expect
-      .poll(() => page.evaluate(() => (window as any).loomScalarRequest.wrap))
+      .poll(() =>
+        page.evaluate((key) => (window as any).loomScalarRequest[key], key),
+      )
       .toBe(1 / phi);
-    expect(
-      await page.evaluate(
-        () => "mapParameter" in (window as any).loomScalarRequest,
-      ),
-    ).toBe(false);
+    for (const other of ["mapParameter", "wrap", "fold"].filter(
+      (k) => k !== key,
+    ))
+      expect(
+        await page.evaluate(
+          (other) => other in (window as any).loomScalarRequest,
+          other,
+        ),
+        other,
+      ).toBe(false);
   });
 
 test("general Möbius coefficients share Go scalar expressions", async ({

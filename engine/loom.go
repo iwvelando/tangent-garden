@@ -36,6 +36,9 @@ type LoomRequest struct {
 	// into eᶻ, and of the composite exp(zⁿ), which grows the power's image
 	// into the composite's; absent means 1. Every other map ignores it.
 	Wrap *float64 `json:"wrap,omitempty"`
+	// The power map's parameter s, 0–1, which folds the identity into zⁿ;
+	// absent means 1. Every other map, squaring included, ignores it.
+	Fold *float64 `json:"fold,omitempty"`
 	// The general Möbius map's coefficients; every other map ignores them.
 	Coefficients *LoomCoefficients `json:"coefficients,omitempty"`
 	// The prepared general Möbius frame; computed once per request.
