@@ -466,6 +466,35 @@ checkFourierFit();
       ).field,
       "degree",
     );
+    // Its map parameter s crosses the bridge as wrap: at s = 0 the frame is
+    // the power map, at s = ½ zero maps to s, and s = 1 is the composite.
+    const power = lifted(
+      globalThis.tangentGardenLoom(
+        JSON.stringify({ ...request, map: "power" }),
+      ),
+    );
+    assert.deepEqual(
+      lifted(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 0 })),
+      ).members,
+      power.members,
+    );
+    const half = lifted(
+      globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 0.5 })),
+    );
+    assert.deepEqual(half.marker.image, { x: 0.5, y: 0 });
+    assert.deepEqual(
+      lifted(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 1 })),
+      ),
+      result,
+    );
+    assert.equal(
+      JSON.parse(
+        globalThis.tangentGardenLoom(JSON.stringify({ ...request, wrap: 2 })),
+      ).field,
+      "wrap",
+    );
   }
   // A derived path: the ellipse (2 cos t, 3 sin t)'s evolute, with its base
   // curve as lifted points beside the member and the base point on the

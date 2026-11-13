@@ -4378,7 +4378,7 @@ test("general Möbius loom presets open their flow at the inverse over the base 
     assert.equal(model.presetLoom(i, base).map, map);
 });
 
-test("composite loom links carry a whole-number degree, refuse map motion, and older loom links keep their requests", async () => {
+test("composite loom links carry a whole-number degree, never animate it, and older loom links keep their requests", async () => {
   const model = await import("../web/loom/model");
   const ordinary = planarPreset(0);
   const square = model.defaultLoom(ordinary.config);
@@ -4388,7 +4388,8 @@ test("composite loom links carry a whole-number degree, refuse map motion, and o
   assert.equal(composite.degree, 2);
   assert.deepEqual(composite.source, square.source);
   assert.deepEqual(composite.views, square.views);
-  // Only the degree joins the request: no parameter, exclusion or motion.
+  // Only the degree joins the request: s = 1 sends nothing, and there is
+  // no exclusion or motion.
   assert.deepEqual(model.loomRequest(composite), {
     ...model.loomRequest(square),
     map: "exp-power",
@@ -4413,7 +4414,7 @@ test("composite loom links carry a whole-number degree, refuse map motion, and o
       `degree ${String(degree)}`,
     );
   }
-  // Neither stage has a parameter to animate.
+  // The degree is never animated: map motion runs over s, 0–1.
   assert.throws(
     () =>
       planarStudy({
@@ -4443,6 +4444,115 @@ test("composite loom links carry a whole-number degree, refuse map motion, and o
   assert.equal(model.mapText(quintic).formula, "w = exp(z⁵)");
   assert.equal(model.mapText(quintic).imageHeading, "Image plane · exp(z⁵)");
   assert.equal(model.mapText(quintic).kind, "exp-power-5");
+});
+
+test("composite loom map motion grows the power into exp(zⁿ) in its own field, and older composite links keep the composite", async () => {
+  const model = await import("../web/loom/model");
+  const ordinary = planarPreset(0);
+  const square = model.defaultLoom(ordinary.config);
+  const composite = model.replaceMap(square, "exp-power");
+  // The composite is s = 1 of its family, with no field written for it, so
+  // its requests and links are as before.
+  assert.equal(model.maps["exp-power"].parameterized, true);
+  assert.deepEqual(model.maps["exp-power"].range, [0, 1]);
+  assert.equal(model.mapParameterOf(composite), 1);
+  assert.equal("wrap" in composite, false);
+  assert.equal("wrap" in model.loomRequest(composite), false);
+  // A link made before the family existed can carry another map's retained
+  // parameter, which the composite ignored; it still opens on the composite.
+  const fold = model.replaceMap(square, "joukowski");
+  const older = { ...fold, map: "exp-power" as const, degree: 3 };
+  const opened = planarStudy({ ...ordinary, loom: older }).loom!;
+  assert.equal(opened.mapParameter, fold.mapParameter);
+  assert.equal(model.mapParameterOf(opened), 1);
+  assert.equal("wrap" in model.loomRequest(opened), false);
+  // A frame or an edited parameter writes s in its own field, never in the
+  // retained rational parameter.
+  const half = model.withMapParameter(opened, 0.5);
+  assert.equal(half.wrap, 0.5);
+  assert.equal(half.mapParameter, fold.mapParameter);
+  assert.equal(model.loomRequest(half).wrap, 0.5);
+  const motion = {
+    ...composite,
+    degree: 5,
+    motion: { mode: "map" as const, from: 0, to: 1 },
+  };
+  assert.equal(model.loomFrame(motion, 0).wrap, 0);
+  assert.equal(model.loomFrame(motion, 1).wrap, 1);
+  assert.equal(model.loomFrame(motion, 0.3).wrap, 0.3);
+  assert.equal("mapParameter" in model.loomFrame(motion, 0.3), false);
+  for (const study of [half, { ...motion, wrap: 0 }]) {
+    const saved = planarStudy({ ...ordinary, loom: study });
+    assert.deepEqual(saved.loom, study);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).loom, study);
+  }
+  for (const [loom, field] of [
+    [{ ...composite, wrap: 1.5 }, "loom.wrap"],
+    [{ ...composite, wrap: -0.1 }, "loom.wrap"],
+    [{ ...motion, motion: { mode: "map", from: -0.5, to: 1 } }, "loom.motion"],
+    [{ ...motion, motion: { mode: "map", from: 0, to: 2 } }, "loom.motion"],
+  ] as const)
+    assert.throws(
+      () => planarStudy({ ...ordinary, loom }),
+      (e: unknown) => e instanceof LinkError && e.field === field,
+      field,
+    );
+  // Other maps keep but never send s; the rational maps' parameter is their
+  // own, and a motion from the composite does not carry over.
+  const power = model.replaceMap({ ...half, motion: motion.motion }, "power");
+  assert.equal("wrap" in model.loomRequest(power), false);
+  assert.equal("motion" in power, false);
+  assert.equal(model.mapParameterOf(fold), fold.mapParameter);
+  assert.equal(model.withMapParameter(fold, 0.2).mapParameter, 0.2);
+  assert.equal("wrap" in model.withMapParameter(fold, 0.2), false);
+  // Returning to the composite starts again from the composite.
+  assert.equal(model.mapParameterOf(model.replaceMap(power, "exp-power")), 1);
+});
+
+test("composite map-motion presets open on the power at s = 0 and grow into the composite", async () => {
+  const model = await import("../web/loom/model");
+  const base = planarPreset(0).config;
+  for (const [title, degree, kind, members, selected, fixed] of [
+    ["A quintic rosette grown into a shell", 5, "rosette", 24, 0, true],
+    ["A squared grid grown into a web", 2, "grid", 34, 16, false],
+  ] as const) {
+    const index = model.loomPresets.findIndex((p) => p.title === title);
+    assert.ok(index >= 0, `${title} is missing`);
+    const s = model.presetLoom(index, base);
+    assert.equal(s.map, "exp-power");
+    assert.equal(s.degree, degree);
+    assert.equal(s.source.kind, kind);
+    assert.equal(model.memberCount(s.source), members);
+    assert.equal(s.selected, selected);
+    assert.equal(s.parameter, model.memberInterval(s.source, selected)[0]);
+    // It opens where its motion starts, on the power map, and ends on the
+    // composite; no rational setting rides along.
+    assert.deepEqual(s.motion, { mode: "map", from: 0, to: 1 });
+    assert.equal(s.wrap, 0);
+    assert.equal(model.mapParameterOf(s), 0);
+    assert.equal(model.loomFrame(s, 0).wrap, 0);
+    assert.equal(model.loomFrame(s, 1).wrap, 1);
+    for (const key of ["mapParameter", "exclusionRadius", "coefficients"])
+      assert.equal(key in s, false, key);
+    // A fixed reference framing, or the fit of its opening frame, which
+    // the loom then keeps through the motion.
+    assert.equal("framing" in s, fixed);
+    assert.deepEqual(s.source.curve, base.curve);
+    assert.deepEqual(planarStudy({ ...planarPreset(0), loom: s }).loom, s);
+  }
+  // The static composite presets keep their definitions.
+  for (const title of [
+    "A quintic rosette wrapped into a shell",
+    "A squared grid wrapped into a web",
+  ]) {
+    const s = model.presetLoom(
+      model.loomPresets.findIndex((p) => p.title === title),
+      base,
+    );
+    for (const key of ["wrap", "motion", "framing"])
+      assert.equal(key in s, false, `${title}: ${key}`);
+  }
 });
 
 test("composite loom presets open a shell and a web over the base curve", async () => {

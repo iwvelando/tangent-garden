@@ -32,6 +32,9 @@ type LoomRequest struct {
 	// Degree n of the power map z^n, 2–6; categorical, never interpolated.
 	Degree       int     `json:"degree,omitempty"`
 	MapParameter float64 `json:"mapParameter,omitempty"`
+	// The composite exp(zⁿ)'s map parameter s, 0–1, which grows the power's
+	// image into the composite's; absent means 1. Every other map ignores it.
+	Wrap *float64 `json:"wrap,omitempty"`
 	// The general Möbius map's coefficients; every other map ignores them.
 	Coefficients *LoomCoefficients `json:"coefficients,omitempty"`
 	// The prepared general Möbius frame; computed once per request.
@@ -403,8 +406,9 @@ func computeLoom(q LoomRequest, limits loomLimits) (LoomResult, error) {
 			}
 			// The exponential's pilots are at most an eighth of a period
 			// apart in the plane its period acts on (periodic: the source,
-			// or the composite's intermediate zⁿ) wherever either pane end
-			// is drawn, so whole-period aliasing can neither hide a turn
+			// or the composite frame's scaled intermediate s·zⁿ) wherever
+			// either pane end is drawn, so whole-period aliasing can neither
+			// hide a turn
 			// nor shrink the image's tolerance. Inside the bounded window
 			// this adds at most a few hundred samples to an analytic
 			// member. An interval leaving the window is divided as finely

@@ -106,6 +106,7 @@ export async function loomMovie(o: {
             ...(o.metadata as object),
             parameter: marker.parameter,
             mapParameter: request.mapParameter,
+            ...(request.wrap !== undefined && { wrap: request.wrap }),
           },
         ),
       );

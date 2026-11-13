@@ -970,6 +970,8 @@ function loomStudy(value: unknown): LoomStudy {
         },
         degree: { optional: { range: [2, 6] } },
         mapParameter: { optional: "number" },
+        // The composite's own s; absent is s = 1, the composite.
+        wrap: { optional: { range: [0, 1] } },
         exclusionRadius: { optional: { range: [0.000001, 1000000] } },
         // Go refuses components beyond ±1,000,000 and degenerate matrices,
         // under their own fields, as when they are typed.
@@ -1057,16 +1059,19 @@ function loomStudy(value: unknown): LoomStudy {
     );
   if (maps[out.map].parameterized) {
     const [lo, hi] = maps[out.map].range;
+    // The composite's s has its own field, optional; another map's retained
+    // mapParameter rides along unread, as it did before s existed.
     if (
-      out.mapParameter === undefined ||
-      out.mapParameter < lo ||
-      out.mapParameter > hi
+      maps[out.map].parameterKey === "mapParameter" &&
+      (out.mapParameter === undefined ||
+        out.mapParameter < lo ||
+        out.mapParameter > hi)
     )
       throw new LinkError(
         "loom.mapParameter",
         "Enter a supported map parameter.",
       );
-    if (out.exclusionRadius === undefined)
+    if (maps[out.map].exclusion && out.exclusionRadius === undefined)
       throw new LinkError(
         "loom.exclusionRadius",
         "Enter a positive exclusion radius.",

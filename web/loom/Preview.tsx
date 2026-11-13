@@ -34,6 +34,8 @@ import {
   maps,
   mapHelp,
   mapText,
+  mapParameterOf,
+  withMapParameter,
   coefficientHelp,
   replaceMap,
   loomFrame,
@@ -62,6 +64,7 @@ import "./loom.css";
 const labels: Record<string, string> = {
   degree: "Degree",
   mapParameter: "Map parameter",
+  wrap: "Map parameter",
   exclusionRadius: "Pole exclusion radius",
   ...Object.fromEntries(
     ["a", "b", "c", "d"].flatMap((k) => [
@@ -122,6 +125,8 @@ const geometryKey = (s: LoomRequest) =>
     s.map,
     maps[s.map].degree ? s.degree : undefined,
     s.mapParameter,
+    // The composite's s, absent at 1; other maps never send it.
+    maps[s.map].parameterKey === "wrap" ? mapParameterOf(s) : undefined,
     s.exclusionRadius,
     s.source,
     s.samples,
@@ -203,7 +208,7 @@ export function LoomPreview({
       s.tolerance,
       s.selected,
       s.motion,
-      s.motion ? s.parameter : s.mapParameter,
+      s.motion ? s.parameter : mapParameterOf(s),
       usedCoefficients(s),
     ]);
   const [playing, setPlaying] = useState(false),
@@ -278,7 +283,8 @@ export function LoomPreview({
   const scrubbedMap =
     !!study.motion &&
     !!resultKey &&
-    resultKey === geometryKey({ ...study, mapParameter: applied.mapParameter });
+    resultKey ===
+      geometryKey(withMapParameter(study, mapParameterOf(applied)!));
   const actionable =
     !!result &&
     !sourceError &&
@@ -514,7 +520,7 @@ export function LoomPreview({
         ? 0
         : Math.max(
             0,
-            Math.min(1, ((study.mapParameter ?? from) - from) / (to - from)),
+            Math.min(1, ((mapParameterOf(study) ?? from) - from) / (to - from)),
           );
     }
     const [lo, hi] = memberInterval(study.source, study.selected);
@@ -535,7 +541,7 @@ export function LoomPreview({
         const context = scrubContext(currentStudy.current);
         scrubOwner.current = owner?.context === context ? owner : { context };
       }
-      setStudy((s) => ({ ...s, mapParameter: loomFrame(s, p).mapParameter }));
+      setStudy((s) => withMapParameter(s, mapParameterOf(loomFrame(s, p))!));
     }
     setScrubProgress(null);
   };
@@ -570,11 +576,12 @@ export function LoomPreview({
           setResultKey(nextKey);
           setApplied(request);
         }
-        setStudy((s) => ({
-          ...s,
-          parameter: request.parameter,
-          ...(frozen.motion && { mapParameter: request.mapParameter }),
-        }));
+        setStudy((s) => {
+          const next = { ...s, parameter: request.parameter };
+          return frozen.motion
+            ? withMapParameter(next, mapParameterOf(request)!)
+            : next;
+        });
         setPlaced({
           key: JSON.stringify([nextKey, frozen.selected, request.parameter]),
           marker: frame.marker,
@@ -619,6 +626,7 @@ export function LoomPreview({
     ...(mapInfo.degree && { degree: study.degree }),
     formula: text.formula,
     mapParameter: study.mapParameter,
+    ...(mapInfo.parameterKey === "wrap" && { wrap: mapParameterOf(study) }),
     ...("coefficients" in mapInfo && { coefficients: study.coefficients }),
     exclusionRadius: study.exclusionRadius,
     showExclusion: study.showExclusion,
@@ -866,7 +874,7 @@ export function LoomPreview({
             className="loom-parameter"
             helpBeforeControl
             value={(study.motion
-              ? study.mapParameter!
+              ? mapParameterOf(study)!
               : study.parameter
             ).toPrecision(6)}
             help={
@@ -874,7 +882,7 @@ export function LoomPreview({
                 ? "Seek the same absolute map time used by playback and export."
                 : tiered(
                     "Move corresponding points at the same original source parameter.",
-                    mapInfo.traversalHelp,
+                    text.traversalHelp,
                   )
             }
           >
@@ -885,7 +893,7 @@ export function LoomPreview({
               step="any"
               value={scrubProgress ?? progress}
               aria-valuetext={String(
-                study.motion ? study.mapParameter : study.parameter,
+                study.motion ? mapParameterOf(study) : study.parameter,
               )}
               onChange={(e) =>
                 study.motion
@@ -909,7 +917,8 @@ export function LoomPreview({
           {study.motion && (
             <>
               {" "}
-              · {mapInfo.symbol} = {(applied.mapParameter ?? 0).toPrecision(6)}
+              · {mapInfo.symbol} ={" "}
+              {(mapParameterOf(applied) ?? 0).toPrecision(6)}
             </>
           )}
         </div>
@@ -1081,10 +1090,10 @@ export function LoomPreview({
                       >
                         <ScalarInput
                           name="Map parameter"
-                          value={study.mapParameter!}
+                          value={mapParameterOf(study)!}
                           onChange={(v) => {
                             pause();
-                            setStudy((s) => ({ ...s, mapParameter: v }));
+                            setStudy((s) => withMapParameter(s, v));
                           }}
                         />
                       </Field>
@@ -1126,41 +1135,45 @@ export function LoomPreview({
                             })}
                           </div>
                         ))}
-                      <Field
-                        label="Pole exclusion radius"
-                        help={tiered(
-                          "Omit a closed source disk: 0.000001–1,000,000 source units.",
-                          "The initial radius is 2.5% of the circle radius, grid half-span or frozen curve’s fitted half-height. This deliberate domain restriction omits part of the mathematical image. Analytic circles and lines split at crossings; arbitrary expression checks are finite and cannot certify topology. Values outside the supported range are refused.",
-                        )}
-                      >
-                        <ScalarInput
-                          name="Pole exclusion radius"
-                          value={study.exclusionRadius!}
-                          onChange={(v) => {
-                            pause();
-                            setStudy((s) => ({ ...s, exclusionRadius: v }));
-                          }}
-                        />
-                      </Field>
-                      <label className="check">
-                        <input
-                          type="checkbox"
-                          checked={study.showExclusion ?? true}
-                          onChange={(e) => {
-                            const checked = e.currentTarget.checked;
-                            setStudy((s) => ({
-                              ...s,
-                              showExclusion: checked,
-                            }));
-                          }}
-                        />{" "}
-                        Show pole exclusion
-                      </label>
-                      <p className="note">
-                        Dashed source disk: excluded boundary and interior.
-                        Images beyond radius 100,000,000 are clipped; gaps stay
-                        open.
-                      </p>
+                      {mapInfo.exclusion && (
+                        <>
+                          <Field
+                            label="Pole exclusion radius"
+                            help={tiered(
+                              "Omit a closed source disk: 0.000001–1,000,000 source units.",
+                              "The initial radius is 2.5% of the circle radius, grid half-span or frozen curve’s fitted half-height. This deliberate domain restriction omits part of the mathematical image. Analytic circles and lines split at crossings; arbitrary expression checks are finite and cannot certify topology. Values outside the supported range are refused.",
+                            )}
+                          >
+                            <ScalarInput
+                              name="Pole exclusion radius"
+                              value={study.exclusionRadius!}
+                              onChange={(v) => {
+                                pause();
+                                setStudy((s) => ({ ...s, exclusionRadius: v }));
+                              }}
+                            />
+                          </Field>
+                          <label className="check">
+                            <input
+                              type="checkbox"
+                              checked={study.showExclusion ?? true}
+                              onChange={(e) => {
+                                const checked = e.currentTarget.checked;
+                                setStudy((s) => ({
+                                  ...s,
+                                  showExclusion: checked,
+                                }));
+                              }}
+                            />{" "}
+                            Show pole exclusion
+                          </label>
+                          <p className="note">
+                            Dashed source disk: excluded boundary and interior.
+                            Images beyond radius 100,000,000 are clipped; gaps
+                            stay open.
+                          </p>
+                        </>
+                      )}
                     </details>
                   )}
                   <Field
@@ -1468,7 +1481,7 @@ export function LoomPreview({
                                                 from:
                                                   "motionFrom" in info
                                                     ? info.motionFrom
-                                                    : (s.mapParameter ??
+                                                    : (mapParameterOf(s) ??
                                                       info.initial),
                                                 to: info.range[1],
                                               },

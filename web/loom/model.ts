@@ -36,6 +36,11 @@ export type LoomRequest = {
   // number 2–6. Categorical: never animated.
   degree?: number;
   mapParameter?: number;
+  // The composite exp(zⁿ)'s own map parameter s, 0–1, which grows the
+  // power's image into the composite's: w = s + (exp(s·zⁿ) − 1)/s. Absent
+  // means s = 1, the composite, so links made before it keep their drawing
+  // even when they carry another map's retained mapParameter.
+  wrap?: number;
   exclusionRadius?: number;
   // The general Möbius map's coefficients; other maps keep but ignore them.
   coefficients?: LoomCoefficients;
@@ -63,7 +68,7 @@ export const degreeHelp = tiered(
 );
 const compositeDegreeHelp = tiered(
   "Whole number 2–6; the power multiplies angles about zero by n before the exponential wraps them.",
-  "Zero is a critical point, drawn but not conformal, mapping to 1. Sources are clipped where |Re zⁿ| > 18.42 or |Im zⁿ| > 8π, so higher degrees admit smaller sources: |z| ≤ 5.58 for n = 2, 1.77 for n = 6.",
+  "Zero is a critical point, drawn but not conformal, mapping to s. Sources are clipped where |Re s·zⁿ| > 18.42 or |Im s·zⁿ| > 8π, so higher degrees admit smaller sources: at s = 1, |z| ≤ 5.58 for n = 2, 1.77 for n = 6.",
 );
 // Each map's labels, help, supported parameter, degree and actual pole.
 // Components read these, through mapText for degree-dependent words,
@@ -73,6 +78,8 @@ export const maps = {
     label: "Squaring",
     formula: "w = z²",
     parameterized: false,
+    parameterKey: "mapParameter",
+    exclusion: false,
     degree: undefined,
     exportDomain: fixedDomain,
     symbol: "",
@@ -93,6 +100,8 @@ export const maps = {
     label: "Power zⁿ",
     formula: "w = zⁿ",
     parameterized: false,
+    parameterKey: "mapParameter",
+    exclusion: false,
     degree: { range: [2, 6], initial: 3, help: degreeHelp },
     exportDomain:
       "No pole or excluded disk; zero is critical. Image radius above 1e100 clipped. Finite expression sampling is not certified topology.",
@@ -114,6 +123,8 @@ export const maps = {
     label: "Exponential eᶻ",
     formula: "w = eᶻ",
     parameterized: false,
+    parameterKey: "mapParameter",
+    exclusion: false,
     degree: undefined,
     exportDomain:
       "Source window |Re z| ≤ ln 10⁸ ≈ 18.42, |Im z| ≤ 8π; points beyond it clipped. No pole or critical point; period 2πi. Finite expression sampling is not certified topology.",
@@ -135,17 +146,27 @@ export const maps = {
   // The composite exp(zⁿ), evaluated in Go as the exponential of the power
   // map's own value: sources whose zⁿ leaves the exponential's window are
   // clipped, zero is the only critical point, and the marker reports zⁿ and
-  // every other source point with its image.
+  // every other source point with its image. Its map parameter s, kept in
+  // its own field (wrap), runs the family w = s + (exp(s·zⁿ) − 1)/s from the
+  // power at s = 0 to the composite at s = 1, which Go evaluates exactly.
   "exp-power": {
     label: "Composite exp(zⁿ)",
     formula: "w = exp(zⁿ)",
-    parameterized: false,
+    parameterized: true,
+    parameterKey: "wrap",
+    exclusion: false,
     degree: { range: [2, 6], initial: 2, help: compositeDegreeHelp },
     exportDomain:
-      "Power zⁿ, then the exponential. Sources clipped where zⁿ leaves |Re| ≤ ln 10⁸ ≈ 18.42, |Im| ≤ 8π. No pole; zero is critical. Finite expression sampling is not certified topology.",
-    symbol: "",
-    range: [0, 0],
-    initial: 0,
+      "Power zⁿ, then the exponential. Map parameter s gives w = s + (exp(s·zⁿ) − 1)/s: 0 the power, 1 exp(zⁿ). Sources clipped where s·zⁿ leaves |Re| ≤ ln 10⁸ ≈ 18.42, |Im| ≤ 8π, or zⁿ passes 1e100. No pole; zero is critical. Finite expression sampling is not certified topology.",
+    symbol: "s",
+    range: [0, 1],
+    initial: 1,
+    // Map motion grows the power's image into the composite's.
+    motionFrom: 0,
+    parameterHelp: tiered(
+      "0–1: 0 draws the power zⁿ, 1 the composite exp(zⁿ).",
+      "Between them w = s + (exp(s·zⁿ) − 1)/s grows the power's image into the exponential's shell, with zero mapping to s. Sources are clipped where |Re s·zⁿ| > 18.42 or |Im s·zⁿ| > 8π, so the domain grows as s falls; at s = 0 only images beyond radius 10¹⁰⁰ are clipped.",
+    ),
     note: "The power multiplies angles about zero by n; the exponential then wraps the result into rings and rays.",
     imageLabel: "exp(zⁿ) image plane",
     imageHeading: "Image plane · exp(zⁿ)",
@@ -157,12 +178,24 @@ export const maps = {
       "with zⁿ in the window, the turns of z and roots of zⁿ\u00a0+\u00a02πik,",
     // The readout's name for the intermediate point Go reports.
     intermediate: "zⁿ",
+    // Words for a frame of the family short of the composite, s < 1, and
+    // for a study that moves along it.
+    family: {
+      formula: "w = s + (exp(s·zⁿ) − 1)/s",
+      imageHeading: "Image plane · w",
+      traversalHelp:
+        "Traversal advances uniformly in the source parameter, not arc length. The readout gives the intermediate point zⁿ. w repeats wherever s·zⁿ moves by 2πi: hollow markers show the other source points with the same image. Zero is critical and maps to s. Sources whose s·zⁿ leaves |Re| ≤ 18.42, |Im| ≤ 8π are clipped.",
+      shared:
+        "with s·zⁿ in the window, the turns of z and roots of zⁿ\u00a0+\u00a02πik/s,",
+    },
     pole: (_parameter: number): Vec | undefined => undefined,
   },
   mobius: {
     label: "Möbius",
     formula: "w = (z − b)/(1 − bz)",
     parameterized: true,
+    parameterKey: "mapParameter",
+    exclusion: true,
     degree: undefined,
     exportDomain: fixedDomain,
     symbol: "b",
@@ -182,6 +215,8 @@ export const maps = {
     label: "z + λ/z",
     formula: "w = z + λ/z",
     parameterized: true,
+    parameterKey: "mapParameter",
+    exclusion: true,
     degree: undefined,
     exportDomain: fixedDomain,
     symbol: "λ",
@@ -203,6 +238,8 @@ export const maps = {
     label: "Möbius (az + b)/(cz + d)",
     formula: "w = (az + b)/(cz + d)",
     parameterized: true,
+    parameterKey: "mapParameter",
+    exclusion: true,
     degree: undefined,
     exportDomain:
       "Coefficients a, b, c, d scaled exactly; refused when (|a|²+|b|²+|c|²+|d|²)/(2|ad−bc|) exceeds 1000000. Map parameter s follows the map's flow: 0 identity, 1 the map, −1 its inverse. Closed source disk omitted at each frame's pole; none for an affine frame. Image radius above 100000000 clipped. Finite expression sampling is not certified topology.",
@@ -243,9 +280,19 @@ export const mapHelp = tiered(
   "z², zⁿ and exp(zⁿ), n = 2–6, are critical at zero. eᶻ repeats every 2πi and clips sources beyond |Re z| ≤ 18.42 or |Im z| ≤ 8π; exp(zⁿ) clips where zⁿ does. Möbius (z−b)/(1−bz), −0.9≤b≤0.9, has pole 1/b; z+λ/z, 0≤λ≤1, pole 0 and critical ±√λ; (az+b)/(cz+d), pole −d/c. All three are identity at zero. Poles exclude source disks.",
 );
 const superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹";
-// A map's words with its degree in place of n: z³ for a cubic.
-export function mapText(q: Pick<LoomRequest, "map" | "degree">) {
-  const m = maps[q.map];
+// A map's words with its degree in place of n: z³ for a cubic. A map with a
+// family of frames (the composite's) uses the family's words for a frame
+// short of its own end or for a study that moves along it.
+export function mapText(
+  q: Pick<LoomRequest, "map" | "degree" | "wrap"> & {
+    motion?: LoomStudy["motion"];
+  },
+) {
+  const info = maps[q.map];
+  const m =
+    "family" in info && (q.motion || (q.wrap ?? 1) !== 1)
+      ? { ...info, ...info.family }
+      : info;
   const n =
     m.degree && Number.isInteger(q.degree) ? superscripts[q.degree!] : "ⁿ";
   const fill = (text: string) => text.replaceAll("zⁿ", `z${n}`);
@@ -255,6 +302,7 @@ export function mapText(q: Pick<LoomRequest, "map" | "degree">) {
     imageLabel: fill(m.imageLabel),
     imageHeading: fill(m.imageHeading),
     imageNoun: m.imageNoun,
+    traversalHelp: m.traversalHelp,
     // Distinguishes degrees in file names: complex-power-3.
     kind: m.degree ? `${q.map}-${q.degree}` : q.map,
     // Readout words for the marker's other source points with its image,
@@ -263,6 +311,19 @@ export function mapText(q: Pick<LoomRequest, "map" | "degree">) {
     intermediate: "intermediate" in m ? fill(m.intermediate) : undefined,
   };
 }
+// The map's parameter, in the study field it lives in: the rational maps'
+// mapParameter, or the composite's s, which is 1 when absent.
+export function mapParameterOf(
+  q: Pick<LoomRequest, "map" | "mapParameter" | "wrap">,
+) {
+  return maps[q.map].parameterKey === "wrap" ? (q.wrap ?? 1) : q.mapParameter;
+}
+export function withMapParameter<T extends Pick<LoomRequest, "map">>(
+  q: T,
+  value: number,
+): T {
+  return { ...q, [maps[q.map].parameterKey]: value };
+}
 
 export function replaceMap(
   s: LoomStudy,
@@ -270,7 +331,8 @@ export function replaceMap(
   curveSize = 1,
 ): LoomStudy {
   if (map === s.map) return s;
-  const { motion: _motion, ...rest } = s;
+  // The composite's s is not retained: entering it starts again at s = 1.
+  const { motion: _motion, wrap: _wrap, ...rest } = s;
   const degree = maps[map].degree;
   // A retained valid degree survives map changes, as the radius does.
   if (degree)
@@ -355,7 +417,7 @@ function between(a: number, b: number, p: number) {
 export function loomFrame(s: LoomStudy, progress: number): LoomRequest {
   if (!s.motion) return traversal(s, progress);
   const { from, to } = s.motion;
-  return { ...loomRequest(s), mapParameter: between(from, to, progress) };
+  return withMapParameter(loomRequest(s), between(from, to, progress));
 }
 // The frame's result supplies the pole where Go computes it.
 export function poleExclusion(
@@ -630,6 +692,39 @@ export const loomPresets = [
     extent: 1.25,
     selected: 16,
   },
+  // The same 24 circles at s = 0, where w = s + (exp(s·z⁵) − 1)/s is the
+  // fifth power: the quintic rosette's lace of curled loops. Map motion
+  // grows it into the shell above at s = 1, about five times wider. The
+  // fixed framing keeps the opening lace readable and lets the shell grow
+  // past the pane's right edge.
+  {
+    title: "A quintic rosette grown into a shell",
+    note: "Map motion grows the fifth power's lace of loops into the exponential's interlaced shell",
+    kind: "rosette",
+    map: "exp-power",
+    degree: 5,
+    count: 24,
+    radius: 0.6,
+    motion: { from: 0, to: 1 },
+    framing: {
+      source: { cx: 0, cy: 0, scale: 240 },
+      image: { cx: 2, cy: 0, scale: 60 },
+    },
+  },
+  // The web's grid at s = 0, squared into a fan of parabolas, selecting
+  // the same edge x = 5/4. Map motion curls the fan into the web; the loom
+  // keeps the opening frame's fit, which holds the web throughout.
+  {
+    title: "A squared grid grown into a web",
+    note: "Map motion grows a squared grid's parabolas into the exponential's web of rings and spokes",
+    kind: "grid",
+    map: "exp-power",
+    degree: 2,
+    lines: 17,
+    extent: 1.25,
+    selected: 16,
+    motion: { from: 0, to: 1 },
+  },
 ] as const satisfies readonly {
   title: string;
   note: string;
@@ -650,6 +745,8 @@ export const loomPresets = [
   // performance each pane's fixed reference scale.
   path?: PresetPath;
   scale?: { source: number; image: number };
+  // A composite performance's fixed reference framing, if any.
+  framing?: { source: LoomFraming; image: LoomFraming };
 }[];
 type PresetPath = {
   input: LoomSource["input"];
@@ -731,6 +828,25 @@ export function presetLoom(index: number, config: Config): LoomStudy {
         image: { cx: 0, cy: 0, scale: 120 },
       },
     };
+  }
+  // A composite performance opens on the power map, where its motion
+  // starts, with its fixed framing or else the fit of that opening frame.
+  if ("degree" in definition && "motion" in definition) {
+    const selected = "selected" in definition ? definition.selected : 0;
+    return withMapParameter(
+      {
+        ...replaceMap(study, definition.map),
+        degree: definition.degree,
+        source,
+        selected,
+        parameter: memberInterval(source, selected)[0],
+        motion: { mode: "map" as const, ...definition.motion },
+        ...("framing" in definition && {
+          framing: structuredClone(definition.framing),
+        }),
+      },
+      definition.motion.from,
+    );
   }
   // Maps without a parameter open at a point, without map motion.
   if ("map" in definition && !("motion" in definition)) {
@@ -976,6 +1092,9 @@ export function loomRequest(s: LoomStudy): LoomRequest {
     // Only the general Möbius map sends its coefficients.
     ...("coefficients" in maps[s.map] && { coefficients: s.coefficients }),
     ...(s.mapParameter !== undefined && { mapParameter: s.mapParameter }),
+    // Only the composite sends its s, and only once it leaves s = 1.
+    ...(maps[s.map].parameterKey === "wrap" &&
+      s.wrap !== undefined && { wrap: s.wrap }),
     ...(s.exclusionRadius !== undefined && {
       exclusionRadius: s.exclusionRadius,
     }),
