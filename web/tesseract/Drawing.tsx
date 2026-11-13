@@ -303,7 +303,9 @@ export function Drawing({
                     : {}),
                   projection: result.polytope.sections
                     ? "intersection: w = h, then xyz"
-                    : "orthogonal: (x, y, z, w) → (x, y, z)",
+                    : result.operation === "perspective"
+                      ? `perspective: (x, y, z, w) → d(x, y, z) / (d − w), d = ${config.distance}`
+                      : "orthogonal: (x, y, z, w) → (x, y, z)",
                   ids: result.polytope.sections
                     ? "cell24/{primal|dual}/section/i/{edge|facet|vertex}/j; origins retain source vertex/edge IDs and vertexCells/facet cells retain cell IDs"
                     : "cell24/primal/edge/j, cell24/dual/edge/j, cell24/dual/vertex/k (the center of primal cell k)",

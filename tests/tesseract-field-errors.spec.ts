@@ -347,6 +347,12 @@ const cases: Case[] = [
   ],
   ["angles.1", object("cell24"), (c) => (c.angles[1] = 2e6), "xz angle"],
   [
+    "distance",
+    (c) => c.object === "cell24" && c.mode === "perspective",
+    (c) => (c.distance = 2),
+    "4D eye distance",
+  ],
+  [
     "count",
     (c) => c.object === "cell24" && c.mode === "section",
     (c) => (c.count = 2.5),
@@ -422,7 +428,7 @@ test("every field the engine names has a control", () => {
   const go = readFileSync("engine4/fielderror_test.go", "utf8");
   const rows = [
     ...go.matchAll(
-      /^\t\t\{"([^"]+)", "([^"]+)", func\(\) Request \{ (?:q := )?(\w+)/gm,
+      /^\t\t\{"([^"]+)", "([^"]+)", func\(\) Request \{ (?:q := |return )?(\w+)/gm,
     ),
   ];
   expect(rows.length).toBeGreaterThan(40);
@@ -435,6 +441,7 @@ test("every field the engine names has a control", () => {
     lift: "lift",
     route: "bypass",
     cell24Request: "cell24",
+    cell24Perspective: "cell24",
     root: "root",
   };
   for (const [, name, path, builder] of rows) {

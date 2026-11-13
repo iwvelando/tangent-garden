@@ -743,18 +743,24 @@ self.onmessage = async ({
           : {}),
         mode: q.mode,
         angles: lift || route ? [0, 0, 0, 0, 0, 0] : q.angles,
-        ...(lift || route || weave || root || (polytope && q.mode !== "section")
+        // The 24-cell's shadows have no face grid; its perspective sends
+        // only the eye distance.
+        ...(lift || route || weave || root
           ? {}
-          : q.mode === "section"
-            ? { count: q.count, slice: q.slice, spread: q.spread }
-            : {
-                grid: q.grid,
-                ...(q.mode === "perspective"
-                  ? { distance: q.distance }
-                  : q.mode === "stereo"
-                    ? { samples: q.samples, clip: q.clip }
-                    : {}),
-              }),
+          : polytope && q.mode !== "section"
+            ? q.mode === "perspective"
+              ? { distance: q.distance }
+              : {}
+            : q.mode === "section"
+              ? { count: q.count, slice: q.slice, spread: q.spread }
+              : {
+                  grid: q.grid,
+                  ...(q.mode === "perspective"
+                    ? { distance: q.distance }
+                    : q.mode === "stereo"
+                      ? { samples: q.samples, clip: q.clip }
+                      : {}),
+                }),
       };
       const reply = tangentGardenTesseract(JSON.stringify(request));
       if (typeof reply !== "string") {

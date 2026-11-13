@@ -21,68 +21,27 @@ import {
   polytopeMarkerBound,
   polytopePathBound,
 } from "../web/tesseract/polytope";
+import {
+  artwork,
+  counts,
+  crystal,
+  markerAt,
+  meta,
+  open,
+  pathPoints,
+  raster,
+  screenOf,
+  selected,
+  selectedField,
+  settle,
+  show,
+  signature,
+  stage,
+} from "./cell24-helpers";
 
 // The 24-cell and its polar dual (docs/tesseracts.md): one selected
 // octahedral cell, its center (a dual vertex), and both whole crystals.
-const signature = "The heart of a cell";
-const crystal = "A crystal and its companion";
-const stage = (p: Page) => p.locator(".tesseract-stage");
-const settle = (p: Page) =>
-  expect(stage(p)).toHaveAttribute("aria-busy", "false");
-const artwork = (p: Page) => p.locator("#tesseract-artwork");
-const meta = async (p: Page) =>
-  JSON.parse((await p.locator("#tesseract-artwork > desc").textContent())!);
-const selectedField = (p: Page) =>
-  p.getByRole("spinbutton", { name: "Selected cell", exact: true });
-const show = (p: Page) =>
-  p.getByRole("combobox", { name: "Show", exact: true });
-const open = async (p: Page, preset = signature) => {
-  await p.goto("/?study=4d");
-  await settle(p);
-  await choosePreset(p, { label: preset });
-  await settle(p);
-};
-// Drawn paths by role, and markers by role.
-const counts = (p: Page) =>
-  artwork(p).evaluate((svg) => {
-    const out: Record<string, number> = {};
-    for (const e of svg.querySelectorAll("path[data-role], g[data-role]")) {
-      const r = e.getAttribute("data-role")!;
-      out[r] = (out[r] ?? 0) + 1;
-    }
-    return out;
-  });
-// Screen-independent drawing coordinates of a path's points or a marker's
-// center, in the 1000 × 760 viewBox.
-const pathPoints = (p: Page, selector: string) =>
-  artwork(p)
-    .locator(selector)
-    .evaluateAll((es) =>
-      es.map((e) =>
-        e
-          .getAttribute("d")!
-          .match(/-?\d+(?:\.\d+)?/g)!
-          .map(Number),
-      ),
-    );
-const markerAt = (p: Page, id: string) =>
-  artwork(p)
-    .locator(`g[data-marker="${id}"] circle:last-child`)
-    .evaluate((c) => [
-      Number(c.getAttribute("cx")),
-      Number(c.getAttribute("cy")),
-    ]);
-// A marker's position on the page.
-const screenOf = (p: Page, id: string) =>
-  artwork(p)
-    .locator(`g[data-marker="${id}"] circle:last-child`)
-    .evaluate((c) => {
-      const m = (c as SVGCircleElement).ownerSVGElement!.getScreenCTM()!;
-      const x = Number(c.getAttribute("cx")),
-        y = Number(c.getAttribute("cy"));
-      return { x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f };
-    });
-const selected = async (p: Page) => (await meta(p)).polytope.selectedCell;
+// The perspective shadow has its own spec, cell24-perspective.spec.ts.
 
 test("one cell, its diagonals and its center draw, with no text in the artwork", async ({
   page,
@@ -488,37 +447,6 @@ test("a link and the still carry the selection, view, layers and camera", async 
   expect(reopened.view).toEqual(live.view);
   expect(reopened.layers).toEqual(live.layers);
 });
-
-// The live drawing rasterized as export rasterizes it.
-const raster = (page: Page, width: number, height: number) =>
-  page.evaluate(
-    async ({ width, height }) => {
-      const svg = document
-        .getElementById("tesseract-artwork")!
-        .cloneNode(true) as SVGSVGElement;
-      svg.setAttribute("width", String(width));
-      svg.setAttribute("height", String(height));
-      const url = URL.createObjectURL(
-        new Blob([new XMLSerializer().serializeToString(svg)], {
-          type: "image/svg+xml",
-        }),
-      );
-      try {
-        const image = new Image();
-        image.src = url;
-        await image.decode();
-        const c = document.createElement("canvas");
-        c.width = width;
-        c.height = height;
-        const ctx = c.getContext("2d")!;
-        ctx.drawImage(image, 0, 0);
-        return Array.from(ctx.getImageData(0, 0, width, height).data);
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    },
-    { width, height },
-  );
 
 for (const preset of [signature, crystal])
   test(`the looping rotation of ${preset} passes its loop check and exports with its duration and frames`, async ({

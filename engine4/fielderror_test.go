@@ -68,6 +68,7 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"selected cell", "cell24.selected", func() Request { q := cell24Request(24, "cell", [6]float64{}); return q }},
 		{"24-cell view", "cell24.view", func() Request { q := cell24Request(0, "faces", [6]float64{}); return q }},
 		{"24-cell mode", "mode", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Mode = "stereo"; return q }},
+		{"24-cell eye distance", "distance", func() Request { return cell24Perspective(0, "cell", [6]float64{}, 20.5) }},
 		{"24-cell sections", "count", func() Request { q := cell24Request(0, "cell", [6]float64{}); q.Mode, q.Count = "section", 26; return q }},
 		{"24-cell offset", "slice", func() Request {
 			q := cell24Request(0, "cell", [6]float64{})

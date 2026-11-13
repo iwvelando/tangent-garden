@@ -1225,7 +1225,23 @@ test("fields a link predates take the notebook's defaults", async () => {
   const transient = structuredClone(sectioned);
   transient.config.cell24.emphasis = 0.5;
   await refused(() => tesseractStudy(transient), "config.cell24.emphasis");
+  // Perspective is a 24-cell view with its eye distance; the section's
+  // passage is not one of its motions, and a tesseract-only view is
+  // refused by name.
+  const perspective = structuredClone(cellStudy);
+  perspective.config.mode = "perspective";
+  perspective.config.distance = 2.05;
+  perspective.motion = "xw";
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", perspective))).study,
+    ),
+    perspective,
+  );
   sectioned.config.mode = "perspective";
+  await refused(() => tesseractStudy(sectioned), "motion", /one of/);
+  sectioned.config.mode = "stereo";
+  sectioned.motion = "double";
   await refused(() => tesseractStudy(sectioned), "config.mode", /one of/);
   // The square-root journey: links before it have no root field; its link
   // restores radius, sheet, endpoints and both cameras; one without root

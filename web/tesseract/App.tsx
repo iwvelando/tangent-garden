@@ -72,7 +72,7 @@ import {
   type Motion,
   type View,
 } from "./types";
-import { objects, modeLabel } from "./objects";
+import { objects, modeLabel, objectHelp, viewHelp } from "./objects";
 import { axes, fieldLabel, labels } from "./fields";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
@@ -951,7 +951,7 @@ export default function TesseractApp({
                     </p>
                   )}
                 </div>
-                <Field label={labels.object}>
+                <Field label={labels.object} help={objectHelp(config)}>
                   <select
                     value={config.object}
                     onChange={(e) => {
@@ -975,7 +975,7 @@ export default function TesseractApp({
                     ))}
                   </select>
                 </Field>
-                <Field label={descriptor.viewLabel}>
+                <Field label={descriptor.viewLabel} help={viewHelp(config)}>
                   <select
                     value={config.mode}
                     onChange={(e) => {
@@ -1165,7 +1165,8 @@ export default function TesseractApp({
                     labels.distance,
                     config.distance,
                     (c, distance) => ({ ...c, distance }),
-                    "From 2.05 to 20, so the eye stays outside the tesseract.",
+                    descriptor.distanceHelp ??
+                      "From 2.05 to 20, so the eye stays outside the tesseract.",
                   )}
                 {(config.mode === "stereo" ||
                   (config.mode === "paired" &&

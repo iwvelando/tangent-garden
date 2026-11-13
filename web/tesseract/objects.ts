@@ -63,6 +63,31 @@ const explanations: Record<
   ],
 };
 
+// The view menu's help behind Show more: each view in plain words, for a
+// reader new to four dimensions. Objects override a view's explanation
+// where it means something of their own (ObjectDescriptor.viewAbout).
+const viewAbout: Partial<Record<Config["mode"], string>> = {
+  perspective:
+    "Like a photograph one dimension up: an eye placed out along the fourth direction sees nearer parts larger and farther parts smaller, so the far side appears nested inside the near side. Straight edges stay straight, but lengths and angles change. 4D eye distance sets how close the eye is.",
+  orthographic:
+    "Like a wire model's shadow in sunlight, one dimension up: the fourth coordinate is simply dropped, so nothing grows or shrinks with distance. Edges tilted toward the fourth direction look shorter than they are, and parts at different places along it can overlap.",
+  stereo:
+    "The edges are first carried out onto a round sphere in four dimensions, then that sphere is opened into space, as a globe can be opened into a flat map. Straight lines become circular arcs; arcs reaching the window's edge are left open.",
+  section:
+    "Slices rather than shadows: a flat three-dimensional cut, w = h, passes through the object, as a knife through an apple shows one cross-section. Moving h shows the slices grow, change and vanish. Several slices are drawn together in the same space.",
+};
+const objectBrief =
+  "Which four-dimensional subject to draw; each keeps its own settings when you switch.";
+const viewBrief = "How the four-dimensional subject is shown in the drawing.";
+// The 4D object menu's help: the current object, explained.
+export const objectHelp = (c: Config): Help<string> =>
+  tiered(objectBrief, objects[c.object].about);
+// The view menu's help: the current view of the current object, explained.
+export const viewHelp = (c: Config): Help<string> => {
+  const more = objects[c.object].viewAbout?.[c.mode] ?? viewAbout[c.mode];
+  return more ? tiered(viewBrief, more) : viewBrief;
+};
+
 type Section = Result["sections"][number];
 // Rotation choices shared by every study that turns in four dimensions.
 // A motion that loops ends where it starts (see ../timing.ts): a whole
@@ -110,6 +135,12 @@ export type ObjectDescriptor = {
   };
   name: string;
   noun: string;
+  // What the object is, in plain words for a reader new to the subject:
+  // the 4D object menu's help behind Show more.
+  about: string;
+  // Plain explanations of this object's views where they differ from the
+  // shared ones (viewAbout below).
+  viewAbout?: Partial<Record<Config["mode"], string>>;
   modes: readonly Config["mode"][];
   rotations: boolean;
   // An object's work budget may allow fewer live engines than the device.
@@ -215,6 +246,8 @@ export type ObjectDescriptor = {
   explanation: (config: Config) => Explanation;
   colorNote: (config: Config) => string;
   radiusFields: { key: "radius" | "tube"; label: string; help: string }[];
+  // The 4D eye distance's help in perspective, where it names the object.
+  distanceHelp?: Help<string>;
   support: (config: Config) => number;
   familyPassage: boolean;
   passageHelp: string;
@@ -354,6 +387,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     },
     name: "Tesseract",
     noun: "tesseract",
+    about:
+      "The tesseract is the four-dimensional cube. A square has four edges and a cube six square faces; a tesseract is bounded by eight cubes, joined face to face around a fourth direction at right angles to the other three. We cannot see it whole, only its shadows and slices.",
     modes: ["perspective", "orthographic", "stereo", "section"],
     rotations: true,
     controls: "polyhedral",
@@ -392,6 +427,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     ...curvedCommon,
     name: "4-ball",
     noun: "4-ball",
+    about:
+      "A 4-ball is a solid ball one dimension up: every point within distance R of the center, measured with four coordinates. Each flat slice through it is an ordinary solid ball, as each slice of an orange is a disk, growing from a point to radius R and shrinking again.",
     support: ballSupport,
     radiusFields: [
       {
@@ -413,6 +450,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     ...curvedCommon,
     name: "Circular 4D tube",
     noun: "circular 4D tube",
+    about:
+      "A circle of radius R, thickened by r in every other direction of four-dimensional space. Each flat slice through it is a solid doughnut (a solid torus) whose tube thins as the slice moves away, until only the circle remains, and then nothing.",
     support: tubeSupport,
     radiusFields: [
       {
@@ -438,9 +477,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
   lift: {
     name: "Localized thread lift",
     noun: "lifted threads",
+    about:
+      "Six threads in ordinary space whose middles are lifted a little into a fourth direction. Seen in our space alone, each thread seems to have a gap; drawn with the fourth direction, it is still one connected curve. A fourth dimension lets part of a curve leave our space without cutting it.",
     controls: "lift",
     parameterKey: "lift",
     modes: ["reference", "lifted"],
+    viewAbout: {
+      reference:
+        "Only what lies in our own space, the slice w = 0. The middle of each thread has moved into the fourth direction, so it seems missing, though no thread is cut.",
+      lifted:
+        "The whole of each thread, including the part lifted into the fourth direction, tilted into view before that direction is dropped. The gap seen in the reference slice closes: each thread is still connected.",
+    },
     rotations: false,
     linkedViews: true,
     sampleLabel: "Thread samples",
@@ -592,9 +639,19 @@ export const objects: Record<Object4, ObjectDescriptor> = {
   bypass: {
     name: "Shell bypass",
     noun: "shell bypass",
+    about:
+      "A closed wall surrounds a point, and a route reaches the point without crossing the wall by stepping briefly into a fourth direction, as a person can step over a circle drawn on the floor. A truly four-dimensional shell, closed in all four directions, cannot be stepped around.",
     controls: "route",
     parameterKey: "bypass",
     modes: ["shadow", "diagram", "paired"],
+    viewAbout: {
+      shadow:
+        "The route in ordinary space, with the fourth coordinate dropped. The route can seem to pass through the wall, because the shadow hides how far it has moved in the fourth direction.",
+      diagram:
+        "A flat chart, not a camera view: across is distance from the center in ordinary space, up is the fourth coordinate. There the route visibly climbs beside the wall and comes back down, or meets it.",
+      paired:
+        "The ordinary-space shadow and the coordinate chart side by side, showing the same moment of the route in each.",
+    },
     pairedModes: ["shadow", "diagram"],
     rotations: false,
     linkedViews: true,
@@ -812,9 +869,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     },
     name: "Spherical ring weave",
     noun: "spherical ring weave",
+    about:
+      "The 3-sphere is the round sphere one dimension up: the points at distance 1 from the center, in four coordinates. The Hopf map makes each point of an ordinary sphere stand for a whole circle on it; these circles fill it, and every two of them link like chain links.",
     controls: "weave",
     parameterKey: "weave",
     modes: ["stereo", "paired"],
+    viewAbout: {
+      stereo:
+        "Circles on the round sphere in four dimensions, opened into space as a globe can be opened into a map. Circles stay circles, or become straight lines through the pole, so the drawing keeps how they link; arcs reaching the window's edge stay open.",
+      paired:
+        "Two linked pictures: an ordinary sphere of points, and in space the circle each point stands for. Pick a point or its circle to see the pair; any two of these circles link once.",
+    },
     modeLabels: {
       paired: "Base sphere and fibers",
       stereo: "Stereographic loom",
@@ -1153,12 +1218,14 @@ export const objects: Record<Object4, ObjectDescriptor> = {
   },
   cell24: {
     atlas: {
-      pairs: [rotationPair],
+      pairs: [rotationPair, eyePair],
       samples: { 3: 64, 5: 32 },
       points: () => 4096,
     },
     name: "24-cell and its dual",
     noun: "24-cell",
+    about:
+      "The 24-cell is a four-dimensional crystal bounded by 24 octahedra (eight-faced solids), a regular shape with no counterpart in three dimensions. Its dual, drawn with it, has one corner at the center of each octahedron, and turns out to be another 24-cell, smaller and turned.",
     controls: "polytope",
     parameterKey: "cell24",
     choicesFirst: true,
@@ -1171,13 +1238,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         "The selected cell's section and crossings of its dual vertex's edges stay accented. Source scale, rotation and camera stay fixed. Ends are empty; repeating joins them without a cut in the geometry.",
       ),
     },
-    modes: ["orthographic", "section"],
+    modes: ["orthographic", "perspective", "section"],
     rotations: true,
     viewLabel: "View of the 24-cell",
     selectorNote:
       "24 vertices · 96 edges · 96 triangles · 24 octahedral cells, and the same for its dual",
     constructionNumber: "03",
     radiusFields: [],
+    distanceHelp: tiered(
+      "From 2.05 to 20; the eye stays outside the sphere of radius √2 holding both crystals.",
+      "A nearer eye enlarges the near side more. The drawing frames radius √2·d/√(d² − 2), which depends on d alone, so rotation never rescales it.",
+    ),
     support: () => Math.SQRT2,
     familyPassage: true,
     passageHelp:
@@ -1239,7 +1310,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           "Which of the 24 octahedral cells is selected, from 1 to 24.",
           c.mode === "section"
             ? "Press [ or ] on the drawing to step. Its facet and intersections of edges from its corresponding dual vertex are accented; either can be absent at this plane."
-            : "Tap a cell's center, a dual vertex, to select it, or press [ or ] on the drawing. Tapping again where centers coincide steps through them.",
+            : "Tap a cell's center, a dual vertex, to select it, or press [ or ] on the drawing. Tapping again where centers coincide steps through them. Distinct cells can coincide in a particular view; the field and center readouts tell them apart.",
         ),
       visible: () => true,
       count: () => 24,
@@ -1262,7 +1333,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     viewingHelp: (c) =>
       c.mode === "section"
         ? "Shared plane w = h · [ and ] select a cell · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom"
-        : "Orthographic · tap a center to select its cell · [ and ] step · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom",
+        : `${c.mode === "perspective" ? "Perspective" : "Orthographic"} · tap a center to select its cell · [ and ] step · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom`,
     viewingLabel: () =>
       "Interactive 24-cell and its dual. Drag to orbit; shift-drag or two fingers to pan; scroll or pinch to zoom.",
     readouts: (r) => {
@@ -1313,7 +1384,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     colorNote: (c) =>
       c.mode === "section"
         ? "Inks distinguish both sections and the selected correspondence; multiple slices overlay their real coordinates. Sections of a polar pair need not be 3D polar duals."
-        : `Inks mark roles, not coordinate directions. The cell's three dashed diagonals cross at its center in every shadow. ${c.cell24!.view === "crystal" ? "The rest of both crystals is drawn fainter. " : ""}Coinciding shadows of distinct vertices are not merged.`,
+        : `Inks mark roles, not coordinate directions. The cell's three dashed diagonals cross at its center in every shadow${c.mode === "perspective" ? ", though perspective moves it off their midpoints" : ""}. ${c.cell24!.view === "crystal" ? "The rest of both crystals is drawn fainter. " : ""}Coinciding shadows of distinct vertices are not merged.`,
     explanation: (c) =>
       c.mode === "section"
         ? [
@@ -1321,14 +1392,20 @@ export const objects: Record<Object4, ObjectDescriptor> = {
             "One plane passes through both rotated crystals. Each octahedral cell contributes its actual intersection; a whole cell lying in the plane is a solid region. The selected primal cell's section shares an accent with the crossings of edges leaving its corresponding dual vertex. Those crossings can disappear as the plane moves. At the unrotated center the primal is a cuboctahedron; its polar's section is a rhombic dodecahedron. General rotated sections need not be polar duals.",
             "RP ∩ {w = h},   RP° ∩ {w = h}",
           ]
-        : [
-            "A crystal and its companion",
-            "The 24-cell's vertices are the permutations of (±1, ±1, 0, 0). Each of its 24 octahedral cells lies in a hyperplane d · x = 1, and these 24 vectors d, ±eᵢ and (±½, ±½, ±½, ±½), are the vertices of its polar dual. So every dual vertex is the center of one cell, where the cell's three diagonals cross. Dual edges join the centers of cells that share a triangle. The dual is the same shape, turned and scaled by 1/√2.",
-            "P = { x : d · x ≤ 1 for every dual vertex d },   cell d = P ∩ { d · x = 1 }",
-          ],
+        : c.mode === "perspective"
+          ? [
+              "Looking into the crystal",
+              "An eye on the w axis, at distance d from the center, looks at both rotated crystals. Nearer cells grow and farther cells shrink, so the far side of the crystal nests inside the near side. Lines stay straight: the selected cell's three diagonals still cross at its center, the dual vertex, though no longer at their midpoints. Drawn lengths change; every edge is still √2 long in four dimensions.",
+              "P(x, y, z, w) = d(x, y, z) / (d − w),   2.05 ≤ d ≤ 20",
+            ]
+          : [
+              "A crystal and its companion",
+              "The 24-cell's vertices are the permutations of (±1, ±1, 0, 0). Each of its 24 octahedral cells lies in a hyperplane d · x = 1, and these 24 vectors d, ±eᵢ and (±½, ±½, ±½, ±½), are the vertices of its polar dual. So every dual vertex is the center of one cell, where the cell's three diagonals cross. Dual edges join the centers of cells that share a triangle. The dual is the same shape, turned and scaled by 1/√2.",
+              "P = { x : d · x ≤ 1 for every dual vertex d },   cell d = P ∩ { d · x = 1 }",
+            ],
     title: () => "Tangent Garden — the 24-cell and its dual",
     limitations:
-      "exact-incidence orthogonal shadows and shared-plane sections; transparent linework; projected crossings are not incidences; sections are not generally polar duals; no perspective",
+      "exact-incidence orthogonal and perspective shadows and shared-plane sections; transparent linework; projected crossings are not incidences; perspective keeps lines straight but not lengths or midpoints; sections are not generally polar duals",
     defaults: () => ({
       ...structuredClone(defaultConfig),
       object: "cell24",
@@ -1358,7 +1435,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
                 ? c.count
                 : 1,
           }
-        : { ...c, mode },
+        : mode === "perspective"
+          ? {
+              ...c,
+              mode,
+              // The distance is inactive in the other views, so a link may
+              // carry any number there. Keep a supported edit.
+              distance: Number.isFinite(c.distance)
+                ? Math.max(2.05, Math.min(20, c.distance))
+                : 4,
+            }
+          : { ...c, mode },
     motion: "double",
   },
   root: {
@@ -1369,11 +1456,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     },
     name: "Square-root journey",
     noun: "square-root journey",
+    about:
+      "Not a solid but a journey. A point circles zero twice, and its square root follows smoothly. The root needs both circuits to come home, and the pair of numbers, four coordinates in all, traces one closed curve in four dimensions.",
     controls: "root",
     playbackEngines: 1,
     parameterKey: "root",
     modes: ["paired"],
     modeLabels: { paired: "Source, value and lift" },
+    viewAbout: {
+      paired:
+        "Three linked pictures: the point z circling zero, its square root w, and the pair (z, w) as one path in four dimensions, turned and with its fourth coordinate dropped. That path shows why two circuits are needed.",
+    },
     // The 4D curve is the result; its companion is one flat diagram that
     // holds the z and w planes side by side.
     pairedModes: ["orthographic", "diagram"],
