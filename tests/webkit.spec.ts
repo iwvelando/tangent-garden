@@ -151,13 +151,18 @@ for (const title of ["A square grid, curved", "Circles through infinity"])
     await checkLoomPortraitPlayer(page, title);
   });
 
-// A journey step changes asynchronously. Under a loaded WebKit run, a second
-// "Next step" clicked while the first change was still under way was lost
-// (the journey stayed on step 2 of 3), so each click waits for the step it
-// reached before the next.
+// A journey step changes asynchronously, and presenting a step's drawing can
+// move the step buttons: at 390 × 844 "Next step" drops about 160 px when the
+// opening drawing replaces its placeholder. A click dispatched in between
+// lands on the dialog instead, and the journey stays on its step. So each
+// click waits for the shown step's drawing, and for the step it reached.
 async function nextSteps(dialog: Locator, count: number) {
   const status = dialog.getByText(/^Step \d+ of \d+$/);
   for (let i = 0; i < count; i++) {
+    await expect(dialog.locator(".journey-art")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
     const at = Number((await status.textContent())!.match(/\d+/)![0]);
     await dialog
       .getByRole("button", { name: "Next step", exact: true })
