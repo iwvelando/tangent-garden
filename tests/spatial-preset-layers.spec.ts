@@ -181,7 +181,9 @@ test("a preset's composed opening view survives its default reveal", () => {
       (preset.flight && preset.flight.animate?.mode !== "reveal")
     )
       continue;
-    expect.soft(presetStudy(i).animation.camera, preset.name).toBe("current");
+    expect
+      .soft(presetStudy(i).animation.camera, preset.name)
+      .toBe(preset.name === "A knot remembers" ? "hold" : "current");
   }
 });
 
