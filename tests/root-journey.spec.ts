@@ -200,6 +200,20 @@ test("one circuit returns z but not w or the 4D point; two return everything", a
   await expect(readout(page, "Parameter t")).toHaveText("6.2832");
   await expect(readout(page, "Turns of z")).toHaveText("1.00000");
   await expect(readout(page, "Circuit")).toHaveText("2 of 2");
+  // z = 1.6 and w = −√1.6 lie on the real axis: an imaginary part that is
+  // zero reads zero, not its rounding residue, in the columns every frame
+  // of the journey keeps.
+  expect(
+    await Promise.all(
+      ["Re z", "Im z", "Re w", "Im w"].map((label) =>
+        readout(page, label).textContent(),
+      ),
+    ),
+  ).toEqual(["\u20071.60000", "\u20070.00000", "−1.26491", "\u20070.00000"]);
+  // The residual is a rounding-sized bound, not a six-figure measurement.
+  await expect(readout(page, "Largest |w² − z|")).toHaveText(
+    /^(0|\d(\.\d)?e−1\d)$/,
+  );
   // z is home; w is opposite its start through the w plane's origin; the
   // 4D point is visibly elsewhere.
   expect(

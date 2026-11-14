@@ -3,6 +3,7 @@ import {
   liveReadout,
   type ReadoutRange,
   count as formatCount,
+  withoutResidue,
 } from "../number-format";
 import {
   rotationPair,
@@ -377,10 +378,12 @@ function correspondenceReadouts(c: Correspondence) {
       label: "Moving point δ",
       value: liveReadout(c.parameter, [0, 2 * Math.PI]),
     },
-    // One coordinate each, so every value fits its readout column.
+    // One coordinate each, so every value fits its readout column. The
+    // point moves on the unit sphere: live columns, and a coordinate plane
+    // crossed in passing reads zero.
     ...c.base.map((n, i) => ({
       label: `Base point ${"xyz"[i]}`,
-      value: formatNumber(n),
+      value: liveReadout(withoutResidue(n), [-1, 1]),
     })),
   ];
 }
@@ -1788,7 +1791,13 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     readouts: (r) => {
       const d = r.root;
       if (!d) return [];
-      const n = formatNumber;
+      // z and w move within the norm bound: live columns, and an axis
+      // crossed at a quarter turn reads zero.
+      const n = (x: number) =>
+        liveReadout(withoutResidue(x, d.normBound), [
+          -d.normBound,
+          d.normBound,
+        ]);
       return [
         {
           label: "Parameter t",
@@ -1807,7 +1816,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           label: "w as a root of z",
           value: d.principal > 0 ? "+√z (principal)" : "−√z",
         },
-        { label: "Largest |w² − z|", value: formatNumber(d.residual) },
+        // A rounding-sized bound: two figures say all it means.
+        { label: "Largest |w² − z|", value: formatNumber(d.residual, 2) },
         { label: "Norm |(z, w)|", value: formatNumber(d.normBound) },
       ];
     },

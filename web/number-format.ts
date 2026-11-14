@@ -69,6 +69,13 @@ export function count(n: number): string {
 export const plural = (n: number, one: string, many = `${one}s`) =>
   `${count(n)} ${n === 1 ? one : many}`;
 
+// A computed coordinate whose exact value is zero carries rounding residue
+// near 1e-16 of its scale (sin π, say). Read below 1e-12 of that scale as
+// zero; anything larger is a value and is shown. For coordinates of a known
+// scale only, never for a measured error or a distance from a threshold.
+export const withoutResidue = (v: number, scale = 1) =>
+  Math.abs(v) < 1e-12 * scale ? 0 : v;
+
 export type ReadoutRange = readonly [number, number];
 const figureSpace = "\u2007";
 

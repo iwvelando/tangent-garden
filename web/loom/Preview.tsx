@@ -1,7 +1,9 @@
-import { progressPercent } from "../number-format";
-import { liveReadout } from "../number-format";
-import { elapsed } from "../number-format";
-import { readout as formatNumber } from "../number-format";
+import {
+  elapsed,
+  liveReadout,
+  progressPercent,
+  readout as formatNumber,
+} from "../number-format";
 import {
   OverlayJourneyLayout,
   type OverlayGuide,

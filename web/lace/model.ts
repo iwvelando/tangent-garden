@@ -2,6 +2,7 @@ import {
   readout as formatNumber,
   count as formatCount,
   percent as formatPercent,
+  withoutResidue,
 } from "../number-format";
 import { tiered } from "../help";
 import type { Repeat } from "../timing";
@@ -414,7 +415,7 @@ export function explain(r: LaceResult, i: number) {
   const side = formatNumber(r.sideLength);
   // Disk coordinates have unit scale: a tile carried to the disk's center
   // reads 0 there, not its rounding error near 1e-16.
-  const disk = (v: number) => formatNumber(Math.abs(v) < 1e-12 ? 0 : v);
+  const disk = (v: number) => formatNumber(withoutResidue(v));
   const at = `(${disk(r.center[i].x)}, ${disk(r.center[i].y)})`;
   // Moved, the center tile no longer lies at the disk's center, so the
   // distance from it, which the isometry keeps, is named apart from the

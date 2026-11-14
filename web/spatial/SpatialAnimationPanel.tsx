@@ -1,9 +1,10 @@
-import { progressPercent } from "../number-format";
-import { liveReadout } from "../number-format";
-import { elapsed, mebibytes } from "../number-format";
 import {
-  readout as formatNumber,
   count as formatCount,
+  elapsed,
+  liveReadout,
+  mebibytes,
+  progressPercent,
+  readout as formatNumber,
 } from "../number-format";
 import {
   sampleSpatialFamily,

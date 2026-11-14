@@ -62,8 +62,17 @@ test("all constructions, empty and tangent sections, finite curves, and exact mo
   const base = await definition(page);
   await pauseMotion(page);
   const slider = page.getByRole("slider", { name: "Animation progress" });
+  // The timeline's label is the shared one: a first step is not 0%.
+  const shown = page
+    .locator(".timeline .field")
+    .filter({ has: slider })
+    .locator(".field-label b");
+  await slider.fill("0.001");
+  await settle(page);
+  await expect(shown).toHaveText("under 1%");
   await slider.fill("0.37");
   await settle(page);
+  await expect(shown).toHaveText("37%");
   const paused = await definition(page);
   expect(paused.angles[3]).toBeCloseTo(2 * Math.PI * 0.37, 12);
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("1");

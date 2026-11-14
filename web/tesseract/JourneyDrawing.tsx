@@ -1,6 +1,4 @@
-import { progressPercent } from "../number-format";
-import { elapsed } from "../number-format";
-import { readout as formatNumber } from "../number-format";
+import { elapsed, progressPercent } from "../number-format";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { EngineClient } from "../engine-client";
 import type { ColorScheme } from "../color-schemes";

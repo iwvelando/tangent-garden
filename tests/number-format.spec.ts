@@ -425,6 +425,22 @@ test("live values below a range's decimal resolution keep their sign without bec
   );
 });
 
+test("rounding residue of a coordinate reads zero; values at its scale do not", async () => {
+  const { withoutResidue, liveReadout } = await import("../web/number-format");
+  expect(withoutResidue(Math.sin(Math.PI))).toBe(0);
+  expect(withoutResidue(-2.4e-16)).toBe(0);
+  expect(withoutResidue(4 * Math.sin(Math.PI), 4)).toBe(0);
+  // A small value is still a value, and the scale is the caller's.
+  expect(withoutResidue(1e-9)).toBe(1e-9);
+  expect(withoutResidue(-1e-12)).toBe(-1e-12);
+  expect(withoutResidue(1e-9, 1e4)).toBe(0);
+  expect(withoutResidue(1e-15, 1e-6)).toBe(1e-15);
+  expect(withoutResidue(NaN)).toBeNaN();
+  expect(liveReadout(withoutResidue(Math.sin(Math.PI)), [-1, 1])).toBe(
+    "\u20070.00000",
+  );
+});
+
 test("live notation thresholds are range-based and include both finite extremes", async () => {
   const { liveReadout } = await import("../web/number-format");
   expect(liveReadout(0.0001, [0, 0.0001])).toBe("0.000100000");

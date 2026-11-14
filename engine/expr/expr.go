@@ -104,13 +104,12 @@ func curve(s string, a *float64) (Expr, error) {
 	return func(t float64) float64 { return e.eval(t, 0, 0, 0) }, nil
 }
 
-// Scalar accepts constants and arithmetic, but never a curve-dependent variable.
-func Scalar(s string) (float64, error) {
-	// Check the original byte budget before normalizing readout minus signs and spacing.
-	if len(s) > 1024 {
-		return 0, fmt.Errorf("expression exceeds 1024 characters")
-	}
-	_, e, err := parse(strings.Map(func(r rune) rune {
+// scalarText gives a scalar's source the parser's ASCII minus and spacing:
+// the mathematical minus readouts print and any Unicode space, such as the
+// figure spaces that align them. A byte that is not valid UTF-8 becomes
+// U+FFFD, which the parser rejects as it rejects the byte.
+func scalarText(s string) string {
+	return strings.Map(func(r rune) rune {
 		if r == '−' {
 			return '-'
 		}
@@ -118,7 +117,16 @@ func Scalar(s string) (float64, error) {
 			return ' '
 		}
 		return r
-	}, s), nil, nil)
+	}, s)
+}
+
+// Scalar accepts constants and arithmetic, but never a curve-dependent variable.
+func Scalar(s string) (float64, error) {
+	// Check the original byte budget before normalizing readout minus signs and spacing.
+	if len(s) > 1024 {
+		return 0, fmt.Errorf("expression exceeds 1024 characters")
+	}
+	_, e, err := parse(scalarText(s), nil, nil)
 	if err != nil {
 		return 0, err
 	}

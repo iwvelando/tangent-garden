@@ -1,4 +1,4 @@
-import { readout as formatNumber } from "../number-format";
+import { percent, readout as formatNumber } from "../number-format";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { EngineClient } from "../engine-client";
 import { Field, HelpText, HelpToggle, useHelp } from "../Field";
@@ -297,12 +297,12 @@ export default function HarmonicFitPreview({
           </Field>
           <SteadyNote
             testid="fit-error"
-            longest="Sample error: RMS 0.000123457, largest 0.000123457, 0.000123457% of the source's 0.000123457 diagonal. Between samples, proved within 0.000123457 of the closed-up polygon."
+            longest="Sample error: RMS 0.000123457, largest 0.000123457, over 99.9% of the source's 0.000123457 diagonal. Between samples, proved within 0.000123457 of the closed-up polygon."
           >
             {fit &&
               (exact
                 ? "These terms reproduce all 1,024 samples to rounding."
-                : `Sample error: RMS ${formatNumber(fit.rms)}, largest ${formatNumber(fit.maxResidual)}, ${formatNumber((100 * fit.maxResidual) / fit.extent)}% of the source's ${formatNumber(fit.extent)} diagonal.`)}
+                : `Sample error: RMS ${formatNumber(fit.rms)}, largest ${formatNumber(fit.maxResidual)}, ${percent(fit.maxResidual / fit.extent)} of the source's ${formatNumber(fit.extent)} diagonal.`)}
             {fit?.continuousBound
               ? ` Between samples, proved within ${formatNumber(fit.continuousBound)} of the ${fit.joined ? "closed-up" : "source's"} polygon.`
               : ""}

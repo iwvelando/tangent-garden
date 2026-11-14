@@ -202,6 +202,11 @@ func FuzzCompiledMatchesClosureEvaluator(f *testing.F) {
 	for _, s := range malformedExpressions {
 		f.Add(s, 0.0, 0.0, 0.0, 0.0)
 	}
+	// Scalars alone read a readout's minus and spacing; both evaluators
+	// must, and must agree on a byte that is not UTF-8 and on the budget.
+	for _, s := range []string{"−1", "−1e−7", "1\u2007+\u20072", "1\u20072", "1\xa0", strings.Repeat("−1+", 400) + "1"} {
+		f.Add(s, 0.0, 0.0, 0.0, 0.0)
+	}
 	f.Fuzz(func(t *testing.T, s string, x, y, z, u float64) {
 		xs := []float64{x, y, z, u, 0, math.Inf(1), math.NaN()}
 		compareCurve(t, s, xs)
