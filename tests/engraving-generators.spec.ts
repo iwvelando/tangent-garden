@@ -704,6 +704,65 @@ test("generator target defaults stay valid beside edited radii and nonnegative d
   expect(arm.from).toBeGreaterThanOrEqual(0);
 });
 
+test("planar engraving member labels are short readouts that stay distinct", async ({
+  page,
+}) => {
+  const panel = page.getByRole("region", {
+    name: "Finite engraving settings",
+  });
+  const labels = async () => {
+    await settled(page);
+    await panel.locator("details").evaluate((d: HTMLDetailsElement) => {
+      d.open = true;
+    });
+    return {
+      options: await panel
+        .getByLabel("Selected member", { exact: true })
+        .locator("option")
+        .allTextContents(),
+      list: await panel.locator("details li").allTextContents(),
+    };
+  };
+  const contour = (from: number, to: number, count: number) => {
+    const s = source("implicit");
+    s.config.curve.implicit.f = "x^2+y^2";
+    s.family = {
+      ...familyDefaults(s.config),
+      enabled: true,
+      count,
+      from,
+      to,
+      selected: 1,
+    };
+    return s;
+  };
+  // A π-valued endpoint and its interpolants would print sixteen digits.
+  await load(page, contour(0.3, Math.PI / 3, 4));
+  expect(await labels()).toEqual({
+    options: ["1 · 0.3", "2 · 0.5491", "3 · 0.7981", "4 · 1.047"],
+    list: [
+      "0.3: Available",
+      "0.5491: Available",
+      "0.7981: Available",
+      "1.047: Available",
+    ],
+  });
+  // Four digits would show three equal members; the labels lengthen instead.
+  await load(page, contour(0.5, 0.500001, 3));
+  expect((await labels()).options).toEqual([
+    "1 · 0.5",
+    "2 · 0.5000005",
+    "3 · 0.500001",
+  ]);
+  // The members themselves keep their exact values.
+  const meta = JSON.parse(
+    (await page.locator("#artwork > desc").textContent())!,
+  );
+  expect(meta.family.members.map((m: any) => m.value)).toEqual([
+    0.5, 0.5000005, 0.500001,
+  ]);
+});
+
 test("expensive admitted contour engraving stays serial and disabling retires delayed work", async ({
   page,
 }, info) => {

@@ -83,6 +83,56 @@ test("spatial engraving uses notebook controls, restores source drafts and saves
   ).not.toBeChecked();
 });
 
+test("spatial engraving member labels are short readouts that stay distinct", async ({
+  page,
+}) => {
+  const panel = page.getByRole("region", {
+    name: "Spatial finite engraving settings",
+  });
+  const labels = async () => {
+    await settled(page);
+    await panel.locator("details").evaluate((d: HTMLDetailsElement) => {
+      d.open = true;
+    });
+    return {
+      options: await panel
+        .getByLabel("Selected member", { exact: true })
+        .locator("option")
+        .allTextContents(),
+      list: await panel.locator("details li").allTextContents(),
+    };
+  };
+  // A π-valued endpoint and its interpolants would print sixteen digits.
+  await load(page, {
+    ...source(),
+    family: { ...settings(), from: 0.3, to: Math.PI / 3, count: 4 },
+  });
+  expect(await labels()).toEqual({
+    options: ["1 · 0.3", "2 · 0.5491", "3 · 0.7981", "4 · 1.047"],
+    list: [
+      "0.3: Available",
+      "0.5491: Available",
+      "0.7981: Available",
+      "1.047: Available",
+    ],
+  });
+  // Four digits would show three equal members; the labels lengthen instead.
+  await load(page, {
+    ...source(),
+    family: { ...settings(), from: 0.5, to: 0.500001, count: 3, selected: 1 },
+  });
+  expect((await labels()).options).toEqual([
+    "1 · 0.5",
+    "2 · 0.5000005",
+    "3 · 0.500001",
+  ]);
+  // The members themselves keep their exact values.
+  const meta = JSON.parse(
+    (await page.locator(".spatial-stage").getAttribute("data-family")) ?? "{}",
+  );
+  expect(meta).toMatchObject({ from: 0.5, to: 0.500001 });
+});
+
 import * as family from "../web/spatial/family";
 import { buildScene, scenePasses } from "../web/spatial/scene";
 import { defaultLayers } from "../web/spatial/renderer";

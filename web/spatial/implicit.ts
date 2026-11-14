@@ -3,9 +3,7 @@ import {
   type ImplicitBox,
   type ImplicitResult,
 } from "./types";
-
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
+import { count, plural } from "../number-format";
 const words = [
   "no",
   "one",
@@ -21,7 +19,7 @@ const words = [
   "eleven",
   "twelve",
 ];
-const number = (n: number) => words[n] ?? n.toLocaleString();
+const number = (n: number) => words[n] ?? count(n);
 // Go's shape: cells along the box's longest side, and as many along the
 // others as keeps them nearest to cubes, at least one.
 export function implicitGrid(box: ImplicitBox, cells: number) {
@@ -39,7 +37,7 @@ export function implicitGrid(box: ImplicitBox, cells: number) {
 // projective plane and two a Klein bottle. Without genus, as for a surface
 // known to be singular, which is no manifold to have one, only χ is given.
 function pieceOf(c: ImplicitResult["components"][number], genus = true) {
-  const euler = `Euler characteristic ${c.euler.toLocaleString().replace("-", "−")}`;
+  const euler = `Euler characteristic ${count(c.euler)}`;
   const sides = c.orientable ? "" : " and one-sided";
   if (!c.closed) return `open${sides}, with ${euler}`;
   if (!genus) return `closed${sides}, with ${euler}`;
@@ -82,12 +80,12 @@ export function implicitNote(
         : groups.size === 1
           ? `The mesh has ${number(r.components.length)} pieces, each ${piece(r.components[0])}.`
           : `The mesh has ${number(r.components.length)} pieces: ${kinds.join("; ")}.`,
-      `It has ${count(triangles, "triangle", "triangles")} on ${count(r.positions.length / 3, "vertex", "vertices")}, from a ${r.grid.join(" × ")} grid.`,
+      `It has ${plural(triangles, "triangle", "triangles")} on ${plural(r.positions.length / 3, "vertex", "vertices")}, from a ${r.grid.join(" × ")} grid.`,
     );
     // Each crossing edge is listed once for each of its two sheets.
     if (r.crossings.length)
       out.push(
-        `It passes through itself along ${count(r.crossings.length / 4, "edge", "edges")}, each sheet whole through them.`,
+        `It passes through itself along ${plural(r.crossings.length / 4, "edge", "edges")}, each sheet whole through them.`,
       );
   }
   const { levels, reached, bisected, unresolved, exhausted } = r.refinement;
@@ -95,41 +93,41 @@ export function implicitNote(
     const of = `${levels} ${levels === 1 ? "level" : "levels"}`;
     out.push(
       bisected
-        ? `Refinement bisected ${count(bisected, "tetrahedron", "tetrahedra")}, reaching ${reached} of ${of}, where an edge's midpoint lay across the level from both its ends.`
+        ? `Refinement bisected ${plural(bisected, "tetrahedron", "tetrahedra")}, reaching ${reached} of ${of}, where an edge's midpoint lay across the level from both its ends.`
         : `Refinement up to ${of} split nothing: no edge's midpoint lay across the level from both its ends.`,
     );
     if (exhausted)
       out.push(
-        `Refinement stopped at its budget of ${maxRefinedTetrahedra.toLocaleString()} tetrahedra with ${unresolved.toLocaleString()} still disagreeing with a sample: use fewer cells or a smaller box.`,
+        `Refinement stopped at its budget of ${count(maxRefinedTetrahedra)} tetrahedra with ${count(unresolved)} still disagreeing with a sample: use fewer cells or a smaller box.`,
       );
     else if (unresolved)
       out.push(
-        `${count(unresolved, "tetrahedron", "tetrahedra")} at the deepest level still ${unresolved === 1 ? "disagrees" : "disagree"} with a sample: the surface there is finer than refinement reaches.`,
+        `${plural(unresolved, "tetrahedron", "tetrahedra")} at the deepest level still ${unresolved === 1 ? "disagrees" : "disagree"} with a sample: the surface there is finer than refinement reaches.`,
       );
   }
   if (r.cut.length)
     out.push(
-      `The box cuts it open along ${count(r.cut.length / 2, "edge", "edges")}.`,
+      `The box cuts it open along ${plural(r.cut.length / 2, "edge", "edges")}.`,
     );
   if (r.nonfinite)
     out.push(
-      `F is not finite at ${levels > 0 ? count(r.nonfinite, "point sampled", "points sampled") : count(r.nonfinite, "grid point", "grid points")}: the cells beside them are left out${r.open.length ? ", and the mesh stops there" : ""}.`,
+      `F is not finite at ${levels > 0 ? plural(r.nonfinite, "point sampled", "points sampled") : plural(r.nonfinite, "grid point", "grid points")}: the cells beside them are left out${r.open.length ? ", and the mesh stops there" : ""}.`,
     );
   else if (r.open.length)
     out.push(
-      `The mesh stops beside cells left out, along ${count(r.open.length / 2, "edge", "edges")}.`,
+      `The mesh stops beside cells left out, along ${plural(r.open.length / 2, "edge", "edges")}.`,
     );
   if (r.discontinuities)
     out.push(
-      `${count(r.discontinuities, "grid edge changes", "grid edges change")} sign across a pole or a jump rather than a root: ${r.marks.length < r.discontinuities ? `the first ${r.marks.length.toLocaleString()} are` : r.discontinuities === 1 ? "it is" : "they are"} marked with crosses and never meshed.`,
+      `${plural(r.discontinuities, "grid edge changes", "grid edges change")} sign across a pole or a jump rather than a root: ${r.marks.length < r.discontinuities ? `the first ${count(r.marks.length)} are` : r.discontinuities === 1 ? "it is" : "they are"} marked with crosses and never meshed.`,
     );
   if (r.cones)
     out.push(
-      `Its sheets meet at ${count(r.cones, "isolated point", "isolated points")}, as at a cone's apex.`,
+      `Its sheets meet at ${plural(r.cones, "isolated point", "isolated points")}, as at a cone's apex.`,
     );
   if (r.crossingsUnresolved)
     out.push(
-      `${count(r.crossingsUnresolved, "tetrahedron", "tetrahedra")} where sheets meet could not be meshed and ${r.crossingsUnresolved === 1 ? "is" : "are"} left out, as where three sheets meet.`,
+      `${plural(r.crossingsUnresolved, "tetrahedron", "tetrahedra")} where sheets meet could not be meshed and ${r.crossingsUnresolved === 1 ? "is" : "are"} left out, as where three sheets meet.`,
     );
   if (r.crossingsExhausted)
     out.push(
@@ -137,13 +135,13 @@ export function implicitNote(
     );
   if (r.singular)
     out.push(
-      `${count(r.singular, "vertex has", "vertices have")} no normal: ∇F vanishes there, as at a cone's apex or where a crossing ends, or is not finite.`,
+      `${plural(r.singular, "vertex has", "vertices have")} no normal: ∇F vanishes there, as at a cone's apex or where a crossing ends, or is not finite.`,
     );
   if (r.ambiguous)
     out.push(
       levels > 0
-        ? `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; refinement samples each face's center, and splits the face where the grid's diagonal disagrees with it.`
-        : `${count(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; there the grid's diagonal, not F, decides whether the surface joins across, so compare a finer grid.`,
+        ? `${plural(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; refinement samples each face's center, and splits the face where the grid's diagonal disagrees with it.`
+        : `${plural(r.ambiguous, "grid face has", "grid faces have")} corners alternating in sign; there the grid's diagonal, not F, decides whether the surface joins across, so compare a finer grid.`,
     );
   if (r.sections.length) {
     const paths = r.sections.flatMap((s) => s.paths);
@@ -154,26 +152,26 @@ export function implicitNote(
     const open = paths.length - loops;
     const held =
       loops && open
-        ? `${count(loops, "closed curve", "closed curves")} and ${count(open, "open one", "open ones")}`
+        ? `${plural(loops, "closed curve", "closed curves")} and ${plural(open, "open one", "open ones")}`
         : loops
-          ? count(loops, "closed curve", "closed curves")
+          ? plural(loops, "closed curve", "closed curves")
           : open
-            ? count(open, "open curve", "open curves")
+            ? plural(open, "open curve", "open curves")
             : "no curve";
     out.push(
       `The ${r.sections.length === 1 ? "section holds" : `${number(r.sections.length)} sections hold`} ${held}${open ? `; an open curve ends at the box or beside cells left out` : ""}.`,
     );
     if (missed)
       out.push(
-        `${count(missed, "plane misses", "planes miss")} the box, or only touches it.`,
+        `${plural(missed, "plane misses", "planes miss")} the box, or only touches it.`,
       );
     if (r.sectionDiscontinuities)
       out.push(
-        `${count(r.sectionDiscontinuities, "section crossing was", "section crossings were")} rejected as a pole or jump.`,
+        `${plural(r.sectionDiscontinuities, "section crossing was", "section crossings were")} rejected as a pole or jump.`,
       );
     if (r.sectionsSkipped)
       out.push(
-        `The last ${count(r.sectionsSkipped, "plane was", "planes were")} skipped: the sections would bisect more than 65,536 grid edges in all. Use fewer cells or planes.`,
+        `The last ${plural(r.sectionsSkipped, "plane was", "planes were")} skipped: the sections would bisect more than 65,536 grid edges in all. Use fewer cells or planes.`,
       );
     if (r.truncated)
       out.push(

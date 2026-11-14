@@ -1,9 +1,8 @@
 import { plotScale } from "./probe";
+import { plural } from "./number-format";
 
 // Four significant figures, as the probe's readouts give them.
 const short = (v: number) => String(Number(v.toPrecision(4)));
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
 const width = 240,
   height = 44;
 
@@ -47,7 +46,7 @@ export function ProbePlot({
           ? `${label}: constant at ${short(constant)}`
           : `${label} from ${short(lo)} to ${short(hi)}`}
         {pinned > 0 &&
-          `; ${count(pinned, "sample", "samples")} beyond, pinned to the edge`}
+          `; ${plural(pinned, "sample", "samples")} beyond, pinned to the edge`}
       </figcaption>
       <svg
         viewBox={`0 0 ${width} ${height}`}

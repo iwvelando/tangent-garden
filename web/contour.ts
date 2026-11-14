@@ -1,7 +1,5 @@
 import type { ContourResult } from "./types";
-
-const count = (n: number, one: string, many = `${one}s`) =>
-  `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+import { plural } from "./number-format";
 
 // What the curve's level set consists of, and where F could not be drawn
 // through: poles or jumps, and points where it is not a number.
@@ -25,11 +23,11 @@ export function contourNote(result: ContourResult) {
   const notes = [shape];
   if (result.discontinuities.length)
     notes.push(
-      `F changes sign without reaching the level across ${count(result.discontinuities.length, "grid edge")}, marked ×: a pole or a jump, not a curve, so no contour is drawn there.`,
+      `F changes sign without reaching the level across ${plural(result.discontinuities.length, "grid edge")}, marked ×: a pole or a jump, not a curve, so no contour is drawn there.`,
     );
   if (result.nonfinite)
     notes.push(
-      `F is not a finite number at ${count(result.nonfinite, "grid point")} of ${((result.columns + 1) * (result.rows + 1)).toLocaleString("en-US")}; the cells beside them are left out.`,
+      `F is not a finite number at ${plural(result.nonfinite, "grid point")} of ${((result.columns + 1) * (result.rows + 1)).toLocaleString("en-US")}; the cells beside them are left out.`,
     );
   return notes.join(" ");
 }

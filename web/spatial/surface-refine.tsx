@@ -1,6 +1,7 @@
 import { HelpText, HelpToggle, useHelp } from "../Field";
 import { tiered } from "../help";
 import type { AdaptiveResult, RefinedPath, SpatialConfig } from "./types";
+import { count } from "../number-format";
 
 // The limit Go enforces on the vertices refining a surface adds
 // (engine3/surfacerefine.go), which help text states.
@@ -30,7 +31,7 @@ export const refinedPaths = (adaptive: AdaptiveResult) =>
 // What refining the surface added.
 export const surfaceReadout = (adaptive: AdaptiveResult) => {
   const columns = adaptive.columns ?? 0;
-  return `${columns.toLocaleString()} ${columns === 1 ? "column" : "columns"} added to the surface${adaptive.capped ? `: the budget of ${surfaceVertices.toLocaleString()} vertices left the finest out` : ""}.`;
+  return `${count(columns)} ${columns === 1 ? "column" : "columns"} added to the surface${adaptive.capped ? `: the budget of ${count(surfaceVertices)} vertices left the finest out` : ""}.`;
 };
 
 // The checkbox, its help and readout. Unchecking drops the field, so the

@@ -6,6 +6,7 @@ import type {
   SurfaceKind,
   SurfaceResult,
 } from "./types";
+import { plural } from "../number-format";
 
 type Shape = Pick<
   SurfaceConfig,
@@ -200,8 +201,6 @@ const shapes: Record<FocalShape, string> = {
   point: "collapses to a point",
   none: "lies wholly at infinity",
 };
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
 // What the focal branches are, and every sample left without part of the
 // study, with why.
 export function surfaceNote(s: SurfaceResult): string[] {
@@ -210,23 +209,23 @@ export function surfaceNote(s: SurfaceResult): string[] {
       (f, k) =>
         `Focal sheet ${k + 1} (κ${k === 0 ? "₁" : "₂"}) ${shapes[f.shape]}${
           f.clipped && f.shape !== "none"
-            ? `; at ${count(f.clipped, "sample", "samples")} its center of curvature is beyond 100 surface radii, treated as at infinity`
+            ? `; at ${plural(f.clipped, "sample", "samples")} its center of curvature is beyond 100 surface radii, treated as at infinity`
             : ""
         }.`,
     ),
     ...(s.singular
       ? [
-          `${count(s.singular, "sample is a chart singularity", "samples are chart singularities")}, where X_u × X_v vanishes: no normal, offset or focal point there.`,
+          `${plural(s.singular, "sample is a chart singularity", "samples are chart singularities")}, where X_u × X_v vanishes: no normal, offset or focal point there.`,
         ]
       : []),
     ...(s.umbilics
       ? [
-          `${count(s.umbilics, "sample is an umbilic", "samples are umbilics")} (κ₁ = κ₂), where the principal directions are undefined and the two sheets meet.`,
+          `${plural(s.umbilics, "sample is an umbilic", "samples are umbilics")} (κ₁ = κ₂), where the principal directions are undefined and the two sheets meet.`,
         ]
       : []),
     ...(s.offset && s.folded
       ? [
-          `${count(s.folded, "offset sample lies", "offset samples lie")} beyond one focal sheet, where the offset turns inside out; it is drawn, not trimmed.`,
+          `${plural(s.folded, "offset sample lies", "offset samples lie")} beyond one focal sheet, where the offset turns inside out; it is drawn, not trimmed.`,
         ]
       : []),
     ...edgesNote(s),

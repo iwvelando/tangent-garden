@@ -6,6 +6,7 @@
 // never taken for it.
 import type { NumericTrack } from "./animation";
 import type { ImplicitResult, SpatialConfig, Vec3 } from "./types";
+import { readout } from "../number-format";
 
 export type StoryId = "two-drops" | "handle";
 export type EventState = "before" | "critical" | "after";
@@ -204,7 +205,7 @@ export function storyNote(
     ];
   if (!(level >= low && level <= high))
     return [
-      `The story's analysis covers levels from ${low} to ${high}; at c = ${level.toLocaleString()} the notes describe the mesh alone.`,
+      `The story's analysis covers levels from ${low} to ${high}; at c = ${readout(level)} the notes describe the mesh alone.`,
     ];
   const side = level < story.critical ? story.below : story.above;
   const where = `${level < story.critical ? "Below" : "Above"} the critical level c = ${story.critical} the surface is ${side.name}`;

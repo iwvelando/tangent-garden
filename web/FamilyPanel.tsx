@@ -7,6 +7,7 @@ import {
 } from "./Field";
 import { ScalarInput } from "./ScalarInput";
 import { tiered } from "./help";
+import { distinctReadouts } from "./number-format";
 import { familyMotionHelp } from "./family-motion";
 import { EngineClient } from "./engine-client";
 import {
@@ -116,6 +117,7 @@ export function FamilyPanel({
       ...patch,
     }));
   const budget = familyBudget(study.config, f, study.probe.enabled);
+  const labels = distinctReadouts(state.members.map((m) => m.value));
   // A rejected constant explains its own field; otherwise a setting's
   // refusal goes under the setting it names.
   const target: FieldErrorTarget =
@@ -270,9 +272,9 @@ export function FamilyPanel({
                 value={f.selected}
                 onChange={(e) => change({ selected: Number(e.target.value) })}
               >
-                {state.members.map((m) => (
+                {state.members.map((m, i) => (
                   <option key={m.id} value={m.id}>
-                    {m.id + 1} · {m.value}
+                    {m.id + 1} · {labels[i]}
                     {m.error ? " · unavailable" : !m.frame ? " · pending" : ""}
                   </option>
                 ))}
@@ -302,9 +304,10 @@ export function FamilyPanel({
                 One calculation runs at a time. Hidden geometry counts too.
               </p>
               <ol>
-                {state.members.map((m) => (
+                {state.members.map((m, i) => (
                   <li key={m.id}>
-                    {m.value}: {m.error ?? (m.frame ? "Available" : "Pending")}
+                    {labels[i]}:{" "}
+                    {m.error ?? (m.frame ? "Available" : "Pending")}
                   </li>
                 ))}
               </ol>

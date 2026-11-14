@@ -42,12 +42,11 @@ import {
   type SurfacePlots,
 } from "./probe";
 import type { Frame, SpatialConfig, SurfaceDiagnostics } from "./types";
+import { plural } from "../number-format";
 
 // Four significant figures: τ from expressions or an integrated path is
 // differenced numerically to about 10⁻⁵ relative accuracy.
 const short = (v: number) => String(Number(v.toPrecision(4)));
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 // One diagnostic along the whole base, in the probe's ink (../ProbePlot.tsx).
 function Plot({
@@ -375,11 +374,11 @@ export function ProbePanel({
                   {[
                     d.flat > 0 &&
                       !probeStraight(d) &&
-                      `κ vanishes at ${count(d.flat, "sample", "samples")}, where N, B and τ are undefined`,
+                      `κ vanishes at ${plural(d.flat, "sample", "samples")}, where N, B and τ are undefined`,
                     d.unknown > 0 &&
-                      `τ is unknown at ${count(d.unknown, "sample", "samples")}, where r‴ is unstable`,
+                      `τ is unknown at ${plural(d.unknown, "sample", "samples")}, where r‴ is unstable`,
                     d.clipped > 0 &&
-                      `${count(d.clipped, "center lies", "centers lie")} beyond 100 study radii, at infinity`,
+                      `${plural(d.clipped, "center lies", "centers lie")} beyond 100 study radii, at infinity`,
                   ]
                     .filter(Boolean)
                     .join("; ")}
@@ -641,19 +640,19 @@ function SurfaceProbe({
             <p className="spatial-caption probe-notes">
               {[
                 d.singular > 0 &&
-                  `${count(d.singular, "point is", "points are")} singular, without a normal`,
+                  `${plural(d.singular, "point is", "points are")} singular, without a normal`,
                 d.umbilics > 0 &&
-                  `${count(d.umbilics, "point is an umbilic", "points are umbilics")}`,
+                  `${plural(d.umbilics, "point is an umbilic", "points are umbilics")}`,
                 folded > 0 &&
-                  `${count(folded, "point has", "points have")} folded, beyond a focal sheet`,
+                  `${plural(folded, "point has", "points have")} folded, beyond a focal sheet`,
                 d.unknown > planes &&
-                  `${terms.unknownBranch} unknown at ${count(d.unknown - planes, "point", "points")}, ${terms.unknown}`,
+                  `${terms.unknownBranch} unknown at ${plural(d.unknown - planes, "point", "points")}, ${terms.unknown}`,
                 planes > 0 &&
-                  `${count(planes, "point has", "points have")} no known tangent plane, where the surface's first derivative S_t is unstable`,
+                  `${plural(planes, "point has", "points have")} no known tangent plane, where the surface's first derivative S_t is unstable`,
                 ...[0, 1].map(
                   (b) =>
                     d.clipped[b] > 0 &&
-                    `${count(d.clipped[b], "center", "centers")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
+                    `${plural(d.clipped[b], "center", "centers")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
                 ),
               ]
                 .filter(Boolean)
@@ -784,19 +783,19 @@ function LightReadout({
         <p className="spatial-caption probe-notes">
           {[
             d.singular > 0 &&
-              `${count(d.singular, "point is", "points are")} singular, without a normal`,
+              `${plural(d.singular, "point is", "points are")} singular, without a normal`,
             d.umbilics > 0 &&
-              `${count(d.umbilics, "point is", "points are")} stigmatic`,
+              `${plural(d.umbilics, "point is", "points are")} stigmatic`,
             light.unlit > 0 &&
-              `${count(light.unlit, "point is", "points are")} unlit`,
+              `${plural(light.unlit, "point is", "points are")} unlit`,
             light.total > 0 &&
-              `${count(light.total, "point is", "points are")} beyond the critical angle`,
+              `${plural(light.total, "point is", "points are")} beyond the critical angle`,
             light.atSource > 0 &&
-              `${count(light.atSource, "point is", "points are")} at the source`,
+              `${plural(light.atSource, "point is", "points are")} at the source`,
             ...[0, 1].map(
               (b) =>
                 d.clipped[b] > 0 &&
-                `${count(d.clipped[b], "focus", "foci")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
+                `${plural(d.clipped[b], "focus", "foci")} of ${terms.branches[b]} ${d.clipped[b] === 1 ? "lies" : "lie"} beyond 100 study radii, at infinity`,
             ),
           ]
             .filter(Boolean)
