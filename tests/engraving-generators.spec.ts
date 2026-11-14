@@ -577,10 +577,18 @@ test("contour reversal preserves every component and discontinuity without cross
       return logs
         .filter((l: any) => l.requests.length >= 3)
         .at(-1)
-        .replies.slice(-3)
+        ?.replies.slice(-3)
         .map((r: any) => r.data.result.contours);
     });
-  const forward = await result();
+  // A fragment-only load can settle on the previous study before the new
+  // family starts, so wait for the replies of the requested levels.
+  const levels = async (expected: number[]) => {
+    await expect
+      .poll(async () => ((await result()) ?? []).map((r: any) => r.curve.level))
+      .toEqual(expected);
+    return result();
+  };
+  const forward = await levels([-0.3, 0, 0.3]);
   for (const r of forward) {
     expect(r.curve.contours).toHaveLength(2);
     expect(r.discontinuities.length).toBeGreaterThan(0);
@@ -600,7 +608,7 @@ test("contour reversal preserves every component and discontinuity without cross
     }
   }
   await load(page, { ...s, family: { ...s.family, from: 0.3, to: -0.3 } });
-  expect(await result()).toEqual(forward.reverse());
+  expect(await levels([0.3, 0, -0.3])).toEqual(forward.reverse());
 });
 
 for (const theme of ["light", "dark"] as const)
