@@ -1846,3 +1846,46 @@ test("the see-through opacity shares the bounded scalar parser", async ({
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect.poll(drawn).toBe(Math.PI / 10);
 });
+
+test("spatial engraving endpoints share scalar expressions and preserve source drafts", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A knot remembers" });
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  const radius = field(page, "Major radius R");
+  await radius.fill("12/5");
+  await field(page, "Family from").fill("pi/10");
+  await field(page, "Family to").fill("phi/2");
+  await page.getByText("Selected member", { exact: true }).click();
+  await expect
+    .poll(async () =>
+      JSON.parse((await stage.getAttribute("data-family")) ?? "{}"),
+    )
+    .toMatchObject({ from: Math.PI / 10, to: phi / 2 });
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await page
+    .getByRole("checkbox", { name: "Finite engraving", exact: true })
+    .uncheck();
+  await expect(radius).toHaveValue("12/5");
+  await page
+    .getByRole("checkbox", { name: "Finite engraving", exact: true })
+    .check();
+  await expect(field(page, "Family from")).toHaveValue("pi/10");
+  await field(page, "Family to").fill("t");
+  await page.getByText("Selected member", { exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Copy link", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    field(page, "Family to").locator("..").getByRole("alert"),
+  ).toBeVisible();
+  // A preset wins over a scalar evaluation begun in the old family.
+  await field(page, "Family to").fill("pi/3");
+  await choosePreset(page, { label: "Trefoil · (2, 3)" });
+  await expect(
+    page.getByRole("checkbox", { name: "Finite engraving", exact: true }),
+  ).not.toBeChecked();
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+});

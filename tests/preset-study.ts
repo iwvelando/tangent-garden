@@ -157,8 +157,9 @@ export const spatial: Notebook<SpatialStudy> = {
     expect(s.probe.enabled).toBe(!!p.probe?.enabled);
     expect(s.projection).toBe(p.projection ?? "orthographic");
     const a = s.animation;
-    expect(a.repeat).toBe(f?.repeat ?? "once");
-    expect(a.pace).toBe(f?.pace ?? "steady");
+    expect(a.repeat).toBe(p.timing?.repeat ?? f?.repeat ?? "once");
+    expect(a.pace).toBe(p.timing?.pace ?? f?.pace ?? "steady");
+    if (p.timing) expect(a.duration).toBe(p.timing.duration);
     if (!f) {
       expect(a).toMatchObject({ mode: "reveal", camera: "hold", tracks: [] });
       return;

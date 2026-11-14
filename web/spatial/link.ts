@@ -1,3 +1,4 @@
+import { spatialFamilyLink, type SpatialFamilySettings } from "./family";
 // The 3D notebook's study in a portable link (see ../study-link.ts).
 import {
   animationSettings,
@@ -94,6 +95,7 @@ export type SpatialAnimation = Omit<
   holds?: true;
 };
 export type SpatialStudy = {
+  family?: SpatialFamilySettings;
   config: SpatialConfig;
   layers: Layers;
   view: SpatialCamera;
@@ -158,13 +160,14 @@ export function presetStudy(index: number): SpatialStudy {
     config: structuredClone(preset.config),
     layers: { ...defaultLayers, ...preset.layers },
     view: { ...(preset.view ?? initialView) },
-    animation: flightAnimation(preset.flight),
+    animation: { ...flightAnimation(preset.flight), ...preset.timing },
     probe: structuredClone(preset.probe ?? defaultProbe),
     cut: structuredClone(preset.cut ?? defaultCut),
     sight: structuredClone(preset.sight ?? defaultSight),
     projection: preset.projection ?? "orthographic",
     lensAngle: preset.lensAngle ?? lensAngles.initial,
     ...(preset.story && { story: preset.story }),
+    ...(preset.family && { family: structuredClone(preset.family) }),
   };
 }
 
@@ -651,6 +654,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
         "projection",
         "lensAngle",
         "story",
+        "family",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -807,8 +811,10 @@ export function spatialStudy(value: unknown): SpatialStudy {
       "animation.mode",
       "animation.mode peels with the cut only while the cut is on.",
     );
+  const engraving = spatialFamilyLink(raw.family, study.config);
   return {
     ...study,
+    ...(engraving && { family: engraving }),
     animation,
     probe: probed,
     cut: cutting,

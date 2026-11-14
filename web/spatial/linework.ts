@@ -58,6 +58,8 @@ import {
 // them, up to fadeLayers, counted against the nearest layers at each pixel.
 export type Occlusion = "none" | "sampled";
 export type LineGroup = {
+  member?: number;
+  slots?: number[];
   layer: string;
   // Set on a group of lines behind sheets.
   hidden?: "faint" | "dashed";
@@ -158,6 +160,10 @@ export function linework(
   >;
   // Hidden lines by the sheet layers in front of them (all at 1 unless
   // layered), faint and dashed apart.
+  const identities = new Map<
+    string,
+    { layer: string; member?: number; slots?: number[] }
+  >();
   const groups = new Map<string, Strokes>(),
     hiddenGroups = Array.from({ length: (raster?.layers ?? 1) + 1 }, () => ({
       faint: new Map<string, Strokes>(),
@@ -233,7 +239,16 @@ export function linework(
   for (const pass of passes) {
     if (pass.sheet) continue;
     options.signal?.throwIfAborted();
-    if (!groups.has(pass.layer)) groups.set(pass.layer, new Map());
+    const key =
+      pass.member === undefined ? pass.layer : `${pass.layer}/${pass.member}`;
+    identities.set(key, {
+      layer: pass.layer,
+      ...(pass.member !== undefined && {
+        member: pass.member,
+        slots: pass.slots,
+      }),
+    });
+    if (!groups.has(key)) groups.set(key, new Map());
     const { data, origin } = pass.batch;
     const cutting = cut && isCut(pass, cut.scope),
       behind = behindOf(pass.layer);
@@ -262,18 +277,18 @@ export function linework(
           lineColor(pass.batch.ink, data[i + 6], dark, options.scheme),
         );
         if (!raster) {
-          draw(groups, pass.layer, color, width, piece, piece[0], piece[1]);
+          draw(groups, key, color, width, piece, piece[0], piece[1]);
           continue;
         }
         for (const run of runs(raster, piece, work)) {
           if (!run.layers) {
-            draw(groups, pass.layer, color, width, piece, run.from, run.to);
+            draw(groups, key, color, width, piece, run.from, run.to);
             continue;
           }
           if (!behind) continue;
           const into = hiddenGroups[run.layers][behind];
           if (behind === "faint")
-            draw(into, pass.layer, color, width, piece, run.from, run.to);
+            draw(into, key, color, width, piece, run.from, run.to);
           else if (arcs && paged) {
             // The phase is affine on the page, measured from whichever end
             // lies ahead of the near plane (see sight.ts's pagePhases).
@@ -302,7 +317,7 @@ export function linework(
               phase(run.from),
               phase(run.to),
             ))
-              draw(into, pass.layer, color, width, piece, p, q);
+              draw(into, key, color, width, piece, p, q);
           } else if (arcs) {
             // Arc length is affine along the segment in space, and so along
             // the kept part and the clipped piece; on the page it is affine
@@ -327,7 +342,7 @@ export function linework(
                 ? undefined
                 : (f) => (pageAt(w, s0 + (s1 - s0) * f) - r0) / (r1 - r0),
             ))
-              draw(into, pass.layer, color, width, piece, a, b);
+              draw(into, key, color, width, piece, a, b);
           }
         }
       }
@@ -339,8 +354,8 @@ export function linework(
     layers?: number,
   ) =>
     [...into]
-      .map(([layer, strokes]) => ({
-        layer,
+      .map(([key, strokes]) => ({
+        ...identities.get(key)!,
         ...(hidden && { hidden }),
         ...(hidden && layers !== undefined && { layers }),
         strokes: [...strokes.values()].filter((s) => s.paths.length),
@@ -941,7 +956,7 @@ export function linesSvg(
   const body = groups
     .map(
       (g) =>
-        `<g id="${g.hidden ? `hidden-${g.layer}${(g.layers ?? 1) > 1 ? `-${g.layers}` : ""}` : g.layer}" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${g.hidden ? ` stroke-opacity="${hiddenOpacity(g.hidden, g.layers)}"` : ""}>${g.strokes
+        `<g id="${g.hidden ? `hidden-${g.layer}${(g.layers ?? 1) > 1 ? `-${g.layers}` : ""}` : g.layer}${g.member === undefined ? "" : `-member-${g.member}`}"${g.member === undefined ? "" : ` data-family-member="${g.member}" data-family-slots="${g.slots!.join(" ")}"`} fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"${g.hidden ? ` stroke-opacity="${hiddenOpacity(g.hidden, g.layers)}"` : ""}>${g.strokes
           .map(
             (s) =>
               `<path stroke="${s.color}"${s.width === undefined ? "" : ` stroke-width="${fixed(s.width)}"`} d="${s.paths

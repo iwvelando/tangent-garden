@@ -1,3 +1,10 @@
+import { SpatialFamilyPanel, useSpatialFamily } from "./SpatialFamilyPanel";
+import {
+  composeSpatialFamily,
+  spatialFamilyBudget,
+  spatialFamilyRecord,
+  type SpatialFamilySettings,
+} from "./family";
 import { Icon } from "../icons";
 import {
   ReceiverViewCheck,
@@ -322,6 +329,10 @@ export default function SpatialApp({
     controls = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
   const [config, setConfig] = useState<SpatialConfig>(spatialPresets[0].config);
+  const [family, setFamily] = useState<SpatialFamilySettings | undefined>(
+    undefined,
+  );
+  const engraving = !!family?.enabled;
   const [customOpened, setCustomOpened] = useState(false);
   // The curated event the study opened as (story.ts), kept until another
   // study replaces it; it applies only while the study is its recipe.
@@ -361,7 +372,7 @@ export default function SpatialApp({
   // The parameter probe asks Go for diagnostics only while it is on, and
   // only for what it describes: the curve or the surface.
   const [probe, setProbe] = useState<Probe>(defaultProbe);
-  const probing = probe.enabled && probeSupport(config).available,
+  const probing = !engraving && probe.enabled && probeSupport(config).available,
     target = probeTarget(config, probe);
   // The cutaway plane: a drawing setting, never sent to Go.
   const [cut, setCut] = useState<Cut>(defaultCut);
@@ -424,13 +435,34 @@ export default function SpatialApp({
   viewRef.current = view;
   const pending = Object.values(states).some((s) => s.pending),
     scalarError = Object.values(states).find((s) => s.error);
+  // Playback owns the prepared set even if its released camera is explored.
+  const familyFocus = useRef<RefinementView | null>(null);
+  if (!animation) familyFocus.current = view;
+  const familyState = useSpatialFamily(
+    config,
+    family,
+    active,
+    pending || !!scalarError,
+    animation ? familyFocus.current : view,
+  );
+  const familyFrame = useMemo(
+    () =>
+      engraving && family && !familyState.pending && familyState.members.length
+        ? composeSpatialFamily(config, family, familyState.members)
+        : null,
+    [config, family, familyState],
+  );
   const key = JSON.stringify(config),
     request = [
       key,
       ...(probing ? [`probe:${target}`] : []),
-      ...(view ? [`view:${JSON.stringify(view)}`] : []),
+      ...(!engraving && view ? [`view:${JSON.stringify(view)}`] : []),
     ].join("\u0000"),
-    busy = settled !== request || pending || (refineView && focusPending);
+    busy =
+      settled !== request ||
+      pending ||
+      (refineView && focusPending) ||
+      (engraving && familyState.pending);
   const journey = useJourneyEntry(
     active,
     busy,
@@ -463,6 +495,8 @@ export default function SpatialApp({
     atlasWaiting,
     generation.current,
     eventSelection,
+    family,
+    engraving ? [layers, theme.dark, theme.scheme] : null,
   ]);
   useEffect(() => {
     client.current = new EngineClient();
@@ -484,7 +518,7 @@ export default function SpatialApp({
       client
         .current!.computeSpatial(config, {
           ...(probing ? probeOptions(target) : {}),
-          ...(view && { view }),
+          ...(!engraving && view && { view }),
         })
         .then((value) => {
           if (current) {
@@ -578,6 +612,7 @@ export default function SpatialApp({
     setCustomOpened(study.config.format === "parametric");
     setStory(study.story);
     setConfig(study.config);
+    setFamily(study.family);
     setLayers(study.layers);
     setProbe(study.probe);
     setCut(study.cut);
@@ -626,6 +661,7 @@ export default function SpatialApp({
     projection: lensing,
     lensAngle,
     ...(story && { story }),
+    ...(family && { family }),
   });
   // The cut's buttons compute from its numeric fields, so they wait for
   // evaluations still pending for them; a preset chosen meanwhile wins.
@@ -1929,7 +1965,9 @@ export default function SpatialApp({
     [fieldError],
   );
   const claimedHere = !!failure && claimed !== null;
-  const shownFrame = animation?.frame ?? frame;
+  // Keep the plot mounted while members prepare, preserving its manual camera.
+  const shownFrame =
+    animation?.frame ?? (engraving ? (familyFrame ?? frame) : frame);
   const shown = useMemo(
     () =>
       shownFrame && (!receiverView || receiverPending)
@@ -1953,7 +1991,19 @@ export default function SpatialApp({
     !!animation?.complete,
     reset,
   );
-  const ready = !!frame && !busy && !failure && !renderError;
+  const sourceReady = !!frame && !busy && !failure && !renderError;
+  const familyProblem =
+    engraving && family ? spatialFamilyBudget(config, family) : undefined;
+  const familyReady = !!familyFrame && !familyFrame.result.unavailable;
+  const ready =
+    sourceReady && (!engraving || (familyReady && !familyProblem?.error));
+  // Invalid motion settings must leave their setup editable; actions and
+  // sharing still wait for correction.
+  const animationReady =
+    sourceReady &&
+    (!engraving ||
+      (familyReady &&
+        (!familyProblem?.error || familyProblem.field === "Band width")));
   const atlasRefusal =
     ready &&
     config.format === "implicit" &&
@@ -2665,7 +2715,26 @@ export default function SpatialApp({
         : ""}
     </p>
   );
-  const behind = eventStory ? (
+  const behind = engraving ? (
+    <StudyExplanation
+      note="Unavailable slots keep their positions in the family and timeline; their reasons appear in Members and limits."
+      label="BEHIND THE ENGRAVING"
+      title="Every curve keeps its own identity."
+      formula={
+        <>
+          r(t, λ) <span>one ordinary study at each λ</span>
+        </>
+      }
+    >
+      <p>
+        Both range endpoints belong to this finite family. Each curve keeps its
+        gaps; no surface connects neighboring members. The selected member alone
+        supplies enabled construction guides. Select it to inspect the
+        construction, or use Animation to reveal the family or move a band
+        through its frozen slots.
+      </p>
+    </StudyExplanation>
+  ) : eventStory ? (
     <StudyExplanation
       label="BEHIND THE EVENT"
       title={eventStory.explanation.title}
@@ -3194,7 +3263,9 @@ export default function SpatialApp({
         <AnimationButton section="spatial-animation-section" />
         <ExportImageMenu
           revision={journey.requested}
-          disabled={!ready || running || imageBusy}
+          disabled={
+            !ready || !!shown?.result.unavailable || running || imageBusy
+          }
           kind="spatial"
           menuId="spatial-export-image-menu"
           svgLabel="SVG · embedded 3D image"
@@ -3246,6 +3317,7 @@ export default function SpatialApp({
                 ref={atlasButton}
                 type="button"
                 disabled={
+                  engraving ||
                   !frame ||
                   busy ||
                   !!failure ||
@@ -3284,7 +3356,12 @@ export default function SpatialApp({
               <button
                 ref={fitButton}
                 type="button"
-                disabled={!harmonicFitEligible(config) || !!failure || running}
+                disabled={
+                  engraving ||
+                  !harmonicFitEligible(config) ||
+                  !!failure ||
+                  running
+                }
                 aria-describedby={fitHelp.open ? fitHelp.id : undefined}
                 className="with-icon"
                 onClick={(e) => {
@@ -4184,21 +4261,28 @@ export default function SpatialApp({
               />
             </FieldErrorContext.Provider>
           </ScalarStatus.Provider>
-          <ProbePanel
-            config={config}
-            frame={probeFrame}
-            probe={probe}
-            onProbe={setProbe}
-            animating={!!animation && !moving}
-            held={heldProbe}
-            point={heldPoint?.grid}
-            at={moving?.probe}
-            across={moving?.probeSetup?.across}
-            position={moving?.probeSetup?.position}
-            away={moving ? undefined : animation?.probeAway}
-            dark={theme.dark}
-            scheme={theme.scheme}
-          />
+          <fieldset disabled={engraving}>
+            <ProbePanel
+              config={config}
+              frame={probeFrame}
+              probe={probe}
+              onProbe={setProbe}
+              animating={!!animation && !moving}
+              held={heldProbe}
+              point={heldPoint?.grid}
+              at={moving?.probe}
+              across={moving?.probeSetup?.across}
+              position={moving?.probeSetup?.position}
+              away={moving ? undefined : animation?.probeAway}
+              dark={theme.dark}
+              scheme={theme.scheme}
+            />
+          </fieldset>
+          {engraving && (
+            <p className="note">
+              Disable engraving to use the source study’s probe.
+            </p>
+          )}
           <FieldErrorContext.Provider value={fieldError}>
             <details className="spatial-details">
               <summary>Sampling & definition</summary>
@@ -4459,12 +4543,37 @@ export default function SpatialApp({
                     ? `${config.surface.uSamples} × ${config.surface.vSamples} cells · ${config.surface.curves} parameter curves`
                     : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
+          <ScalarStatus.Provider value={scalarStatus}>
+            <div key={`family-${controls.current}`}>
+              <SpatialFamilyPanel
+                config={config}
+                value={family}
+                state={familyState}
+                pending={pending}
+                fieldError={fieldError}
+                onChange={setFamily}
+              />
+            </div>
+          </ScalarStatus.Provider>
           <SpatialAnimationPanel
-            frame={frame}
+            family={
+              engraving && family
+                ? {
+                    settings: family,
+                    error:
+                      familyProblem?.field === "Band width"
+                        ? familyProblem.error
+                        : undefined,
+                    members: familyState.members,
+                    onChange: setFamily,
+                  }
+                : undefined
+            }
+            frame={engraving ? familyFrame : frame}
             client={client}
             length={config.length}
             revision={revision}
-            disabled={!ready || !active || imageBusy}
+            disabled={!animationReady || !active || imageBusy}
             probe={probing ? probe : null}
             cut={userCut.spec}
             sight={userSight.spec}
@@ -4474,8 +4583,8 @@ export default function SpatialApp({
             getCurrentView={() =>
               viewport.current ? structuredClone(viewport.current) : undefined
             }
-            getFocus={() => (curveView ? viewRef.current : null)}
-            refineView={curveView}
+            getFocus={() => (!engraving && curveView ? viewRef.current : null)}
+            refineView={!engraving && curveView}
             getPage={() =>
               canvasWrap.current?.clientWidth
                 ? {
@@ -4526,6 +4635,12 @@ export default function SpatialApp({
               : undefined
           }
           data-config={shown ? JSON.stringify(shown.config) : undefined}
+          data-family={engraving ? JSON.stringify(family) : undefined}
+          data-engraving={
+            shown?.result.engraving
+              ? JSON.stringify(spatialFamilyRecord(shown.result.engraving))
+              : undefined
+          }
           // The entered cut while it is on, as a preset's fingerprint
           // includes it (see examples/index.ts).
           data-cut={cut.enabled ? JSON.stringify(cut) : undefined}
@@ -4571,37 +4686,39 @@ export default function SpatialApp({
                   : "YOUR OWN EXPLORATION"}
               </div>
               <h1>
-                {leveled
-                  ? "A level surface and its sections"
-                  : refracting
-                    ? "An interface and its caustics"
-                    : mirroring
-                      ? "A mirror and its caustics"
-                      : surfacing
-                        ? config.surface.geodesics?.transport
-                          ? "An arrow carried along a surface"
-                          : config.surface.geodesics
-                            ? "Threads that go straight on a surface"
-                            : surfaceCapabilities[config.surface.kind].title
-                        : none
-                          ? flowing
-                            ? "Paths that follow a field"
-                            : chasing
-                              ? "Pursuers closing in space"
-                              : "A curve in space"
-                          : canal
-                            ? "A surface enveloping spheres"
-                            : ruled
-                              ? "A surface of straight threads"
-                              : framed
-                                ? "A ribbon carried by a frame"
-                                : inversion
-                                  ? "A curve inverted in a sphere"
-                                  : projection
-                                    ? projectionName
-                                    : involute
-                                      ? "Filaments unwound from a curve"
-                                      : "A ribbon of tangent lines"}
+                {engraving
+                  ? "Finite spatial engraving"
+                  : leveled
+                    ? "A level surface and its sections"
+                    : refracting
+                      ? "An interface and its caustics"
+                      : mirroring
+                        ? "A mirror and its caustics"
+                        : surfacing
+                          ? config.surface.geodesics?.transport
+                            ? "An arrow carried along a surface"
+                            : config.surface.geodesics
+                              ? "Threads that go straight on a surface"
+                              : surfaceCapabilities[config.surface.kind].title
+                          : none
+                            ? flowing
+                              ? "Paths that follow a field"
+                              : chasing
+                                ? "Pursuers closing in space"
+                                : "A curve in space"
+                            : canal
+                              ? "A surface enveloping spheres"
+                              : ruled
+                                ? "A surface of straight threads"
+                                : framed
+                                  ? "A ribbon carried by a frame"
+                                  : inversion
+                                    ? "A curve inverted in a sphere"
+                                    : projection
+                                      ? projectionName
+                                      : involute
+                                        ? "Filaments unwound from a curve"
+                                        : "A ribbon of tangent lines"}
               </h1>
             </div>
             <div className="view-buttons lensed">
