@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 import { roundedGenerated } from "../atlas";
 import { tiered } from "../help";
 import type { Config, Vec } from "../types";
@@ -1179,12 +1180,11 @@ export function sameCurve(a: Config["curve"], b: Config["curve"]) {
 // study's own curve, or of the curve an example brought.
 export function pathNote(s: LoomSource, own: boolean) {
   const path = loomPaths[s.input];
-  const n = (v: number) => String(+v.toPrecision(6));
   const setting =
     path.setting === "pole" && s.pole
-      ? ` about the pole (${n(s.pole.x)}, ${n(s.pole.y)})`
+      ? ` about the pole (${formatNumber(s.pole.x)}, ${formatNumber(s.pole.y)})`
       : path.setting === "distance" && s.distance !== undefined
-        ? ` at distance ${n(s.distance)}`
+        ? ` at distance ${formatNumber(s.distance)}`
         : "";
   const curve = own
     ? `a frozen copy of your base study’s ${s.curve.format} curve`

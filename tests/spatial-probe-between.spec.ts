@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
@@ -40,7 +41,6 @@ const mode = (page: Page) => page.getByLabel("Animate", { exact: true });
 const motion = (page: Page) => page.getByLabel("Probe", { exact: true });
 const button = (page: Page, name: string) =>
   page.getByRole("button", { name, exact: true });
-const short = (v: number) => String(Number(v.toPrecision(4)));
 const samples = 240,
   position = 0.123456;
 

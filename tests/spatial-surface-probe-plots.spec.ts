@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { choosePreset } from "./helpers";
 import { helpText } from "../web/help";
@@ -203,7 +204,6 @@ const joined = (page: Page) =>
         ),
       ),
     );
-const short = (v: number) => String(Number(v.toPrecision(4)));
 const curvatureSwitch = (page: Page) =>
   page.getByRole("checkbox", {
     name: "Principal curvatures & centers at a point",

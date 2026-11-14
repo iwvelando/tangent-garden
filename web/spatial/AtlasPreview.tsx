@@ -1,3 +1,8 @@
+import {
+  distinctReadouts,
+  count as formatCount,
+  plural,
+} from "../number-format";
 // The 3D notebook's parameter atlas (atlas.ts), shown over the notebook as
 // the planar atlas is: the shared dialog shell (../atlas-dialog.tsx), its
 // cells drawn as the notebook draws by atlas-paint.ts.
@@ -51,22 +56,18 @@ import { AtlasSheetExport } from "../AtlasSheetExport";
 import { spatialSheetPainter } from "./atlas-sheet";
 import { spatialSheetDefinition } from "./atlas-definition";
 
-const short = (value: number) => Number(value.toPrecision(5)).toString();
-const count = (n: number) => n.toLocaleString("en-US");
 function quality(config: SpatialConfig) {
   if (config.format === "implicit") {
     const { cells, refine, sections } = config.implicit;
-    const plural = (n: number, one: string, many: string) =>
-      `${count(n)} ${n === 1 ? one : many}`;
     return [
-      `${count(cells)} cells along the longest box side`,
+      `${formatCount(cells)} cells along the longest box side`,
       plural(refine, "refinement level", "refinement levels"),
       plural(sections.count, "section", "sections"),
     ].join(", ");
   }
   if (config.format === "surface")
-    return `${count(config.surface.uSamples)} × ${count(config.surface.vSamples)} grid cells`;
-  return `${count(config.samples)} samples, ${config.lines} rulings, refinement ${config.adaptive ? "on" : "off"}`;
+    return `${formatCount(config.surface.uSamples)} × ${formatCount(config.surface.vSamples)} grid cells`;
+  return `${formatCount(config.samples)} samples, ${config.lines} rulings, refinement ${config.adaptive ? "on" : "off"}`;
 }
 
 // Reuse the notebook's diagnostics outside the geometry-only images.
@@ -297,6 +298,12 @@ export default function SpatialAtlasPreview({
     scheduler.current?.inspect(index);
     tabs.showVariant();
   };
+  const axisLabels = [0, 1].map((axis) =>
+    distinctReadouts(
+      state.cells.map((c) => c.values[axis]),
+      6,
+    ),
+  );
   const cell = selected && state.cells[selected.index];
   const inspection = images.inspection;
   const capped =
@@ -536,9 +543,9 @@ export default function SpatialAtlasPreview({
                           </div>
                         )}
                         <span className="atlas-values">
-                          {descriptor.axes[0].symbol} = {short(cell.values[0])}
+                          {descriptor.axes[0].symbol} = {axisLabels[0][index]}
                           <br />
-                          {descriptor.axes[1].symbol} = {short(cell.values[1])}
+                          {descriptor.axes[1].symbol} = {axisLabels[1][index]}
                         </span>
                       </button>
                       {cell.error && (
@@ -580,10 +587,10 @@ export default function SpatialAtlasPreview({
                   </h3>
                   <p className="note">
                     {descriptor.axes[0].symbol} ={" "}
-                    {cell && short(cell.values[0])} ·{" "}
+                    {cell && axisLabels[0][selected!.index]} ·{" "}
                     {descriptor.axes[1].symbol} ={" "}
-                    {cell && short(cell.values[1])} · Original quality and
-                    manual camera
+                    {cell && axisLabels[1][selected!.index]} · Original quality
+                    and manual camera
                   </p>
                 </div>
                 <button

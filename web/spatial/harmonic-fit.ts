@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 import type { EngineClient } from "../engine-client";
 import { tiered } from "../help";
 import { turnTo } from "../named-views";
@@ -368,7 +369,6 @@ export function harmonicFitStudy(
   };
 }
 
-const short = (x: number) => Number(x.toPrecision(3)).toString();
 // What one term actually traces, in words. The tilt is against the first
 // term's plane: a planar epicycle chain would read zero throughout.
 export function harmonicEllipseWords(
@@ -376,11 +376,11 @@ export function harmonicEllipseWords(
   reference?: HarmonicEllipse,
 ) {
   const flat = e.minor <= 1e-9 * e.major;
-  if (flat) return `segment of half-length ${short(e.major)}`;
+  if (flat) return `segment of half-length ${formatNumber(e.major)}`;
   const round = e.major - e.minor <= 1e-3 * e.major;
   const shape = round
-    ? `circle of radius ${short(e.major)}`
-    : `ellipse ${short(e.major)} × ${short(e.minor)}`;
+    ? `circle of radius ${formatNumber(e.major)}`
+    : `ellipse ${formatNumber(e.major)} × ${formatNumber(e.minor)}`;
   const n = reference?.normal;
   if (!n || (n.x === 0 && n.y === 0 && n.z === 0)) return shape;
   const dot = Math.abs(n.x * e.normal.x + n.y * e.normal.y + n.z * e.normal.z);

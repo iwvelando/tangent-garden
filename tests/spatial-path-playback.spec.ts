@@ -225,14 +225,14 @@ test("key views are taken from the drawing, shown, set again and removed", async
   );
   const add = button(page, "+ Add the drawing's view");
   await add.click();
-  await expect(views(page)).toContainText("yaw 17°, pitch 43°, zoom 1.00×");
+  await expect(views(page)).toContainText("yaw 17°, pitch 43°, zoom 1×");
   // The first view has no leg before it, so no turns.
   await expect(page.getByLabel("View 1 turns", { exact: true })).toHaveCount(0);
   await canvas(page).focus();
   for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
   await page.keyboard.press("+");
   await add.click();
-  await expect(views(page)).toContainText("yaw 46°, pitch 43°, zoom 1.10×");
+  await expect(views(page)).toContainText("yaw 46°, pitch 43°, zoom 1.1×");
   await expect(page.getByLabel("View 2 turns", { exact: true })).toHaveValue(
     "0",
   );
@@ -243,7 +243,7 @@ test("key views are taken from the drawing, shown, set again and removed", async
   await canvas(page).focus();
   await page.keyboard.press("ArrowDown");
   await button(page, "Set view 2 to the drawing's view").click();
-  await expect(views(page)).toContainText("yaw 17°, pitch 49°, zoom 1.00×");
+  await expect(views(page)).toContainText("yaw 17°, pitch 49°, zoom 1×");
   await page.getByLabel("View 2 name", { exact: true }).fill("Lower");
   // A third view, two turns after the second.
   await add.click();

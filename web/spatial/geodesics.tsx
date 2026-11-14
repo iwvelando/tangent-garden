@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 import type { ReactNode } from "react";
 import { describeColors, type ColorScheme } from "../color-schemes";
 import { Field } from "../Field";
@@ -76,10 +77,6 @@ export const geodesicHelp = {
     "Samples are evenly spaced in arc length. The integration takes its own steps between them. A carried arrow's path counts as one more thread, plus two points.",
   ),
 } satisfies Record<string, Help<string>>;
-const format = (x: number) =>
-  Math.abs(x) >= 1e-3 || x === 0
-    ? x.toPrecision(4).replace(/\.?0+$/, "")
-    : x.toExponential(1);
 
 // What the fan is, which threads stopped short and why, and the colors.
 export function geodesicsNote(
@@ -92,8 +89,8 @@ export function geodesicsNote(
     each = g.threads.length === 1 ? "" : "each ";
   const out = [
     g.surface === "sphere"
-      ? `${threads} on the sphere, ${each}a great circle traced exactly, ${format(config.length)} long.`
-      : `${threads} on the torus, ${each}${format(config.length)} long, integrated in ${count(g.steps)} steps.`,
+      ? `${threads} on the sphere, ${each}a great circle traced exactly, ${formatNumber(config.length)} long.`
+      : `${threads} on the torus, ${each}${formatNumber(config.length)} long, integrated in ${count(g.steps)} steps.`,
   ];
   const exhausted = g.threads.filter((t) => t.reason === "exhausted").length;
   const unresolved = g.threads.filter((t) => t.reason === "unresolved").length;
@@ -128,19 +125,19 @@ export function selectedNote(g: GeodesicResult): string {
     th.reason === "end"
       ? "runs its whole length"
       : th.reason === "exhausted"
-        ? `ran out of steps at ${format(th.reached)}`
-        : `could not be integrated past ${format(th.reached)}`;
+        ? `ran out of steps at ${formatNumber(th.reached)}`
+        : `could not be integrated past ${formatNumber(th.reached)}`;
   const invariant =
     g.surface === "torus"
-      ? `; Clairaut's ρ cos ψ is ${format(th.points[0].x * th.tangents[0].y - th.points[0].y * th.tangents[0].x)}`
+      ? `; Clairaut's ρ cos ψ is ${formatNumber(th.points[0].x * th.tangents[0].y - th.points[0].y * th.tangents[0].x)}`
       : "";
   const back =
     th.reason !== "end"
       ? ""
       : th.closes
         ? ", and returns to its start within 10⁻⁶ in position and direction"
-        : `, and ends ${format(th.return.position)} r from its start, heading ${format(turned(th.return.direction))}° from its first direction`;
-  return `Thread ${k} leaves at ${format(th.direction)}° and ${ran}${invariant}${back}.`;
+        : `, and ends ${formatNumber(th.return.position)} r from its start, heading ${formatNumber(turned(th.return.direction))}° from its first direction`;
+  return `Thread ${k} leaves at ${formatNumber(th.direction)}° and ${ran}${invariant}${back}.`;
 }
 
 type Vector = (
@@ -363,7 +360,7 @@ export function TransportFields({
 
 const signed = (radians: number) => {
   const d = (radians * 180) / Math.PI;
-  return `${d > 0 ? "+" : d < 0 ? "−" : ""}${format(Math.abs(d))}°`;
+  return `${d > 0 ? "+" : d < 0 ? "−" : ""}${formatNumber(Math.abs(d))}°`;
 };
 
 // Where the arrow went and how it came back, how well it kept its length
@@ -386,19 +383,19 @@ export function transportNote(
     );
   else
     out.push(
-      `Along thread ${g.selected} the arrow keeps its ${format(config.angle)}° angle to the thread, as along any geodesic.`,
+      `Along thread ${g.selected} the arrow keeps its ${formatNumber(config.angle)}° angle to the thread, as along any geodesic.`,
     );
   if (tr.reason === "exhausted")
     out.push(
-      `It ran out of its share of the 200,000 steps at ${format(tr.reached)}.`,
+      `It ran out of its share of the 200,000 steps at ${formatNumber(tr.reached)}.`,
     );
   else if (tr.reason === "unresolved")
-    out.push(`It could not be integrated past ${format(tr.reached)}.`);
+    out.push(`It could not be integrated past ${formatNumber(tr.reached)}.`);
   const drift = Math.max(tr.drift.norm, tr.drift.tangency);
   out.push(
     drift < 1e-12
       ? "Its length stays 1 and it stays tangent to rounding."
-      : `Its length stays 1 and it stays tangent within ${format(drift)}.`,
+      : `Its length stays 1 and it stays tangent within ${formatNumber(drift)}.`,
   );
   out.push(
     describeColors(

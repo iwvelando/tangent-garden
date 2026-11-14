@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import {
@@ -85,7 +86,7 @@ test("the torus preset draws its fan, its selected thread and their notes", asyn
   // The selected thread, at 65 − 30/32 degrees, keeps ρ cos ψ = 2.8 cos β.
   const beta = 65 - 30 / 32;
   await expect(selected(page)).toContainText(
-    `Thread 8 leaves at 64.06° and runs its whole length; Clairaut's ρ cos ψ is ${(2.8 * Math.cos((beta * Math.PI) / 180)).toPrecision(4)}`,
+    `Thread 8 leaves at 64.0625° and runs its whole length; Clairaut's ρ cos ψ is ${formatNumber(2.8 * Math.cos((beta * Math.PI) / 180))}`,
   );
   await expect(selected(page)).not.toContainText("returns to its start");
   await expect(page.locator(".legend")).toContainText(
@@ -231,7 +232,7 @@ test("an ellipsoid with unequal axes has no threads until it is a sphere", async
   await field(page, "Axis c").fill("1");
   await settled(page);
   await expect(unavailable(page)).toHaveCount(0);
-  await expect(selected(page)).toContainText("Thread 8 leaves at 64.06°");
+  await expect(selected(page)).toContainText("Thread 8 leaves at 64.0625°");
 });
 
 test("the reveal draws every thread along its arc length; seeking and stopping agree", async ({

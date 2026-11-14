@@ -2762,7 +2762,10 @@ for (const [width, theme] of [
     });
     expect(await caption.count()).toBe(1);
     await expect(caption).toContainText("Hold the cusps");
-    await expect(caption).toContainText("Source x = 0.650000");
+    await expect(caption).toContainText("Source x = 0.65000");
+    expect((await definition(page)).animation.phrase).not.toHaveProperty(
+      "range",
+    );
     // Per-frame counters remain ordinary text, including implicit ARIA roles.
     await expect(caption.getByRole("status")).toHaveCount(0);
     await expect(page.locator("#playback .animation-values")).toHaveCount(0);
@@ -2799,7 +2802,7 @@ for (const [width, theme] of [
       "Hold the cusps",
     );
     await expect(page.locator("#artwork [data-phrase-caption]")).toContainText(
-      "Source x = 0.650000",
+      "Source x = 0.65000",
     );
     // Match the quiet 22-unit regular type used by exported face-on view
     // captions, rather than letting the caption dominate the construction.

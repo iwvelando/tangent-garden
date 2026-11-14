@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
@@ -47,7 +48,6 @@ const readout = (page: Page) => page.locator(".probe-readout dd");
 const mode = (page: Page) => page.getByLabel("Animate", { exact: true });
 const button = (page: Page, name: string) =>
   page.getByRole("button", { name, exact: true });
-const short = (v: number) => String(Number(v.toPrecision(4)));
 const position = 0.123456,
   across = 0.29,
   r = 0.5;

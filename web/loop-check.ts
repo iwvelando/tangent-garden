@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "./number-format";
 // Seamless loops in the 2D and 4D notebooks (see timing.ts). A loop joins
 // the motion's end to its start, so it is seamless only when the last frame
 // is the first. Both notebooks draw each frame as SVG, the same markup that
@@ -55,7 +56,7 @@ export function markupRefusal(
   if (gap === "pieces")
     return `${loopLead} the drawing at the end has different pieces from the drawing at the start.${advice}`;
   if (gap > 0)
-    return `${loopLead} the drawing at the end lies up to ${gap.toPrecision(2)} pixels from the drawing at the start.${advice}`;
+    return `${loopLead} the drawing at the end lies up to ${formatNumber(gap)} pixels from the drawing at the start.${advice}`;
   return null;
 }
 

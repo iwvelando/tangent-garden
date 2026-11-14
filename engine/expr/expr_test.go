@@ -181,3 +181,57 @@ func TestSpatialFieldVariables(t *testing.T) {
 		t.Errorf("scalar z: %v", err)
 	}
 }
+
+func TestScalarReadoutMinus(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want float64
+	}{
+		{"−0.5", -0.5}, {"1−2", -1}, {"−1e−7", -1e-7}, {"2^−2", .25}, {"−phi", -(1 + math.Sqrt(5)) / 2},
+	} {
+		got, err := Scalar(tc.text)
+		if err != nil || got != tc.want {
+			t.Errorf("Scalar(%q) = %g, %v; want %g", tc.text, got, err, tc.want)
+		}
+	}
+	for _, text := range []string{"−t", "−x", "−a", "sqrt(−1)", "1e999", "∞", "−∞", "1—2", strings.Repeat("−", 400) + "1"} {
+		if _, err := Scalar(text); err == nil {
+			t.Errorf("accepted %q", text)
+		}
+	}
+	// Curve grammar is unchanged; normalization belongs only to Scalar.
+	if _, err := Parse("−t"); err == nil {
+		t.Fatal("changed curve grammar")
+	}
+}
+
+func TestScalarMinusOriginalBudget(t *testing.T) {
+	// A flat sum is within the normalized source and depth budgets. The
+	// original multibyte text must still obey the ordinary byte budget.
+	ascii := strings.Repeat("-1+", 260) + "1"
+	if value, err := Scalar(ascii); err != nil || value != -259 {
+		t.Fatalf("valid ASCII control: %g, %v", value, err)
+	}
+	if _, err := Scalar(strings.Repeat("−1+", 260) + "1"); err == nil || !strings.Contains(err.Error(), "1024") {
+		t.Fatalf("original source budget: %v", err)
+	}
+}
+
+func TestScalarReadoutSpacing(t *testing.T) {
+	for _, tc := range []struct {
+		text string
+		want float64
+	}{
+		{"\u2007\u20070.30000", .3}, {"−\u2007\u20071.00000", -1}, {"1\u2007+\u20072", 3},
+	} {
+		if got, err := Scalar(tc.text); err != nil || got != tc.want {
+			t.Errorf("Scalar(%q) = %g, %v; want %g", tc.text, got, err, tc.want)
+		}
+	}
+	if _, err := Scalar("1\u20072"); err == nil {
+		t.Fatal("joined numbers across readout spacing")
+	}
+	if _, err := Scalar(strings.Repeat("\u2007", 400) + "1"); err == nil || !strings.Contains(err.Error(), "1024") {
+		t.Fatalf("original spacing budget: %v", err)
+	}
+}

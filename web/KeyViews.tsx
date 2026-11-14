@@ -1,3 +1,4 @@
+import { progressPercent } from "./number-format";
 import {
   useEffect,
   useId,
@@ -168,7 +169,6 @@ export function KeyViews<K extends KeyBase>({
     )
       ? keyTimes({ keys })
       : null;
-  const percent = (x: number) => `${Math.round(x * 100)}%`;
   return (
     <div
       className="field path-views"
@@ -223,7 +223,8 @@ export function KeyViews<K extends KeyBase>({
               ))}
             <p className="hint">
               {describe(key)}
-              {reached && ` · reached ${percent(reached[k])} of the way`}
+              {reached &&
+                ` · reached ${progressPercent(reached[k])} of the way`}
             </p>
             <div className="path-view-buttons">
               {(["up", "down"] as const).map((way) => {

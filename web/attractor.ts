@@ -1,3 +1,4 @@
+import { count as formatCount } from "./number-format";
 import type { AttractorMap, AttractorResult } from "./types";
 import { plural } from "./number-format";
 
@@ -27,15 +28,15 @@ export function attractorNote(result: AttractorResult, discard: number) {
   const notes = [
     result.accumulated === 0
       ? "No iterates are accumulated."
-      : `${plural(result.accumulated, "iterate")}${discard ? `, after ${discard.toLocaleString("en-US")} discarded,` : ""} ${result.accumulated === 1 ? "visits" : "visit"} ${visited.toLocaleString("en-US")} of ${plural(result.columns * result.rows, "cell")}; the busiest has ${plural(result.max, "visit")}.`,
+      : `${plural(result.accumulated, "iterate")}${discard ? `, after ${formatCount(discard)} discarded,` : ""} ${result.accumulated === 1 ? "visits" : "visit"} ${formatCount(visited)} of ${plural(result.columns * result.rows, "cell")}; the busiest has ${plural(result.max, "visit")}.`,
   ];
   if (result.outside)
     notes.push(
-      `${result.outside.toLocaleString("en-US")} of them ${result.outside === 1 ? "lies" : "lie"} outside the window and ${result.outside === 1 ? "is" : "are"} not drawn.`,
+      `${formatCount(result.outside)} of them ${result.outside === 1 ? "lies" : "lie"} outside the window and ${result.outside === 1 ? "is" : "are"} not drawn.`,
     );
   if (result.escape)
     notes.push(
-      `The orbit left |x|, |y| ≤ 100,000 at iterate ${result.escape.toLocaleString("en-US")} and stops there.`,
+      `The orbit left |x|, |y| ≤ 100,000 at iterate ${formatCount(result.escape)} and stops there.`,
     );
   return notes.join(" ");
 }

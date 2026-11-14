@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { deflateRawSync } from "node:zlib";
 import { readFile } from "node:fs/promises";
@@ -29,7 +30,6 @@ const value = (page: Page, term: string) =>
     .locator(".probe-readout dt", { hasText: term })
     .locator("xpath=following-sibling::dd[1]");
 const drawn = (page: Page, id: string) => art(page).getByTestId(id);
-const short = (v: number) => String(Number(v.toPrecision(4)));
 const button = (page: Page, name: string) =>
   page.getByRole("button", { name, exact: true });
 const probeT = async (page: Page) =>

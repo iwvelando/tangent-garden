@@ -1,3 +1,4 @@
+import { count as formatCount } from "../number-format";
 // The cutaway plane: a drawing setting, not part of the study. Go computes
 // the whole study as always; the cut hides whatever lies where n̂·p > d,
 // n̂ = n/|n|, in world coordinates, in the live drawing and every export.
@@ -66,8 +67,8 @@ export const cutHelp = {
     "Hides everything on the side the plane's normal points to, here and in every export.",
     "That is where n̂·p > d, with n̂ = n/|n|. The plane is fixed in space: it stays put while the camera turns and while parameters animate. The study itself is unchanged; the cut only hides part of the drawing.",
   ),
-  normal: `Any nonzero direction, each component within ±${maxCutValue.toLocaleString("en-US")}.`,
-  offset: `The plane's signed distance from the origin along n̂, within ±${maxCutValue.toLocaleString("en-US")}.`,
+  normal: `Any nonzero direction, each component within ±${formatCount(maxCutValue)}.`,
+  offset: `The plane's signed distance from the origin along n̂, within ±${formatCount(maxCutValue)}.`,
   cuts: tiered(
     "The surface alone, every sheet, or sheets and lines. Never the probe.",
     "The surface is the study's own sheet: the patch, mirror or interface, ribbon, tube, or level surface. Every sheet adds the offset, focal or caustic sheets and the receiver. Sheets and lines also cuts the curve and construction lines.",

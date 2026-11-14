@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "./number-format";
 import { useJourneyViewport } from "./useJourneyViewport";
 import { useEffect, useId, useMemo, useReducer, useRef, useState } from "react";
 import { AnimationPanel } from "./AnimationPanel";
@@ -49,7 +50,6 @@ const calculation = (i: number, step: JourneyStep, edit?: JourneyValue) =>
   step.control.kind !== "probe" && edit !== undefined
     ? `${i}:${JSON.stringify(edit)}`
     : `${i}`;
-const short = (v: number) => String(Number(v.toPrecision(4)));
 
 // One disposable engine for the entire excursion. At most one calculation
 // runs: the requested step first, then each other example nearest it, once.
@@ -572,7 +572,7 @@ function StepControl({
   return (
     <Field
       label={control.label}
-      value={at ? `t = ${short(at.t)}` : ""}
+      value={at ? `t = ${formatNumber(at.t)}` : ""}
       className="probe-slider"
     >
       <input
@@ -583,7 +583,7 @@ function StepControl({
         value={sample}
         disabled={!frame}
         aria-valuetext={
-          at ? `t = ${short(at.t)}, sample ${sample} of ${n}` : undefined
+          at ? `t = ${formatNumber(at.t)}, sample ${sample} of ${n}` : undefined
         }
         onChange={(e) => onEdit(e.target.valueAsNumber / n)}
       />

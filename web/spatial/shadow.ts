@@ -1,3 +1,7 @@
+import {
+  count as formatCount,
+  percent as formatPercent,
+} from "../number-format";
 // A curve study's shadow on a plane (engine3/shadow.go): the plane's
 // choices, the 2D construction that corresponds to each 3D one, and the
 // words the panel, the legend and the note use for them. Everything here
@@ -52,7 +56,7 @@ export const shadowHelp = {
     "Casts the curve's shadow on a plane, beside its 2D construction.",
     "The involute, tangent-foot curve, orthotomic and sphere inversion meet their 2D counterparts there: the involute, pedal, orthotomic and circle inversion of the shadow, with the pole and center projected onto the plane. Other constructions cast the curve's shadow alone. With Refine between samples, the plane's paths are refined too.",
   ),
-  at: `Where the plane stands, within ±${maxShadowAt.toLocaleString("en-US")}.`,
+  at: `Where the plane stands, within ±${formatCount(maxShadowAt)}.`,
 };
 
 // A plane just beyond the drawn study on its own axis's low side, so the
@@ -96,20 +100,8 @@ export function shadowLegend(c: SpatialConfig): SpatialLegendEntry[] {
   ];
 }
 
-// A share of the shadow's size, as a percentage to two figures, or in
-// powers of ten when it is under a millionth.
-function share(x: number) {
-  if (x >= 1e-6) return `${Number((100 * x).toPrecision(2))}%`;
-  if (x === 0) return "0";
-  let power = Math.floor(Math.log10(x)),
-    digit = Math.round(x / 10 ** power);
-  if (digit === 10) [digit, power] = [1, power + 1];
-  const superscript = String(power).replace(
-    /[-0-9]/g,
-    (d) => "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"["-0123456789".indexOf(d)],
-  );
-  return `${digit} × 10${superscript}`;
-}
+// A share of the shadow's size, including tiny nonzero percentages.
+const share = formatPercent;
 
 // Whether the shadow of the 3D construction lies on the 2D construction of
 // the shadow: within a millionth of the shadow's size, about where the

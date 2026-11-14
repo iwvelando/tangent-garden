@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 import { tiered, type Help } from "../help";
 import type { LineWeight } from "../line-weight";
 import { objects, rotationMotions, type MotionChoice } from "./objects";
@@ -372,7 +373,7 @@ export function passageExtent(config: Config): number {
 }
 // A slice passage's help: its extent, then the object's own detail.
 function passageHelp(config: Config): Help<string> {
-  const extent = passageExtent(config).toPrecision(4),
+  const extent = formatNumber(passageExtent(config)),
     brief = `Move h from −${extent} to ${extent}, empty at both ends.`,
     more = objects[config.object].passageHelp;
   return more ? tiered(brief, more) : brief;

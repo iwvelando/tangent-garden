@@ -1,3 +1,4 @@
+import { readout as formatNumber, count as formatCount } from "./number-format";
 import { Icon, type IconName } from "./icons";
 import { LoomContext, type LoomEntry } from "./loom/Context";
 import { GardenContext, type GardenEntry } from "./garden/Context";
@@ -455,7 +456,7 @@ function App({
   const samplesHelp = refinable
     ? tiered(
         samplesBrief,
-        `Between samples, an interval is halved up to ${refineDepth} times where the curve strays from its chord, adding at most ${refineBudget.toLocaleString("en-US")} points per curve. Derived curves are refined too; construction lines and circles stay on the even samples. A feature narrower than a sample can still be missed.`,
+        `Between samples, an interval is halved up to ${refineDepth} times where the curve strays from its chord, adding at most ${formatCount(refineBudget)} points per curve. Derived curves are refined too; construction lines and circles stay on the even samples. A feature narrower than a sample can still be missed.`,
       )
     : samplesBrief;
   const client = useRef<EngineClient | null>(null);
@@ -2303,7 +2304,7 @@ function App({
                       </div>
                       <p className="note">
                         Ratio n₁/n₂ ={" "}
-                        {(config.nIncident / config.nTransmitted).toFixed(3)}.
+                        {formatNumber(config.nIncident / config.nTransmitted)}.
                         Each ray crosses once.
                       </p>
                       <details {...indices}>
@@ -2728,7 +2729,7 @@ function App({
                   },
                 )}
                 {optical && (
-                  <Field label="Ray length" value={`${length.toFixed(1)}×`}>
+                  <Field label="Ray length" value={`${formatNumber(length)}×`}>
                     <input
                       type="range"
                       min=".1"

@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
@@ -508,7 +509,6 @@ const pixels = (page: Page) =>
   page
     .locator("#spatial-artwork")
     .evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
-const short = (v: number) => String(Number(v.toPrecision(4)));
 const beads = { label: "Beads that lose their envelope" };
 
 // The beads: spheres of radius R = 0.7(1 + 0.8 sin 2t) on the x-axis, a

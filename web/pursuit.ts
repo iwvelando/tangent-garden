@@ -1,6 +1,5 @@
+import { readout as formatNumber } from "./number-format";
 import type { Pursuer, PursuitResult } from "./types";
-
-const time = (t: number) => String(Number(t.toPrecision(6)));
 
 // Why the chase stopped where it did, with pursuers numbered from 1.
 export function captureNote(pursuit: PursuitResult, min: number) {
@@ -8,9 +7,9 @@ export function captureNote(pursuit: PursuitResult, min: number) {
   if (c && c.time === min)
     return `Pursuer ${c.pursuer + 1} starts within the capture distance of pursuer ${c.target + 1}, so the chase ends at once.`;
   if (c)
-    return `Pursuer ${c.pursuer + 1} comes within the capture distance of pursuer ${c.target + 1} at t = ${time(c.time)}, and the chase stops there for everyone: later samples are left empty.`;
+    return `Pursuer ${c.pursuer + 1} comes within the capture distance of pursuer ${c.target + 1} at t = ${formatNumber(c.time)}, and the chase stops there for everyone: later samples are left empty.`;
   if (pursuit.exhausted)
-    return `The chase ran out of integration steps at t = ${time(pursuit.end)}: later samples are left empty. A shorter domain or a larger capture distance needs fewer steps.`;
+    return `The chase ran out of integration steps at t = ${formatNumber(pursuit.end)}: later samples are left empty. A shorter domain or a larger capture distance needs fewer steps.`;
   return "No pursuer comes within the capture distance of its target by the end of the domain.";
 }
 

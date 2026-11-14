@@ -1,3 +1,6 @@
+import { progressPercent } from "../number-format";
+import { elapsed } from "../number-format";
+import { liveReadout } from "../number-format";
 import {
   OverlayJourneyLayout,
   type OverlayGuide,
@@ -736,11 +739,21 @@ export function LacePreview({
           className="note garden-reveal-status lace-motion-status"
           aria-live="off"
         >
-          {(time * (durationError ? 0 : motion.duration)).toFixed(1)} /{" "}
-          {durationError ? "—" : motion.duration} s · offset{" "}
-          {drawnIsometry.offset.toFixed(3)}, direction{" "}
-          {drawnIsometry.direction.toFixed(3)}, rotation{" "}
-          {drawnIsometry.rotation.toFixed(3)}
+          {durationError
+            ? "—"
+            : elapsed(time * motion.duration, motion.duration)}{" "}
+          · offset{" "}
+          {liveReadout(drawnIsometry.offset, [isometry.offset, motion.offset])},
+          direction{" "}
+          {liveReadout(drawnIsometry.direction, [
+            isometry.direction - (motion.orbits ? Math.PI : 0),
+            isometry.direction + (motion.orbits ? Math.PI : 0),
+          ])}
+          , rotation{" "}
+          {liveReadout(drawnIsometry.rotation, [
+            isometry.rotation - (motion.turns ? Math.PI : 0),
+            isometry.rotation + (motion.turns ? Math.PI : 0),
+          ])}
           {film && !playing && film.time < 1 ? " · Paused" : ""}
         </p>
       </div>
@@ -1132,7 +1145,7 @@ export function LacePreview({
                 {exporting && (
                   <p role="status" aria-live="off">
                     Exporting {exportState.text.short}…{" "}
-                    {Math.round(exportProgress * 100)}%
+                    {progressPercent(exportProgress)}
                   </p>
                 )}
                 <h3 className="garden-section">Disk isometry</h3>

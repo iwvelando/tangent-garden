@@ -1,6 +1,5 @@
+import { readout as formatNumber } from "../number-format";
 import type { SpatialPursuer, SpatialPursuitResult } from "./types";
-
-const time = (t: number) => String(Number(t.toPrecision(6)));
 
 // Why the chase stopped where it did, with pursuers numbered from 1.
 // `carried` says whether a construction is built on the first path.
@@ -15,9 +14,9 @@ export function pursuitNote(
     c && c.time === min
       ? `Pursuer ${c.pursuer + 1} starts within the capture distance of pursuer ${c.target + 1}, so the chase ends at once.`
       : c
-        ? `Pursuer ${c.pursuer + 1} comes within the capture distance of pursuer ${c.target + 1} at t = ${time(c.time)}, and the chase stops there for everyone: later samples are left empty.`
+        ? `Pursuer ${c.pursuer + 1} comes within the capture distance of pursuer ${c.target + 1} at t = ${formatNumber(c.time)}, and the chase stops there for everyone: later samples are left empty.`
         : pursuit.exhausted
-          ? `The chase ran out of integration steps at t = ${time(pursuit.end)}: later samples are left empty. A shorter interval or a larger capture distance needs fewer steps.`
+          ? `The chase ran out of integration steps at t = ${formatNumber(pursuit.end)}: later samples are left empty. A shorter interval or a larger capture distance needs fewer steps.`
           : "No pursuer comes within the capture distance of its target by the end of the interval.",
   ];
   if (carried)

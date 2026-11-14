@@ -1,3 +1,6 @@
+import { progressPercent } from "../number-format";
+import { elapsed } from "../number-format";
+import { readout as formatNumber } from "../number-format";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { EngineClient } from "../engine-client";
 import type { ColorScheme } from "../color-schemes";
@@ -229,10 +232,7 @@ export default function JourneyDrawing(p: {
           </button>
         </div>
         <div className="timeline">
-          <Field
-            label="Animation progress"
-            value={`${Math.round(progress * 100)}%`}
-          >
+          <Field label="Animation progress" value={progressPercent(progress)}>
             <ProgressSlider
               progress={progress}
               disabled={disabled || playing || !motion}
@@ -241,7 +241,7 @@ export default function JourneyDrawing(p: {
           </Field>
           <div className="note" aria-live="off">
             {playing
-              ? `${(progress * p.study.duration).toFixed(1)} / ${p.study.duration} s`
+              ? elapsed(progress * p.study.duration, p.study.duration)
               : progress >= 1
                 ? "Complete"
                 : motion

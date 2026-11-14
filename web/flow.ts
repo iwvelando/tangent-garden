@@ -1,6 +1,5 @@
+import { readout as formatNumber } from "./number-format";
 import type { FieldResult, Vec } from "./types";
-
-const time = (t: number) => String(Number(t.toPrecision(6)));
 
 // Where and why each trajectory that stopped early did, numbered from 1,
 // and why a field with t has no direction field.
@@ -17,16 +16,18 @@ function trajectoryNote(field: FieldResult, min: number) {
     if (reason === "escape" && t === min)
       return [`Seed ${n} is outside the escape circle, so it has no path.`];
     if (reason === "escape")
-      return [`Trajectory ${n} leaves the escape circle at t = ${time(t)}.`];
+      return [
+        `Trajectory ${n} leaves the escape circle at t = ${formatNumber(t)}.`,
+      ];
     if (reason === "singular" && t === min)
       return [`The field is not finite at seed ${n}, so it has no path.`];
     if (reason === "singular")
       return [
-        `Trajectory ${n} stops at t = ${time(t)}, where the field stops being finite or changes too fast to follow.`,
+        `Trajectory ${n} stops at t = ${formatNumber(t)}, where the field stops being finite or changes too fast to follow.`,
       ];
     if (reason === "exhausted")
       return [
-        `Trajectory ${n} ran out of integration steps at t = ${time(t)}; a shorter domain needs fewer.`,
+        `Trajectory ${n} ran out of integration steps at t = ${formatNumber(t)}; a shorter domain needs fewer.`,
       ];
     return [];
   });

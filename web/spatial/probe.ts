@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 // The parameter probe: the curve's Frenet frame, osculating circle and
 // construction lines at one parameter, at a sample or between samples, and
 // its curvature and torsion around it; or, on a surface, one point's
@@ -1510,10 +1511,9 @@ export function probeWhere(
   probe: Probe,
   i: ProbePlace,
 ) {
-  const short = (v: number) => Number(v.toPrecision(6));
   if (probeTarget(config, probe) === "curve")
-    return `t = ${short(curveAt(result, i)!.t)}`;
+    return `t = ${formatNumber(curveAt(result, i)!.t)}`;
   const r = probeRecord(result, config, probe, i) as { u: number; v: number },
     t = surfaceTerms(config, probeTarget(config, probe));
-  return `${t.along} = ${short(r.u)}, ${t.around} = ${short(r.v)}`;
+  return `${t.along} = ${formatNumber(r.u)}, ${t.around} = ${formatNumber(r.v)}`;
 }

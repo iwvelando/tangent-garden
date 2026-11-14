@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { deflateRawSync } from "node:zlib";
 import { readFile } from "node:fs/promises";
@@ -29,7 +30,6 @@ const value = (page: Page, term: string) =>
     .locator(".probe-readout dt", { hasText: term })
     .locator("xpath=following-sibling::dd[1]");
 const drawn = (page: Page, id: string) => art(page).getByTestId(id);
-const short = (v: number) => String(Number(v.toPrecision(4)));
 const button = (page: Page, name: string) =>
   page.getByRole("button", { name, exact: true });
 
@@ -144,7 +144,7 @@ test("the probe reads and draws an ellipse's curvature, circle and frame at a sa
   await expect(value(page, "Arc length s")).toHaveText(short(s));
   // The κ plot spans the ellipse's least and greatest curvature.
   await expect(page.locator(".probe-plot figcaption")).toHaveText(
-    `κ from ${short(a / (b * b))} to ${short(b / (a * a))}`,
+    `κ from ${short(a / (b * b))} to ${short(Math.max(...Array.from({ length: n + 1 }, (_, j) => ellipse(j).kappa)))}`,
   );
   await probeSwitch(page).uncheck();
   await expect(drawn(page, "probe")).toHaveCount(0);

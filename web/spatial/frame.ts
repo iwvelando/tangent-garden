@@ -1,10 +1,9 @@
+import { readout as formatNumber } from "../number-format";
 import type { FrameResult } from "./types";
 
-// Signed degrees with a true minus sign, one decimal.
-export const degrees = (radians: number) => {
-  const d = (radians * 180) / Math.PI;
-  return `${d < -0.05 ? "−" : ""}${Math.abs(d).toFixed(1)}°`;
-};
+// Signed degrees with the shared static readout.
+export const degrees = (radians: number) =>
+  `${formatNumber((radians * 180) / Math.PI)}°`;
 
 // What the frame is and what it did on this curve: its kind, the closed
 // loop's return angle and seam (or why there is none), and any samples or

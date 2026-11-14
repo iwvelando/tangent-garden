@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 import { HelpText, HelpToggle, useHelp } from "../Field";
 import { tiered } from "../help";
 
@@ -9,11 +10,9 @@ export const restartHelp = tiered(
   "Each stretch of the base past a break gets its own anchor, halfway between its first and last regular samples, with the same string length c. A lone regular sample between two breaks stays unreached.",
 );
 
-const short = (t: number) => String(+t.toPrecision(4));
-
 // Names a result's restarted anchors, in order, as the notes show them.
 export const restartedAt = (restarts: number[]) =>
-  `${restarts.length === 1 ? "an anchor" : "anchors"} at t = ${restarts.map(short).join(", ")}`;
+  `${restarts.length === 1 ? "an anchor" : "anchors"} at t = ${restarts.map((t) => formatNumber(t)).join(", ")}`;
 
 // The checkbox and its help. Unchecking drops the field, so the link is
 // the one made before restarts existed.

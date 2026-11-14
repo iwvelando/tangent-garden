@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "./number-format";
 // The parameter probe's notebook-independent parts, shared by the 2D and 3D
 // notebooks: where it stands among a curve's samples, how a diagnostic is
 // scaled for its plot, and where it stands in each frame while parameters
@@ -149,9 +150,8 @@ export const betweenMotionHelp = tiered(
 // Why a held probe has no point in a frame: its t lies outside the frame's
 // domain, it has no share of the length to keep, or the frame has no
 // length.
-const short6 = (v: number) => Number(v.toPrecision(6));
 export const outsideFrame = (t: number, min: number, max: number, name = "t") =>
-  `${name} = ${short6(t)} lies outside this frame's domain, [${short6(min)}, ${short6(max)}].`;
+  `${name} = ${formatNumber(t)} lies outside this frame's domain, [${formatNumber(min)}, ${formatNumber(max)}].`;
 export const noShare =
   "The probe's point has no share of the length: it is not on a drawn stretch of the curve.";
 export const noLength = "This frame's curve has no length.";

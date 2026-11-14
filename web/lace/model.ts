@@ -1,3 +1,8 @@
+import {
+  readout as formatNumber,
+  count as formatCount,
+  percent as formatPercent,
+} from "../number-format";
 import { tiered } from "../help";
 import type { Repeat } from "../timing";
 import type { LineWeight } from "../line-weight";
@@ -383,9 +388,8 @@ export function hitTile(
   return best;
 }
 
-const number = (v: number) => v.toLocaleString("en-US");
 // A tile's number in the reader's terms: one-based breadth-first order.
-export const tileName = (i: number) => `Tile ${number(i + 1)}`;
+export const tileName = (i: number) => `Tile ${formatCount(i + 1)}`;
 // Sides are numbered 1–7 for the reader, 0–6 in addresses.
 export const sideName = (k: number) => `side ${k + 1}`;
 export const addressText = (a: LaceAddress) =>
@@ -403,23 +407,18 @@ export const between = (z: Vec, w: Vec) =>
 // How large a tile is drawn, relative to the center tile.
 export const drawnShare = (r: LaceResult, i: number) =>
   reach(r, i) / r.vertexRadius;
-const percent = (v: number) =>
-  v >= 0.1 ? `${Math.round(v * 100)}%` : `${(v * 100).toPrecision(2)}%`;
 
 // The explanation beside the drawing for the selected tile.
 export function explain(r: LaceResult, i: number) {
   const d = r.depth[i];
-  const side = r.sideLength.toFixed(3);
-  // A coordinate that rounds to zero reads 0.0000, never −0.0000, as a
-  // tile carried to the center does.
-  const fixed = (v: number) => (+v.toFixed(4) || 0).toFixed(4);
-  const at = `(${fixed(r.center[i].x)}, ${fixed(r.center[i].y)})`;
+  const side = formatNumber(r.sideLength);
+  const at = `(${formatNumber(r.center[i].x)}, ${formatNumber(r.center[i].y)})`;
   // Moved, the center tile no longer lies at the disk's center, so the
   // distance from it, which the isometry keeps, is named apart from the
   // distance from the disk's center, which it changes.
   const facts = isIdentity(r.isometry)
-    ? `Depth ${d} · center ${at} · hyperbolic distance ${fromCenter(r.center[i]).toFixed(3)} from the center · drawn ${percent(drawnShare(r, i))} of the center tile's size`
-    : `Depth ${d} · drawn at ${at} · hyperbolic distance ${between(r.center[0], r.center[i]).toFixed(3)} from the center tile and ${fromCenter(r.center[i]).toFixed(3)} from the disk's center · drawn ${percent(drawnShare(r, i))} of a tile's size at the disk's center`;
+    ? `Depth ${d} · center ${at} · hyperbolic distance ${formatNumber(fromCenter(r.center[i]))} from the center · drawn ${formatPercent(drawnShare(r, i))} of the center tile's size`
+    : `Depth ${d} · drawn at ${at} · hyperbolic distance ${formatNumber(between(r.center[0], r.center[i]))} from the center tile and ${formatNumber(fromCenter(r.center[i]))} from the disk's center · drawn ${formatPercent(drawnShare(r, i))} of a tile's size at the disk's center`;
   if (i === 0)
     return {
       facts,
@@ -446,9 +445,10 @@ export function cutoffSummary(r: LaceResult, q: LaceRequest) {
   const deepest = n ? Math.max(...r.depth) : 0;
   let gap = 1;
   for (const v of r.vertex) gap = Math.min(gap, 1 - Math.hypot(v.x, v.y));
-  const tiles = (n: number) => `${number(n)} ${n === 1 ? "tile" : "tiles"}`;
+  const tiles = (n: number) =>
+    `${formatCount(n)} ${n === 1 ? "tile" : "tiles"}`;
   const parts = [
-    `${tiles(n)} at depths 0–${deepest}; the outermost corners lie ${gap.toPrecision(2)} inside the rim, which no tile reaches.`,
+    `${tiles(n)} at depths 0–${deepest}; the outermost corners lie ${formatNumber(gap)} inside the rim, which no tile reaches.`,
   ];
   const cut = [
     r.omitted.depth && `${tiles(r.omitted.depth)} beyond depth ${q.depth}`,
@@ -461,14 +461,14 @@ export function cutoffSummary(r: LaceResult, q: LaceRequest) {
   if (r.isometry.offset > 0)
     parts.push(
       r.coverage.radius > 0
-        ? `Moved off center, it is complete only to radius ${r.coverage.radius.toFixed(3)} about the disk's center (hyperbolic distance ${r.coverage.distance.toFixed(2)}); beyond, the tiling goes on but this finite patch stops.`
+        ? `Moved off center, it is complete only to radius ${formatNumber(r.coverage.radius)} about the disk's center (hyperbolic distance ${formatNumber(r.coverage.distance)}); beyond, the tiling goes on but this finite patch stops.`
         : "Moved off center, the disk's center lies beyond the patch.",
     );
   const stopped =
     r.stopped === "count"
-      ? `Stopped at the ${number(q.maxTiles)}-tile limit with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
+      ? `Stopped at the ${formatCount(q.maxTiles)}-tile limit with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
       : r.stopped === "candidates"
-        ? `Stopped after examining ${number(laceLimits.candidates)} candidate tiles with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
+        ? `Stopped after examining ${formatCount(laceLimits.candidates)} candidate tiles with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
         : "";
   return { text: parts.join(" "), stopped };
 }
@@ -479,8 +479,8 @@ export const laceHelp = {
     `Each depth reflects the previous ring of tiles across their outer sides. Depth 5 holds 617 tiles; deeper rings exceed the tile limit, which then stops the last ring partway.`,
   ),
   maxTiles: tiered(
-    `Most tiles kept: 1–${number(laceLimits.tiles)}.`,
-    `Tiles are added ring by ring. Reaching this count stops generation, leaving the last ring incomplete; the summary says so. Generation also stops after examining ${number(laceLimits.candidates)} candidate tiles.`,
+    `Most tiles kept: 1–${formatCount(laceLimits.tiles)}.`,
+    `Tiles are added ring by ring. Reaching this count stops generation, leaving the last ring incomplete; the summary says so. Generation also stops after examining ${formatCount(laceLimits.candidates)} candidate tiles.`,
   ),
   starPoint: tiered(
     "Where each strand turns, from tile center (0) to corner (1).",

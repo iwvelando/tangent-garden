@@ -1,8 +1,8 @@
+import { readout as formatNumber } from "./number-format";
 import { plotScale } from "./probe";
 import { plural } from "./number-format";
 
-// Four significant figures, as the probe's readouts give them.
-const short = (v: number) => String(Number(v.toPrecision(4)));
+// Plot captions share the probe's numeric readouts.
 const width = 240,
   height = 44;
 
@@ -43,8 +43,8 @@ export function ProbePlot({
     <figure className="probe-plot">
       <figcaption>
         {constant !== null
-          ? `${label}: constant at ${short(constant)}`
-          : `${label} from ${short(lo)} to ${short(hi)}`}
+          ? `${label}: constant at ${formatNumber(constant)}`
+          : `${label} from ${formatNumber(lo)} to ${formatNumber(hi)}`}
         {pinned > 0 &&
           `; ${plural(pinned, "sample", "samples")} beyond, pinned to the edge`}
       </figcaption>

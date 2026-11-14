@@ -185,11 +185,18 @@ try {
           await loom
             .getByLabel("Motion progress", { exact: true })
             .fill(String((value - from) / (to - from)));
-          await loom
-            .locator(".animation-values", {
-              hasText: `= ${value.toPrecision(6)}`,
-            })
-            .waitFor({ timeout: 60_000 });
+          // Wait for the numeric intent, then its ready drawing below;
+          // visible readout precision does not determine the saved frame.
+          await page.waitForFunction(
+            (value) =>
+              Number(
+                document
+                  .querySelector("dialog.loom .loom-parameter input")
+                  ?.getAttribute("aria-valuetext"),
+              ) === value,
+            value,
+            { timeout: 60_000 },
+          );
           await loom
             .locator(".loom-panes[aria-busy=false]")
             .waitFor({ timeout: 60_000 });

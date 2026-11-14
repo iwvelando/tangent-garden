@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset } from "./helpers";
@@ -40,7 +41,6 @@ async function seek(page: Page, p: string) {
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
 }
 const helix = { label: "Helix · a ribbon staircase" };
-const short = (v: number) => String(Number(v.toPrecision(4)));
 // The readout of a helix of pitch parameter a: κ, 1/κ, τ.
 const helixReadout = (a: number) => {
   const h = a / 3;

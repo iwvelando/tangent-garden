@@ -1,3 +1,4 @@
+import { count as formatCount } from "./number-format";
 // Refinement between samples, shared by the 2D and 3D notebooks: the drawn
 // curves Go refines (engine/refine), what a reveal shows of them, and how a
 // readout totals them.
@@ -43,7 +44,7 @@ export const spatialPlainZoom = 8;
 // Refinement to the view's help, stating the limits Go enforces
 // (engine/adaptive.go, View.focus).
 export const viewHelp = tiered(
-  `Once you zoom in, refines what is in view to its own scale, and zooms to ${viewZoom.toLocaleString("en-US")}×.`,
+  `Once you zoom in, refines what is in view to its own scale, and zooms to ${formatCount(viewZoom)}×.`,
   `In view, each chord stays within 2 × 10⁻⁴ of the view's half diagonal of the curve, and shorter than a quarter of it; elsewhere the study's tolerance holds. A view is refined once the drawing rests, and playback at the current view uses it. Without this, zoom stops at ${plainZoom}×.`,
 );
 
@@ -57,7 +58,7 @@ export const frameHelp = tiered(
 // The 3D notebook's, where a perspective's tolerances grow with depth
 // (engine3/view.go, View.focus).
 export const spatialViewHelp = tiered(
-  `Once you zoom in, refines what is in view to its own scale, and zooms to ${viewZoom.toLocaleString("en-US")}×.`,
+  `Once you zoom in, refines what is in view to its own scale, and zooms to ${formatCount(viewZoom)}×.`,
   `In view, each chord stays within 2 × 10⁻⁴ of the view's half diagonal of the curve, and shorter than a quarter of it; in a perspective, both grow with distance from the eye. Elsewhere the study's tolerance holds. Playback at the current view uses it. Without this, zoom stops at ${spatialPlainZoom}×.`,
 );
 

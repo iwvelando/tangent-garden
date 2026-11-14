@@ -1,6 +1,6 @@
+import { readout as formatNumber } from "../number-format";
 import type { SpatialResult } from "./types";
 
-const short = (v: number) => Number(v.toPrecision(3)).toString();
 const samples = (n: number) => (n === 1 ? "one sample" : `${n} samples`);
 
 // Whether the spheres keep a real envelope, where it closes, collapses,
@@ -10,13 +10,13 @@ export function canalNote(result: SpatialResult): string[] {
   const out = [
     q.constant
       ? "A tube: every sphere has the same radius R, so each contact circle is the circle of radius R in the normal plane."
-      : `Each sphere touches the envelope along a circle set back along the tangent by RR′/v, of radius R√(1 − (R′/v)²); |R′|/v reaches ${short(q.steepest)}.`,
+      : `Each sphere touches the envelope along a circle set back along the tangent by RR′/v, of radius R√(1 − (R′/v)²); |R′|/v reaches ${formatNumber(q.steepest)}.`,
   ];
   if (q.closed)
     out.push("The curve and the radius both close, so the surface closes.");
   else if (q.gap > 0)
     out.push(
-      `The curve closes but the radius does not return: the first and last contact circles are ${short(q.gap)} apart.`,
+      `The curve closes but the radius does not return: the first and last contact circles are ${formatNumber(q.gap)} apart.`,
     );
   else out.push("The curve is open, so the surface has two open ends.");
   if (q.imaginary > 0)

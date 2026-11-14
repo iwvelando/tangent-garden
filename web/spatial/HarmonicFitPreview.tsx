@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { EngineClient } from "../engine-client";
 import { Field, HelpText, HelpToggle, useHelp } from "../Field";
@@ -23,9 +24,6 @@ import type { Frame } from "./types";
 import "../fourier-fit.css";
 import "../journey.css";
 import "./harmonic-fit.css";
-
-const short = (x: number) =>
-  x === 0 ? "0" : Math.abs(x) < 1e-3 ? x.toExponential(1) : x.toPrecision(3);
 
 // Unavailable without leaving the tab order, so focus stays where a keyboard
 // left it, as in the planar fit's SteadyButton.
@@ -304,9 +302,9 @@ export default function HarmonicFitPreview({
             {fit &&
               (exact
                 ? "These terms reproduce all 1,024 samples to rounding."
-                : `Sample error: RMS ${short(fit.rms)}, largest ${short(fit.maxResidual)}, ${short((100 * fit.maxResidual) / fit.extent)}% of the source's ${short(fit.extent)} diagonal.`)}
+                : `Sample error: RMS ${formatNumber(fit.rms)}, largest ${formatNumber(fit.maxResidual)}, ${formatNumber((100 * fit.maxResidual) / fit.extent)}% of the source's ${formatNumber(fit.extent)} diagonal.`)}
             {fit?.continuousBound
-              ? ` Between samples, proved within ${short(fit.continuousBound)} of the ${fit.joined ? "closed-up" : "source's"} polygon.`
+              ? ` Between samples, proved within ${formatNumber(fit.continuousBound)} of the ${fit.joined ? "closed-up" : "source's"} polygon.`
               : ""}
           </SteadyNote>
           <fieldset className="harmonic-fit-parameter">
@@ -345,7 +343,7 @@ export default function HarmonicFitPreview({
               >
                 {state.closed
                   ? fit?.joined
-                    ? `Closed by a straight segment of length ${short(fit.joined)}, dashed in the source. The fit rounds the two corners it makes.`
+                    ? `Closed by a straight segment of length ${formatNumber(fit.joined)}, dashed in the source. The fit rounds the two corners it makes.`
                     : ""
                   : "This curve is open. Close outline joins its ends with a straight segment, then fits it."}
               </SteadyNote>

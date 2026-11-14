@@ -1,3 +1,10 @@
+import { progressPercent } from "../number-format";
+import { elapsed } from "../number-format";
+import {
+  readout as formatNumber,
+  liveReadout,
+  percent,
+} from "../number-format";
 import {
   OverlayJourneyLayout,
   type OverlayGuide,
@@ -73,8 +80,8 @@ const labels: Partial<
   duration: "Duration",
   repeat: "Repeat",
 };
-const fmt = (v: number | undefined, digits = 4) =>
-  v !== undefined && Number.isFinite(v) ? v.toPrecision(digits) : "—";
+const fmt = (v: number | undefined) =>
+  v !== undefined && Number.isFinite(v) ? formatNumber(v) : "—";
 // What generation asks for: the film's settings and the family's times.
 type Generation = { study: ShortenStudy; contours: number; spacing: Spacing };
 const generationOf = (s: ShortenStudy): Generation => ({
@@ -654,9 +661,10 @@ export function ShortenPreview({
           />
         </Field>
         <p className="note garden-reveal-status" aria-live="off">
-          {(time * (durationError ? 0 : motion.duration)).toFixed(1)} /{" "}
-          {durationError ? "—" : motion.duration} s
-          {frame ? ` · t = ${fmt(frame.t, 3)}` : ""}
+          {durationError
+            ? "—"
+            : elapsed(time * motion.duration, motion.duration)}
+          {frame ? ` · t = ${liveReadout(frame.t, [0, reply!.end])}` : ""}
           {film && !playing && !finished && film.time < 1 ? " · Paused" : ""}
         </p>
       </div>
@@ -804,20 +812,19 @@ export function ShortenPreview({
                   {frame && reply ? (
                     <>
                       <p>
-                        t = {fmt(frame.t)} of extinction T ={" "}
-                        {fmt(reply.extinction)} (
-                        {fmt((100 * frame.t) / reply.extinction, 3)}%)
+                        t = {liveReadout(frame.t, [0, reply.end])} of extinction
+                        T = {fmt(reply.extinction)} (
+                        {percent(frame.t / reply.extinction)})
                       </p>
                       <p>
-                        Area {fmt(frame.area, 6)}; A₀ − 2πt ={" "}
+                        Area {fmt(frame.area)}; A₀ − 2πt ={" "}
                         {fmt(
                           a0 === undefined ? NaN : a0 - 2 * Math.PI * frame.t,
-                          6,
                         )}{" "}
-                        · length {fmt(frame.length, 5)} ·{" "}
+                        · length {fmt(frame.length)} ·{" "}
                         {frame.minKappa !== undefined
-                          ? `κ from ${fmt(frame.minKappa, 3)} to ${fmt(frame.maxKappa, 3)}`
-                          : `ρ from ${fmt(frame.minRho, 3)} to ${fmt(frame.maxRho, 3)}`}
+                          ? `κ from ${fmt(frame.minKappa)} to ${fmt(frame.maxKappa)}`
+                          : `ρ from ${fmt(frame.minRho)} to ${fmt(frame.maxRho)}`}
                       </p>
                     </>
                   ) : null}
@@ -914,7 +921,7 @@ export function ShortenPreview({
                   data-end={reply && current ? reply.end : undefined}
                 >
                   {reply && current
-                    ? `${reply.contours.length} loops from the seed to ${fmt((100 * reply.end) / reply.extinction, 4)}% of the extinction time; the flow ${stopText[reply.stop] ?? reply.stop}. ${shortenHelp.limits}`
+                    ? `${reply.contours.length} loops from the seed to ${percent(reply.end / reply.extinction)} of the extinction time; the flow ${stopText[reply.stop] ?? reply.stop}. ${shortenHelp.limits}`
                     : "Solving…"}
                 </p>
                 <h3 className="garden-section">Motion</h3>
@@ -986,7 +993,7 @@ export function ShortenPreview({
                 {exporting && (
                   <p role="status" aria-live="off">
                     Exporting {exportState.text.short}…{" "}
-                    {Math.round(exportProgress * 100)}%
+                    {progressPercent(exportProgress)}
                   </p>
                 )}
                 <h3 className="garden-section">Appearance</h3>

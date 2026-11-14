@@ -620,6 +620,8 @@ export function Plot({
       line({ x: x0, y: 0 }, { x: x1, y: 0 }, palette.text, 0.5, false, "xaxis"),
     );
   }
+  // Numeric range belongs to caption layout, not saved numerical provenance.
+  const { range: _captionRange, ...phraseMetadata } = animation?.phrase ?? {};
   return (
     <svg
       ref={svgRef}
@@ -731,7 +733,7 @@ export function Plot({
                 progress: animation.progress,
                 camera: animation.camera,
                 heldView: animation.heldView,
-                ...(animation.phrase && { phrase: animation.phrase }),
+                ...(animation.phrase && { phrase: phraseMetadata }),
               }
             : undefined,
           // Recorded only when it is not the drawing as it always was.

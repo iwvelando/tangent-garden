@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import {
@@ -197,7 +198,7 @@ test("one circuit returns z but not w or the 4D point; two return everything", a
   // The live summary does not change with the frame.
   await expect(page.locator(".tesseract-diagnostics")).toHaveText(status!);
   await expect(readout(page, "Parameter t")).toHaveText("6.2832");
-  await expect(readout(page, "Turns of z")).toHaveText("1.000");
+  await expect(readout(page, "Turns of z")).toHaveText("1.00000");
   await expect(readout(page, "Circuit")).toHaveText("2 of 2");
   // z is home; w is opposite its start through the w plane's origin; the
   // 4D point is visibly elsewhere.
@@ -232,7 +233,7 @@ test("one circuit returns z but not w or the 4D point; two return everything", a
   expect((await desc(page, "orthographic")).root).toEqual(half.root);
   // 4π draws exactly what 0 draws, in every pane.
   await scrub(page, 1);
-  await expect(readout(page, "Turns of z")).toHaveText("2.000");
+  await expect(readout(page, "Turns of z")).toHaveText("2.00000");
   expect(await drawing(page)).toBe(start);
   await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
   await settle(page);
@@ -282,7 +283,7 @@ test("reversed traversal, the other sheet and edited radii keep the relation; in
     .fill("0.25");
   await settle(page);
   await expect(readout(page, "Norm |(z, w)|")).toHaveText(
-    Math.sqrt(0.25 * 0.25 + 0.25).toPrecision(5),
+    formatNumber(Math.sqrt(0.25 * 0.25 + 0.25)),
   );
   await playThenPause(page);
   await scrub(page, 0.25);

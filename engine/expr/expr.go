@@ -106,7 +106,19 @@ func curve(s string, a *float64) (Expr, error) {
 
 // Scalar accepts constants and arithmetic, but never a curve-dependent variable.
 func Scalar(s string) (float64, error) {
-	_, e, err := parse(s, nil, nil)
+	// Check the original byte budget before normalizing readout minus signs and spacing.
+	if len(s) > 1024 {
+		return 0, fmt.Errorf("expression exceeds 1024 characters")
+	}
+	_, e, err := parse(strings.Map(func(r rune) rune {
+		if r == '−' {
+			return '-'
+		}
+		if unicode.IsSpace(r) {
+			return ' '
+		}
+		return r
+	}, s), nil, nil)
 	if err != nil {
 		return 0, err
 	}

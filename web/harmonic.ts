@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "./number-format";
 import type { Config, HarmonicResult, Term } from "./types";
 
 // A period as a multiple of π when it is one with a small denominator, both
@@ -14,7 +15,7 @@ export function periodText(period: number) {
       };
     }
   }
-  return { text: `${period.toPrecision(6)}`, expression: String(period) };
+  return { text: `${formatNumber(period)}`, expression: String(period) };
 }
 
 // Closure depends only on the frequencies that move the curve, so a result

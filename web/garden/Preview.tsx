@@ -1,3 +1,9 @@
+import { progressPercent } from "../number-format";
+import { elapsed } from "../number-format";
+import {
+  readout as formatNumber,
+  count as formatCount,
+} from "../number-format";
 import {
   OverlayJourneyLayout,
   type OverlayGuide,
@@ -154,7 +160,7 @@ export function GardenPreview({
       : "";
   const loopError =
     reveal.repeat === "loop" && result && !revealLoops(total)
-      ? `${loopLead} the reveal starts with the 4 seed circles and ends with all ${total.toLocaleString("en-US")}. Back and forth returns smoothly.`
+      ? `${loopLead} the reveal starts with the 4 seed circles and ends with all ${formatCount(total)}. Back and forth returns smoothly.`
       : "";
   const revealError = durationError || loopError;
   // Whole-number fields are checked here, as the worker would, so the
@@ -584,13 +590,14 @@ export function GardenPreview({
           />
         </Field>
         <p className="note garden-reveal-status" aria-live="off">
-          {(
-            (film?.time ?? (finished ? 1 : 0)) *
-            (durationError ? 0 : reveal.duration)
-          ).toFixed(1)}{" "}
-          / {durationError ? "—" : reveal.duration} s
+          {durationError
+            ? "—"
+            : elapsed(
+                (film?.time ?? (finished ? 1 : 0)) * reveal.duration,
+                reveal.duration,
+              )}
           {film && result
-            ? ` · ${count!.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} circles`
+            ? ` · ${formatCount(count!)} of ${formatCount(total)} circles`
             : ""}
           {film && !playing && film.time < 1 ? " · Paused" : ""}
         </p>
@@ -958,7 +965,7 @@ export function GardenPreview({
                 {exporting && (
                   <p role="status" aria-live="off">
                     Exporting {exportState.text.short}…{" "}
-                    {Math.round(exportProgress * 100)}%
+                    {progressPercent(exportProgress)}
                   </p>
                 )}
                 <h3 className="garden-section">Cutoffs</h3>

@@ -1,3 +1,7 @@
+import { progressPercent } from "../number-format";
+import { liveReadout } from "../number-format";
+import { elapsed } from "../number-format";
+import { readout as formatNumber } from "../number-format";
 import {
   OverlayJourneyLayout,
   type OverlayGuide,
@@ -241,6 +245,13 @@ export function LoomPreview({
     error.request && error.request !== markerKey
       ? { message: "", field: undefined }
       : error;
+  const traversalRange = [
+    traversal(study, 0).parameter,
+    traversal(study, 1).parameter,
+  ] as const;
+  const mapRange = study.motion
+    ? ([study.motion.from, study.motion.to] as const)
+    : mapInfo.range;
   const sourceError =
     study.source.kind === "curve" && !supportedSource(study.source)
       ? "This source is unsupported. Choose a parametric, Cartesian, polar, roulette, Lissajous or Fourier curve."
@@ -877,10 +888,9 @@ export function LoomPreview({
             label={study.motion ? "Motion progress" : "Source parameter"}
             className="loom-parameter"
             helpBeforeControl
-            value={(study.motion
-              ? mapParameterOf(study)!
-              : study.parameter
-            ).toPrecision(6)}
+            value={formatNumber(
+              study.motion ? mapParameterOf(study)! : study.parameter,
+            )}
             help={
               study.motion
                 ? "Seek the same absolute map time used by playback and export."
@@ -912,17 +922,17 @@ export function LoomPreview({
         </fieldset>
         <div className="note" aria-live="off">
           {Number.isFinite(progress) && !durationError
-            ? `${(progress * study.duration).toFixed(1)} / ${study.duration} s`
+            ? elapsed(progress * study.duration, study.duration)
             : "—"}
           {playbackActive && !playing && progress < 1 ? " · Paused" : ""}
         </div>
         <div className="animation-values">
-          t = {marker.parameter.toPrecision(6)}
+          t = {liveReadout(marker.parameter, traversalRange)}
           {study.motion && (
             <>
               {" "}
               · {mapInfo.symbol} ={" "}
-              {(mapParameterOf(applied) ?? 0).toPrecision(6)}
+              {liveReadout(mapParameterOf(applied) ?? 0, mapRange)}
             </>
           )}
         </div>
@@ -1437,14 +1447,14 @@ export function LoomPreview({
                           {marker.source && marker.image ? (
                             <p>
                               {marker.base &&
-                                `Base point (${marker.base.x.toPrecision(5)}, ${marker.base.y.toPrecision(5)}); `}
-                              z = ({marker.source.x.toPrecision(5)},{" "}
-                              {marker.source.y.toPrecision(5)}) →{" "}
+                                `Base point (${formatNumber(marker.base.x)}, ${formatNumber(marker.base.y)}); `}
+                              z = ({formatNumber(marker.source.x)},{" "}
+                              {formatNumber(marker.source.y)}) →{" "}
                               {marker.intermediate &&
                                 text.intermediate &&
-                                `${text.intermediate} = (${marker.intermediate.x.toPrecision(5)}, ${marker.intermediate.y.toPrecision(5)}) → `}
-                              w = ({marker.image.x.toPrecision(5)},{" "}
-                              {marker.image.y.toPrecision(5)}).{" "}
+                                `${text.intermediate} = (${formatNumber(marker.intermediate.x)}, ${formatNumber(marker.intermediate.y)}) → `}
+                              w = ({formatNumber(marker.image.x)},{" "}
+                              {formatNumber(marker.image.y)}).{" "}
                               {marker.critical
                                 ? "Critical point: derivative zero; no regular conformality."
                                 : "Regular map point."}
@@ -1581,7 +1591,7 @@ export function LoomPreview({
                           {exporting && (
                             <p role="status" aria-live="off">
                               Exporting {exportState.text.short}…{" "}
-                              {Math.round(exportProgress * 100)}%
+                              {progressPercent(exportProgress)}
                             </p>
                           )}
                         </details>
