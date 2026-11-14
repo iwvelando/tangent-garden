@@ -6,7 +6,7 @@ import { EngineError, type EngineClient } from "../engine-client";
 import { familyValues } from "../planar-family";
 import { sharedBounds } from "./atlas-paint";
 import type { Frame, SpatialResult, RefinementView } from "./types";
-import { familyProgressAt } from "../family-motion";
+import { familyMotionMembers, familyProgressAt } from "../family-motion";
 import type { Pace } from "../timing";
 import type { AnimationView } from "./animation";
 import type { View } from "./renderer";
@@ -341,17 +341,11 @@ export function spatialFamilyVisible(
   progress?: number,
 ) {
   if (f.presentation === "selected") return [f.selected];
-  if (progress === undefined) return Array.from({ length: n }, (_, i) => i);
-  const p = Math.max(0, Math.min(1, progress));
-  if (f.motion === "reveal")
-    return Array.from(
-      { length: Math.min(n, 1 + Math.floor(p * (n - 1))) },
-      (_, i) => i,
-    );
-  const width = Math.max(1, Math.min(n, f.width));
-  const start =
-    p === 1 ? n - width : Math.min(n - width, Math.floor(p * (n - width + 1)));
-  return Array.from({ length: width }, (_, i) => start + i);
+  const slots = Array.from({ length: n }, (_, i) => i);
+  // The planar engraving's slot timing, applied to slot indices.
+  return progress === undefined
+    ? slots
+    : familyMotionMembers(slots, { mode: f.motion, width: f.width, progress });
 }
 export function composeSpatialFamily(
   config: SpatialConfig,

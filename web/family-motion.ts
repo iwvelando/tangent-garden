@@ -13,8 +13,8 @@ export type FamilyMotion = {
 
 // Slice the frozen slots, including unavailable ones. The returned references
 // share the prepared geometry; neither seek nor playback makes engine requests.
-export function familyMotionMembers(
-  members: readonly FamilyMember[],
+export function familyMotionMembers<T = FamilyMember>(
+  members: readonly T[],
   motion: FamilyMotion,
 ) {
   const n = members.length;

@@ -1058,12 +1058,6 @@ for (const [width, height] of [
     ).toBeLessThanOrEqual(width + 1);
     await canvas.scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath("walkthrough.png") });
-    if (width === 1024) {
-      for (const theme of ["light", "dark"] as const) {
-        await page.emulateMedia({ colorScheme: theme });
-        await page.screenshot({ path: `/tmp/tangent-garden-373-${theme}.png` });
-      }
-    }
   });
 
 test("the spatial engraving appears with its torus-knot subject in the gallery", async ({
