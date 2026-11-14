@@ -13,6 +13,7 @@ import {
   type TransportConfig,
   type TransportPath,
 } from "./types";
+import { count, plural } from "../number-format";
 export { revealGeodesics, threadPath } from "./geodesic-path";
 
 // The surfaces whose geodesic threads can be launched: the controls appear
@@ -75,9 +76,6 @@ export const geodesicHelp = {
     "Samples are evenly spaced in arc length. The integration takes its own steps between them. A carried arrow's path counts as one more thread, plus two points.",
   ),
 } satisfies Record<string, Help<string>>;
-
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
 const format = (x: number) =>
   Math.abs(x) >= 1e-3 || x === 0
     ? x.toPrecision(4).replace(/\.?0+$/, "")
@@ -90,22 +88,22 @@ export function geodesicsNote(
   scheme: ColorScheme,
 ): string[] {
   if (g.unavailable) return [g.unavailable];
-  const threads = count(g.threads.length, "thread", "threads"),
+  const threads = plural(g.threads.length, "thread", "threads"),
     each = g.threads.length === 1 ? "" : "each ";
   const out = [
     g.surface === "sphere"
       ? `${threads} on the sphere, ${each}a great circle traced exactly, ${format(config.length)} long.`
-      : `${threads} on the torus, ${each}${format(config.length)} long, integrated in ${g.steps.toLocaleString()} steps.`,
+      : `${threads} on the torus, ${each}${format(config.length)} long, integrated in ${count(g.steps)} steps.`,
   ];
   const exhausted = g.threads.filter((t) => t.reason === "exhausted").length;
   const unresolved = g.threads.filter((t) => t.reason === "unresolved").length;
   if (exhausted)
     out.push(
-      `${count(exhausted, "thread", "threads")} ran out of the fan's 200,000 steps before ${exhausted === 1 ? "its" : "their"} length, marked by a cross.`,
+      `${plural(exhausted, "thread", "threads")} ran out of the fan's 200,000 steps before ${exhausted === 1 ? "its" : "their"} length, marked by a cross.`,
     );
   if (unresolved)
     out.push(
-      `${count(unresolved, "thread", "threads")} could not be integrated further, marked by a cross.`,
+      `${plural(unresolved, "thread", "threads")} could not be integrated further, marked by a cross.`,
     );
   out.push(
     describeColors(

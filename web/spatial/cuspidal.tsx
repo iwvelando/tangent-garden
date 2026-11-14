@@ -6,6 +6,7 @@ import type {
   SurfaceConfig,
   SurfaceResult,
 } from "./types";
+import { count, plural } from "../number-format";
 
 // Whether a surface study locates cuspidal edges, on its offset or over its
 // ridges.
@@ -107,9 +108,6 @@ export const RidgesCheck = (props: CheckProps) => (
   />
 );
 
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
-
 // How many cuspidal edges the offset has, and on which focal sheets.
 export function edgesNote(s: SurfaceResult): string[] {
   if (!s.offset || !s.edges) return [];
@@ -120,16 +118,16 @@ export function edgesNote(s: SurfaceResult): string[] {
   const on = ([1, 2] as const)
     .map((b) => [b, s.edges!.filter((e) => e.branch === b).length] as const)
     .filter(([, n]) => n > 0)
-    .map(([b, n]) => `${n.toLocaleString()} on focal sheet ${b}`);
+    .map(([b, n]) => `${count(n)} on focal sheet ${b}`);
   const closed = s.edges.filter((e) => e.closed).length;
   return [
-    `The offset folds along ${count(s.edges.length, "cuspidal edge", "cuspidal edges")} (${on.join(", ")})${
+    `The offset folds along ${plural(s.edges.length, "cuspidal edge", "cuspidal edges")} (${on.join(", ")})${
       closed === s.edges.length
         ? s.edges.length === 1
           ? ", a closed curve"
           : ", each a closed curve"
         : closed > 0
-          ? `, ${count(closed, "closed", "closed")}`
+          ? `, ${plural(closed, "closed", "closed")}`
           : ""
     }, where it touches the focal sheet.`,
   ];
@@ -145,11 +143,11 @@ export function ridgesNote(s: SurfaceResult): string[] {
   const on = ([1, 2] as const)
     .map((b) => [b, s.ridges!.filter((e) => e.branch === b).length] as const)
     .filter(([, n]) => n > 0)
-    .map(([b, n]) => `${n.toLocaleString()} of κ${b === 1 ? "₁" : "₂"}`);
+    .map(([b, n]) => `${count(n)} of κ${b === 1 ? "₁" : "₂"}`);
   const closed = s.ridges.filter((e) => e.closed).length;
   return [
-    `The patch has ${count(s.ridges.length, "ridge", "ridges")} (${on.join(", ")})${
-      closed > 0 ? `, ${count(closed, "closed", "closed")}` : ""
+    `The patch has ${plural(s.ridges.length, "ridge", "ridges")} (${on.join(", ")})${
+      closed > 0 ? `, ${plural(closed, "closed", "closed")}` : ""
     }, over which its focal sheets fold in cuspidal edges.`,
   ];
 }
@@ -162,16 +160,16 @@ export function causticEdgesNote(r: RaysResult): string[] {
   const on = ([1, 2] as const)
     .map((b) => [b, r.edges!.filter((e) => e.branch === b).length] as const)
     .filter(([, n]) => n > 0)
-    .map(([b, n]) => `${n.toLocaleString()} on caustic ${b}`);
+    .map(([b, n]) => `${count(n)} on caustic ${b}`);
   const virtual = r.edges.filter((e) => e.virtual).length;
   return [
-    `The caustics fold along ${count(r.edges.length, "cuspidal edge", "cuspidal edges")} (${on.join(", ")})${
+    `The caustics fold along ${plural(r.edges.length, "cuspidal edge", "cuspidal edges")} (${on.join(", ")})${
       virtual === r.edges.length
         ? r.edges.length === 1
           ? ", virtual"
           : ", all virtual"
         : virtual > 0
-          ? `, ${count(virtual, "virtual", "virtual")}`
+          ? `, ${plural(virtual, "virtual", "virtual")}`
           : ""
     }.`,
   ];

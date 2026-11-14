@@ -14,12 +14,11 @@ import {
   type PlanarProbe,
 } from "./planar-probe";
 import { refinesBetweenSamples, type Config, type Frame } from "./types";
+import { plural } from "./number-format";
 
 // Four significant figures: curvature is differenced numerically from the
 // curve's expressions to about 10⁻⁷ relative accuracy.
 const short = (v: number) => String(Number(v.toPrecision(4)));
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
 
 // The 2D probe's controls and readout. `frame` is the study's own result
 // with diagnostics, or null while they are computed. `at` is the probe it
@@ -213,11 +212,11 @@ export function PlanarProbePanel({
                   {[
                     d.flat > 0 &&
                       !probeStraight(frame!.result) &&
-                      `κ vanishes at ${count(d.flat, "sample", "samples")}, where there is no circle`,
+                      `κ vanishes at ${plural(d.flat, "sample", "samples")}, where there is no circle`,
                     d.unknown > 0 &&
-                      `κ is unknown at ${count(d.unknown, "sample", "samples")}, where the second derivative is unstable`,
+                      `κ is unknown at ${plural(d.unknown, "sample", "samples")}, where the second derivative is unstable`,
                     d.clipped > 0 &&
-                      `${count(d.clipped, "center lies", "centers lie")} beyond 100 study radii, at infinity`,
+                      `${plural(d.clipped, "center lies", "centers lie")} beyond 100 study radii, at infinity`,
                   ]
                     .filter(Boolean)
                     .join("; ")}

@@ -29,6 +29,7 @@ Before making one of these changes, read its section of `docs/contributing.md`. 
 - adding an entry button, a 2D construction or a guided journey, which needs a picture (button pictures);
 - adding a preset;
 - adding a numeric field or a validation error;
+- showing a number in a readout, note, caption, label or help (displayed numbers);
 - adding or renaming a configuration, layer or animation field (study links);
 - changing numerical guards, stencils or regularity decisions (numerical changes);
 - changing a shared evaluator, parser transformation or retained state (shared paths and state);

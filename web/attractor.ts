@@ -1,7 +1,5 @@
 import type { AttractorMap, AttractorResult } from "./types";
-
-const count = (n: number, one: string, many = `${one}s`) =>
-  `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+import { plural } from "./number-format";
 
 // Each map's curated coefficients, which it starts from when chosen.
 export const mapDefaults: Record<
@@ -29,7 +27,7 @@ export function attractorNote(result: AttractorResult, discard: number) {
   const notes = [
     result.accumulated === 0
       ? "No iterates are accumulated."
-      : `${count(result.accumulated, "iterate")}${discard ? `, after ${discard.toLocaleString("en-US")} discarded,` : ""} ${result.accumulated === 1 ? "visits" : "visit"} ${visited.toLocaleString("en-US")} of ${count(result.columns * result.rows, "cell")}; the busiest has ${count(result.max, "visit")}.`,
+      : `${plural(result.accumulated, "iterate")}${discard ? `, after ${discard.toLocaleString("en-US")} discarded,` : ""} ${result.accumulated === 1 ? "visits" : "visit"} ${visited.toLocaleString("en-US")} of ${plural(result.columns * result.rows, "cell")}; the busiest has ${plural(result.max, "visit")}.`,
   ];
   if (result.outside)
     notes.push(

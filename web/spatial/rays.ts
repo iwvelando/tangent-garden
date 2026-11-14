@@ -8,14 +8,13 @@ import {
   type RaysResult,
   type ReceiverResult,
 } from "./types";
+import { count, plural, readout } from "../number-format";
 
 const shapes: Record<Exclude<FocalShape, "none">, string> = {
   surface: "a surface",
   curve: "a curve",
   point: "a point",
 };
-const count = (n: number, one: string, many: string) =>
-  `${n.toLocaleString()} ${n === 1 ? one : many}`;
 // A share never rounds to nothing or to everything unless it is.
 const percent = (part: number, whole: number) =>
   part > 0 && part < 5e-4 * whole
@@ -56,7 +55,7 @@ export function raysNote(
             : "lies wholly at infinity";
     return `${name} ${where}${
       clipped && (real || virtual)
-        ? `; at ${count(clipped, "sample", "samples")} it is beyond 100 surface radii, treated as at infinity`
+        ? `; at ${plural(clipped, "sample", "samples")} it is beyond 100 surface radii, treated as at infinity`
         : ""
     }.`;
   };
@@ -65,27 +64,27 @@ export function raysNote(
     branch(2),
     ...(r.unlit
       ? [
-          `${count(r.unlit, "sample is", "samples are")} unlit: the light grazes ${surface} there or arrives behind its ${refracting ? "incident" : "mirror"} side.`,
+          `${plural(r.unlit, "sample is", "samples are")} unlit: the light grazes ${surface} there or arrives behind its ${refracting ? "incident" : "mirror"} side.`,
         ]
       : []),
     ...(r.total
       ? [
-          `${count(r.total, "sample is", "samples are")} at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in ${describeColors("gray", scheme)}.`,
+          `${plural(r.total, "sample is", "samples are")} at or beyond the critical angle, where sin θ₁ ≥ n₂/n₁: nothing is transmitted, and their rays are drawn totally reflected, in ${describeColors("gray", scheme)}.`,
         ]
       : []),
     ...(r.singular
       ? [
-          `${count(r.singular, "sample is a chart singularity", "samples are chart singularities")}, with no normal and no ${refracting ? "refraction" : "reflection"}.`,
+          `${plural(r.singular, "sample is a chart singularity", "samples are chart singularities")}, with no normal and no ${refracting ? "refraction" : "reflection"}.`,
         ]
       : []),
     ...(r.atSource
       ? [
-          `${count(r.atSource, "sample lies", "samples lie")} at the source, with no incident direction.`,
+          `${plural(r.atSource, "sample lies", "samples lie")} at the source, with no incident direction.`,
         ]
       : []),
     ...(r.stigmatic
       ? [
-          `${count(r.stigmatic, "sample is", "samples are")} stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.`,
+          `${plural(r.stigmatic, "sample is", "samples are")} stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.`,
         ]
       : []),
     ...causticEdgesNote(r),
@@ -96,10 +95,8 @@ export function raysNote(
 // Where the light went, and what the receiver's shade means.
 export function receiverNote(g: ReceiverResult, light: RaysConfig): string[] {
   const tilt = light.receiver.tilt ?? 0;
-  const plane = `${g.plane} = ${light.receiver.at.toLocaleString()}${
-    tilt
-      ? ` turned ${tilt.toLocaleString()}° about ${receiverAxes[g.plane][0]}`
-      : ""
+  const plane = `${g.plane} = ${readout(light.receiver.at)}${
+    tilt ? ` turned ${readout(tilt)}° about ${receiverAxes[g.plane][0]}` : ""
   }`;
   if (!(g.emitted > 0))
     return [
@@ -134,14 +131,14 @@ export function receiverNote(g: ReceiverResult, light: RaysConfig): string[] {
       : "No light lands in its window.",
     ...(g.inset
       ? [
-          `The visible inset has ${g.inset.irradiance.length.toLocaleString()} × ${g.inset.irradiance[0].length.toLocaleString()} bins, shaded against the window's peak; the brightest shade is at or above the window's peak.${g.inset.exhausted ? ` Its refinement budget of ${maxReceiverCells.toLocaleString()} cells ran out.` : ""}`,
+          `The visible inset has ${count(g.inset.irradiance.length)} × ${count(g.inset.irradiance[0].length)} bins, shaded against the window's peak; the brightest shade is at or above the window's peak.${g.inset.exhausted ? ` Its refinement budget of ${count(maxReceiverCells)} cells ran out.` : ""}`,
         ]
       : []),
     ...(g.split
       ? [
-          `${count(g.split, "cell was", "cells were")} split where ${g.split === 1 ? "its" : "their"} light lands coarsely on the window${
+          `${plural(g.split, "cell was", "cells were")} split where ${g.split === 1 ? "its" : "their"} light lands coarsely on the window${
             g.exhausted
-              ? `, until the budget of ${maxReceiverCells.toLocaleString()} cells ran out`
+              ? `, until the budget of ${count(maxReceiverCells)} cells ran out`
               : ""
           }.`,
         ]

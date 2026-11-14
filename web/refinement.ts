@@ -3,6 +3,7 @@
 // readout totals them.
 
 import { tiered } from "./help";
+import { count, plural } from "./number-format";
 
 // Mirrors engine.RefinedPath and engine3.RefinedPath: a drawn curve with
 // points inserted between its uniform samples. at is each point's position
@@ -92,8 +93,6 @@ export function refinementReadout(
   const paths = refined.filter((p): p is RefinedPath<unknown> => !!p);
   const total = (key: "inserted" | "breaks" | "unresolved") =>
     paths.reduce((sum, p) => sum + p[key], 0);
-  const plural = (n: number, one: string, many: string) =>
-    `${n.toLocaleString()} ${n === 1 ? one : many}`;
   // How much finer the view is refined than the study, on the curve where
   // it is finest.
   const finer = Math.max(
@@ -105,10 +104,10 @@ export function refinementReadout(
     unresolved = total("unresolved");
   return [
     `${plural(inserted, "point", "points")} added between samples.`,
-    finer >= 2 && `Up to ${Math.round(finer).toLocaleString()}× finer in view.`,
+    finer >= 2 && `Up to ${count(Math.round(finer))}× finer in view.`,
     breaks > 0 && `${plural(breaks, "break", "breaks")} found between samples.`,
     unresolved > 0 &&
-      `${plural(unresolved, "piece stays", "pieces stay")} coarser than the tolerance${paths.some((p) => p.exhausted) ? `: the budget of ${refineBudget.toLocaleString()} points ran out` : ", at the finest step"}.`,
+      `${plural(unresolved, "piece stays", "pieces stay")} coarser than the tolerance${paths.some((p) => p.exhausted) ? `: the budget of ${count(refineBudget)} points ran out` : ", at the finest step"}.`,
   ]
     .filter(Boolean)
     .join(" ");

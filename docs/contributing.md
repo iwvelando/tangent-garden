@@ -279,6 +279,16 @@ Editable defaults computed from other numbers can acquire binary arithmetic tail
 - Clean generated interior grid values with their interpolation budget as well; otherwise an adopted choice can carry a tail into the next excursion. Preserve the frozen center independently, before cleanup. The interpolation's rounding scale is the larger magnitude of the source value and either endpoint. Comparing only with the source magnitude loses a small coordinate between endpoints near ±1: for example, the midpoint of −1.2 and 0.8 differs from −0.2 by more than its own one-epsilon budget. Snap the center only within the endpoint-aware rounding budget; an off-center range keeps its own midpoint and all entered endpoints stay exact.
 - Cover negative and near-zero coordinates, meaningful long precision, subnormals, both grid sizes, and reopening after adopting off-center variants. Sweep every axis and cell through repeated adoption with independent exact-decimal expectations, including values near the minimum half-width where subtraction cancels. Assert the actual generated numbers and the unchanged source/full-quality center request, with an ordinary WASM comparison for representative studies. Tests belong in `tests/gallery.spec.ts` with the atlas's existing defaults and ownership cases.
 
+## Displayed numbers
+
+Format numbers shown in the interface (readouts, notes, captions, labels and help) with `web/number-format.ts`, not a file-local helper or a bare `toLocaleString()`, which follows the browser's locale:
+
+- `readout(v, digits)` for a value: significant digits without floating-point tails or padded zeros, scientific notation below 1e-4 or at 10^digits and above, a true minus sign, and named nonfinite values.
+- `distinctReadouts(values)` for a list whose members must stay distinguishable, such as an engraving's members.
+- `count(n)` and `plural(n, one, many)` for whole numbers, always grouped as en-US.
+
+Values the user typed (sheet definitions, links, `ScalarInput` text) stay exact, generated editable defaults follow [Generated numeric defaults](#generated-numeric-defaults), and SVG path data, GLSL literals and export metadata are machine-read and keep their own formats. Test a new format in `tests/number-format.spec.ts` with expected strings written out by hand.
+
 ## Adding a validation error
 
 A validation error about one field is a `FieldError` (in `engine`, `engine3` or `engine4`) carrying the field's request path, shown under that control. A new path needs:

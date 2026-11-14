@@ -2,14 +2,14 @@ import { HelpText, HelpToggle, useHelp } from "../Field";
 import { tiered } from "../help";
 import type { PreviewSlot, PreviewSlots } from "./event-previews";
 import { eventStates, type EventState, type StoryContext } from "./story";
+import { count } from "../number-format";
 
 const stateLabels: Record<EventState, string> = {
   before: "Before",
   critical: "At the event",
   after: "After",
 };
-const euler = (pieces: number[]) =>
-  pieces.map((e) => e.toLocaleString().replace("-", "−")).join(", ");
+const euler = (pieces: number[]) => pieces.map((e) => count(e)).join(", ");
 // What the mesh at a state shows, beside the analysis: a short reading,
 // with the full statement in the study's note once it is chosen.
 function reading(slot: PreviewSlot | undefined, waiting: boolean) {

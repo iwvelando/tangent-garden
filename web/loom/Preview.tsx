@@ -61,6 +61,7 @@ import { LoomSession } from "./session";
 import { PaneDrawing, loomFit, type DrawingProps, type Pane } from "./Drawing";
 import { loomStill, loomMovie } from "./export";
 import "./loom.css";
+import { count as countText } from "../number-format";
 const labels: Record<string, string> = {
   degree: "Degree",
   mapParameter: "Map parameter",
@@ -107,12 +108,12 @@ function gapSummary(result: LoomResult) {
     for (const g of m.intervals)
       if (g.reason in count) count[g.reason as keyof typeof count]++;
   const parts = [
-    count.excluded && `${count.excluded.toLocaleString()} excluded`,
-    count.clipped && `${count.clipped.toLocaleString()} clipped`,
-    count.invalid && `${count.invalid.toLocaleString()} undefined`,
-    count.singular && `${count.singular.toLocaleString()} singular`,
-    count.unresolved && `${count.unresolved.toLocaleString()} unresolved`,
-    count.exhausted && `${count.exhausted.toLocaleString()} out of budget`,
+    count.excluded && `${countText(count.excluded)} excluded`,
+    count.clipped && `${countText(count.clipped)} clipped`,
+    count.invalid && `${countText(count.invalid)} undefined`,
+    count.singular && `${countText(count.singular)} singular`,
+    count.unresolved && `${countText(count.unresolved)} unresolved`,
+    count.exhausted && `${countText(count.exhausted)} out of budget`,
   ].filter(Boolean);
   return `${result.exhausted ? "Refinement ran out of budget. " : ""}${parts.length ? `Gaps: ${parts.join(", ")}.` : "No gaps."}`;
 }
@@ -1586,8 +1587,8 @@ export function LoomPreview({
                         </details>
                       </section>
                       <p className="note" data-gaps>
-                        {gapSummary(result)} {result.points.toLocaleString()}{" "}
-                        paired points.
+                        {gapSummary(result)} {countText(result.points)} paired
+                        points.
                       </p>
                     </>
                   )}

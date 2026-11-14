@@ -250,6 +250,7 @@ import { PlaneCell, usePlaneFraming } from "./PlaneViews";
 import { ProbePanel } from "./ProbePanel";
 import { RestartCheck, restartedAt } from "./restart";
 import "./spatial.css";
+import { count } from "../number-format";
 
 // Saved image files, by format.
 const imageNames: Record<ImageFormat, string> = {
@@ -1404,7 +1405,7 @@ export default function SpatialApp({
             label="Refinement levels"
             help={tiered(
               `0–${maxReceiverRefine} levels, splitting cells whose light lands more than a bin wide on the window.`,
-              `0 spreads each cell whole. Each level splits such a cell into four, tracing more rays where the light folds or spreads, so each costs more time. At most ${maxReceiverCells.toLocaleString()} cells in all. Parameter animations play 2 or 3 levels one level coarser unless set to keep them in Animation.`,
+              `0 spreads each cell whole. Each level splits such a cell into four, tracing more rays where the light folds or spreads, so each costs more time. At most ${count(maxReceiverCells)} cells in all. Parameter animations play 2 or 3 levels one level coarser unless set to keep them in Animation.`,
             )}
           >
             <input
@@ -4293,7 +4294,7 @@ export default function SpatialApp({
                       label="Cells"
                       help={tiered(
                         `${minImplicitCells}–${maxImplicitCells} along the box's longest side; the others keep cells near cubes.`,
-                        `At most ${maxImplicitGrid.toLocaleString()} cells in all.`,
+                        `At most ${count(maxImplicitGrid)} cells in all.`,
                       )}
                     >
                       <input
@@ -4316,7 +4317,7 @@ export default function SpatialApp({
                       label="Refinement levels"
                       help={tiered(
                         `0–${maxImplicitRefine} levels, halving cells where the surface may hide.`,
-                        `0 meshes the grid alone. Refinement stops at ${maxRefinedTetrahedra.toLocaleString()} tetrahedra.`,
+                        `0 meshes the grid alone. Refinement stops at ${count(maxRefinedTetrahedra)} tetrahedra.`,
                       )}
                     >
                       <input
@@ -4359,7 +4360,7 @@ export default function SpatialApp({
                         label={label}
                         help={
                           key === "uSamples"
-                            ? `12–240 cells each way, and at most ${maxSurfaceCells.toLocaleString()} in all.`
+                            ? `12–240 cells each way, and at most ${count(maxSurfaceCells)} in all.`
                             : undefined
                         }
                       >
@@ -4541,7 +4542,7 @@ export default function SpatialApp({
                   ? `${implicitGrid(config.implicit.box, config.implicit.cells).join(" × ")} cells · ${config.implicit.sections.count} section ${config.implicit.sections.count === 1 ? "plane" : "planes"}${config.implicit.refine > 0 ? ` · up to ${config.implicit.refine} refinement ${config.implicit.refine === 1 ? "level" : "levels"}` : ""}`
                   : patched
                     ? `${config.surface.uSamples} × ${config.surface.vSamples} cells · ${config.surface.curves} parameter curves`
-                    : `${config.samples.toLocaleString()} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
+                    : `${count(config.samples)} samples · ${config.lines} ${none ? (flowing ? "arrows" : chasing ? "polygons" : "lines") : canal ? "circles" : ruled ? "rulings" : framed ? "frames" : inversion ? "correspondences" : projection ? "projections" : involute ? "strings" : "tangents"}`}
           </p>
           <ScalarStatus.Provider value={scalarStatus}>
             <div key={`family-${controls.current}`}>

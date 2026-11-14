@@ -7,6 +7,7 @@ import {
 } from "../Field";
 import { ScalarInput } from "../ScalarInput";
 import { tiered } from "../help";
+import { distinctReadouts } from "../number-format";
 import { EngineClient } from "../engine-client";
 import {
   SpatialFamily,
@@ -91,6 +92,7 @@ export function SpatialFamilyPanel({
       ...patch,
     }));
   const budget = spatialFamilyBudget(config, f);
+  const labels = distinctReadouts(state.members.map((m) => m.value));
   const target =
     fieldError.message || !budget.field
       ? fieldError
@@ -215,9 +217,9 @@ export function SpatialFamilyPanel({
                 value={f.selected}
                 onChange={(e) => change({ selected: Number(e.target.value) })}
               >
-                {state.members.map((m) => (
+                {state.members.map((m, i) => (
                   <option key={m.id} value={m.id}>
-                    {m.id + 1} · {m.value}
+                    {m.id + 1} · {labels[i]}
                     {m.error ? " · unavailable" : !m.frame ? " · pending" : ""}
                   </option>
                 ))}
@@ -245,9 +247,10 @@ export function SpatialFamilyPanel({
                 disabled.
               </p>
               <ol>
-                {state.members.map((m) => (
+                {state.members.map((m, i) => (
                   <li key={m.id}>
-                    {m.value}: {m.error ?? (m.frame ? "Available" : "Pending")}
+                    {labels[i]}:{" "}
+                    {m.error ?? (m.frame ? "Available" : "Pending")}
                   </li>
                 ))}
               </ol>
