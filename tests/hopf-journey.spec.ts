@@ -49,6 +49,7 @@ test("the Hopf journey declares a selection, a descriptor choice and a scalar on
     "A thread learns the surface",
     "Rules that grow a garden",
     "Every point owns a circle",
+    "When a crystal meets its dual",
   ]);
 });
 
@@ -163,7 +164,11 @@ test("an edit reconciles motion and repeat as the notebook does", () => {
 
 test("the existing journeys' studies are unchanged by the new experiment kinds", () => {
   for (const journey of journeys.journeys)
-    if (journey.kind === undefined && journey.title !== hopf().title)
+    if (
+      journey.kind === undefined &&
+      journey.title !== hopf().title &&
+      journey.title !== "When a crystal meets its dual"
+    )
       for (const step of journey.steps) {
         expect(["scalar", "probe"]).toContain(step.control.kind);
         const study = journeys.journeyStudy(step);
