@@ -18,7 +18,15 @@ export type FamilyTarget =
   | "sourceY"
   | "poleX"
   | "poleY"
-  | "a";
+  | "a"
+  | "rollArm"
+  | "rollPhase"
+  | "rollRadius"
+  | "rollFixed"
+  | "lissajousA"
+  | "lissajousB"
+  | "lissajousPhase"
+  | "contourLevel";
 export type FamilySettings = {
   enabled: boolean;
   target: FamilyTarget;
@@ -67,10 +75,46 @@ const catalog: { target: FamilyTarget; supports: (c: Config) => boolean }[] = [
     supports: (c: Config) => usesPole(c.kind) || usesPole(c.input),
   })),
   { target: "a", supports: consumedA },
+  ...(["rollArm", "rollPhase", "rollRadius", "rollFixed"] as const).map(
+    (target) => ({
+      target,
+      supports: (c: Config) =>
+        c.curve.format === "roulette" &&
+        availableTargets(c).includes(target) &&
+        (target !== "rollPhase" || c.curve.roulette.arm !== 0),
+    }),
+  ),
+  ...(["lissajousA", "lissajousB", "lissajousPhase"] as const).map(
+    (target) => ({
+      target,
+      supports: (c: Config) => {
+        const l = c.curve.lissajous;
+        return (
+          c.curve.format === "lissajous" &&
+          (target === "lissajousPhase"
+            ? l.amplitudeX !== 0
+            : target === "lissajousA"
+              ? l.frequencyX !== 0 || Math.sin(l.phase) !== 0
+              : l.frequencyY !== 0)
+        );
+      },
+    }),
+  ),
 ];
 export function familyTargets(c: Config) {
+  // Contours have no parametric construction. Never multiply their native
+  // level stack, or expose dormant poles, sources or curve expressions.
+  if (c.curve.format === "implicit")
+    return c.curve.implicit.family.enabled
+      ? []
+      : [
+          {
+            target: "contourLevel" as const,
+            label: targetLabel("contourLevel"),
+          },
+        ];
   if (
-    ["implicit", "attractor", "field", "pursuit"].includes(c.curve.format) ||
+    ["attractor", "field", "pursuit"].includes(c.curve.format) ||
     (c.kind === "offset" && c.stack.enabled) ||
     (c.kind === "envelope" && c.envelope.mode === "circle")
   )
@@ -79,28 +123,67 @@ export function familyTargets(c: Config) {
     .filter((t) => t.supports(c))
     .map((t) => ({ ...t, label: targetLabel(t.target) }));
 }
+// Each contour member reserves Go's whole 131,072-point ceiling, so the
+// 1,048,576-point family limit admits at most eight of them.
+export const maxMembers = (c: Config) =>
+  c.curve.format === "implicit" ? 8 : 32;
 export function familyDefaults(
   c: Config,
   target = familyTargets(c)[0]?.target ?? "a",
 ): FamilySettings {
   const value = targetValue(c, target, 0.8);
   const half = Math.max(1, Math.abs(value) * 0.25);
-  const count = 16;
-  // Theta is periodic: a whole inclusive turn would end on the first lamp, so
-  // the default stops one step short and every member is a distinct position.
+  const count = c.curve.format === "implicit" ? 8 : 16;
+  const positive = [
+    "sourceRadius",
+    "rollRadius",
+    "rollFixed",
+    "rollArm",
+    "lissajousA",
+    "lissajousB",
+  ].includes(target);
+  const floor =
+    target === "rollRadius" || target === "rollFixed" ? value / 2 : 0;
+  let from =
+    target === "sourceTheta"
+      ? value
+      : positive
+        ? Math.max(
+            floor ||
+              (target === "rollRadius" || target === "rollFixed" ? value : 0),
+            roundedGenerated(value - half, half + Math.abs(value)),
+          )
+        : roundedGenerated(value - half, half + Math.abs(value));
+  let to =
+    target === "sourceTheta"
+      ? value + (2 * Math.PI * (count - 1)) / count
+      : roundedGenerated(value + half, half + Math.abs(value));
+  // A target switch must start with valid generator geometry even beside
+  // edited radii. Only generated endpoints are shortened/clamped here.
+  const roulette = c.curve.roulette;
+  if (roulette.roll === "inside" && target === "rollRadius") {
+    const middle = roundedGenerated(
+      value / 2 + roulette.fixedRadius / 2,
+      roulette.fixedRadius,
+    );
+    to = Math.min(to, middle < roulette.fixedRadius ? middle : value);
+  }
+  if (roulette.roll === "inside" && target === "rollFixed") {
+    const middle = roundedGenerated(value / 2 + roulette.radius / 2, value);
+    from = Math.max(from, middle > roulette.radius ? middle : value);
+  }
+  if (
+    ["rollRadius", "rollFixed", "rollArm", "lissajousA", "lissajousB"].includes(
+      target,
+    )
+  )
+    to = Math.min(100000, to);
+  // Theta is periodic: stop one step short so the first lamp never repeats.
   return {
     enabled: false,
     target,
-    from:
-      target === "sourceTheta"
-        ? value
-        : target === "sourceRadius"
-          ? Math.max(0, roundedGenerated(value - half, half + Math.abs(value)))
-          : roundedGenerated(value - half, half + Math.abs(value)),
-    to:
-      target === "sourceTheta"
-        ? value + (2 * Math.PI * (count - 1)) / count
-        : roundedGenerated(value + half, half + Math.abs(value)),
+    from,
+    to,
     count,
     selected: 0,
     presentation: "family",
@@ -131,8 +214,8 @@ export function familyBudget(
 ) {
   const refined = !!c.adaptive;
   const paths = 2 + (c.input === "curve" ? 0 : 1);
-  const points = f.count * paths * (c.samples + (refined ? refineBudget : 0));
-  const work =
+  let points = f.count * paths * (c.samples + (refined ? refineBudget : 0));
+  let work =
     points *
     (c.input === "curve" ? 9 : 81) *
     (refined ? 8 : 1) *
@@ -140,11 +223,29 @@ export function familyBudget(
     (refined && c.adaptiveFrame ? 2 : 1);
   // Reserve sampled diagnostics, representative geometry (including Fourier
   // guides and rolling placements), refinement parameters/flags and reach.
-  const numbers =
+  let numbers =
     points * (refined && c.adaptiveFrame ? 16 : 7) +
     f.count *
       ((diagnostics ? c.samples * 12 : 0) +
         c.lines * (40 + c.curve.terms.length * 8));
+  const implicit = c.curve.format === "implicit";
+  const grid = implicit ? f.count * (c.curve.implicit.cells + 1) ** 2 : 0;
+  if (implicit) {
+    // Ordinary Go contours cap crossings at 65,536 and points at 131,072,
+    // including their refinement. Reserve the entire per-request ceiling:
+    // no quality reduction, reliance on authored F, or hidden sample budget.
+    const crossings = Math.min(
+      65536,
+      2 * c.curve.implicit.cells * (c.curve.implicit.cells + 1),
+    );
+    points = f.count * 131072;
+    // Weighted admission score for grid, edge roots, Newton projection and
+    // normals, not a count of F evaluations or a latency guarantee.
+    work = grid + f.count * (crossings * 128 + 131072 * 512 + c.lines * 4096);
+    // Coordinates, per-component level/closure bookkeeping, discontinuity
+    // coordinates, normals and the ordinary result's scalar metadata.
+    numbers = points * 2.5 + f.count * (2 * crossings + c.lines * 16 + 64);
+  }
   // An error about one setting names the field shown under that control; the
   // aggregate limit belongs to no single field.
   const [field, error] = !familyTargets(c).some((t) => t.target === f.target)
@@ -152,10 +253,12 @@ export function familyBudget(
         "Family parameter",
         "This family target is not supported by the current study. Your source study is kept.",
       ]
-    : !Number.isInteger(f.count) || f.count < 2 || f.count > 32
+    : !Number.isInteger(f.count) || f.count < 2 || f.count > maxMembers(c)
       ? [
           "Family members",
-          "Family members must be a whole number from 2 to 32.",
+          implicit
+            ? "Family members must be a whole number from 2 to 8 for contours."
+            : "Family members must be a whole number from 2 to 32.",
         ]
       : !Number.isFinite(f.from)
         ? ["Family from", "Family from must be a finite constant."]
@@ -165,13 +268,18 @@ export function familyBudget(
               f.selected < 0 ||
               f.selected >= f.count
             ? ["Selected member", "Selected member must be within the family."]
-            : points > 500000 || numbers > 4000000 || work > 80000000
+            : grid > 2000000 ||
+                points > (implicit ? 1048576 : 500000) ||
+                numbers > 4000000 ||
+                work > (implicit ? 800000000 : 80000000)
               ? [
                   undefined,
-                  "This family exceeds the work or geometry limit. Reduce members, samples, lines or refinement. Your source study is kept.",
+                  implicit
+                    ? "This contour family exceeds the work or geometry limit. Reduce members, grid cells or normals. Your source study is kept."
+                    : "This family exceeds the work or geometry limit. Reduce members, samples, lines or refinement. Your source study is kept.",
                 ]
               : [undefined, undefined];
-  return { points, work, numbers, error, field };
+  return { points, work, numbers, grid, error, field };
 }
 export type FamilyMember = {
   id: number;
@@ -302,8 +410,18 @@ export class PlanarFamily {
             refuse("Family retained geometry limit reached.");
             return;
           }
-          if (!frame.result.derived.some((p) => p)) {
-            refuse("No finite derived curve for this member.");
+          if (
+            frame.result.contours
+              ? !frame.result.contours.curve.contours.some(
+                  (c) => c.points.length > 1,
+                )
+              : !frame.result.derived.some((p) => p)
+          ) {
+            refuse(
+              frame.result.contours
+                ? "No finite contour for this member."
+                : "No finite derived curve for this member.",
+            );
             return;
           }
           this.state = {

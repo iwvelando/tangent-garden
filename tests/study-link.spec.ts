@@ -4935,3 +4935,34 @@ test("composite loom presets open a shell and a web over the base curve", async 
   ].entries())
     assert.equal(model.presetLoom(i, base).map, map);
 });
+
+test("continuous generator and separate contour engraving targets round-trip without enabling native families", async () => {
+  const { familyDefaults } = await import("../web/planar-family");
+  const { presetStudy } = await import("../web/planar-link");
+  for (const [format, targets] of [
+    ["roulette", ["rollArm", "rollPhase", "rollRadius", "rollFixed"]],
+    ["lissajous", ["lissajousA", "lissajousB", "lissajousPhase"]],
+    ["implicit", ["contourLevel"]],
+  ] as const) {
+    const s = presetStudy(0);
+    s.config.curve.format = format;
+    s.config.curve.implicit.family.enabled = false;
+    for (const target of targets) {
+      s.family = {
+        ...familyDefaults(s.config, target),
+        enabled: true,
+        count: 3,
+        selected: 1,
+      };
+      const decoded = await readStudyLink(await writeStudyLink("2d", s));
+      expect(planarStudy(decoded.study).family).toEqual(s.family);
+      expect((decoded.study as any).config.curve.implicit.family.enabled).toBe(
+        false,
+      );
+    }
+    if (format === "implicit") {
+      s.config.curve.implicit.family.enabled = true;
+      expect(() => planarStudy(s)).toThrow(/family.target.*supported/);
+    }
+  }
+});

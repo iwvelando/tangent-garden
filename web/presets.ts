@@ -1765,4 +1765,84 @@ export const presets: {
       },
     },
   },
+  // Twenty-four ordinary pedals of an inside roulette, differing only
+  // in tracing distance. Reveal the frozen set; inspect one with its tangent projections.
+  {
+    title: "A roulette's woven petals",
+    note: "Twenty-four tracing distances weave the pedals of a rolling circle into a three-petaled engraving",
+    layers: { base: false, lines: false },
+    config: {
+      ...base,
+      kind: "pedal",
+      curve: {
+        ...base.curve,
+        format: "roulette",
+        roulette: {
+          roll: "inside",
+          fixedRadius: 3,
+          radius: 1,
+          arm: 0.6,
+          phase: 0,
+        },
+      },
+      samples: 9600,
+      lines: 18,
+    },
+    family: {
+      enabled: true,
+      target: "rollArm",
+      from: 0.2,
+      to: 1.8,
+      count: 24,
+      selected: 8,
+      presentation: "family",
+      animation: {
+        mode: "reveal",
+        width: 3,
+        duration: 8,
+        repeat: "back-and-forth",
+        pace: "steady",
+        camera: "hold",
+      },
+    },
+  },
+  // Eight independently sampled Cassini levels about foci (±1.25, 0)
+  // retain paired loops below a^4 and an oval above it. An eased band of
+  // four members visits the set in a three-second back-and-forth motion.
+  {
+    title: "Contours around two foci",
+    note: "Eight Cassini levels grow from paired loops into surrounding ovals; one member explains the level set with gradient normals",
+    layers: { base: true, derived: false, lines: false },
+    config: {
+      ...base,
+      curve: {
+        ...base.curve,
+        a: 1.25,
+        format: "implicit",
+        implicit: {
+          ...base.curve.implicit,
+          family: { ...base.curve.implicit.family, enabled: false },
+          cells: 160,
+        },
+      },
+      lines: 24,
+    },
+    family: {
+      enabled: true,
+      target: "contourLevel",
+      from: 0.15,
+      to: 2.6,
+      count: 8,
+      selected: 2,
+      presentation: "family",
+      animation: {
+        mode: "window",
+        width: 4,
+        duration: 3,
+        repeat: "back-and-forth",
+        pace: "ease",
+        camera: "hold",
+      },
+    },
+  },
 ];

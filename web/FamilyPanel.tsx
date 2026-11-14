@@ -13,6 +13,7 @@ import {
   familyDefaults,
   familyTargets,
   familyBudget,
+  maxMembers,
   PlanarFamily,
   emptyFamily,
   type FamilyMember,
@@ -145,7 +146,7 @@ export function FamilyPanel({
           onChange={(enabled) => change({ enabled })}
           help={tiered(
             "Overlay full-quality constructions from one changing parameter.",
-            "Only active point-source coordinates, pedal-family poles and consumed shape a are supported. Implicit curves, densities, integrated paths and nested stacks are excluded. Disabling restores the source study. Reveal members or move a band in Animation; ordinary study animation is unavailable here.",
+            "Supports active light, pole and shape parameters; roulette geometry; Lissajous amplitudes and phase; or implicit levels without a native stack. Densities, integrated paths and nested stacks are excluded. Disabling restores the source study. Reveal members or move a band in Animation.",
           )}
         />
         {f.enabled && (
@@ -199,12 +200,16 @@ export function FamilyPanel({
             </div>
             <Field
               label="Family members"
-              help="2–32 whole members, including both endpoints; default 16."
+              help={
+                study.config.curve.format === "implicit"
+                  ? "2–8 whole contour members within work limits; default 8."
+                  : "2–32 whole members within work limits; default 16."
+              }
             >
               <input
                 type="number"
                 min="2"
-                max="32"
+                max={maxMembers(study.config)}
                 step="1"
                 value={Number.isNaN(f.count) ? "" : f.count}
                 onChange={(e) => {
@@ -290,9 +295,11 @@ export function FamilyPanel({
                 curves. Construction layers show the selected member, or every
                 visible member with Construction lines for all members enabled.
                 Selection does not follow the moving band. Select one to inspect
-                it alone. At most 500,000 reserved path points, four million
-                retained numbers and 80 million weighted work units. One
-                calculation runs at a time. Hidden geometry counts too.
+                it alone.{" "}
+                {study.config.curve.format === "implicit"
+                  ? "Contours reserve at most 1,048,576 points, two million grid nodes, four million retained numbers and 800 million weighted work units. Samples and refinement are ignored."
+                  : "At most 500,000 reserved path points, four million retained numbers and 80 million weighted work units."}{" "}
+                One calculation runs at a time. Hidden geometry counts too.
               </p>
               <ol>
                 {state.members.map((m) => (

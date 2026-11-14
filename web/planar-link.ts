@@ -671,6 +671,14 @@ export function planarStudy(value: unknown): PlanarStudy {
               enabled: "boolean",
               target: {
                 options: {
+                  rollArm: true,
+                  rollPhase: true,
+                  rollRadius: true,
+                  rollFixed: true,
+                  lissajousA: true,
+                  lissajousB: true,
+                  lissajousPhase: true,
+                  contourLevel: true,
                   sourceTheta: true,
                   sourceRadius: true,
                   sourceX: true,

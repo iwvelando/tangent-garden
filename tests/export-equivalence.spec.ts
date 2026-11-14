@@ -499,3 +499,40 @@ for (const scheme of ["light", "dark"] as const)
         );
       }
     });
+
+for (const [title, count, target, shape] of [
+  ["A roulette's woven petals", 24, "rollArm", "derived-curve"],
+  ["Contours around two foci", 8, "contourLevel", "contour-path"],
+] as const)
+  test(`extended engraving ${target} keeps vectors and decoded still output in both presentations`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await choosePreset(page, { label: title });
+    for (const presentation of ["family", "selected"] as const) {
+      await page
+        .getByLabel("Family presentation", { exact: true })
+        .selectOption(presentation);
+      if (target === "contourLevel" && presentation === "selected") {
+        // Wider focus spacing makes this selected level's two loops sparse.
+        // Exercise its explanatory normals and window while retaining the
+        // shared nonempty-artwork and pixel-equivalence assertions.
+        await page
+          .getByRole("checkbox", { name: "Construction lines", exact: true })
+          .check();
+        await expect(
+          page.locator("#artwork [data-testid=contour-normal]"),
+        ).not.toHaveCount(0);
+      }
+      await expect(imageButton(page)).toBeEnabled();
+      const svg = await vectorEquivalence(page, "#artwork", [1000, 760], 1.5);
+      expect(svg).not.toMatch(/<image|<text|<foreignObject/);
+      expect([...svg.matchAll(/data-family-member="(\d+)"/g)]).toHaveLength(
+        presentation === "family" ? count : 1,
+      );
+      expect(svg).toContain(`data-testid="${shape}"`);
+      expect(
+        JSON.parse(svg.match(/<desc>(.*?)<\/desc>/)![1]).family.target,
+      ).toBe(target);
+    }
+  });
