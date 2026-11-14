@@ -491,7 +491,7 @@ export const crystalJourney: StudyJourney = {
     across(
       "4d",
       "A tesseract meeting its dual",
-      "Now one plane cuts both corner-first crystals. At the center, the tesseract gives an octahedron and the 16-cell a cuboctahedron. The octahedron's 3D dual is a cube: cutting a 4D dual pair need not give dual sections.",
+      "Now one plane cuts both crystals, the tesseract corner first. At the center, the tesseract gives an octahedron and the 16-cell a cuboctahedron. The octahedron's 3D dual is a cube: cutting a 4D dual pair need not give dual sections.",
       "Try Slice offset h at 1/4. Play deliberately starts at an empty plane, then passes through both crystals.",
       null,
       ["slice"],
