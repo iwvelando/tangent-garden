@@ -3454,3 +3454,70 @@ test("implicit engraving scalar blur, selection and native-stack refusal work in
     "pi/10",
   );
 });
+
+test("spatial engraving scalar blur, label clicks and range spacing work in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A knot remembers" });
+  const stage = page.locator(".spatial-stage"),
+    panel = page.getByRole("region", {
+      name: "Spatial finite engraving settings",
+    });
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  const from = panel.getByRole("textbox", { name: "Family from", exact: true });
+  const gaps = await panel.evaluate((p) => {
+    const pair = p.querySelector(".pair")!,
+      before = pair.previousElementSibling!,
+      after = pair.nextElementSibling!;
+    return [
+      pair.getBoundingClientRect().top - before.getBoundingClientRect().bottom,
+      after.getBoundingClientRect().top - pair.getBoundingClientRect().bottom,
+    ];
+  });
+  expect(gaps.every((g) => g >= 0)).toBe(true);
+  await from.fill("pi/10");
+  await panel.getByText("Selected member", { exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await stage.getAttribute("data-family")) ?? "{}").from,
+    )
+    .toBe(Math.PI / 10);
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await panel
+    .getByLabel("Family presentation", { exact: true })
+    .selectOption("selected");
+  await panel.getByLabel("Selected member", { exact: true }).selectOption("4");
+  await expect
+    .poll(
+      async () =>
+        JSON.parse((await stage.getAttribute("data-engraving")) ?? "{}")
+          .visible,
+    )
+    .toEqual([4]);
+  await panel.getByText("Finite engraving", { exact: true }).click();
+  await expect(
+    panel.getByLabel("Finite engraving", { exact: true }),
+  ).not.toBeChecked();
+  await panel.getByText("Finite engraving", { exact: true }).click();
+  await expect(from).toHaveValue("pi/10");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await page.getByRole("button", { name: "Animation", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const progress = page.getByRole("slider", {
+    name: "Animation progress",
+    exact: true,
+  });
+  await progress.focus();
+  await page.keyboard.press("End");
+  await expect(stage).toHaveAttribute("data-time", "1");
+  await expect(stage).toHaveAttribute("data-progress", "0");
+  await page
+    .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
+    .click();
+});

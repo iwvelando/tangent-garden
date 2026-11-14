@@ -130,8 +130,11 @@ export const shortenExamples: Example[] = shortenPresets.map((p) => ({
 export const spatialExamples: Example[] = spatialPresets.map((p) => ({
   title: p.name,
   caption: p.detail,
-  family:
-    p.config.format === "implicit"
+  family: p.family
+    ? p.config.format === "torus"
+      ? "Torus knots"
+      : "Parametric curves"
+    : p.config.format === "implicit"
       ? "Implicit surfaces and sections"
       : p.config.format === "surface" &&
           p.config.surface.kind === "helicoid-catenoid"
@@ -167,13 +170,19 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
                                 : p.config.format === "torus"
                                   ? "Torus knots"
                                   : "Parametric curves",
-  keywords: `${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.cut?.others?.length ? (p.cut.beyond === "any" ? " planes slab box" : " planes notch corner wedge") : ""}${p.sight && !isPlain(p.sight) ? " see-through" : ""}${p.sight && p.sight.weight !== defaultSight.weight ? ` ${p.sight.weight} line weight strokes` : ""}${p.projection && p.projection !== "orthographic" ? ` perspective${p.projection === "chosen" ? " lens angle" : ""}` : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.path.keys.some((k) => k.leg !== undefined) ? " leg times linger" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}${p.config.adaptive && p.config.adaptiveSurface ? " refined surface" : ""}${p.config.adaptive && p.config.adaptiveView ? " refined to the view deep zoom" : ""}${p.probe?.enabled ? " probe curvature torsion" : ""}${p.story ? " event topology critical level singular strip" : ""}`,
+  keywords: `${p.family ? "engraving family reveal window " : ""}${p.config.format} ${p.config.construction}${composes(p.config) ? ` ${p.config.input} composition` : ""}${p.cut ? " cut" : ""}${p.cut?.others?.length ? (p.cut.beyond === "any" ? " planes slab box" : " planes notch corner wedge") : ""}${p.sight && !isPlain(p.sight) ? " see-through" : ""}${p.sight && p.sight.weight !== defaultSight.weight ? ` ${p.sight.weight} line weight strokes` : ""}${p.projection && p.projection !== "orthographic" ? ` perspective${p.projection === "chosen" ? " lens angle" : ""}` : ""}${p.flight ? `${p.flight.path.keys.length ? " flight" : ""}${p.flight.path.keys.some((k) => k.leg !== undefined) ? " leg times linger" : ""}${p.flight.ride ? " ride perspective" : ""}${p.flight.repeat === "loop" ? " seamless loop" : p.flight.repeat === "back-and-forth" ? " back and forth" : ""}` : ""}${p.config.adaptive ? " refined adaptive aliasing" : ""}${p.config.adaptive && p.config.adaptiveSurface ? " refined surface" : ""}${p.config.adaptive && p.config.adaptiveView ? " refined to the view deep zoom" : ""}${p.probe?.enabled ? " probe curvature torsion" : ""}${p.story ? " event topology critical level singular strip" : ""}`,
   // A preset's cut, sight, projection (with its lens angle), opening view,
   // probe and layers are
   // part of its picture; presets without them keep the fingerprints they
   // had before those existed.
   fingerprint: fingerprint(
-    p.cut || p.sight || p.projection || p.view || p.probe || p.layers
+    p.cut ||
+      p.sight ||
+      p.projection ||
+      p.view ||
+      p.probe ||
+      p.layers ||
+      p.family
       ? {
           config: p.config,
           ...(p.cut && { cut: p.cut }),
@@ -183,6 +192,7 @@ export const spatialExamples: Example[] = spatialPresets.map((p) => ({
           ...(p.view && { view: p.view }),
           ...(p.probe && { probe: p.probe }),
           ...(p.layers && { layers: p.layers }),
+          ...(p.family && { family: p.family }),
         }
       : p.config,
   ),

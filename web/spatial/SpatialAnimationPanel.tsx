@@ -1,4 +1,10 @@
 import {
+  sampleSpatialFamily,
+  type SpatialFamilySettings,
+  type SpatialFamilyMember,
+} from "./family";
+import { familyMotionHelp } from "../family-motion";
+import {
   fullRefinementHelp,
   lowersRefinement,
   playbackRefinement,
@@ -129,7 +135,7 @@ import {
   type Story,
 } from "./story";
 import { easedPath, withEase } from "../key-views";
-import { Field } from "../Field";
+import { Field, FieldErrorContext } from "../Field";
 import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
 import type { SpatialCamera } from "./link";
@@ -174,6 +180,10 @@ import {
 type Status =
   "idle" | "preparing" | "playing" | "paused" | "complete" | "exporting";
 type Session = {
+  family?: {
+    settings: SpatialFamilySettings;
+    members: readonly SpatialFamilyMember[];
+  };
   original: Frame;
   // Present only while revealing a harmonic study: its chain at every sample.
   chains?: HarmonicChainTrack;
@@ -253,6 +263,14 @@ const holdsHelp = (story: Story) =>
   );
 
 type Props = {
+  family?: {
+    settings: SpatialFamilySettings;
+    error?: string;
+    members: readonly SpatialFamilyMember[];
+    onChange: (
+      change: (previous?: SpatialFamilySettings) => SpatialFamilySettings,
+    ) => void;
+  };
   preview?: boolean;
   // Why a preview cannot play while Play is unavailable, in place of a
   // general note.
@@ -302,6 +320,7 @@ type Props = {
 };
 
 export function SpatialAnimationPanel({
+  family,
   preview = false,
   unavailable,
   frame,
@@ -328,7 +347,8 @@ export function SpatialAnimationPanel({
   onShowView,
   event = null,
 }: Props) {
-  const [mode, setMode] = useState<AnimationMode>("reveal");
+  const [modeChoice, setMode] = useState<AnimationMode>("reveal");
+  const mode = family ? "reveal" : modeChoice;
   const probing = probe !== null;
   // What a probe animation moves along: the curve, or a surface.
   const target = frame && probe ? probeTarget(frame.config, probe) : "curve";
@@ -348,14 +368,22 @@ export function SpatialAnimationPanel({
   useEffect(() => {
     if (!cutting && mode === "cut") setMode("reveal");
   }, [cutting, mode]);
-  const [camera, setCamera] = useState<CameraMode>("hold");
+  const [cameraChoice, setCamera] = useState<CameraMode>("hold");
+  const camera = family
+    ? cameraChoice === "current"
+      ? "current"
+      : "hold"
+    : cameraChoice;
   const [duration, setDuration] = useState(10);
-  const [repeat, setRepeat] = useState<Repeat>("once");
+  const [repeatChoice, setRepeat] = useState<Repeat>("once");
+  const repeat =
+    family && repeatChoice === "loop" ? "back-and-forth" : repeatChoice;
   const [pace, setPace] = useState<Pace>("steady");
   // Only motion that can return to its start loops; another keeps
   // repeating, back and forth.
   useEffect(() => {
-    if (!loops(mode) && repeat === "loop") setRepeat("back-and-forth");
+    if (!family && !loops(mode) && repeat === "loop")
+      setRepeat("back-and-forth");
   }, [mode, repeat]);
   const [tracks, setTracks] = useState<Track[]>([]);
   // How the probe moves while parameters vary; a grid has no length, so
@@ -495,8 +523,8 @@ export function SpatialAnimationPanel({
   }, [!!frame, targets.join(",")]);
   if (settings)
     settings.current = {
-      mode,
-      camera,
+      mode: modeChoice,
+      camera: cameraChoice,
       duration,
       tracks,
       probeMotion,
@@ -504,7 +532,7 @@ export function SpatialAnimationPanel({
       ...(holds && { holds }),
       path,
       ride,
-      repeat,
+      repeat: repeatChoice,
       pace,
     };
   // After the retention and trace fallbacks above, which then see the
@@ -525,6 +553,7 @@ export function SpatialAnimationPanel({
     setRepeat(restore.settings.repeat);
     setPace(restore.settings.pace);
   }, [restore]);
+  const actionDisabled = disabled || !!family?.error;
   const running =
     status === "playing" || status === "preparing" || status === "exporting";
   const active = status !== "idle";
@@ -621,6 +650,21 @@ export function SpatialAnimationPanel({
     engine = client.current!,
     playing = false,
   ): Promise<AnimationView> {
+    if (s.family)
+      return sampleSpatialFamily(
+        s.original.config,
+        s.family.settings,
+        s.family.members,
+        {
+          duration: s.duration,
+          repeat: s.repeat === "loop" ? "back-and-forth" : s.repeat,
+          pace: s.pace,
+        },
+        s.heldView!,
+        time,
+        s.length,
+        s.camera === "current" ? "current" : "hold",
+      );
     const view = await frameAt(
       s,
       progressAt(time, s.repeat, s.pace),
@@ -974,6 +1018,8 @@ export function SpatialAnimationPanel({
     );
   }
   function readout(s: Session, view: AnimationView) {
+    if (s.family)
+      return `${view.frame.result.engraving!.visible.length} family slots shown`;
     if (s.mode === "reveal" && s.original.config.format === "implicit") {
       // A level surface reveals upward through its box.
       const { zMin, zMax } = s.original.config.implicit.box;
@@ -1281,6 +1327,12 @@ export function SpatialAnimationPanel({
       if (ray && !rode) throw new Error("This ray cannot be ridden.");
       const s: Session = {
         original,
+        ...(family && {
+          family: {
+            settings: structuredClone(family.settings),
+            members: family.members,
+          },
+        }),
         ...(chains && { chains }),
         timeline,
         ...(rode && {
@@ -1646,87 +1698,146 @@ export function SpatialAnimationPanel({
             if (status === "complete") stop();
           }}
         >
-          <Field
-            label="Animate"
-            topic="animation modes"
-            help={
-              mode === "path"
-                ? pathHelp.mode
-                : mode === "cut"
-                  ? tiered(
-                      "Sweep the cut plane along its normal, peeling the drawing away until all it cuts is hidden. Geometry stays fixed.",
-                      "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
-                    )
-                  : mode === "probe"
-                    ? gridded(target) &&
-                      frame &&
-                      probe &&
-                      probeBetweenGrid(frame.config, probe)
-                      ? tiered(
-                          `Move the probe through every ${surfaceTerms(frame.config, target).along} of the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
-                          `It runs from its first ${surfaceTerms(frame.config, target).along} to its last at its ${surfaceTerms(frame.config, target).around}, between the grid's rows, with its principal directions and circles.`,
-                        )
-                      : gridded(target) && frame
-                        ? tiered(
-                            `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
-                            `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
-                          )
-                        : probe && frame && probeBetween(frame.config, probe)
-                          ? tiered(
-                              "Move the probe through every t of the curve. Geometry stays fixed.",
-                              "It carries its frame, osculating circle and readout from the start of the curve to its end.",
-                            )
-                          : tiered(
-                              "Move the probe along the curve, sample by sample. Geometry stays fixed.",
-                              "It carries its frame, osculating circle and readout from the start of the curve to its end.",
-                            )
-                    : mode === "trace"
-                      ? tiered(
-                          "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
-                          "Parallel light comes in from past the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
-                        )
-                      : mode === "orbit"
-                        ? "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
-                        : mode === "reveal"
-                          ? frame?.config.format === "implicit"
-                            ? "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
-                            : "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
-                          : tiered<ReactNode>(
-                              "Tracks vary together, linearly. Endpoints accept constants.",
-                              <>
-                                Use <var>a</var> in a curve expression to
-                                animate any coefficient, for example{" "}
-                                <code>
-                                  <var>a</var>*cos(t)
-                                </code>
-                                . Integer counts change in whole steps.
-                              </>,
-                            )
-            }
-          >
-            <select
-              value={mode}
-              onChange={(e) => parameterMode(e.target.value as typeof mode)}
-            >
-              <option value="reveal">
-                {frame?.config.format === "implicit"
-                  ? "Rise through the box"
-                  : "Draw along the curve"}
-              </option>
-              <option value="parameters">Vary parameters</option>
-              <option value="orbit">Orbit the study</option>
-              {traceable && <option value="trace">Trace rays</option>}
-              {probing && (
-                <option value="probe">
-                  {gridded(target) && frame
-                    ? `Move the probe along the ${surfaceTerms(frame.config, target).surface}`
-                    : "Move the probe along the curve"}
-                </option>
+          {family && (
+            <>
+              <Field
+                label="Family motion"
+                help={familyMotionHelp[family.settings.motion]}
+              >
+                <select
+                  value={family.settings.motion}
+                  onChange={(e) => {
+                    const motion = e.target
+                      .value as SpatialFamilySettings["motion"];
+                    family.onChange((previous) => ({
+                      ...(previous ?? family.settings),
+                      motion,
+                    }));
+                  }}
+                >
+                  <option value="reveal">Reveal members</option>
+                  <option value="window">Moving band</option>
+                </select>
+              </Field>
+              {family.settings.motion === "window" && (
+                <FieldErrorContext.Provider
+                  value={{
+                    label: "Band width",
+                    message: family.error ?? "",
+                    claim: () => {},
+                    touch: () => {},
+                  }}
+                >
+                  <Field
+                    label="Band width"
+                    help="Show consecutive slots, from one up to the family size."
+                  >
+                    <input
+                      type="number"
+                      min="1"
+                      max={family.settings.count}
+                      step="1"
+                      value={
+                        Number.isNaN(family.settings.width)
+                          ? ""
+                          : family.settings.width
+                      }
+                      onChange={(e) => {
+                        const width = e.target.valueAsNumber;
+                        family.onChange((previous) => ({
+                          ...(previous ?? family.settings),
+                          width,
+                        }));
+                      }}
+                    />
+                  </Field>
+                </FieldErrorContext.Provider>
               )}
-              {cutting && <option value="cut">Peel away with the cut</option>}
-              <option value="path">Fly through key views</option>
-            </select>
-          </Field>
+            </>
+          )}
+          <div hidden={!!family}>
+            <Field
+              label="Animate"
+              topic="animation modes"
+              help={
+                mode === "path"
+                  ? pathHelp.mode
+                  : mode === "cut"
+                    ? tiered(
+                        "Sweep the cut plane along its normal, peeling the drawing away until all it cuts is hidden. Geometry stays fixed.",
+                        "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
+                      )
+                    : mode === "probe"
+                      ? gridded(target) &&
+                        frame &&
+                        probe &&
+                        probeBetweenGrid(frame.config, probe)
+                        ? tiered(
+                            `Move the probe through every ${surfaceTerms(frame.config, target).along} of the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                            `It runs from its first ${surfaceTerms(frame.config, target).along} to its last at its ${surfaceTerms(frame.config, target).around}, between the grid's rows, with its principal directions and circles.`,
+                          )
+                        : gridded(target) && frame
+                          ? tiered(
+                              `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                              `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
+                            )
+                          : probe && frame && probeBetween(frame.config, probe)
+                            ? tiered(
+                                "Move the probe through every t of the curve. Geometry stays fixed.",
+                                "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                              )
+                            : tiered(
+                                "Move the probe along the curve, sample by sample. Geometry stays fixed.",
+                                "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                              )
+                      : mode === "trace"
+                        ? tiered(
+                            "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
+                            "Parallel light comes in from past the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
+                          )
+                        : mode === "orbit"
+                          ? "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
+                          : mode === "reveal"
+                            ? frame?.config.format === "implicit"
+                              ? "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
+                              : "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
+                            : tiered<ReactNode>(
+                                "Tracks vary together, linearly. Endpoints accept constants.",
+                                <>
+                                  Use <var>a</var> in a curve expression to
+                                  animate any coefficient, for example{" "}
+                                  <code>
+                                    <var>a</var>*cos(t)
+                                  </code>
+                                  . Integer counts change in whole steps.
+                                </>,
+                              )
+              }
+            >
+              <select
+                value={mode}
+                onChange={(e) => parameterMode(e.target.value as typeof mode)}
+              >
+                <option value="reveal">
+                  {frame?.config.format === "implicit"
+                    ? "Rise through the box"
+                    : "Draw along the curve"}
+                </option>
+                <option value="parameters">Vary parameters</option>
+                <option value="orbit">Orbit the study</option>
+                {traceable && <option value="trace">Trace rays</option>}
+                {probing && (
+                  <option value="probe">
+                    {gridded(target) && frame
+                      ? `Move the probe along the ${surfaceTerms(frame.config, target).surface}`
+                      : "Move the probe along the curve"}
+                  </option>
+                )}
+                {cutting && <option value="cut">Peel away with the cut</option>}
+                <option value="path">Fly through key views</option>
+              </select>
+            </Field>
+          </div>
           {mode === "parameters" && (
             <>
               {tracks.map((track, i) => (
@@ -1912,13 +2023,13 @@ export function SpatialAnimationPanel({
               >
                 <option value="hold">Hold final view</option>
                 <option value="current">Hold current view</option>
-                {mode !== "trace" && (
+                {!family && mode !== "trace" && (
                   <>
                     <option value="follow">Follow center, fixed zoom</option>
                     <option value="fit">Fit each frame</option>
                   </>
                 )}
-                {mode !== "orbit" && (
+                {!family && mode !== "orbit" && (
                   <option value="path">Fly through key views</option>
                 )}
                 {mode === "trace" && (
@@ -2062,7 +2173,7 @@ export function SpatialAnimationPanel({
             ) : (
               <button
                 className="export"
-                disabled={disabled || running || !frame}
+                disabled={actionDisabled || running || !frame}
                 onClick={() => void start()}
               >
                 {status === "complete"
@@ -2123,7 +2234,7 @@ export function SpatialAnimationPanel({
         <button
           hidden={preview}
           className="animation-export"
-          disabled={disabled || running || !frame || !exportReady}
+          disabled={actionDisabled || running || !frame || !exportReady}
           onClick={() => void start(true)}
         >
           Export {text.name} ↗

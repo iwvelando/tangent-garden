@@ -189,7 +189,10 @@ export function familyDefaults(
     presentation: "family",
   };
 }
-export function familyValues(f: FamilySettings, current: number) {
+export function familyValues(
+  f: Pick<FamilySettings, "from" | "to" | "count">,
+  current: number,
+) {
   if (f.from === f.to) return Array(f.count).fill(f.from) as number[];
   const reverse = f.from > f.to;
   const a = reverse ? f.to : f.from,

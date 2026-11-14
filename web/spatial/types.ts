@@ -467,6 +467,8 @@ export type CurveMesh = {
 };
 export const meshStride = 7;
 export type SpatialResult = {
+  // A browser-owned finite engraving; every member remains an ordinary result.
+  engraving?: import("./family").SpatialEngraving;
   // A fitting preview's transient source outline, from no engine result.
   fitSource?: FitSourceOutline;
   // Additional constructions in source order; all surfaces share mesh.

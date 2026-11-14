@@ -1,3 +1,5 @@
+import { loomMetadata as annotateMedia } from "../loom/metadata";
+import { spatialFamilyRecord } from "./family";
 import type { ColorScheme } from "../color-schemes";
 import { composes, type Frame } from "./types";
 import { curveInputs } from "./inputs";
@@ -125,6 +127,7 @@ export async function imageFile(
   // holds every view, each cell at the drawing's own page size.
   grid?: GridPlanes,
 ): Promise<Blob> {
+  if (frame.result.unavailable) throw new Error(frame.result.unavailable);
   const lensed = projectionRecord(view);
   const page = stillSize(still);
   const whole = grid && stillSize(still, gridPage(grid.views));
@@ -142,6 +145,9 @@ export async function imageFile(
       metadata: { ...metadata, grid: gridRecord(grid!, frame.result) },
     });
   const probed = {
+    ...(frame.result.engraving && {
+      family: spatialFamilyRecord(frame.result.engraving),
+    }),
     ...(probe ? { probe: probe.record } : {}),
     ...(cut ? { cut: cutRecord(cut) } : {}),
     ...(lensed ? { projection: lensed } : {}),
@@ -287,7 +293,18 @@ export async function imageFile(
       ),
     );
     signal.throwIfAborted();
-    if (format === "png") return png;
+    if (format === "png")
+      return frame.result.engraving
+        ? annotateMedia(png, "png", {
+            config: frame.config,
+            family: spatialFamilyRecord(frame.result.engraving),
+            view,
+            layers,
+            dark,
+            scheme,
+            ...probed,
+          })
+        : png;
     // A 3D shaded/depth-tested view is raster content. Label it honestly; do not
     // claim a painter-sorted mesh is an exact vector hidden-surface solution.
     return new Blob(
@@ -343,6 +360,7 @@ export async function exportAnimation(options: {
       ? captionBand * (encoding.width / gridPage(grid.views).width)
       : 0;
   let sink: ReturnType<typeof mp4Sink> | undefined;
+  let metadata: object | undefined;
   try {
     sink =
       options.format === "mp4"
@@ -352,6 +370,25 @@ export async function exportAnimation(options: {
       options.signal.throwIfAborted();
       const view = await options.sample(timing[i].progress);
       options.signal.throwIfAborted();
+      const family = view.frame.result.engraving;
+      if (family) {
+        if (!family.members.some((m) => m.frame))
+          throw new Error("No available member to export.");
+        metadata ??= {
+          config: view.frame.config,
+          family: spatialFamilyRecord(family),
+          view: animationCamera(view),
+          layers: options.layers,
+          dark: options.dark,
+          scheme: options.scheme ?? "default",
+          animation: {
+            duration: options.duration,
+            fps: options.fps,
+            cyclic: options.cyclic,
+          },
+        };
+      } else if (view.frame.result.unavailable)
+        throw new Error(view.frame.result.unavailable);
       renderer.upload(view.frame.result);
       // The probe as playback draws it, when the animation moves it.
       renderer.setProbe(
@@ -416,7 +453,13 @@ export async function exportAnimation(options: {
     }
     const blob = await sink.finish();
     options.signal.throwIfAborted();
-    return blob;
+    const file = metadata
+      ? await annotateMedia(blob, options.format, metadata)
+      : blob;
+    options.signal.throwIfAborted();
+    if (file.size > 256 * 1024 * 1024)
+      throw new Error("Export reached the 256 MiB limit.");
+    return file;
   } finally {
     sink?.close();
     renderer.dispose();

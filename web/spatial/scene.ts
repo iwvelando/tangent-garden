@@ -1378,7 +1378,15 @@ function buildSingleScene(result: SpatialResult) {
     cast,
   };
 }
-export type Scene = ReturnType<typeof buildSingleScene> & { members?: Scene[] };
+export type Scene = ReturnType<typeof buildSingleScene> & {
+  members?: Scene[];
+  engraving?: {
+    scene: Scene;
+    selected: boolean;
+    id: number;
+    slots: number[];
+  }[];
+};
 
 // A fitting preview's source outline as line pairs: every edge of the source,
 // then any closing segment in dashes, so that what closure added reads as
@@ -1422,6 +1430,26 @@ export function fitSourceEdges({ points, closing }: FitSourceOutline): Vec3[] {
 
 export function buildScene(result: SpatialResult): Scene {
   const scene: Scene = buildSingleScene(result);
+  if (result.engraving) {
+    const e = result.engraving;
+    const seen = new Set<SpatialResult>();
+    scene.engraving = e.visible.flatMap((id) => {
+      const r = e.members[id]?.frame?.result;
+      if (!r || seen.has(r)) return [];
+      seen.add(r);
+      return [
+        {
+          id,
+          slots: e.visible.filter((i) => e.members[i]?.frame?.result === r),
+          scene: buildScene({ ...r, bounds: result.bounds }),
+          selected: e.visible.some(
+            (i) =>
+              i === e.settings.selected && e.members[i]?.frame?.result === r,
+          ),
+        },
+      ];
+    });
+  }
   if (result.members?.length) {
     // Every batch uses the same origin and marker scale as the whole study.
     // The root mesh already contains every member's indexed triangles.
@@ -1437,6 +1465,8 @@ export function buildScene(result: SpatialResult): Scene {
 // lines lying on it stay in front. The cut's edge (see cut.ts) and the
 // parameter probe are drawn whenever they are given.
 export type Pass = {
+  member?: number;
+  slots?: number[];
   layer: keyof Layers | "base" | "probe" | "cut";
   batch: Batch;
   sheet: boolean;
@@ -1568,6 +1598,13 @@ export function scenePasses(
     for (const pass of scenePasses(member, layers))
       if (pass.layer !== "base" || member.parent.data.length > 0)
         out.push(pass);
+  for (const member of s.engraving ?? [])
+    for (const pass of scenePasses(member.scene, layers))
+      if (
+        member.selected ||
+        ["base", "projection", "inverse"].includes(pass.layer)
+      )
+        out.push({ ...pass, member: member.id, slots: member.slots });
   if (edge) add("cut", true, false, edge);
   add("probe", true, false, ...probe);
   return out;

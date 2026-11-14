@@ -1,3 +1,4 @@
+import type { SpatialFamilySettings } from "./family";
 import type { Pace, Repeat } from "../timing";
 import type { Cut } from "./cut";
 import type { Sight } from "./sight";
@@ -278,6 +279,8 @@ export const spatialPresets: {
   cut?: Cut;
   sight?: Sight;
   flight?: Flight;
+  // Timing for a fixed-geometry animation without a camera flight.
+  timing?: { duration: number; repeat: Repeat; pace: Pace };
   projection?: Projection;
   // The chosen projection's lens angle, in whole degrees.
   lensAngle?: number;
@@ -290,6 +293,7 @@ export const spatialPresets: {
   // A curated event (story.ts), whose strip it opens with; one without
   // opens with none.
   story?: StoryId;
+  family?: SpatialFamilySettings;
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -5986,5 +5990,33 @@ export const spatialPresets: {
         ],
       },
     },
+  },
+  // Sixteen full trefoils and their orthotomics, changing tube radius. Only
+  // the selected member has guides; reveal playback uses this same frozen set.
+  {
+    name: "A knot remembers",
+    timing: { duration: 3, repeat: "back-and-forth", pace: "steady" },
+    detail: "Sixteen shapes held in one spatial engraving",
+    config: {
+      ...base,
+      construction: "orthotomic",
+      samples: 720,
+      lines: 12,
+      adaptive: false,
+      pole: { x: 0, y: 0, z: 0 },
+    },
+    family: {
+      enabled: true,
+      target: "tube",
+      from: 0.15,
+      to: 1.3,
+      count: 16,
+      selected: 7,
+      presentation: "family",
+      motion: "reveal",
+      width: 4,
+    },
+    view: { ...initialView },
+    layers: { connectors: false, pole: false },
   },
 ];
