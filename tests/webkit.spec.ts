@@ -3400,3 +3400,57 @@ test("each drawing pane keeps its own zoom and trackpad behavior in Safari's eng
   await checkPaneViewsAreIndependentAndKept(page);
   await checkPreviewTrackpad(page);
 });
+
+test("implicit engraving scalar blur, selection and native-stack refusal work in Safari", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "Contours around two foci" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await page.getByLabel("Family from", { exact: true }).fill("pi/10");
+  // Safari leaves button clicks unfocused; clicking the checkbox must still
+  // settle the scalar draft and apply the layer change to the latest state.
+  await page
+    .getByRole("checkbox", { name: "Construction lines", exact: true })
+    .click();
+  await expect(page.getByLabel("Family from", { exact: true })).toHaveValue(
+    "pi/10",
+  );
+  await page
+    .getByLabel("Family presentation", { exact: true })
+    .selectOption("selected");
+  await expect(page.locator("#artwork [data-testid=contour-path]")).toHaveCount(
+    2,
+  );
+  await expect(
+    page.locator("#artwork [data-testid=contour-normal]"),
+  ).not.toHaveCount(0);
+  await page
+    .getByRole("checkbox", { name: "Family of levels", exact: true })
+    .click();
+  await expect(page.locator(".family-panel")).toContainText("not supported");
+  await page
+    .getByRole("checkbox", { name: "Family of levels", exact: true })
+    .click();
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await expect(
+    page.getByRole("button", { name: "Export image", exact: true }),
+  ).toBeEnabled();
+  await page
+    .getByRole("checkbox", { name: "Finite engraving", exact: true })
+    .click();
+  await expect(page.locator("#artwork [data-family-member]")).toHaveCount(0);
+  await page
+    .getByRole("checkbox", { name: "Finite engraving", exact: true })
+    .click();
+  await expect(page.getByLabel("Family from", { exact: true })).toHaveValue(
+    "pi/10",
+  );
+});

@@ -263,6 +263,7 @@ export function Plot({
     const key = (member: FamilyMember) =>
       JSON.stringify([
         member.frame?.result.base,
+        member.frame?.result.contours?.curve,
         member.frame?.result.input,
         member.frame?.result.second,
         member.frame?.result.adaptive?.base,
@@ -270,7 +271,12 @@ export function Plot({
       ]);
     const members = family.members.filter((m) => m.frame);
     const first = members[0] && key(members[0]);
-    return members.every((m) => key(m) === first);
+    // A contour is the member's artwork, not a source shared independently
+    // of its validity. Never reveal a later valid level through an empty slot.
+    const completeContours =
+      !members.some((m) => m.frame?.result.contours) ||
+      members.length === family.members.length;
+    return completeContours && members.every((m) => key(m) === first);
   }, [family?.members]);
   const currentFrame = useMemo(
     () =>

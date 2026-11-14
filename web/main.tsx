@@ -723,15 +723,17 @@ function App({
         })}
       </div>
       <p className="note" data-testid="closure-note">
-        {roll.roll === "line"
-          ? "Along a line the trace repeats every turn of the circle, shifted by 2πr. It never closes."
-          : !closure
-            ? "Checking whether the trace closes…"
-            : closure.turns > 0
-              ? `R/r = ${closure.lobes}/${closure.turns}: the trace closes after ${closure.turns} ${closure.turns === 1 ? "turn" : "turns"} of the rolling center (t over ${2 * closure.turns}π), with ${closure.lobes} ${closure.lobes === 1 ? "arch" : "arches"}.`
-              : "R/r is not a ratio of whole numbers with at most 200 turns, so the trace never closes exactly. It is not forced closed."}
+        {family?.enabled
+          ? "Disable the engraving to inspect the source curve’s closure."
+          : roll.roll === "line"
+            ? "Along a line the trace repeats every turn of the circle, shifted by 2πr. It never closes."
+            : !closure
+              ? "Checking whether the trace closes…"
+              : closure.turns > 0
+                ? `R/r = ${closure.lobes}/${closure.turns}: the trace closes after ${closure.turns} ${closure.turns === 1 ? "turn" : "turns"} of the rolling center (t over ${2 * closure.turns}π), with ${closure.lobes} ${closure.lobes === 1 ? "arch" : "arches"}.`
+                : "R/r is not a ratio of whole numbers with at most 200 turns, so the trace never closes exactly. It is not forced closed."}
       </p>
-      {closure && closure.turns > 0 && (
+      {!family?.enabled && closure && closure.turns > 0 && (
         <button
           className="closure"
           type="button"
@@ -758,28 +760,32 @@ function App({
     closureKey(frame.config.curve) === closureKey(config.curve)
       ? frame.result.harmonic
       : undefined;
-  const periodButton = harmonicClosure && harmonicClosure.period > 0 && (
-    <button
-      className="closure"
-      type="button"
-      onClick={() => {
-        const span = periodText(harmonicClosure.period).expression;
-        setPreset("custom");
-        setBounds({
-          ...bounds,
-          max: bounds.min.trim() === "0" ? span : `(${bounds.min})+${span}`,
-        });
-      }}
-    >
-      Trace one full period
-    </button>
-  );
+  const periodButton = !family?.enabled &&
+    harmonicClosure &&
+    harmonicClosure.period > 0 && (
+      <button
+        className="closure"
+        type="button"
+        onClick={() => {
+          const span = periodText(harmonicClosure.period).expression;
+          setPreset("custom");
+          setBounds({
+            ...bounds,
+            max: bounds.min.trim() === "0" ? span : `(${bounds.min})+${span}`,
+          });
+        }}
+      >
+        Trace one full period
+      </button>
+    );
   const harmonicNote = (
     <>
       <p className="note" data-testid="closure-note">
-        {harmonicClosure
-          ? closureNote(harmonicClosure)
-          : "Checking whether the curve closes…"}
+        {family?.enabled
+          ? "Disable the engraving to inspect the source curve’s closure."
+          : harmonicClosure
+            ? closureNote(harmonicClosure)
+            : "Checking whether the curve closes…"}
       </p>
       {periodButton}
     </>
@@ -1181,7 +1187,11 @@ function App({
         </>
       )}
       <p className="note" data-testid="contour-note">
-        {levelSets ? contourNote(levelSets) : "Tracing…"}
+        {family?.enabled
+          ? "Inspect an engraving member below; disable it to inspect the source level."
+          : levelSets
+            ? contourNote(levelSets)
+            : "Tracing…"}
       </p>
     </>
   );
