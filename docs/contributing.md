@@ -236,7 +236,7 @@ Draw the subject's real geometry rather than a generic symbol, in a 24 × 24 box
 ## Adding a preset
 
 - A new 2D or 3D preset needs its engine's copy of the presets regenerated, `engine/testdata/presets.json` and `engine3/testdata/presets.json`: run `make preset-fixtures`.
-- Raise every count of the notebook's presets: in `tests/gallery.spec.ts`, and in `tests/notebook-consistency.spec.ts`, where the 3D test counts both the example titles and their eyebrows.
+- Raise every count of the notebook's presets: in `tests/gallery.spec.ts`, and in `tests/notebook-consistency.spec.ts`, where the 3D test counts both the example titles and their eyebrows. Other specs count a notebook's presets too (2D: `tests/contour.spec.ts`, `tests/loom.spec.ts`), so search `tests/` for the old total.
 - Choosing a preset replaces the whole study, as a link does. Each notebook's `presetStudy` (`planar-link.ts`, `spatial/link.ts`, `tesseract/link.ts`) returns its full link study, the preset's own fields over the notebook's defaults, so nothing of the previous study (animation, probe, layers, line weight) carries over. `tests/preset-study.ts` checks every preset against that.
 - Tests choose presets through `choosePreset` in `tests/helpers.ts`.
 - A preset that turns an option on needs a test that plays the preset's own animation with the option on.

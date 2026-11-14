@@ -2050,7 +2050,7 @@ test("gallery loom examples open their family over the study and return to it", 
   const section = gallery.getByRole("region", { name: "Complex maps" });
   const cards = section.locator("[data-loom-example]");
   await expect(cards).toHaveCount(20);
-  await expect(gallery.locator("[data-example]")).toHaveCount(72);
+  await expect(gallery.locator("[data-example]")).toHaveCount(74);
   for (const card of await cards.all()) {
     await card.scrollIntoViewIfNeeded();
     await expect(
