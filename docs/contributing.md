@@ -171,7 +171,7 @@ New-feature development uses [Product iteration before final verification](#prod
 
 Follow the user's testing scope. When implementation is explicitly limited to targeted checks so parallel work fits the machine, hand off the tested revision, any uncommitted changes, exact commands and results, reproduced failures, and deferred checks with the reason. Name the designated integration or review stage that owns final verification, or mark it unassigned; do not silently omit that work or describe the targeted run as a full pass. Schedule the full run in a quiet slot instead of starting competing suites. Use an isolated preview port for concurrent targeted browser work, as [Development](development.md#checks-and-tests) describes.
 
-`make pre-pr` checks existing assertions and generated artifacts. It does not run deployed-site benchmarks, the whole-preset deployed comparison, or targeted mutations. Those remain separate checks when required by the change; if the user's scope defers them too, record each deferral. A larger run cannot supply an assertion that no test makes. After a rebase, reassess changed dependencies and consumers before deciding which prior results still apply. Final verification follows [AGENTS.md](../AGENTS.md#verification), including its Markdown-only, demonstrated timing and verification-only follow-up exceptions.
+`make pre-pr` checks existing assertions and generated artifacts. It does not run deployed-site benchmarks, the whole-preset deployed comparison, or targeted mutations. Those remain separate checks when required by the change; if the user's scope defers them too, record each deferral. A larger run cannot supply an assertion that no test makes. After a rebase, reassess changed dependencies and consumers before deciding which prior results still apply. Final verification follows [AGENTS.md](../AGENTS.md#verification), including its Markdown-only, demonstrated timing, stale-assertion and verification-only follow-up exceptions.
 
 ### Verification-only follow-ups
 
@@ -183,6 +183,18 @@ After a successful complete `make pre-pr`, reuse that result without regeneratin
 - Confirm `git status --porcelain web/examples` is empty and required CI checks pass on the final head. Until CI finishes, report final verification as pending. Other required evidence, such as deployed comparisons and mutations, must still be completed or explicitly deferred; this exception only avoids repeating unaffected checks.
 
 Record the revision and final lines of the successful full run, the exact subsequent diff, targeted commands and results, final head and CI result. Describe this as an earlier full pass plus verified follow-ups, never as a full local run on the final head. If eligibility or the failure's cause is uncertain, investigate and use the normal full-run requirement. AGENTS.md's separate exception for one or two timing failures during the full run still applies on its own terms.
+
+### Stale assertions in a full run
+
+A complete `make pre-pr` sometimes fails only because an existing spec asserts a value the change intentionally altered: a hard-coded count of a notebook's presets, say. The change's own tests already establish the new value, and every other stage either passed or never ran. Rerunning the whole gate repeats work without testing anything new, so the run still counts when all of the following hold:
+
+- Every failure has the same demonstrated cause: an expected value made stale by the change's intended, otherwise verified result. A product defect, a timing failure or an unexplained mismatch does not qualify. Timing failures follow AGENTS.md's separate one-or-two-tests exception.
+- The fix changes only those expected values. Application code, dependencies, fixtures, baselines, shared helpers, other assertions and test selection stay as they were in the full run.
+- The stale value is searched for in the other specs too (`rg 'toHaveCount\(72\)' tests`), including those the failed run never reached.
+
+Then rebuild (`npm run build`), rerun the failing specs and any others the search touched, and run every stage the failure stopped before. `make test-browser` failing stops `make pre-pr` before `make test-webkit` and the gallery check, so run `make test-webkit` (on macOS) and confirm `git status --porcelain web/examples` is empty. Do not repeat `make check`, `make thumbnails` or the Chromium suite.
+
+Record the full run's revision and final lines, the follow-up diff, and the targeted and remaining-stage results. Describe it as a full run plus a verified assertion follow-up, never as a full local run on the final head. If the cause is uncertain, or the fix touches anything beyond expected values, run the full gate again.
 
 ## Numerical changes
 
