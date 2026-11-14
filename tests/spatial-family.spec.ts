@@ -1673,3 +1673,47 @@ test("disabled spatial families retain settings when the source exceeds family a
     /limit/,
   );
 });
+
+test("family links keep the source animation valid after its cut is disabled", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const s = {
+    ...source(),
+    family: { ...settings(), count: 3, selected: 1, width: 2 },
+  };
+  s.cut.enabled = true;
+  s.animation.mode = "cut";
+  await load(page, s);
+  await page
+    .getByRole("checkbox", { name: "Cut with a plane", exact: true })
+    .uncheck();
+  const saved = (await copiedStudy(page)).study;
+  expect(() => spatialStudy(saved)).not.toThrow();
+  expect(saved.animation.mode).toBe("reveal");
+});
+
+test("family links clear a source ray ride when its definition becomes a curve", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const s = source();
+  s.config.format = "rays";
+  s.animation.mode = "trace";
+  s.animation.camera = "ride";
+  await load(page, s);
+  await page
+    .getByRole("checkbox", { name: "Finite engraving", exact: true })
+    .check();
+  await page
+    .getByRole("combobox", { name: "Spatial definition", exact: true })
+    .selectOption("torus");
+  await expect(
+    page.getByText("16 of 16 members available.", { exact: true }),
+  ).toBeVisible();
+  const saved = (await copiedStudy(page)).study;
+  expect(() => spatialStudy(saved)).not.toThrow();
+  expect(saved.animation).toMatchObject({ mode: "reveal", camera: "hold" });
+});

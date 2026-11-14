@@ -356,8 +356,8 @@ export function SpatialAnimationPanel({
   // Light is traced only in a mirror or interface study; another falls back
   // to revealing.
   useEffect(() => {
-    if (frame && !traceable && mode === "trace") setMode("reveal");
-  }, [!!frame, traceable, mode]);
+    if (frame && !traceable && modeChoice === "trace") setMode("reveal");
+  }, [!!frame, traceable, modeChoice]);
   // The probe moves only while it is on; another study falls back to
   // revealing.
   useEffect(() => {
@@ -366,8 +366,8 @@ export function SpatialAnimationPanel({
   // The cut peels only while it is on and valid.
   const cutting = cut !== null;
   useEffect(() => {
-    if (!cutting && mode === "cut") setMode("reveal");
-  }, [cutting, mode]);
+    if (!cutting && modeChoice === "cut") setMode("reveal");
+  }, [cutting, modeChoice]);
   const [cameraChoice, setCamera] = useState<CameraMode>("hold");
   const camera = family
     ? cameraChoice === "current"
@@ -409,8 +409,8 @@ export function SpatialAnimationPanel({
   // Only traced light has a ray to ride; another mode holds the final view.
   const rides = mode === "trace" && camera === "ride";
   useEffect(() => {
-    if (mode !== "trace" && camera === "ride") setCamera("hold");
-  }, [mode, camera]);
+    if (modeChoice !== "trace" && cameraChoice === "ride") setCamera("hold");
+  }, [modeChoice, cameraChoice]);
   // The path mode flies the key views with the geometry fixed; the path
   // camera flies them while it moves. The orbit turns the camera itself.
   const flies = mode === "path" || (camera === "path" && mode !== "orbit");
