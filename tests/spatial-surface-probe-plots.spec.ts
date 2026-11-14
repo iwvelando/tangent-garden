@@ -1,6 +1,6 @@
 import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
-import { choosePreset } from "./helpers";
+import { choosePreset, displayedNumber } from "./helpers";
 import { helpText } from "../web/help";
 import {
   defaultProbe,
@@ -225,13 +225,13 @@ test("a torus plots κ₁ varying along v and constant along u", async ({
   await expect(plots(page)).toHaveValue("along");
   await expect(captions(page)).toHaveText([
     `κ₁ along u: constant at ${short(k1(0))}`,
-    "κ₂ along u: constant at -1.25",
+    "κ₂ along u: constant at −1.25",
   ]);
   expect(await marks(page)).toEqual([0.5, 0.5]);
   await plots(page).selectOption("around");
   await expect(captions(page)).toHaveText([
     `κ₁ along v from ${short(k1(0))} to ${short(k1(Math.PI / 3))}`,
-    "κ₂ along v: constant at -1.25",
+    "κ₂ along v: constant at −1.25",
   ]);
   expect(await joined(page)).toEqual([25, 25]);
   // The mark follows the column, and the row leaves the plot alone.
@@ -244,9 +244,9 @@ test("a torus plots κ₁ varying along v and constant along u", async ({
   await plots(page).selectOption("both");
   await expect(captions(page)).toHaveText([
     `κ₁ along u: constant at ${short(k1(-Math.PI / 6))}`,
-    "κ₂ along u: constant at -1.25",
+    "κ₂ along u: constant at −1.25",
     `κ₁ along v from ${short(k1(0))} to ${short(k1(Math.PI / 3))}`,
-    "κ₂ along v: constant at -1.25",
+    "κ₂ along v: constant at −1.25",
   ]);
   expect(await marks(page)).toEqual(
     [10 / 216, 10 / 216, 0.25, 0.25].map(places),
@@ -304,9 +304,14 @@ test("a tangent ribbon plots its curvatures along its ruling", async ({
   await expect(captions(page).first()).toHaveText(
     "κ along the ruling along u: constant at 0",
   );
+  // Differenced, the plotted 1/9 holds to about 1e-5 at six figures.
   await expect(captions(page).nth(1)).toContainText(
-    `κ across it along u from ${short(1 / 9)}`,
+    "κ across it along u from ",
   );
+  const across = /from (\S+) to/.exec(
+    (await captions(page).nth(1).textContent())!,
+  )!;
+  expect(Math.abs(displayedNumber(across[1]) * 9 - 1)).toBeLessThan(1e-4);
   expect(await joined(page)).toEqual([24, 24]);
 });
 
@@ -415,7 +420,7 @@ test("a torus's offset plots both ways", async ({ page }) => {
   // κ₁ = −cos v/(2 + cos v).
   await expect(captions(page)).toHaveText([
     `κ₁ along v from ${short(-1 / 3)} to ${short(-0.5 / 2.5)}`,
-    "κ₂ along v: constant at -1",
+    "κ₂ along v: constant at −1",
   ]);
 });
 
@@ -459,17 +464,17 @@ test("an ellipsoid's curvatures meet at an umbilic down its meridian", async ({
   await expect(plots(page)).toHaveValue("both");
   await expect(slider(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 6.283, row 135 of 150",
+    "u = 6.28319, row 135 of 150",
   );
   await expect(slider(page, "Along v")).toHaveAttribute(
     "aria-valuetext",
-    "v = 0.5672, column 49 of 72",
+    "v = 0.567232, column 49 of 72",
   );
   const [a, b, c] = [1.5, 1, 0.7];
   const k = async () =>
     (await page.locator(".probe-readout dd").allTextContents())
       .slice(0, 2)
-      .map(Number);
+      .map(displayedNumber);
   const [k1, k2] = await k();
   expect(Math.abs(k1 - (-a * c) / b ** 3)).toBeLessThan(0.01);
   expect(Math.abs(k2 - (-a * c) / b ** 3)).toBeLessThan(0.01);

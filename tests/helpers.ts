@@ -1,4 +1,29 @@
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { readout as short } from "../web/number-format";
+
+// A displayed number read back: readouts print a true minus (U+2212), also
+// in exponents, and live values pad their columns with figure spaces.
+export function displayedNumber(text: string | null | undefined): number {
+  const plain = (text ?? "").replace(/\u2007/g, "").replace(/\u2212/g, "-");
+  return plain.trim() === "" ? NaN : Number(plain);
+}
+
+export type Frenet = [kappa: number, radius: number, torsion: number];
+// A curve probe's κ, 1/κ and τ against closed forms. Six displayed digits
+// reveal the differenced torsion's error, about 1e-5 relative: curvature
+// and radius read exactly, and the torsion reads cleanly formatted within a
+// relative bound.
+export async function expectFrenet(page: Page, [kappa, radius, tau]: Frenet) {
+  const readout = page.locator(".probe-readout dd");
+  await expect(readout).toHaveText([short(kappa), short(radius), /./]);
+  await expect
+    .poll(async () => {
+      const text = (await readout.nth(2).textContent()) ?? "";
+      const torsion = displayedNumber(text);
+      return text === short(torsion) ? Math.abs(torsion - tau) : Infinity;
+    })
+    .toBeLessThan(Math.abs(tau) * 5e-5 + 1e-9);
+}
 
 // Links conform configuration fields in schema order. Historical SVG
 // recordings use the preset's order; preserve every observed field and

@@ -2367,7 +2367,7 @@ test("phrase camera buttons set and show a key view in WebKit at phone width", a
   );
   await openAnimation(page);
   const hint = page.locator(".phrase-phases li").nth(4).locator(".hint");
-  await expect(hint).toContainText("zoom 1.7×, centered at (-0.19, 0)");
+  await expect(hint).toContainText("zoom 1.7×, centered at (−0.19, 0)");
   await page
     .getByRole("button", { name: "Play animation", exact: true })
     .click();

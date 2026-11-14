@@ -297,7 +297,7 @@ export default function HarmonicFitPreview({
           </Field>
           <SteadyNote
             testid="fit-error"
-            longest="Sample error: RMS 0.00123, largest 0.00123, 0.00123% of the source's 1.00e+5 diagonal. Between samples, proved within 0.00123 of the closed-up polygon."
+            longest="Sample error: RMS 0.000123457, largest 0.000123457, 0.000123457% of the source's 0.000123457 diagonal. Between samples, proved within 0.000123457 of the closed-up polygon."
           >
             {fit &&
               (exact
@@ -339,7 +339,7 @@ export default function HarmonicFitPreview({
             <div className="harmonic-fit-close">
               <SteadyNote
                 testid="fit-closure"
-                longest="Closed by a straight segment of length 0.00123, dashed in the source. The fit rounds the two corners it makes."
+                longest="Closed by a straight segment of length 0.000123457, dashed in the source. The fit rounds the two corners it makes."
               >
                 {state.closed
                   ? fit?.joined

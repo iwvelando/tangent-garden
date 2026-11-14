@@ -1435,7 +1435,8 @@ export async function checkOutlineTrackpad(page: Page) {
   const held = await modelAt(0.3, 0.7);
   // Within the single precision an SVG transform carries.
   expect(Math.hypot(held.x - anchor.x, held.y - anchor.y)).toBeLessThan(1e-5);
-  await expect(d.getByTestId("outline-zoom")).toContainText("1.2×");
+  // e^0.2 = 1.22140…, to six figures.
+  await expect(d.getByTestId("outline-zoom")).toContainText("1.2214×");
   // A wheel notch held with Ctrl sends a far larger delta, yet stays a step.
   const before = await span();
   await wheel({ dy: -100, ctrl: true });

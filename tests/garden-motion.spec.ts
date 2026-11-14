@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { readout } from "../web/number-format";
 
 // The Apollonian garden's reveal and zoom detail: the reveal's membership
 // rule and the view-to-request policy, with expectations worked by hand
@@ -371,8 +372,9 @@ test("zooming in with detail grows finer circles for the view, keeps the selecti
     .poll(async () => Number(await art(d).getAttribute("data-zoom")))
     .toBeCloseTo(95 / (350 / 23), 9);
   await ready(d);
+  // Level floor(2 log2 6.2429) = 5: 0.002/2^2.5 · 350 · 6.2429 units.
   await expect(summary(d)).toContainText(
-    "Finer circles for this view reach 0.77 drawing units in radius.",
+    "Finer circles for this view reach 0.772514 drawing units in radius.",
   );
   const zoomed = await geometry(d);
   const radii = zoomed.filter((c) => c.role === "base").map((c) => c.r);
@@ -471,7 +473,7 @@ test("rapid zoom gestures keep one request, coalesce the rest, and show only the
   // The drawn packing answers that newest request: its summary gives the
   // smallest radius on screen at this zoom.
   await expect(summary(d)).toContainText(
-    `reach ${((0.002 / 2 ** (level / 2)) * 350 * zoom).toFixed(2)} drawing units`,
+    `reach ${readout((0.002 / 2 ** (level / 2)) * 350 * zoom)} drawing units`,
   );
   // Zooming back past 1.4× needs no detail: the static packing returns.
   await art(d).focus();
@@ -503,11 +505,11 @@ test("a keyboard zoom past 1.4× with detail refines the gaps about the view's m
     .toBeCloseTo(zoom, 9);
   await ready(d);
   // Zoom 6.19 is level floor(2 log2 6.19) = 5: the cutoff is the minimum
-  // radius over 2^2.5, 0.000354, drawn 0.000354 · 350 · 6.19 = 0.77 units.
+  // radius over 2^2.5, 0.000354, drawn 0.000354 · 350 · 6.19 = 0.766 units.
   const level = 5,
     cutoff = 0.002 / 2 ** (level / 2);
   await expect(summary(d)).toContainText(
-    `Finer circles for this view reach ${(cutoff * 350 * zoom).toFixed(2)} drawing units in radius.`,
+    `Finer circles for this view reach ${readout(cutoff * 350 * zoom)} drawing units in radius.`,
   );
   const q = (
     await page.evaluate(() => (window as any).gardenPosts as any[])
@@ -825,7 +827,8 @@ test("the finer-circles preset opens zoomed with detail and plays its reveal ove
   await expect(d.getByLabel("Finer circles when zoomed in")).toBeChecked();
   await expect(art(d)).toHaveAttribute("data-zoom", "24");
   await expect(summary(d)).toContainText(
-    "Finer circles for this view reach 0.74 drawing units in radius.",
+    // Level floor(2 log2 24) = 9: 0.002/2^4.5 · 350 · 24 units.
+    "Finer circles for this view reach 0.742462 drawing units in radius.",
   );
   const n = await total(d);
   const [last] = (await page.evaluate(

@@ -157,7 +157,7 @@ test("the peel runs from the farthest drawn point to the nearest, exactly, then 
   await seek(page, "1");
   expect(await offset(page)).toBe(Math.fround(-R));
   await expect(page.locator(".animation-values")).toHaveText(
-    "Cut at d = -1.20000",
+    "Cut at d = −1.20000",
   );
   expect(await pixels(page)).not.toBe(middle);
   // Resume carries on from the scrubbed time.

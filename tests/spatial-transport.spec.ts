@@ -366,7 +366,7 @@ test("an arrow carried on an edited torus takes defaults, follows edits and refu
   await field(page, "Arrow angle α (°)").fill("10");
   await field(page, "Arrow angle α (°)").fill("-45");
   await settled(page);
-  await expect(note(page)).toContainText("keeps its -45° angle");
+  await expect(note(page)).toContainText("keeps its −45° angle");
   expect((await config(page)).surface.geodesics.transport.angle).toBe(-45);
   // Refusals name their field, and the drawing stays.
   const drawn = await pixels(page);

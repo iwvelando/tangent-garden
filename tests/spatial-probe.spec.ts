@@ -3,7 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { wireStudy } from "./study-link-wire";
-import { choosePreset } from "./helpers";
+import { choosePreset, displayedNumber, expectFrenet } from "./helpers";
 import { helpText } from "../web/help";
 import {
   probeBatches,
@@ -659,7 +659,7 @@ async function helixReadout(page: Page, radius = 2, rise = 1 / 3) {
   const kappa = radius / (radius * radius + rise * rise);
   const tau = rise / (radius * radius + rise * rise);
   const texts = await readout(page).allTextContents();
-  const torsion = Number(texts[2]?.replace(/−/g, "-"));
+  const torsion = displayedNumber(texts[2]);
   expect(Math.abs(torsion - tau)).toBeLessThan(Math.abs(tau) * 5e-5);
   await expect(readout(page)).toHaveText([
     formatNumber(kappa),
@@ -831,7 +831,10 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await settled(page);
   await point(page).focus();
   await page.keyboard.press("Home");
-  await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = -9\.425, /);
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    /^t = −9\.42478, /,
+  );
   // Another preset opens with the probe off, as its own study; turned on,
   // the probe stands at the middle of its curve.
   await choosePreset(page, { label: "Trefoil · (2, 3)" });
@@ -839,7 +842,10 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await expect(probeSwitch(page)).not.toBeChecked();
   await probeSwitch(page).check();
   await settled(page);
-  await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 3\.142, /);
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    /^t = 3\.14159, /,
+  );
   await expect(readout(page)).toHaveCount(3);
   // A surface study has no curve to probe: the probe describes its surface.
   await choosePreset(page, { label: "A torus revealing its centers" });
@@ -928,7 +934,7 @@ test("still exports include the probe as drawn; a reveal draws it once reached",
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 9.425, sample 960 of 960",
+    "t = 9.42478, sample 960 of 960",
   );
   await expect(point(page)).toBeDisabled();
   expect(await pixels(page)).toBe(probed);
@@ -951,7 +957,7 @@ test("an orbit, a peel and a camera path draw the probe at the user's point", as
   await probeSwitch(page).check();
   await settled(page);
   await point(page).fill("300");
-  const mine = "t = -3.534, sample 300 of 960";
+  const mine = "t = −3.53429, sample 300 of 960";
   await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
@@ -1029,7 +1035,7 @@ test("a link carries the probe; links without it open with it off", async ({
   await page.keyboard.press("Home");
   for (let i = 0; i < 24; i++) await page.keyboard.press("ArrowRight");
   const where = await point(page).getAttribute("aria-valuetext");
-  expect(where).toMatch(/^t = -8\.954, sample 24 of 960$/);
+  expect(where).toMatch(/^t = −8\.95354, sample 24 of 960$/);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy link", exact: true }).click();
   await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
@@ -1073,10 +1079,10 @@ test("the trefoil example flies round its probe, face on and edge on", async ({
   });
   await settled(page);
   await expect(probeSwitch(page)).toBeChecked();
-  const mine = "t = 3.142, sample 480 of 960";
+  const mine = "t = 3.14159, sample 480 of 960";
   await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
   // κ = 1/2, radius 2 and τ = −2/9.
-  await expect(readout(page)).toHaveText(["0.5", "2", "-0.2222"]);
+  await expectFrenet(page, [0.5, 2, -2 / 9]);
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
     await panel.locator(":scope > summary").click();

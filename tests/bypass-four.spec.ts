@@ -143,7 +143,7 @@ test("same XYZ shadow retains distinct point identities and independent fourth-c
     .getByText("Same shadow, different points", { exact: true })
     .click();
   await expect(
-    page.getByText("4D separation: 1.2000", { exact: true }),
+    page.getByText("4D separation: 1.2", { exact: true }),
   ).toBeVisible();
   await page
     .getByRole("textbox", { name: "First comparison w", exact: true })

@@ -587,7 +587,7 @@ for (const caption of [false, true])
           expect(svg).toContain('data-phrase-caption="true"');
           expect(svg).toContain('"inDrawing":true');
           expect(svg).toContain("Hold the cusps");
-          expect(svg).toContain("Source x = 0.650000");
+          expect(svg).toContain("Source x = 0.65000");
         } else expect(svg).not.toMatch(/<text[\s>]/);
       }
       const saved = page.waitForEvent("download");

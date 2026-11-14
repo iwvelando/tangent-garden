@@ -1,7 +1,7 @@
 import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset } from "./helpers";
+import { choosePreset, displayedNumber } from "./helpers";
 import { engines, watchEngines } from "./engines";
 import { spatialPresets } from "../web/spatial/presets";
 import {
@@ -175,7 +175,7 @@ test("a tiny framed ribbon keeps its probe normal and curvature on and between s
     );
     await expect(readout(page)).toHaveCount(4);
     await expect(readout(page).first()).not.toHaveText(/—|unknown/);
-    const K = Number(
+    const K = displayedNumber(
       (await readout(page).nth(3).textContent())!.split(", ")[0],
     );
     expect(Math.abs(K * radius * radius + 1)).toBeLessThan(5e-4);
@@ -381,10 +381,10 @@ test("the hyperboloid example stands on the throat its grid steps over", async (
   // On x² + z² − y²/c² = 1, c = 1.25: κ = 1/c² and −1, K = −1/c².
   await expect(readout(page)).toHaveText([
     "0.64",
-    "-1",
-    // 1/0.64 = 1.5625 exactly, so the fourth figure rounds either way.
-    /^1\.56[23], -1$/,
-    "-0.64, -0.18",
+    "−1",
+    // 1/0.64 = 1.5625 exactly; the computed radius may part in the sixth figure.
+    /^1\.562[45]\d?, −1$/,
+    "−0.64, −0.18",
   ]);
   // Played, it glides round the throat, reading the same everywhere.
   await openAnimation(page);

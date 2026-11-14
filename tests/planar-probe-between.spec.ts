@@ -309,7 +309,7 @@ for (const [motion, label] of [
     // Scrubbed to the middle, a probe that stays is still exactly at t₀.
     await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
     await expect(page.locator(".animation-values")).toContainText(
-      "Domain end = 9.42478",
+      "Domain end = 9.4248",
     );
     await expect(drawn(page, "probe")).toHaveCount(1);
     if (motion === "stays")
@@ -356,7 +356,8 @@ test("drawing along the curve reaches a probe between samples at its t", async (
   // At 0.124 the drawing has reached sample 123, just short of it.
   await progress.fill("0.124");
   await expect(page.locator(".animation-values")).toHaveText(
-    `t = ${(2 * Math.PI * 0.124).toPrecision(6)}`,
+    // Live values keep five decimals over the domain [0, 2π].
+    `t = ${(2 * Math.PI * 0.124).toFixed(5)}`,
   );
   await expect(drawn(page, "probe")).toHaveCount(0);
   await expect(page.locator(".planar-probe")).toContainText(

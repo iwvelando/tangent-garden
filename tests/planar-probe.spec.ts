@@ -351,7 +351,7 @@ for (const [motion, label, sample, t] of [
     // probe stands on that frame's own samples.
     await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
     await expect(page.locator(".animation-values")).toContainText(
-      "Domain end = 9.42478",
+      "Domain end = 9.4248",
     );
     await expect(drawn(page, "probe")).toHaveCount(1);
     await page.getByRole("slider", { name: "Animation progress" }).fill("1");
@@ -518,7 +518,7 @@ test("the clover example opens probed, bends both ways, and other examples leave
   const tip = 1.6 * 1.6 + 1.6 * 5.4;
   await expect(page.locator(".probe-plot figcaption")).toHaveText(
     new RegExp(
-      `^κ from -[\\d.]+ to ${short(tip / 1.6 ** 3).replace(".", "\\.")}; \\d+ samples beyond, pinned to the edge$`,
+      `^κ from −[\\d.]+ to ${short(tip / 1.6 ** 3).replace(".", "\\.")}; \\d+ samples beyond, pinned to the edge$`,
     ),
   );
   await expect(drawn(page, "probe-construction")).toHaveCount(2);

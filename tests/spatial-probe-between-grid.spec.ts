@@ -504,11 +504,11 @@ test("the probe's values never move the sliders as they change length", async ({
     const places: number[][] = [];
     // u = 0.1052, 0.02981, −0.00012, 1.5 and −1.5.
     for (const [p, u] of [
-      ["0.535067", "0.1052"],
-      ["0.509937", "0.02981"],
-      ["0.49996", "-0.00012"],
+      ["0.535067", "0.105201"],
+      ["0.509937", "0.029811"],
+      ["0.49996", "−0.00012"],
       ["1", "1.5"],
-      ["0", "-1.5"],
+      ["0", "−1.5"],
     ]) {
       await alongU(page).fill(p);
       await settled(page);

@@ -412,13 +412,16 @@ export const drawnShare = (r: LaceResult, i: number) =>
 export function explain(r: LaceResult, i: number) {
   const d = r.depth[i];
   const side = formatNumber(r.sideLength);
-  const at = `(${formatNumber(r.center[i].x)}, ${formatNumber(r.center[i].y)})`;
+  // Disk coordinates have unit scale: a tile carried to the disk's center
+  // reads 0 there, not its rounding error near 1e-16.
+  const disk = (v: number) => formatNumber(Math.abs(v) < 1e-12 ? 0 : v);
+  const at = `(${disk(r.center[i].x)}, ${disk(r.center[i].y)})`;
   // Moved, the center tile no longer lies at the disk's center, so the
   // distance from it, which the isometry keeps, is named apart from the
   // distance from the disk's center, which it changes.
   const facts = isIdentity(r.isometry)
-    ? `Depth ${d} · center ${at} · hyperbolic distance ${formatNumber(fromCenter(r.center[i]))} from the center · drawn ${formatPercent(drawnShare(r, i))} of the center tile's size`
-    : `Depth ${d} · drawn at ${at} · hyperbolic distance ${formatNumber(between(r.center[0], r.center[i]))} from the center tile and ${formatNumber(fromCenter(r.center[i]))} from the disk's center · drawn ${formatPercent(drawnShare(r, i))} of a tile's size at the disk's center`;
+    ? `Depth ${d} · center ${at} · hyperbolic distance ${disk(fromCenter(r.center[i]))} from the center · drawn ${formatPercent(drawnShare(r, i))} of the center tile's size`
+    : `Depth ${d} · drawn at ${at} · hyperbolic distance ${formatNumber(between(r.center[0], r.center[i]))} from the center tile and ${disk(fromCenter(r.center[i]))} from the disk's center · drawn ${formatPercent(drawnShare(r, i))} of a tile's size at the disk's center`;
   if (i === 0)
     return {
       facts,

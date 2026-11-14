@@ -491,7 +491,7 @@ test("section diagnostics preserve concise tesseract and curved summaries", asyn
   await choosePreset(page, { label: "An octahedron within" });
   await settle(page);
   await expect(page.locator(".tesseract-diagnostics")).toHaveText(
-    "h = 0.000 · 6 vertices · 12 edges · 8 faces",
+    "h = 0 · 6 vertices · 12 edges · 8 faces",
   );
   await choosePreset(page, { label: presets[0] });
   await settle(page);
@@ -544,7 +544,7 @@ test("section identity distinguishes coincident levels and survives scrub and SV
 });
 
 for (const [preset, expected] of [
-  ["An octahedron within", "h = 0.000 · 6 vertices · 12 edges · 8 faces"],
+  ["An octahedron within", "h = 0 · 6 vertices · 12 edges · 8 faces"],
   [presets[0], "5 of 5 sections intersect the 4-ball."],
 ])
   test(`single and family diagnostic: ${preset}`, async ({ page }) => {

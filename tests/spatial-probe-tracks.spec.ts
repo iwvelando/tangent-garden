@@ -1,7 +1,12 @@
 import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset } from "./helpers";
+import {
+  choosePreset,
+  displayedNumber,
+  expectFrenet,
+  type Frenet,
+} from "./helpers";
 import { probe as ffprobe, decodeVideo, frameDifference } from "./video";
 import { spatialPresets } from "../web/spatial/presets";
 import { defaultAnimation } from "../web/spatial/link";
@@ -41,14 +46,10 @@ async function seek(page: Page, p: string) {
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
 }
 const helix = { label: "Helix · a ribbon staircase" };
-// The readout of a helix of pitch parameter a: κ, 1/κ, τ.
-const helixReadout = (a: number) => {
+// The closed forms of a helix of pitch parameter a: κ, 1/κ, τ.
+const helixValues = (a: number): Frenet => {
   const h = a / 3;
-  return [
-    short(2 / (4 + h * h)),
-    short((4 + h * h) / 2),
-    short(h / (4 + h * h)),
-  ];
+  return [2 / (4 + h * h), (4 + h * h) / 2, h / (4 + h * h)];
 };
 async function probing(page: Page) {
   await page.goto("/?study=3d");
@@ -121,7 +122,7 @@ test("a probe that stays at its t describes each frame of a varying helix", asyn
   ] as const) {
     await seek(page, p);
     await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
-    await expect(readout(page)).toHaveText(helixReadout(a));
+    await expectFrenet(page, helixValues(a));
   }
   // The track's readout alone: the probe does not move.
   await expect(values(page)).toHaveText("Shape parameter a = 1.50000");
@@ -171,12 +172,12 @@ test("staying at t and keeping a share of the length part when the domain grows"
   // Half the helix's length is halfway along the domain, at t = π.
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 3.142, sample 480 of 960",
+    "t = 3.14159, sample 480 of 960",
   );
   await expect(values(page)).toHaveText(
     "Domain end = 15.7080 · Probe at t = 3.14159",
   );
-  await expect(readout(page)).toHaveText(helixReadout(1));
+  await expectFrenet(page, helixValues(1));
 });
 
 test("a probe whose t leaves the domain is absent and says why", async ({
@@ -217,18 +218,18 @@ test("a probe that moves along the curve does so while the parameters vary", asy
   await seek(page, "0.25");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = -4.712, sample 240 of 960",
+    "t = −4.71239, sample 240 of 960",
   );
-  await expect(readout(page)).toHaveText(helixReadout(1.5));
+  await expectFrenet(page, helixValues(1.5));
   await expect(values(page)).toHaveText(
-    "Shape parameter a = 1.50000 · Probe at t = -4.71239",
+    "Shape parameter a = 1.50000 · Probe at t = −4.71239",
   );
   await seek(page, "1");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 9.425, sample 960 of 960",
+    "t = 9.42478, sample 960 of 960",
   );
-  await expect(readout(page)).toHaveText(helixReadout(6));
+  await expectFrenet(page, helixValues(6));
   await button(page, "Back to study").click();
   // With geometry that returns, a probe that stays loops; one that moves
   // along cannot, as it ends where it did not start.
@@ -303,7 +304,7 @@ test("a study link reopens how the probe moves while parameters vary", async ({
   await seek(page, "1");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 3.142, sample 480 of 960",
+    "t = 3.14159, sample 480 of 960",
   );
 });
 
@@ -376,7 +377,7 @@ test("an export of varying parameters draws the probe on each frame", async ({
   await a.fill("4");
   await a.blur();
   await settled(page);
-  await expect(readout(page)).toHaveText(helixReadout(4));
+  await expectFrenet(page, helixValues(4));
   const last = await still(page);
   await probeSwitch(page).uncheck();
   await settled(page);
@@ -425,7 +426,7 @@ async function at(page: Page, time: string) {
   await expect(stage(page)).toHaveAttribute("aria-busy", "false");
 }
 const numbers = async (page: Page) =>
-  (await readout(page).allTextContents()).map((t) => parseFloat(t));
+  (await readout(page).allTextContents()).map(displayedNumber);
 
 test("a helix pressed through its circle reads κ = 1/(1 + a²) and τ = −a/(1 + a²)", async ({
   page,
@@ -474,7 +475,7 @@ test("a twisted cubic losing its bend reads κ = 2|a| and τ = 3/a, flat at a = 
     "0 (flat: N, B and τ undefined)",
   );
   await at(page, "0.5");
-  await expect(readout(page)).toHaveText(["2", "0.5", "-3"]);
+  await expect(readout(page)).toHaveText(["2", "0.5", "−3"]);
 });
 
 test("a trefoil breathing under a moving probe rides the knot out and back", async ({
@@ -491,7 +492,7 @@ test("a trefoil breathing under a moving probe rides the knot out and back", asy
   await at(page, "0.5");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 6.283, sample 960 of 960",
+    "t = 6.28319, sample 960 of 960",
   );
   await expect(values(page)).toHaveText(
     "Minor radius r = 1.30000 · Probe at t = 6.28319",
@@ -576,7 +577,7 @@ test("an ellipsoid's parallel surface reads radii less d as d sweeps", async ({
   await expect(status).toHaveText(
     "Folded here: the offset lies beyond one focal sheet, turned inside out.",
   );
-  await expect(values(page)).toHaveText(/Offset d = -0\.90000/);
+  await expect(values(page)).toHaveText(/Offset d = −0\.900000/);
   await button(page, "Stop").click();
   await settled(page);
   await expect(readout(page).nth(2)).toHaveText(radii(-0.25));
@@ -605,7 +606,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
     around = page.getByRole("slider", { name: "Along v" });
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 108 of 216",
+    "u = 3.14159, row 108 of 216",
   );
   await expect(around).toHaveAttribute("aria-valuetext", /, column 12 of 24$/);
   const panel = page.locator("#spatial-animation-section");
@@ -624,7 +625,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
   await seek(page, "1");
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 6.283, row 108 of 216",
+    "u = 6.28319, row 108 of 216",
   );
   await button(page, "Back to study").click();
   await motion(page).selectOption("point");
@@ -632,7 +633,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
   await seek(page, "1");
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 54 of 216",
+    "u = 3.14159, row 54 of 216",
   );
   // The probe does not move, so the readout names only the track.
   await expect(values(page)).toHaveText("u to = 12.5664");
@@ -668,7 +669,7 @@ test("a surface probe held at its u and v keeps them as the domain stretches", a
   await settled(page);
   await expect(along).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 108 of 216",
+    "u = 3.14159, row 108 of 216",
   );
   await expect(around).toHaveAttribute("aria-valuetext", /, column 12 of 24$/);
 });

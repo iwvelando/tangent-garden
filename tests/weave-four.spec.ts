@@ -62,7 +62,7 @@ for (const width of [1440, 390])
       expect(inks).toHaveLength(4);
       for (const strokes of inks) expect(strokes).toHaveLength(1);
       expect(new Set(inks.flat()).size).toBe(4);
-      await expect(keys.first()).toContainText("1: α = 0.390");
+      await expect(keys.first()).toContainText("1: α = 0.39 ");
       await expect(keys.first()).toContainText("(torus)");
       // Window guides share the guide layer.
       await expect(
@@ -167,7 +167,7 @@ test("direct controls switch families, collapse endpoint latitudes and name inva
     page.locator('#tesseract-artwork path[data-role="collapsed"]'),
   ).toHaveCount(1);
   await expect(page.locator(".tesseract-legend")).toContainText(
-    "1: α = 1.57 (one circle)",
+    "1: α = 1.5708 (one circle)",
   );
   await expect(readout(page, "Open arcs")).toHaveText(
     String(m.weave.retainedArcs),

@@ -106,6 +106,7 @@ for (const [width, height] of [
 for (const [width, height] of [
   [1280, 720],
   [390, 844],
+  [320, 667],
   [844, 390],
 ])
   test(`overlay navigation keeps the same vertical position at ${width}x${height}`, async ({
@@ -302,6 +303,7 @@ for (const [width, height] of [
 for (const [width, height] of [
   [1280, 720],
   [390, 844],
+  [320, 667],
   [844, 390],
 ])
   test(`focused overlay experiments keep navigation fixed at ${width}x${height}`, async ({

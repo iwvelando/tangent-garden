@@ -1,7 +1,12 @@
 import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset } from "./helpers";
+import {
+  choosePreset,
+  displayedNumber,
+  expectFrenet,
+  type Frenet,
+} from "./helpers";
 import { engines, watchEngines } from "./engines";
 import { decodeVideo, frameDifference, probe as ffprobe } from "./video";
 import { spatialPresets } from "../web/spatial/presets";
@@ -44,15 +49,16 @@ const button = (page: Page, name: string) =>
 const samples = 240,
   position = 0.123456;
 
-function helix(t: number, a = 1) {
+function helixValues(t: number, a = 1): Frenet {
   const h = a / 4,
     s = Math.sin(t),
     c = Math.cos(t);
   const b = Math.hypot(h * s, 3 * h * c, 3),
     speed = Math.hypot(3 * s, c, h);
   const kappa = b / speed ** 3;
-  return [short(kappa), short(1 / kappa), short((3 * h) / (b * b))];
+  return [kappa, 1 / kappa, (3 * h) / (b * b)];
 }
+const helix = (t: number, a = 1) => helixValues(t, a).map((v) => short(v));
 
 const config: SpatialConfig = {
   ...structuredClone(spatialPresets[0].config),
@@ -123,7 +129,7 @@ test("between samples, the probe reads the curve at its own t", async ({
     `t = ${short(t)}`,
   );
   await expect(point(page)).toHaveAttribute("step", "any");
-  await expect(readout(page)).toHaveText(helix(t));
+  await expectFrenet(page, helixValues(t));
   // Snapped, it stands on the nearest sample instead, which reads
   // differently there.
   await betweenSwitch(page).uncheck();
@@ -136,10 +142,10 @@ test("between samples, the probe reads the curve at its own t", async ({
     "aria-valuetext",
     `t = ${short(tj)}, sample ${j} of ${samples}`,
   );
-  await expect(readout(page)).toHaveText(helix(tj));
+  await expectFrenet(page, helixValues(tj));
   await betweenSwitch(page).check();
   await settled(page);
-  await expect(readout(page)).toHaveText(helix(t));
+  await expectFrenet(page, helixValues(t));
   await expect(stage(page)).toHaveAttribute("data-probe-t", String(t));
 });
 
@@ -159,7 +165,7 @@ test("moving the probe between samples asks Go for the probe alone", async ({
     const t = 2 * Math.PI * p;
     await expect(stage(page)).toHaveAttribute("data-probe-t", String(t));
     await settled(page);
-    await expect(readout(page)).toHaveText(helix(t));
+    await expectFrenet(page, helixValues(t));
   }
   expect(await pixels()).not.toBe(first);
   const log = (await engines(page))[0];
@@ -175,7 +181,7 @@ test("moving the probe between samples asks Go for the probe alone", async ({
     "data-probe-t",
     String(2 * Math.PI * 0.79),
   );
-  await expect(readout(page)).toHaveText(helix(2 * Math.PI * 0.79));
+  await expectFrenet(page, helixValues(2 * Math.PI * 0.79));
 });
 
 test("a drag over a slow engine keeps one probe request in flight and ends at its last place", async ({
@@ -190,7 +196,7 @@ test("a drag over a slow engine keeps one probe request in flight and ends at it
   await settled(page);
   const last = 2 * Math.PI * places.at(-1)!;
   await expect(stage(page)).toHaveAttribute("data-probe-t", String(last));
-  await expect(readout(page)).toHaveText(helix(last));
+  await expectFrenet(page, helixValues(last));
   // The first place, then the latest one each reply finds wanted.
   const sent = (await engines(page))[0].sent.spatial - before;
   expect(sent).toBeGreaterThanOrEqual(2);
@@ -239,7 +245,7 @@ test("moving the probe along the curve passes through every t", async ({
       "aria-valuetext",
       `t = ${short(t)}`,
     );
-    await expect(readout(page)).toHaveText(helix(t));
+    await expectFrenet(page, helixValues(t));
   }
   await expect(page.locator(".animation-values")).toContainText(
     `Probe at t = ${Number((2 * Math.PI * 0.621).toPrecision(6))}`,
@@ -276,7 +282,7 @@ test("while parameters vary, Go places the probe at its exact t in each frame", 
   ] as const) {
     await seek(page, p);
     await expect(stage(page)).toHaveAttribute("data-probe-t", String(t));
-    await expect(readout(page)).toHaveText(helix(t, a));
+    await expectFrenet(page, helixValues(t, a));
   }
   // Moving along the curve, it stands at that share of the domain, as the
   // parameter varies.
@@ -289,7 +295,7 @@ test("while parameters vary, Go places the probe at its exact t in each frame", 
   await seek(page, "0.37");
   const along = 2 * Math.PI * 0.37;
   await expect(stage(page)).toHaveAttribute("data-probe-t", String(along));
-  await expect(readout(page)).toHaveText(helix(along, 1.74));
+  await expectFrenet(page, helixValues(along, 1.74));
 });
 
 // A still PNG's pixels, as RGBA (see spatial-probe-playback.spec.ts).
@@ -435,10 +441,10 @@ test("the Viviani example glides its osculating circle between samples", async (
     String(-2 * Math.PI * 0.9 + 2 * Math.PI * 0.1),
   );
   expect(t).toBeCloseTo(-2 * Math.PI + 0.4 * Math.PI, 12);
-  await expect(readout(page)).toHaveText([
-    short(kappa),
-    short(1 / kappa),
-    short((6 * Math.cos(t / 2)) / (13 + 3 * Math.cos(t))),
+  await expectFrenet(page, [
+    kappa,
+    1 / kappa,
+    (6 * Math.cos(t / 2)) / (13 + 3 * Math.cos(t)),
   ]);
 });
 
@@ -606,7 +612,7 @@ test("torsion stays unknown at a third-derivative jump when the curve shrinks", 
       by = -6 * 0.3015;
     const expected = 12 / (bx * bx + by * by + 4);
     await expect
-      .poll(async () => Number(await torsion.textContent()) * scale)
+      .poll(async () => displayedNumber(await torsion.textContent()) * scale)
       .toBeCloseTo(expected, 3);
     await point(page).fill("0.5");
     await betweenSwitch(page).uncheck();
