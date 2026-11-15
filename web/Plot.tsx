@@ -621,7 +621,17 @@ export function Plot({
     );
   }
   // Numeric range belongs to caption layout, not saved numerical provenance.
-  const { range: _captionRange, ...phraseMetadata } = animation?.phrase ?? {};
+  const {
+    range: _captionRange,
+    also: furtherTracks,
+    ...firstTrack
+  } = animation?.phrase ?? {};
+  const phraseMetadata = {
+    ...firstTrack,
+    ...(furtherTracks && {
+      also: furtherTracks.map(({ target, value }) => ({ target, value })),
+    }),
+  };
   return (
     <svg
       ref={svgRef}

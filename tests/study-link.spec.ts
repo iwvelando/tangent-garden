@@ -3363,6 +3363,66 @@ test("planar phrases conform bounded durations, consumed targets and explicit ph
   );
 });
 
+test("phrase links carry further parameters and their keys, and older single-parameter links are unchanged", async () => {
+  const { defaultPhrase, addPhraseTrack, setPhaseKey } =
+    await import("../web/phrase");
+  const study = planar(2);
+  const single = defaultPhrase(study.config, study.length);
+  study.animation = {
+    ...study.animation,
+    mode: "phrase",
+    camera: "hold",
+    phrase: single,
+  };
+  // A link written before further parameters existed has neither field,
+  // conforms to the same phrase and adds nothing when written again.
+  const old = planarStudy(study);
+  expect(old.animation.phrase).toEqual(single);
+  expect(old.animation.phrase).not.toHaveProperty("also");
+  for (const phase of old.animation.phrase!.phases)
+    expect(phase).not.toHaveProperty("keys");
+  expect(JSON.stringify(old.animation.phrase)).not.toMatch(/also|keys/);
+  const two = setPhaseKey(
+    setPhaseKey(addPhraseTrack(single, "sourceY"), 3, 1, "pi/8"),
+    4,
+    1,
+    "-0.25",
+  );
+  study.animation.phrase = two;
+  const conformed = planarStudy(study);
+  expect(conformed.animation.phrase).toEqual(two);
+  expect(conformed.animation.phrase!.also).toEqual(["sourceY"]);
+  expect(conformed.animation.phrase!.phases[3].keys).toEqual({
+    sourceY: "pi/8",
+  });
+  expect(planarStudy(unpack(envelope("2d", study)).study)).toEqual(conformed);
+  const bad = (change: (p: any) => void) => {
+    const s = structuredClone(study);
+    change(s.animation.phrase);
+    return () => planarStudy(s);
+  };
+  expect(bad((p) => (p.also = ["sourceX"]))).toThrow(/distinct/);
+  expect(bad((p) => (p.also = ["sourceY", "sourceY"]))).toThrow(/distinct/);
+  expect(bad((p) => (p.also = ["sourceY", "min", "max"]))).toThrow(
+    /animation\.phrase\.also/,
+  );
+  expect(bad((p) => (p.also = ["lines"]))).toThrow(/animation\.phrase\.also/);
+  expect(bad((p) => (p.also = "sourceY"))).toThrow(/animation\.phrase\.also/);
+  expect(bad((p) => (p.phases[3].keys = { min: "0" }))).toThrow(
+    /not one of the phrase's further parameters/,
+  );
+  expect(bad((p) => (p.phases[3].keys = { sourceY: 1 }))).toThrow(
+    /animation\.phrase\.phases\[3\]\.keys\.sourceY/,
+  );
+  expect(bad((p) => (p.phases[3].keys = { sourceY: "" }))).toThrow(
+    /Phase 4 key 2/,
+  );
+  expect(bad((p) => (p.phases[3].keys = { surprise: "1" }))).toThrow(
+    /known field/,
+  );
+  expect(bad((p) => (p.phases[3].keys = ["1"]))).toThrow(/keys/);
+});
+
 test("phrase camera views round trip by phase, return to the entry view, and refuse malformed keys", async () => {
   const { defaultPhrase } = await import("../web/phrase");
   const study = planar(2);

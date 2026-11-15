@@ -1133,11 +1133,16 @@ test("the signature's own back-and-forth playback prepares once and seeks the fu
   await page
     .getByRole("button", { name: "Play animation", exact: true })
     .click();
+  // Headless playback of this 3 s film takes most of the configured wait
+  // even alone, and ran out at 0.84 in a full run (#469): the wait is for
+  // completion, not a speed requirement.
   await expect
-    .poll(async () =>
-      Number(
-        await page.locator(".spatial-stage").getAttribute("data-progress"),
-      ),
+    .poll(
+      async () =>
+        Number(
+          await page.locator(".spatial-stage").getAttribute("data-progress"),
+        ),
+      { timeout: 45_000 },
     )
     .toBe(1);
   await page.getByRole("button", { name: "Pause", exact: true }).click();

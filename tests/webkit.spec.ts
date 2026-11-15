@@ -2396,6 +2396,85 @@ test("phrase camera buttons set and show a key view in WebKit at phone width", a
   );
 });
 
+// Safari leaves a pressed button unfocused, so focus reaches a moved or
+// removed phase's place only by script; arranging acts on the click alone.
+test("phrase phases are arranged and a second parameter keyed in WebKit at phone width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "A caustic gathered into a focus" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await openAnimation(page);
+  const button = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  const names = () =>
+    page
+      .locator(".phrase-phases li textarea")
+      .evaluateAll((all) => all.map((e) => (e as HTMLTextAreaElement).value));
+  await button("Move phase 3 down").click();
+  await expect(button("Move phase 4 down")).toBeFocused();
+  expect((await names()).slice(2, 4)).toEqual([
+    "Cross the axis",
+    "Find the caustic",
+  ]);
+  // The last phase moved down to the end can only move up.
+  await button("Move phase 6 down").click();
+  await expect(button("Move phase 7 up")).toBeFocused();
+  await button("Remove phase 7").click();
+  await expect(button("Remove phase 6")).toBeFocused();
+  await button("Add a phase after phase 6").click();
+  expect(await names()).toHaveLength(7);
+  const key = page.getByRole("textbox", { name: "Phase 7 key 2", exact: true });
+  await key.fill("pi/8");
+  await button("About animation modes").click();
+  await expect(key).toHaveValue("pi/8");
+  // An emptied end value holds; the phrase still plays.
+  const first = page.getByRole("textbox", { name: "Phase 5 key", exact: true });
+  await first.fill("");
+  await button("About animation modes").click();
+  await expect(first).toHaveValue("");
+  await button("Play animation").click();
+  await button("Pause").click();
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .fill("1");
+  await expect(page.locator("#artwork")).toHaveAttribute(
+    "data-animation-time",
+    "1",
+  );
+  const config = JSON.parse(
+    (await page.locator("#artwork desc").textContent())!,
+  );
+  // With the carry's x emptied, x is keyed only by the return, to where
+  // it began.
+  expect(config.source.position.x).toBe(0.4);
+  expect(config.source.position.y).toBe(Math.PI / 8);
+  // Both parameter rows stay above the playback dock at the narrowest width,
+  // and the in-drawing caption carries them too.
+  const caption = page.getByRole("group", {
+    name: "Animation stage",
+    exact: true,
+  });
+  await expect(caption.locator(".phrase-caption-value")).toHaveCount(2);
+  await page.setViewportSize({ width: 320, height: 667 });
+  await page.locator(".plot-wrap").scrollIntoViewIfNeeded();
+  const captionBox = (await caption.boundingBox())!;
+  const dockBox = (await page.locator("#playback").boundingBox())!;
+  expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(dockBox.y);
+  await page
+    .getByRole("checkbox", { name: "Stage label in drawing", exact: true })
+    .check();
+  await expect(page.locator("#artwork [data-phrase-caption] text")).toHaveText([
+    "Hold",
+    /^Source x = 0\.4/,
+    /^Source y = /,
+  ]);
+});
+
 test("phrase keys survive scalar blur, invalid drafts and seek in WebKit at phone width", async ({
   page,
 }) => {

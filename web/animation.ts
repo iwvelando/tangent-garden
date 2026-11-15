@@ -115,6 +115,12 @@ export type AnimationView = {
     target: Target;
     value: number;
     range?: readonly [number, number];
+    // A phrase's further parameters, present only when it has any.
+    also?: {
+      target: Target;
+      value: number;
+      range?: readonly [number, number];
+    }[];
     inDrawing?: boolean;
   };
   family?: FamilyComposition;

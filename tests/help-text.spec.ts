@@ -11,9 +11,13 @@ import { repeatHelp as planarRepeatHelp } from "../web/animation";
 import { presets } from "../web/presets";
 import { familyMotionHelp } from "../web/family-motion";
 import {
+  phraseCameraHelp,
   phraseHelp,
+  phraseKeyHelp,
   phrasePaceHelp,
+  phraseParameterHelp,
   phraseRayLengthHelp,
+  phraseRevealHelp,
 } from "../web/PhraseEditor";
 import {
   atlasRangeHelp,
@@ -237,6 +241,10 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("phrase mode", phraseHelp);
   add("phrase pace", phrasePaceHelp, true);
   add("phrase ray length", phraseRayLengthHelp);
+  add("phrase parameter", phraseParameterHelp);
+  add("phrase end value", phraseKeyHelp, true);
+  add("phrase reveal", phraseRevealHelp);
+  add("phrase camera", phraseCameraHelp);
   table("atlas controls", atlasControlHelp, ["size", "framing"]);
   add("once", onceHelp);
   add("back and forth", backAndForthHelp);

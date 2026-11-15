@@ -67,6 +67,18 @@ fieldset:disabled {
   font-weight: 600;
   overflow-wrap: anywhere;
 }
+/* A phrase's further parameter with its removal, the button that adds one,
+   and a phase's arranging actions below its fields. */
+.phrase-track > .text-button {
+  display: block;
+  margin-top: 6px;
+}
+.phrase-add-track {
+  margin-top: 14px;
+}
+.phrase-arrange {
+  margin-top: 14px;
+}
 /* A camera path's key view: its fields, where it stands, and its actions. */
 .path-view-buttons {
   display: flex;
