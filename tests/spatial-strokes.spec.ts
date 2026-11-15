@@ -896,7 +896,11 @@ test("an animation export draws the weight it began with, ending on the still", 
 test("the weight control offers every weight, and presets bring their own", async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  // The sweep grows with the examples: 27 of them took 43–78 s on CI and
+  // passed 120 s on its slowest runners. Each gets 10 s of the budget, about
+  // four times what it takes there; a stuck step still fails at its own wait.
+  const weighted = spatialPresets.filter((p) => p.sight?.weight);
+  test.setTimeout(60_000 + 10_000 * weighted.length);
   await page.goto("/?study=3d");
   await settled(page);
   const select = weightBox(page).getByLabel("Weight", { exact: true });
@@ -905,7 +909,7 @@ test("the weight control offers every weight, and presets bring their own", asyn
     lineWeights.map((w) => w.label),
   );
   await select.selectOption("bold");
-  for (const p of spatialPresets.filter((p) => p.sight?.weight)) {
+  for (const p of weighted) {
     await test.step(p.name, async () => {
       await choosePreset(page, { label: p.name });
       // Implicit surfaces such as the Klein bottle take more than five
