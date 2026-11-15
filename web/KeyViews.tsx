@@ -310,7 +310,7 @@ export function KeyViews<K extends KeyBase>({
 // A view's name wraps onto as many lines as it needs, so a long one stays
 // whole in a narrow sidebar. It is still one line of text: Enter and pasted
 // line breaks add none.
-function ViewName({
+export function ViewName({
   value,
   onChange,
   ...rest
@@ -318,7 +318,7 @@ function ViewName({
   value: string;
   onChange: (name: string) => void;
   "aria-label": string;
-  placeholder: string;
+  placeholder?: string;
   // From the Field around it.
   id?: string;
   "aria-describedby"?: string;

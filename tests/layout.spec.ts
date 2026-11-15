@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
-import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
+import {
+  chooseNotebook,
+  choosePreset,
+  exampleTitles,
+  openAnimation,
+} from "./helpers";
 
 const closing = "An open notebook for mathematical beauty.";
 
@@ -83,6 +88,18 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
         .getByRole("combobox", { name: "Source coordinates" })
         .selectOption("polar");
       await settled();
+    });
+    // A phrase's third parameter pairs the second and third end values.
+    setups.push(async () => {
+      await choosePreset(page, { label: "A caustic gathered into a focus" });
+      await settled();
+      await openAnimation(page);
+      await page
+        .getByRole("button", { name: "+ Add a parameter", exact: true })
+        .click();
+      await expect(
+        page.getByRole("textbox", { name: "Phase 1 key 3", exact: true }),
+      ).toBeVisible();
     });
     // An iterated map's window appears only when it is not fitted.
     setups.push(async () => {

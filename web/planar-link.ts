@@ -64,6 +64,7 @@ import { legRange, maxKeyName, maxKeys } from "./key-views";
 import type { PlanarPath } from "./planar-path";
 import {
   maxPhases,
+  maxPhraseTracks,
   phraseError,
   phraseTargets,
   type Phrase,
@@ -386,14 +387,21 @@ function animationPhrase(value: unknown, config: Config): Phrase {
   };
   // A phase's view is a key view or "entry", which the schema cannot state
   // as one field: it is checked on its own below.
+  const offered = phraseTargets(config);
+  const targetOptions = {
+    options: Object.fromEntries(offered.map((t) => [t, true])) as Record<
+      Target,
+      true
+    >,
+  };
   const schema: SchemaOf<
     Omit<Phrase, "phases"> & { phases: Omit<PhrasePhase, "view">[] }
   > = {
     fields: {
-      target: {
-        options: Object.fromEntries(
-          phraseTargets(config).map((t) => [t, true]),
-        ) as Record<Target, true>,
+      target: targetOptions,
+      // Further parameters; phraseError refuses repeats and the first's own.
+      also: {
+        optional: { list: targetOptions, max: maxPhraseTracks - 1 },
       },
       opening: {
         fields: {
@@ -409,6 +417,14 @@ function animationPhrase(value: unknown, config: Config): Phrase {
             duration: { range: [0.1, 3600] },
             pace: { options: { steady: true, ease: true } },
             key: { optional: "text" },
+            // A further parameter's key, by its target.
+            keys: {
+              optional: {
+                fields: Object.fromEntries(
+                  offered.map((t) => [t, { optional: "text" }]),
+                ) as Record<Target, { optional: "text" }>,
+              },
+            },
             layers: { optional: partialLayers },
             reveal: {
               optional: {

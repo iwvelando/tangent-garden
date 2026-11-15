@@ -147,6 +147,8 @@ import {
   compilePhrase,
   defaultPhrase,
   phraseAt,
+  phraseKeyField,
+  phraseKeys,
   phraseDuration,
   phraseError,
   phraseFlies,
@@ -156,6 +158,7 @@ import {
   type CompiledPhrase,
   type Phrase,
 } from "./phrase";
+import { phraseCaptionText } from "./PhraseCaption";
 import {
   PhraseEditor,
   phraseHelp,
@@ -284,6 +287,41 @@ type Props = {
   restore?: { id: number; settings: PlanarAnimation } | null;
 };
 
+// What a phase's end state depends on: the tracks and every key up to that
+// phase. A refusal there stands until one of these changes.
+const phraseInputs = (phrase: Phrase, phase: number) =>
+  JSON.stringify([
+    phrase.target,
+    phrase.also,
+    phrase.phases.slice(0, phase + 1).map((p) => [p.key, p.keys]),
+  ]);
+// The tracks a phase moves, and the study with one of them alone moved to
+// its end value from the phase's start: what a refused boundary is tried
+// with, to find the end value it belongs under.
+const movedTracks = (compiled: CompiledPhrase, phase: number) => {
+  const { from, to } = compiled.phases[phase];
+  return compiled.targets.flatMap((_, track) =>
+    from.values[track] !== to.values[track] ? [track] : [],
+  );
+};
+const movedAlone = (
+  compiled: CompiledPhrase,
+  phase: number,
+  entry: Config,
+  track: number,
+) => {
+  const { from, to } = compiled.phases[phase];
+  return applyTracks(
+    entry,
+    compiled.targets.map((target, k) => {
+      const value = (k === track ? to : from).values[k];
+      return { target, from: value, to: value };
+    }),
+    0,
+    compiled.length,
+  ).config;
+};
+
 export function AnimationPanel({
   family,
   suspended = false,
@@ -359,22 +397,24 @@ export function AnimationPanel({
   const [resolvedPhrase, setResolvedPhrase] = useState<{
     signature: string;
     compiled?: CompiledPhrase;
+    // The keys' resolved values, in phraseKeys order.
+    keys?: number[];
     error?: string;
   }>({ signature: "" });
   // A changed duration, pace or layer cannot fix an endpoint Go refused.
   // Retain that refusal until its numerical input or study actually changes.
   const [numericalRefusal, setNumericalRefusal] = useState<{
     config: string;
-    target: Target;
     phase: number;
-    key: string;
+    inputs: string;
     message: string;
   } | null>(null);
   const knownRefusal =
     numericalRefusal &&
+    phraseDraft &&
     numericalRefusal.config === JSON.stringify(frame?.config) &&
-    numericalRefusal.target === phraseDraft?.target &&
-    numericalRefusal.key === phraseDraft?.phases[numericalRefusal.phase]?.key
+    numericalRefusal.inputs ===
+      phraseInputs(phraseDraft, numericalRefusal.phase)
       ? numericalRefusal.message
       : undefined;
   // A view deeper than the drawing allows refuses before Play, by phase.
@@ -405,16 +445,14 @@ export function AnimationPanel({
       setResolvedPhrase({ signature: phraseSignature, error });
       return;
     }
-    const keys = phraseDraft.phases.flatMap((p, i) =>
-      p.key === undefined ? [] : [{ text: p.key, index: i }],
-    );
+    // Each key resolves on its own, so a refusal names its own field.
     void Promise.all(
-      keys.map(async (key) => {
+      phraseKeys(phraseDraft).map(async (key) => {
         try {
           return (await client.current!.scalars([key.text]))[0];
         } catch (error) {
           throw new Error(
-            `Phase ${key.index + 1} key: ${error instanceof Error ? error.message : error}`,
+            `${phraseKeyField(key.phase, key.track)}: ${error instanceof Error ? error.message : error}`,
           );
         }
       }),
@@ -423,6 +461,7 @@ export function AnimationPanel({
         if (current)
           setResolvedPhrase({
             signature: phraseSignature,
+            keys: values,
             compiled: compilePhrase(
               frame.config,
               layers,
@@ -943,7 +982,9 @@ export function AnimationPanel({
       );
     else if (view.phrase)
       setLive(
-        `${view.phrase.phase} · ${targetLabel(s.phrase!.target)} = ${liveReadout(view.phrase.value, view.phrase.range ?? [view.phrase.value, view.phrase.value])}`,
+        [view.phrase.phase, ...phraseCaptionText(view.phrase).parameters].join(
+          " · ",
+        ),
       );
     else if (s.mode === "reveal" && view.frame.result.attractor)
       setLive(
@@ -1087,7 +1128,7 @@ export function AnimationPanel({
         return;
       }
       if (mode === "phrase") {
-        if (!phraseReady || !resolvedPhrase.compiled)
+        if (!phraseReady || !resolvedPhrase.compiled || !resolvedPhrase.keys)
           throw new Error(
             phraseProblem ?? "Phrase keys are still being evaluated.",
           );
@@ -1105,9 +1146,7 @@ export function AnimationPanel({
           layers,
           length,
           phraseDraft!,
-          resolvedPhrase.compiled.phases
-            .filter((_, i) => phraseDraft!.phases[i].key !== undefined)
-            .map((p) => p.to.value),
+          resolvedPhrase.keys,
           { fit, entry: heldView ?? fit },
         );
         // A flight refines each zoomed frame to its own view, so the
@@ -1123,12 +1162,22 @@ export function AnimationPanel({
         if (epoch.current !== token) return;
         // Validate each explicit key through the engine, without retaining a
         // movie or even a geometry collection proportional to the phase count.
+        // A boundary is a new numerical input when a computed track (ray
+        // length is only drawn) ends the phase away from where it began,
+        // unless every one is back at the entry study's value.
+        const computed = compiled.targets.flatMap((target, track) =>
+          target === "rayLength" ? [] : [track],
+        );
         for (const [i, phase] of compiled.phases.entries()) {
           if (
-            compiled.target === "rayLength" ||
-            phase.from.value === phase.to.value ||
-            phase.to.value ===
-              targetValue(frame.config, compiled.target, length)
+            computed.every(
+              (track) => phase.from.values[track] === phase.to.values[track],
+            ) ||
+            computed.every(
+              (track) =>
+                phase.to.values[track] ===
+                targetValue(frame.config, compiled.targets[track], length),
+            )
           )
             continue;
           const end = phraseAt(compiled, phase.end);
@@ -1145,6 +1194,29 @@ export function AnimationPanel({
           } catch (reason) {
             if (epoch.current !== token) return;
             if (!(reason instanceof EngineError)) throw reason;
+            // With several tracks moving, the refusal goes under the first
+            // whose end value is refused on its own; if only their
+            // combination is, under the last of them.
+            const moved = movedTracks(compiled, i);
+            let culprit = moved.at(-1) ?? 0;
+            for (const track of moved.slice(0, -1)) {
+              let refused = false;
+              try {
+                await client.current.compute(
+                  movedAlone(compiled, i, frame.config, track),
+                  undefined,
+                  { ...(area ?? {}), diagnostics: !!probe },
+                );
+              } catch (alone) {
+                if (!(alone instanceof EngineError)) throw alone;
+                refused = true;
+              }
+              if (epoch.current !== token) return;
+              if (refused) {
+                culprit = track;
+                break;
+              }
+            }
             cancel();
             session.current = null;
             onView(null);
@@ -1153,10 +1225,9 @@ export function AnimationPanel({
             setError("");
             setNumericalRefusal({
               config: JSON.stringify(frame.config),
-              target: compiled.target,
               phase: i,
-              key: phraseDraft!.phases[i].key!,
-              message: `Phase ${i + 1} key: ${reason.message}`,
+              inputs: phraseInputs(phraseDraft!, i),
+              message: `${phraseKeyField(i, culprit)}: ${reason.message}`,
             });
             return;
           }
@@ -1608,23 +1679,16 @@ export function AnimationPanel({
               phrase={phraseDraft}
               problem={phraseProblem}
               targets={phraseTargets(frame.config)}
-              onChange={(next) => {
-                // Set to drawing edits outside a change event; any edit
-                // returns to the study, as the fieldset's own changes do.
+              layers={layers}
+              current={(target) =>
+                String(targetValue(frame.config, target, length))
+              }
+              onChange={(change) => {
+                // Arranging and Set to drawing edit outside a change event;
+                // any edit returns to the study, as the fieldset's own
+                // changes do.
                 if (active) stop();
-                setPhrase((previous) => {
-                  const before = previous ?? phraseDraft!;
-                  if (next.target === before.target || !frame) return next;
-                  const value = String(
-                    targetValue(frame.config, next.target, length),
-                  );
-                  return {
-                    ...next,
-                    phases: next.phases.map((p) =>
-                      p.key === undefined ? p : { ...p, key: value },
-                    ),
-                  };
-                });
+                setPhrase((previous) => change(previous ?? phraseDraft!));
               }}
               describe={(view) => describeKey({ name: "", ...view })}
               drawn={() => {

@@ -1765,6 +1765,98 @@ export const presets: {
       },
     },
   },
+  // An ellipse with semi-axes 1.25 and 1 has foci at (±0.75, 0). Opens on
+  // the lamp at (0.4, 0.3) with its reflected rays and their caustic.
+  // Playback draws the rays and the caustic, moves y alone across the axis
+  // to −0.35 while x holds, then moves x and y together to the right focus:
+  // every reflected ray now passes through the left focus, and the caustic
+  // gathers into that single point, while the camera closes on the mirror.
+  // After a hold both return with the opening view, and the point opens
+  // into the caustic again. Branches through infinity stay unjoined
+  // gaps. The study opens off the focus because a caustic that is one point
+  // is too ill-conditioned for an opening state.
+  {
+    title: "A caustic gathered into a focus",
+    note: "A lamp carried to one focus of an oval mirror sends every ray through the other, gathering its caustic into a single point that opens again as the lamp leaves",
+    config: {
+      ...base,
+      kind: "catacaustic",
+      curve: { ...base.curve, x: "1.25*cos(t)", y: "sin(t)" },
+      source: { ...base.source, position: { x: 0.4, y: 0.3 } },
+      samples: 1600,
+      lines: 48,
+    },
+    stop: true,
+    layers: { virtual: false },
+    animation: {
+      mode: "phrase",
+      camera: "hold",
+      duration: 19,
+      tracks: [],
+      repeat: "once",
+      pace: "ease",
+      probeMotion: "stays",
+      phrase: {
+        target: "sourceX",
+        also: ["sourceY"],
+        opening: { base: 1, construction: 0, derived: 0 },
+        phases: [
+          {
+            name: "Establish the mirror and lamp",
+            duration: 1,
+            pace: "ease",
+            layers: {
+              base: true,
+              derived: false,
+              lines: false,
+              incident: false,
+            },
+          },
+          {
+            name: "Reveal reflected rays",
+            duration: 3,
+            pace: "ease",
+            layers: { lines: true, incident: true },
+            reveal: { construction: 1 },
+          },
+          {
+            name: "Find the caustic",
+            duration: 2,
+            pace: "ease",
+            layers: { derived: true },
+            reveal: { derived: 1 },
+          },
+          {
+            name: "Cross the axis",
+            duration: 3,
+            pace: "ease",
+            keys: { sourceY: "-0.35" },
+          },
+          {
+            name: "Carry the lamp to a focus",
+            duration: 4,
+            pace: "ease",
+            key: "0.75",
+            keys: { sourceY: "0" },
+            view: { x: 0, y: 0, zoom: 1.5 },
+          },
+          {
+            name: "Every ray meets at the other focus",
+            duration: 2,
+            pace: "ease",
+          },
+          {
+            name: "Return",
+            duration: 4,
+            pace: "ease",
+            key: "0.4",
+            keys: { sourceY: "0.3" },
+            view: "entry",
+          },
+        ],
+      },
+    },
+  },
   // Twenty-four ordinary pedals of an inside roulette, differing only
   // in tracing distance. Reveal the frozen set; inspect one with its tangent projections.
   {

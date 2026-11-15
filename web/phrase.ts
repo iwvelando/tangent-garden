@@ -5,6 +5,7 @@ import {
   integerTargets,
   reveal,
   ridesHead,
+  targetLabel,
   targetValue,
   type Target,
   type AnimationView,
@@ -42,6 +43,8 @@ import type {
 } from "./types";
 
 export const maxPhases = 12;
+// The phrase's own parameter and up to two more, moving on one timeline.
+export const maxPhraseTracks = 3;
 // A camera key: the point of the plane in the middle of the page and the
 // zoom relative to the opening study's fitted framing, as a planar camera
 // path's view (planar-path.ts), or the phrase's own opening view.
@@ -57,6 +60,9 @@ export type PhrasePhase = {
   pace: Pace;
   // An omitted key holds the preceding value; keys are Go scalar expressions.
   key?: string;
+  // The further parameters' keys, by target; an omitted one holds that
+  // parameter alone.
+  keys?: Partial<Record<Target, string>>;
   layers?: Partial<Layers>;
   reveal?: Partial<PhraseReveal>;
   // The view reached at the phase's end; omitted holds the preceding view.
@@ -64,11 +70,16 @@ export type PhrasePhase = {
 };
 export type Phrase = {
   target: Target;
+  // Further parameters moving with the first: distinct targets, each owning
+  // one scalar of the study. Omitted in a single-parameter phrase.
+  also?: Target[];
   opening: PhraseReveal;
   phases: PhrasePhase[];
 };
 type Boundary = {
+  // The first parameter's value, and every parameter's in track order.
   value: number;
+  values: number[];
   layers: Layers;
   reveal: PhraseReveal;
   // Present only in a phrase that moves its camera.
@@ -81,6 +92,8 @@ export type CompiledPhrase = {
   config: Config;
   length: number;
   target: Target;
+  // Every track's target, the first parameter's first.
+  targets: Target[];
   duration: number;
   camera?: PhraseCamera;
   phases: {
@@ -97,6 +110,214 @@ export type CompiledPhrase = {
 // can accumulate (0.1 + 6.1 + …). Sampling keeps the exact compiled phase ends.
 export const phraseDuration = (phrase: Phrase) =>
   Number(phrase.phases.reduce((sum, p) => sum + p.duration, 0).toPrecision(12));
+
+// Every track's target: the phrase's own parameter, then the further ones.
+export const phraseTrackTargets = (phrase: Phrase): Target[] => [
+  phrase.target,
+  ...(phrase.also ?? []),
+];
+// The control and error name of a phase's key: the first parameter's is
+// "Phase 2 key", the others' "Phase 2 key 2" and "Phase 2 key 3".
+export const phraseKeyField = (phase: number, track: number) =>
+  `Phase ${phase + 1} key${track ? ` ${track + 1}` : ""}`;
+// A phase's key text for a track, or undefined while it holds.
+export const phaseKey = (phrase: Phrase, phase: PhrasePhase, track: number) =>
+  track === 0 ? phase.key : phase.keys?.[phrase.also![track - 1]];
+// Every explicit key, in phase order and within a phase in track order: the
+// order compilePhrase takes their resolved values in.
+export function phraseKeys(phrase: Phrase) {
+  const targets = phraseTrackTargets(phrase);
+  return phrase.phases.flatMap((p, phase) =>
+    targets.flatMap((_, track) => {
+      const text = phaseKey(phrase, p, track);
+      return text === undefined ? [] : [{ phase, track, text }];
+    }),
+  );
+}
+
+// Arranging a phrase. Each returns the same phrase when the change is not
+// available, and never alters another phase or track.
+const newPhase = (pace: Pace): PhrasePhase => ({
+  name: "Hold",
+  duration: 1,
+  pace,
+});
+// A one-second hold after a phase, at that phase's pace.
+export function insertPhase(phrase: Phrase, after: number): Phrase {
+  if (phrase.phases.length >= maxPhases || !phrase.phases[after]) return phrase;
+  return {
+    ...phrase,
+    phases: [
+      ...phrase.phases.slice(0, after + 1),
+      newPhase(phrase.phases[after].pace),
+      ...phrase.phases.slice(after + 1),
+    ],
+  };
+}
+export function removePhase(phrase: Phrase, index: number): Phrase {
+  if (phrase.phases.length <= 1 || !phrase.phases[index]) return phrase;
+  return { ...phrase, phases: phrase.phases.filter((_, i) => i !== index) };
+}
+export function movePhase(phrase: Phrase, from: number, to: number): Phrase {
+  if (from === to || !phrase.phases[from] || !phrase.phases[to]) return phrase;
+  const phases = [...phrase.phases];
+  phases.splice(to, 0, ...phases.splice(from, 1));
+  return { ...phrase, phases };
+}
+// An empty text holds the preceding value.
+export function setPhaseKey(
+  phrase: Phrase,
+  index: number,
+  track: number,
+  text: string,
+): Phrase {
+  const target = phraseTrackTargets(phrase)[track];
+  if (!phrase.phases[index] || !target) return phrase;
+  const held = !text.trim();
+  return {
+    ...phrase,
+    phases: phrase.phases.map((p, i) => {
+      if (i !== index) return p;
+      const { key, keys, ...rest } = p;
+      if (track === 0)
+        return {
+          ...rest,
+          ...(!held && { key: text }),
+          ...(keys && { keys }),
+        };
+      const { [target]: _, ...others } = keys ?? {};
+      const next = { ...others, ...(!held && { [target]: text }) };
+      return {
+        ...rest,
+        ...(key !== undefined && { key }),
+        ...(Object.keys(next).length > 0 && { keys: next }),
+      };
+    }),
+  };
+}
+// A further parameter, holding through every phase until given end values.
+export function addPhraseTrack(phrase: Phrase, target: Target): Phrase {
+  const targets = phraseTrackTargets(phrase);
+  if (targets.length >= maxPhraseTracks || targets.includes(target))
+    return phrase;
+  return { ...phrase, also: [...(phrase.also ?? []), target] };
+}
+// Removes a further parameter with its keys; the last leaves a
+// single-parameter phrase exactly.
+export function removePhraseTrack(phrase: Phrase, target: Target): Phrase {
+  if (!phrase.also?.includes(target)) return phrase;
+  const { also, ...rest } = phrase;
+  const remaining = also.filter((t) => t !== target);
+  return {
+    ...rest,
+    ...(remaining.length > 0 && { also: remaining }),
+    phases: phrase.phases.map((p) => {
+      if (!p.keys) return p;
+      const { keys, ...phase } = p;
+      const { [target]: _, ...others } = keys;
+      return Object.keys(others).length ? { ...phase, keys: others } : phase;
+    }),
+  };
+}
+// Gives a track another target. Its explicit keys start again from the
+// study's current value, as text; the other tracks' keys stay.
+export function retargetPhraseTrack(
+  phrase: Phrase,
+  track: number,
+  target: Target,
+  value: string,
+): Phrase {
+  const targets = phraseTrackTargets(phrase);
+  const old = targets[track];
+  if (!old || old === target || targets.includes(target)) return phrase;
+  if (track === 0)
+    return {
+      ...phrase,
+      target,
+      phases: phrase.phases.map((p) =>
+        p.key === undefined ? p : { ...p, key: value },
+      ),
+    };
+  return {
+    ...phrase,
+    also: phrase.also!.map((t) => (t === old ? target : t)),
+    phases: phrase.phases.map((p) => {
+      if (!p.keys) return p;
+      // In track order, so a link reads the same however it was edited.
+      const keys = Object.fromEntries(
+        Object.entries(p.keys).map(([t, text]) =>
+          t === old ? [target, value] : [t, text],
+        ),
+      );
+      return { ...p, keys };
+    }),
+  };
+}
+
+// What a phase reveals: nothing new, or roles drawn in full or erased. A
+// link may carry fractions these do not name ("custom"), which stay until
+// another choice replaces them.
+type Role = keyof PhraseReveal;
+export const revealChoices = {
+  keep: {},
+  "draw-base": { base: 1 },
+  "draw-construction": { construction: 1 },
+  "draw-derived": { derived: 1 },
+  "draw-base-construction": { base: 1, construction: 1 },
+  "draw-construction-derived": { construction: 1, derived: 1 },
+  "draw-all": { base: 1, construction: 1, derived: 1 },
+  "erase-construction": { construction: 0 },
+  "erase-derived": { derived: 0 },
+  "erase-construction-derived": { construction: 0, derived: 0 },
+} satisfies Record<string, Partial<PhraseReveal>>;
+export type RevealChoice = keyof typeof revealChoices;
+const roles: Role[] = ["base", "construction", "derived"];
+export function phaseRevealChoice(phase: PhrasePhase): RevealChoice | "custom" {
+  const reveal = phase.reveal ?? {};
+  const found = (Object.keys(revealChoices) as RevealChoice[]).find((choice) =>
+    roles.every(
+      (role) =>
+        reveal[role] === (revealChoices[choice] as Partial<PhraseReveal>)[role],
+    ),
+  );
+  return found ?? "custom";
+}
+// The layers that show a role. Drawing a role turns them on at the phase's
+// start, so it appears even where the study opens with it hidden; the
+// construction keeps the study's chosen subsets.
+const roleLayers = (role: Role, entry: Layers): Partial<Layers> =>
+  role === "base"
+    ? { base: true }
+    : role === "derived"
+      ? { derived: true }
+      : {
+          lines: true,
+          definitionGuides: entry.definitionGuides,
+          rollingGuides: entry.rollingGuides,
+          incident: true,
+        };
+export function withPhaseReveal(
+  phase: PhrasePhase,
+  choice: RevealChoice | "custom",
+  entry: Layers,
+): PhrasePhase {
+  if (choice === "custom") return phase;
+  const { reveal: before = {}, layers: events = {}, ...rest } = phase;
+  const reveal: Partial<PhraseReveal> = revealChoices[choice];
+  // Drop the layer events the previous choice drew with; others stay.
+  const layers: Partial<Layers> = { ...events };
+  for (const role of roles)
+    if (before[role] === 1)
+      for (const key of Object.keys(roleLayers(role, entry)))
+        delete layers[key as keyof Layers];
+  for (const role of roles)
+    if (reveal[role] === 1) Object.assign(layers, roleLayers(role, entry));
+  return {
+    ...rest,
+    ...(Object.keys(layers).length > 0 && { layers }),
+    ...(Object.keys(reveal).length > 0 && { reveal: { ...reveal } }),
+  };
+}
 
 // A starter composition acts on the current study; only choosing an authored
 // preset replaces its formulas, source or construction.
@@ -221,6 +442,13 @@ export function phraseTargets(config: Config): Target[] {
 export function phraseError(config: Config, phrase: Phrase): string | null {
   if (!phraseTargets(config).includes(phrase.target))
     return "Phrase parameter must be a consumed continuous target available in this study.";
+  const also = phrase.also ?? [];
+  if (also.length > maxPhraseTracks - 1)
+    return `A phrase varies at most ${maxPhraseTracks} parameters.`;
+  if (new Set([phrase.target, ...also]).size !== also.length + 1)
+    return "Phrase parameters must be distinct: each owns one value of the study.";
+  if (!also.every((t) => phraseTargets(config).includes(t)))
+    return "Every phrase parameter must be a consumed continuous target available in this study.";
   if (!phrase.phases.length || phrase.phases.length > maxPhases)
     return "A phrase must contain 1–12 phases.";
   const fraction = (v: number) => Number.isFinite(v) && v >= 0 && v <= 1;
@@ -235,6 +463,13 @@ export function phraseError(config: Config, phrase: Phrase): string | null {
       return `Phase ${i + 1} pace must be steady or eased.`;
     if (p.key !== undefined && !p.key.trim())
       return `Phase ${i + 1} key must be a finite constant.`;
+    for (const [target, text] of Object.entries(p.keys ?? {})) {
+      const track = also.indexOf(target as Target);
+      if (track < 0)
+        return `Phase ${i + 1} has a key for ${targetLabel(target as Target)}, which is not one of the phrase's further parameters.`;
+      if (typeof text !== "string" || !text.trim())
+        return `${phraseKeyField(i, track + 1)} must be a finite constant.`;
+    }
     if (p.reveal && !Object.values(p.reveal).every(fraction))
       return `Phase ${i + 1} reveal fractions must be between 0 and 1.`;
     if (p.view !== undefined && p.view !== "entry" && !validView(p.view))
@@ -283,14 +518,15 @@ export function compilePhrase(
 ): CompiledPhrase {
   const error = phraseError(config, phrase);
   if (error) throw new Error(error);
-  if (
-    keys.length !== phrase.phases.filter((p) => p.key !== undefined).length ||
-    !keys.every(Number.isFinite)
-  )
+  const texts = phraseKeys(phrase);
+  if (keys.length !== texts.length || !keys.every(Number.isFinite))
     throw new Error("Every phase key must resolve to a finite constant.");
+  const targets = phraseTrackTargets(phrase);
   const flies = !!camera && phraseFlies(phrase);
+  const entry = targets.map((t) => targetValue(config, t, length));
   let previous: Boundary = {
-    value: targetValue(config, phrase.target, length),
+    value: entry[0],
+    values: entry,
     layers: { ...layers },
     reveal: { ...phrase.opening },
     ...(flies && { view: camera.entry }),
@@ -305,8 +541,12 @@ export function compilePhrase(
         ...constructionLayerChange(p.layers ?? {}),
       },
     };
+    const values = from.values.map((held, track) =>
+      texts[k]?.phase === i && texts[k].track === track ? keys[k++] : held,
+    );
     const to: Boundary = {
-      value: p.key === undefined ? from.value : keys[k++],
+      value: values[0],
+      values,
       layers: { ...from.layers },
       reveal: { ...from.reveal, ...p.reveal },
       ...(flies && {
@@ -318,8 +558,11 @@ export function compilePhrase(
               : keyViewport({ name: "", ...p.view }, camera.fit),
       }),
     };
-    if (phrase.target === "rayLength" && (to.value < 0.01 || to.value > 100))
-      throw new Error(`Phase ${i + 1} key: Ray length keys must be 0.01–100.`);
+    const ray = targets.indexOf("rayLength");
+    if (ray >= 0 && (values[ray] < 0.01 || values[ray] > 100))
+      throw new Error(
+        `${phraseKeyField(i, ray)}: Ray length keys must be 0.01–100.`,
+      );
     const start = duration;
     duration += p.duration;
     previous = to;
@@ -329,6 +572,7 @@ export function compilePhrase(
     config: structuredClone(config),
     length,
     target: phrase.target,
+    targets,
     duration,
     ...(flies && { camera: { fit: { ...camera.fit }, entry: camera.entry } }),
     phases,
@@ -381,16 +625,24 @@ function viewAt(
 export function phraseAt(phrase: CompiledPhrase, seconds: number) {
   const { phase, p } = locatePhase(phrase, seconds);
   const mix = (a: number, b: number) => (a === b ? a : a * (1 - p) + b * p);
-  const value = mix(phase.from.value, phase.to.value);
-  const values = applyTracks(
+  // Each track between its own endpoints, at the phase's one progress.
+  const values = phase.from.values.map((from, track) =>
+    mix(from, phase.to.values[track]),
+  );
+  const applied = applyTracks(
     phrase.config,
-    [{ target: phrase.target, from: value, to: value }],
+    phrase.targets.map((target, track) => ({
+      target,
+      from: values[track],
+      to: values[track],
+    })),
     0,
     phrase.length,
   );
   return {
-    ...values,
-    value,
+    ...applied,
+    value: values[0],
+    values,
     phase: phase.name,
     layers: { ...phase.from.layers },
     reveal: {
@@ -440,13 +692,13 @@ export function createPhraseSampler(options: {
   const plain = options.plain ?? original;
   const frames = new WeakMap<
     PhraseEngine,
-    { value: number; area: string; frame: Promise<Frame> }
+    { value: string; area: string; frame: Promise<Frame> }
   >();
   // Each engine's last construction track, by input value: the track is the
   // study's samples, which the area a frame is refined to leaves alone.
   const tracks = new WeakMap<
     PhraseEngine,
-    { value: number; track: Promise<ConstructionTrack> }
+    { value: string; track: Promise<ConstructionTrack> }
   >();
   // Each camera-only phase's pieces, cut when first needed: a few per
   // doubling of zoom, bounded by the phase count.
@@ -455,7 +707,8 @@ export function createPhraseSampler(options: {
     if (!camera || !refine || !rect || !(shown.scale > camera.fit.scale))
       return camera ? undefined : focus;
     const phase = phrase.phases[index];
-    if (phase.from.value !== phase.to.value) return rect(shown);
+    if (phase.from.values.some((v, track) => v !== phase.to.values[track]))
+      return rect(shown);
     if (!pieces.has(index))
       pieces.set(
         index,
@@ -477,6 +730,19 @@ export function createPhraseSampler(options: {
         probe.position,
       )
     : 0;
+  // Ray length is drawn, not computed; every other track at its entry value
+  // is the entry study.
+  const opening = phrase.targets.map((target) =>
+    targetValue(original.config, target, phrase.length),
+  );
+  // Each track's extent over the phrase, for its readout's fixed columns.
+  const ranges = phrase.targets.map((_, track) => {
+    const all = phrase.phases.flatMap((p) => [
+      p.from.values[track],
+      p.to.values[track],
+    ]);
+    return [Math.min(...all), Math.max(...all)] as const;
+  });
   return async (
     seconds: number,
     engine: PhraseEngine,
@@ -496,12 +762,15 @@ export function createPhraseSampler(options: {
             refined.radius,
           ].join()
         : "";
+    // The numerical input: every track's value. One number is a value
+    // itself, so a single-parameter phrase keys as it always has.
+    const input = state.values.join();
     let cached = frames.get(engine);
-    if (!cached || cached.value !== state.value || cached.area !== key) {
-      const unchanged =
-        phrase.target === "rayLength" ||
-        state.value ===
-          targetValue(original.config, phrase.target, phrase.length);
+    if (!cached || cached.value !== input || cached.area !== key) {
+      const unchanged = phrase.targets.every(
+        (target, track) =>
+          target === "rayLength" || state.values[track] === opening[track],
+      );
       const within = t >= state.config.curve.min && t <= state.config.curve.max;
       const frame =
         unchanged && !between && !key
@@ -512,7 +781,7 @@ export function createPhraseSampler(options: {
               ...(between && within && { probe: { t } }),
             });
       cached = {
-        value: state.value,
+        value: input,
         area: key,
         frame,
       };
@@ -531,9 +800,9 @@ export function createPhraseSampler(options: {
       !!engine.track &&
       ridesHead(current.result);
     let followed = drawing ? tracks.get(engine) : undefined;
-    if (drawing && followed?.value !== state.value) {
+    if (drawing && followed?.value !== input) {
       followed = {
-        value: state.value,
+        value: input,
         track: engine.track!(current.config),
       };
       tracks.set(engine, followed);
@@ -578,10 +847,14 @@ export function createPhraseSampler(options: {
         reveal: state.reveal,
         target: phrase.target,
         value: state.value,
-        range: [
-          Math.min(...phrase.phases.flatMap((p) => [p.from.value, p.to.value])),
-          Math.max(...phrase.phases.flatMap((p) => [p.from.value, p.to.value])),
-        ],
+        range: ranges[0],
+        ...(phrase.targets.length > 1 && {
+          also: phrase.targets.slice(1).map((target, k) => ({
+            target,
+            value: state.values[k + 1],
+            range: ranges[k + 1],
+          })),
+        }),
       },
       ...(held && reached && { probe: held }),
       ...(!reached

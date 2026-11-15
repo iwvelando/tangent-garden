@@ -4,9 +4,17 @@ import type { PlotPalette } from "./palette";
 import { captionBand } from "./export-quality";
 
 type Presentation = NonNullable<AnimationView["phrase"]>;
+const readout = (track: {
+  target: Presentation["target"];
+  value: number;
+  range?: readonly [number, number];
+}) =>
+  `${targetLabel(track.target)} = ${liveReadout(track.value, track.range ?? [track.value, track.value])}`;
+// The stage, and one readout per parameter: the phrase's own first.
 export const phraseCaptionText = (phrase: Presentation) => ({
   stage: phrase.phase,
-  parameter: `${targetLabel(phrase.target)} = ${liveReadout(phrase.value, phrase.range ?? [phrase.value, phrase.value])}`,
+  parameter: readout(phrase),
+  parameters: [phrase, ...(phrase.also ?? [])].map(readout),
 });
 
 // Ordinary, non-announcing UI remains accessible when the optional visual
@@ -20,7 +28,11 @@ export function PhraseCaption({ phrase }: { phrase: Presentation }) {
       className={`phrase-caption${phrase.inDrawing ? " in-drawing" : ""}`}
     >
       <span className="phrase-caption-stage">{text.stage}</span>
-      <span className="phrase-caption-value">{text.parameter}</span>
+      {text.parameters.map((parameter, k) => (
+        <span className="phrase-caption-value" key={k}>
+          {parameter}
+        </span>
+      ))}
     </div>
   );
 }
@@ -64,7 +76,10 @@ export function SvgPhraseCaption({
   // Match the face-on grid's export captions: regular page type at 55% of
   // its 40-unit band, with the surrounding UI's muted ink in either theme.
   const fontSize = Math.round(captionBand * 0.55);
-  const lines = [...wrapped(text.stage, 42), ...wrapped(text.parameter, 42)];
+  const lines = [
+    ...wrapped(text.stage, 42),
+    ...text.parameters.flatMap((parameter) => wrapped(parameter, 42)),
+  ];
   return (
     <g data-phrase-caption="true" aria-hidden="true" pointerEvents="none">
       {lines.map((line, i) => (
