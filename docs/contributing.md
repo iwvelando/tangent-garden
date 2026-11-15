@@ -145,6 +145,7 @@ For a research issue, the assignment's experiment and decision gate still govern
 - `make check` runs formatting checks, Go vet, native tests with race and coverage, a real WASM bridge test, TypeScript checks, and the production build.
 - `make test-browser` runs the production integration checks. It needs a Chromium installation (`npx playwright install chromium`).
 - `make test-webkit` runs `tests/webkit.spec.ts` and `tests/mobile-inputs.spec.ts` in WebKit (`npx playwright install webkit`). `make pre-pr` runs it on macOS, where CI's `webkit` job runs too; on another platform it skips it with a notice and leaves it to CI.
+- The WebKit project retries a test once, and only when the browser took its page away (`tests/crash-retry.ts`): the page reported a crash, or it closed during the test and the test failed on Playwright's closed-page error. On CI's macOS runners WebKit's page process sometimes dies in its first seconds under whichever test is running (issue #423), and every such crash so far has reached the test as a closed page. An assertion failure, a timeout or an engine error is never run again: its retry fails at once and says so. Each lost page is listed in the `webkit` job's summary and its crash reports are uploaded even when the retry passes, and Playwright reports the test as flaky; record it on the issue all the same ([Recording failures and bugs](#recording-failures-and-bugs)). A WebKit spec imports `test` from `tests/crash-retry.ts`, not from `@playwright/test`. Do not widen the retry to other failures or give the Chromium project one; `tests/crash-retry.spec.ts` checks the rule with a page that really crashes.
 - Playwright tests the production build in `dist/`. `make test-browser`, `make test-webkit` and `make thumbnails` rebuild it first. A targeted `npx playwright test` does not, and locally it reuses a preview already serving port 4173.
 - `make thumbnails` rewrites `web/examples/thumbnails.json` after it builds, so run `npm run build` again before a targeted run.
 - Prettier formats `web/`, `scripts/` and `tests/` only (`npm run format`). Never run it over `docs/` or `README.md`: it rewraps the Markdown.
@@ -197,6 +198,23 @@ A complete `make pre-pr` sometimes fails only because an existing spec asserts a
 Then rebuild (`npm run build`), rerun the failing specs and any others the search touched, and run every stage the failure stopped before. `make test-browser` failing stops `make pre-pr` before `make test-webkit` and the gallery check, so run `make test-webkit` (on macOS) and confirm `git status --porcelain web/examples` is empty. Do not repeat `make check`, `make thumbnails` or the Chromium suite.
 
 Record the full run's revision and final lines, the follow-up diff, and the targeted and remaining-stage results. Describe it as a full run plus a verified assertion follow-up, never as a full local run on the final head. If the cause is uncertain, or the fix touches anything beyond expected values, run the full gate again.
+
+## Recording failures and bugs
+
+One failure has one issue, and that issue is its count. A pull request links to it and holds nothing else about it. A note left only in a PR body or a comment on some other thread is lost to the next person who meets the same failure: an issue that said a second instance would settle its cause went through four more unnoticed, because each was noted on a different PR.
+
+This applies to every failure the change under test did not cause, in CI or in a local `make pre-pr`, including one that passes when rerun. A failure the change caused is fixed in that PR and needs no issue.
+
+1. **Search before rerunning.** `make ci-failure RUN=<run id>` (needs `gh`) lists the run's failed tests, each as an occurrence line, with the open and closed issues that mention the test by name. For a local failure, search by the test's name and the error's first line (`gh issue list --state all --search '"<test name>"'`).
+2. **Record the occurrence.** If an issue covers the failure, add the occurrence line as a comment, reopening the issue if it was closed: a recurrence after a fix belongs with the fix's history. If none does, open one from the **Intermittent failure** template. One occurrence is one line: the date, the run and attempt, the job and its runner image, the test, and the error's first line. Add what this occurrence showed that the earlier ones did not, and nothing else.
+3. **Then rerun**, and write only `Reran for #<issue>` in the PR. Do not describe the failure there.
+4. **Label it.** `ci-flake` marks an intermittent test or runner failure whose cause is unknown or lies outside the product; `bug` marks a defect in the product. Change the label when diagnosis changes the answer. A test that fails every time because the product is wrong is a `bug`, not a flake.
+5. **Escalate at the second occurrence in a week, or the third in all.** Whoever records it says so in their handoff, and the owner decides whether it is fixed next or deferred, with the decision recorded on the issue. Until then a flake waits its turn.
+6. **Close with the fix.** The PR that removes the cause closes the issue. One that only lengthens a wait under [Verification-only follow-ups](#verification-only-follow-ups) links the issue and leaves it open until runs show the failure has stopped.
+
+A bug noticed while working on something else follows the same rule. Fix it in the current PR, with a test that fails first, when it is small and belongs to the change. Otherwise open an issue from the **Bug** template and carry on. Mention it in the PR only as a link.
+
+Several failures with one cause share one issue: name the cause in the title once it is known, and close the others as duplicates of it. Until then, keep failures of different tests apart and link them when they look related, since two tests can fail for different reasons on the same day.
 
 ## Numerical changes
 

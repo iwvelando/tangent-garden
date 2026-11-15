@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./crash-retry";
 import { choosePreset, examplesButton } from "./helpers";
 
 // Native iOS keyboard zoom isn't reproduced by desktop browser engines.
