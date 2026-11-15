@@ -6019,4 +6019,51 @@ export const spatialPresets: {
     view: { ...initialView },
     layers: { connectors: false, pole: false },
   },
+  // Thirty-two associate patches keep the same metric while bending through
+  // theta in [0, pi/2]. Only grid curves open; the selected member can show
+  // its ordinary sheet and normals. Reveal samples this frozen set.
+  {
+    name: "A surface remembers its bending",
+    detail: "Thirty-two minimal-surface grids held in one print",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -0.85 * Math.PI,
+        uMax: 0.85 * Math.PI,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 48,
+        vSamples: 24,
+        curves: 5,
+        offset: 0,
+        reach: 0.3,
+      },
+    },
+    family: {
+      enabled: true,
+      target: "surfaceB",
+      from: 0,
+      to: Math.PI / 2,
+      count: 32,
+      selected: 7,
+      presentation: "family",
+      motion: "reveal",
+      width: 3,
+    },
+    timing: { duration: 6, repeat: "back-and-forth", pace: "steady" },
+    view: { ...initialView, yaw: 0.6, pitch: -1.15 },
+    layers: {
+      surface: false,
+      curves: true,
+      normals: false,
+      focal1: false,
+      focal2: false,
+    },
+  },
 ];

@@ -2720,18 +2720,19 @@ export default function SpatialApp({
     <StudyExplanation
       note="Unavailable slots keep their positions in the family and timeline; their reasons appear in Members and limits."
       label="BEHIND THE ENGRAVING"
-      title="Every curve keeps its own identity."
+      title="Every member keeps its own identity."
       formula={
         <>
-          r(t, λ) <span>one ordinary study at each λ</span>
+          {patched ? "X(u, v, λ)" : "r(t, λ)"}{" "}
+          <span>one ordinary study at each λ</span>
         </>
       }
     >
       <p>
-        Both range endpoints belong to this finite family. Each curve keeps its
+        Both range endpoints belong to this finite family. Each member keeps its
         gaps; no surface connects neighboring members. The selected member alone
-        supplies enabled construction guides. Select it to inspect the
-        construction, or use Animation to reveal the family or move a band
+        supplies enabled sheets and construction guides. Select it to inspect
+        the construction, or use Animation to reveal the family or move a band
         through its frozen slots.
       </p>
     </StudyExplanation>

@@ -673,3 +673,23 @@ test("curves that smooth themselves help fits both tiers and states the engine's
   ])
     expect(text).toContain(limit);
 });
+
+test("surface engraving help states its scope within the sidebar word limits", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, { label: "A surface remembers its bending" });
+  await expect(page.locator(".spatial-stage")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entries = await helps(page);
+  expect(entries.some((h) => h.topic === "About finite engraving")).toBe(true);
+  for (const h of entries) {
+    expect(words(h.essentials), h.topic).toBeLessThanOrEqual(
+      h.paired ? pairedBriefWords : briefWords,
+    );
+    if (h.more !== null)
+      expect(words(h.more), h.topic).toBeLessThanOrEqual(moreWords);
+  }
+});

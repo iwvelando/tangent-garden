@@ -1,3 +1,4 @@
+import { surfaceShape, surfaceFamilyRange } from "./surface";
 import { roundedGenerated } from "../atlas";
 import { refineBudget } from "../refinement";
 import { conform, LinkError, type SchemaOf } from "../study-link";
@@ -12,7 +13,7 @@ import type { AnimationView } from "./animation";
 import type { View } from "./renderer";
 export type SpatialFamilySettings = {
   enabled: boolean;
-  target: "radius" | "tube" | "a";
+  target: "radius" | "tube" | "a" | "surfaceA" | "surfaceB" | "surfaceC";
   from: number;
   to: number;
   count: number;
@@ -21,8 +22,32 @@ export type SpatialFamilySettings = {
   motion: "reveal" | "window";
   width: number;
 };
+const surfaceFields = { surfaceA: "a", surfaceB: "b", surfaceC: "c" } as const;
+function surfaceField(target: SpatialFamilySettings["target"]) {
+  return target in surfaceFields
+    ? surfaceFields[target as keyof typeof surfaceFields]
+    : undefined;
+}
+function familyValue(
+  c: SpatialConfig,
+  target: SpatialFamilySettings["target"],
+): number {
+  const field = surfaceField(target);
+  return field
+    ? c.surface[field]
+    : target === "a"
+      ? c.curve.a
+      : c[target as "radius" | "tube"];
+}
 export function spatialFamilyTargets(c: SpatialConfig) {
   if (c.shadow) return [];
+  if (c.format === "surface") {
+    if (c.surface.geodesics || c.surface.edges || c.surface.ridges) return [];
+    return surfaceShape[c.surface.kind].map(({ key, label }) => ({
+      target: ({ a: "surfaceA", b: "surfaceB", c: "surfaceC" } as const)[key],
+      label,
+    }));
+  }
   if (
     !["none", "tangent-foot", "orthotomic", "inversion"].includes(
       c.construction,
@@ -46,12 +71,15 @@ export function spatialFamilyDefaults(
   c: SpatialConfig,
   target = spatialFamilyTargets(c)[0]?.target ?? "tube",
 ): SpatialFamilySettings {
-  const value = target === "a" ? c.curve.a : c[target];
+  const value = familyValue(c, target);
+  const field = surfaceField(target);
   const half =
     target === "a" ? Math.max(1, Math.abs(value) * 0.25) : value * 0.5;
   let from = roundedGenerated(value - half, Math.abs(value) + half);
   let to = roundedGenerated(value + half, Math.abs(value) + half);
-  if (target === "radius") {
+  if (field) {
+    [from, to] = surfaceFamilyRange(c.surface, field);
+  } else if (target === "radius") {
     from = Math.max(0.1, from);
     if (from <= c.tube) {
       const middle = roundedGenerated(c.tube / 2 + c.radius / 2, c.radius);
@@ -65,27 +93,50 @@ export function spatialFamilyDefaults(
       to = middle < c.radius ? middle : c.tube;
     }
   }
-  return {
+  const defaults: SpatialFamilySettings = {
     enabled: false,
     target,
     from,
     to,
-    count: c.adaptive ? 8 : 16,
+    count: c.format !== "surface" && c.adaptive ? 8 : 16,
     selected: 0,
     presentation: "family",
     motion: "reveal",
     width: 3,
   };
+  if (c.format === "surface") {
+    while (
+      defaults.count > 2 &&
+      spatialFamilyBudget(c, defaults).error?.includes("limit")
+    )
+      defaults.count--;
+    defaults.width = Math.min(defaults.width, defaults.count);
+  }
+  return defaults;
 }
 export function spatialFamilyBudget(
   c: SpatialConfig,
   f: SpatialFamilySettings,
 ) {
+  const surface = c.format === "surface";
+  // Reserve four full sheets even when layers are hidden or a kind has fewer.
+  // Flags count as entries too; normals/representative lines are not free.
+  const nodes = surface
+    ? f.count * (c.surface.uSamples + 1) * (c.surface.vSamples + 1)
+    : 0;
+  const triangles = surface
+    ? f.count * 4 * 2 * c.surface.uSamples * c.surface.vSamples
+    : 0;
   const paths = c.construction === "none" ? 1 : 2;
-  const points =
-    f.count * paths * (c.samples + 1 + (c.adaptive ? refineBudget : 0));
-  const numbers = points * 8 + f.count * (c.lines * 40 + 64);
-  const work = points * (c.adaptive ? 32 : 9) * (c.adaptiveFrame ? 2 : 1);
+  const points = surface
+    ? nodes * 4
+    : f.count * paths * (c.samples + 1 + (c.adaptive ? refineBudget : 0));
+  const numbers = surface
+    ? nodes * 40 + f.count * (c.surface.curves ** 2 * 8 + 128)
+    : points * 8 + f.count * (c.lines * 40 + 64);
+  const work = surface
+    ? nodes * 256 + f.count * c.surface.curves ** 2 * 16
+    : points * (c.adaptive ? 32 : 9) * (c.adaptiveFrame ? 2 : 1);
   const [field, error] =
     !Number.isInteger(f.count) || f.count < 2 || f.count > 32
       ? [
@@ -111,20 +162,31 @@ export function spatialFamilyBudget(
                     "This study does not support the selected family parameter. Disable engraving to return to your source study.",
                   ]
                 : !Number.isFinite(points + numbers + work) ||
+                    nodes > 100000 ||
+                    triangles > 500000 ||
                     points > 500000 ||
                     numbers > 4000000 ||
                     work > 80000000
                   ? [
                       undefined,
-                      "This family exceeds the work or geometry limit. Reduce members, samples, lines or refinement.",
+                      "This family exceeds the work or geometry limit. Reduce members, samples, grid cells, lines or refinement.",
                     ]
                   : [undefined, undefined];
-  return { points, numbers, work, field, error };
+  return { points, numbers, work, nodes, triangles, field, error };
 }
 const schema: SchemaOf<SpatialFamilySettings> = {
   fields: {
     enabled: "boolean",
-    target: { options: { radius: true, tube: true, a: true } },
+    target: {
+      options: {
+        radius: true,
+        tube: true,
+        a: true,
+        surfaceA: true,
+        surfaceB: true,
+        surfaceC: true,
+      },
+    },
     from: "number",
     to: "number",
     count: "number",
@@ -226,7 +288,7 @@ export class SpatialFamily {
     this.config = structuredClone(config);
     this.view = view && structuredClone(view);
     this.target = f.target;
-    const current = f.target === "a" ? config.curve.a : config[f.target];
+    const current = familyValue(config, f.target);
     this.state = {
       ...emptySpatialFamily(),
       pending: true,
@@ -264,8 +326,10 @@ export class SpatialFamily {
       return;
     }
     const config = structuredClone(this.config);
-    if (this.target === "a") config.curve.a = member.value;
-    else config[this.target] = member.value;
+    const field = surfaceField(this.target);
+    if (field) config.surface[field] = member.value;
+    else if (this.target === "a") config.curve.a = member.value;
+    else config[this.target as "radius" | "tube"] = member.value;
     const token = this.epoch;
     this.working = true;
     this.emit();
@@ -288,18 +352,28 @@ export class SpatialFamily {
               : config.construction === "inversion"
                 ? frame.result.inversion?.points
                 : frame.result.projection?.points;
-          if (
-            !path?.some(
-              (p, i) =>
-                p &&
-                i > 0 &&
-                path[i - 1] &&
-                !(frame.result.inversion?.breaks ??
-                  frame.result.projection?.breaks ??
-                  frame.result.breaks)[i],
-            )
-          ) {
-            refuse("No finite curve for this member.");
+          const grid = frame.result.surface?.surface;
+          const available =
+            config.format === "surface"
+              ? !!grid &&
+                [...grid.alongU, ...grid.alongV].some((row) =>
+                  row.some(Boolean),
+                )
+              : path?.some(
+                  (p, i) =>
+                    p &&
+                    i > 0 &&
+                    path[i - 1] &&
+                    !(frame.result.inversion?.breaks ??
+                      frame.result.projection?.breaks ??
+                      frame.result.breaks)[i],
+                );
+          if (!available) {
+            refuse(
+              config.format === "surface"
+                ? "No finite parameter grid for this member."
+                : "No finite curve for this member.",
+            );
             return;
           }
           const entries = spatialFamilyNumbers(frame.result);

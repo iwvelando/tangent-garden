@@ -470,7 +470,7 @@ export const harmonicEllipses = (terms: HarmonicTerm[], s: HarmonicPosition) =>
 
 // Everything the drawing shows of a result, built once per result. The
 // WebGL renderer uploads it, and vector linework projects its lines.
-function buildSingleScene(result: SpatialResult) {
+function buildSingleScene(result: SpatialResult, gridOnly = false) {
   const origin = drawingOrigin(result.bounds);
   const from = origin && { origin };
   function batch(
@@ -557,6 +557,7 @@ function buildSingleScene(result: SpatialResult) {
   // (a chart singularity, an umbilic or cuspidal edge of a focal sheet), the
   // triangle's own normal shades it; a triangle without area is skipped.
   function sheetBatch(sheet: SurfaceSheet, ink: number) {
+    if (gridOnly) return batch([], "triangles", ink);
     const data: number[] = [];
     const last = Math.max(1, sheet.points.length - 1);
     sheet.faces.forEach((column, i) =>
@@ -1437,15 +1438,18 @@ export function buildScene(result: SpatialResult): Scene {
       const r = e.members[id]?.frame?.result;
       if (!r || seen.has(r)) return [];
       seen.add(r);
+      const selected = e.visible.some(
+        (i) => i === e.settings.selected && e.members[i]?.frame?.result === r,
+      );
       return [
         {
           id,
           slots: e.visible.filter((i) => e.members[i]?.frame?.result === r),
-          scene: buildScene({ ...r, bounds: result.bounds }),
-          selected: e.visible.some(
-            (i) =>
-              i === e.settings.selected && e.members[i]?.frame?.result === r,
+          scene: buildSingleScene(
+            { ...r, bounds: result.bounds },
+            !!r.surface && !selected,
           ),
+          selected,
         },
       ];
     });
@@ -1602,7 +1606,7 @@ export function scenePasses(
     for (const pass of scenePasses(member.scene, layers))
       if (
         member.selected ||
-        ["base", "projection", "inverse"].includes(pass.layer)
+        ["base", "projection", "inverse", "curves"].includes(pass.layer)
       )
         out.push({ ...pass, member: member.id, slots: member.slots });
   if (edge) add("cut", true, false, edge);

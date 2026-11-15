@@ -115,15 +115,15 @@ export function SpatialFamilyPanel({
           checked={f.enabled}
           onChange={(enabled) => change({ enabled })}
           help={tiered(
-            "Overlay full-quality space curves from one changing shape parameter.",
-            "Supports torus radius and tube radius, or a consumed expression a, with no construction, tangent-foot, orthotomic or base-curve inversion, without a shadow. Complete families show curves and the selected member's guides. Disable to restore the source study. Reveal members or move a band in Animation.",
+            "Overlay space curves or surface grids from one changing shape parameter.",
+            "Supports analytic patch shapes, torus radii or expression a. Curves admit no construction, tangent-foot, orthotomic or base inversion. Shadows, native geodesic fans and edge/ridge tracing are excluded. Only the selected visible member supplies sheets and guides. Disable to restore the source study; reveal members or move a band in Animation.",
           )}
         />
         {f.enabled && (
           <>
             <Field
               label="Family parameter"
-              help="Only shape parameters used by an admitted curve are offered."
+              help="Only shape parameters used by an admitted curve or patch are offered."
             >
               <select
                 value={f.target}
@@ -197,7 +197,7 @@ export function SpatialFamilyPanel({
             </Field>
             <Field
               label="Family presentation"
-              help="Inspect one member or show every curve with the selected member's guides."
+              help="Inspect one member or show all linework with the selected member's sheets and guides."
             >
               <select
                 value={f.presentation}
@@ -238,13 +238,14 @@ export function SpatialFamilyPanel({
             <details>
               <summary>Members and limits</summary>
               <p className="note">
-                A finite overlay, not a surface between curves. The selected
-                member alone supplies enabled construction guides, while visible
-                during motion. At most 500,000 reserved path points, four
-                million retained numbers and 80 million weighted work units,
-                including hidden geometry. One calculation runs at a time. The
-                probe and source-study excursions wait until engraving is
-                disabled.
+                A finite line overlay, with no surface between members. The
+                selected member alone supplies enabled sheets and guides, while
+                visible during motion. At most 500,000 reserved path points,
+                four million retained numbers and 80 million weighted work
+                units, including hidden geometry. Surface families also reserve
+                at most 100,000 grid nodes and 500,000 triangles across all
+                members. One calculation runs at a time. The probe and
+                source-study excursions wait until engraving is disabled.
               </p>
               <ol>
                 {state.members.map((m, i) => (
