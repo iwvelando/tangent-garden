@@ -245,6 +245,7 @@ test("the signature surface engraving opens in Minimal surfaces with its own fro
     target: "surfaceB",
     count: 32,
   });
+  expect(s.animation.camera).toBe("current");
   expect(family.spatialFamilyBudget(s.config, s.family!)).not.toHaveProperty(
     "error",
     expect.any(String),
@@ -269,6 +270,12 @@ test("the signature surface engraving opens in Minimal surfaces with its own fro
   await expect(
     page.getByText("32 of 32 members available.", { exact: true }),
   ).toBeVisible();
+  const canvas = page.locator("#spatial-artwork");
+  const image = () => canvas.evaluate((c: HTMLCanvasElement) => c.toDataURL());
+  await canvas.focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  await page.keyboard.press("+");
+  const enteredView = await image();
   await page.getByRole("button", { name: "Animation", exact: true }).click();
   await page
     .getByRole("button", { name: "Play animation", exact: true })
@@ -287,7 +294,16 @@ test("the signature surface engraving opens in Minimal surfaces with its own fro
     )
     .toBeGreaterThan(1);
   await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .fill("0.5");
+  await expect(page.locator(".spatial-stage")).toHaveAttribute(
+    "data-progress",
+    "1",
+  );
+  await expect.poll(image).toBe(enteredView);
   await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await expect.poll(image).toBe(enteredView);
 });
 
 test("surface defaults keep edited full-quality grids within aggregate admission", () => {

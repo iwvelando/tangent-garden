@@ -6056,14 +6056,9 @@ export const spatialPresets: {
       motion: "reveal",
       width: 3,
     },
+    flight: revealInPlace,
     timing: { duration: 6, repeat: "back-and-forth", pace: "steady" },
     view: { ...initialView, yaw: 0.6, pitch: -1.15 },
-    layers: {
-      surface: false,
-      curves: true,
-      normals: false,
-      focal1: false,
-      focal2: false,
-    },
+    layers: { surface: false, normals: false },
   },
 ];
