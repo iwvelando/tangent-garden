@@ -1,3 +1,4 @@
+import { roundedGenerated } from "../atlas";
 import { tiered, type Help } from "../help";
 import { edgesNote, ridgesNote } from "./cuspidal";
 import type {
@@ -60,7 +61,12 @@ export const surfaceCharts: Record<SurfaceKind, string> = {
 // The shape fields each kind reads, with their labels and help.
 export const surfaceShape: Record<
   SurfaceKind,
-  { key: "a" | "b" | "c"; label: string; help?: Help<string> }[]
+  {
+    key: "a" | "b" | "c";
+    label: string;
+    help?: Help<string>;
+    engravingRange?: readonly [number, number];
+  }[]
 > = {
   ellipsoid: [
     {
@@ -95,14 +101,16 @@ export const surfaceShape: Record<
     {
       key: "a",
       label: "Curvature k₁",
+      engravingRange: [-100000, 100000],
       help: "Vertex curvatures, within ±100000; opposite signs give a saddle.",
     },
-    { key: "b", label: "Curvature k₂" },
+    { key: "b", label: "Curvature k₂", engravingRange: [-100000, 100000] },
   ],
   monkey: [
     {
       key: "a",
       label: "Height k",
+      engravingRange: [-100000, 100000],
       help: "Scales the three valleys and ridges, within ±100000.",
     },
   ],
@@ -115,6 +123,7 @@ export const surfaceShape: Record<
     {
       key: "b",
       label: "Associate angle θ",
+      engravingRange: [0, Math.PI / 2],
       help: tiered(
         "0 is the helicoid, π/2 the catenoid; within 0–π/2.",
         "Every angle has the metric E = G = s²cosh²v, F = 0, so the grid's lengths never change.",
@@ -122,6 +131,28 @@ export const surfaceShape: Record<
     },
   ],
 };
+// Generated engraving endpoints follow each consumed shape field's limits.
+// An explicitly entered family range still reaches the ordinary evaluator,
+// where invalid members keep their own slots and reasons.
+export function surfaceFamilyRange(
+  s: SurfaceConfig,
+  key: "a" | "b" | "c",
+): [number, number] {
+  const range = surfaceShape[s.kind].find((f) => f.key === key)?.engravingRange;
+  if (range?.[0] === 0 && range[1] === Math.PI / 2) return [range[0], range[1]];
+  const value = s[key],
+    half = Math.max(Math.abs(value) * 0.5, range ? 1 : Number.MIN_VALUE);
+  return [
+    Math.max(
+      range?.[0] ?? Number.MIN_VALUE,
+      roundedGenerated(value - half, Math.abs(value) + half),
+    ),
+    Math.min(
+      range?.[1] ?? 100000,
+      roundedGenerated(value + half, Math.abs(value) + half),
+    ),
+  ];
+}
 // What each kind offers beyond its sheet, parameter curves, normal lines
 // and curvatures, mirroring engine3's surfaceKinds; the controls, layers,
 // legend, probe and animation read it. offset is the offset surface, its

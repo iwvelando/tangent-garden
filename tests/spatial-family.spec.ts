@@ -294,7 +294,6 @@ test("spatial family reservations count refinement, hidden geometry and unsuppor
     "harmonic",
     "field",
     "pursuit",
-    "surface",
     "rays",
     "implicit",
   ] as const)
@@ -420,74 +419,11 @@ test("the signature engraving is a complete preset with its own valid animation"
     pace: "steady",
   });
 });
-async function observeSpatial(page: Page, delay = 0) {
-  await page.addInitScript(
-    ({ delay }) => {
-      const Native = window.Worker;
-      const logs: any[] = [];
-      Object.assign(window, { spatialWorkers: logs });
-      window.Worker = class extends Native {
-        log: any;
-        constructor(url: string | URL, options?: WorkerOptions) {
-          super(url, options);
-          this.log = {
-            url: String(url),
-            requests: [],
-            replies: [],
-            active: 0,
-            maximum: 0,
-            terminated: false,
-          };
-          logs.push(this.log);
-        }
-        postMessage(data: any, options?: any) {
-          if (data.action === "spatial" && !data.probeOnly) {
-            this.log.active++;
-            this.log.maximum = Math.max(this.log.maximum, this.log.active);
-            this.log.requests.push({
-              ...structuredClone(data),
-              observedAt: performance.now(),
-            });
-          }
-          super.postMessage(data, options);
-        }
-        set onmessage(handler: any) {
-          super.onmessage = (event: MessageEvent) => {
-            const deliver = () => {
-              if (this.log.requests.some((r: any) => r.id === event.data.id)) {
-                this.log.active--;
-                const q = this.log.requests.find(
-                  (r: any) => r.id === event.data.id,
-                );
-                const mesh = event.data.result?.mesh;
-                this.log.replies.push({
-                  ...structuredClone(event.data),
-                  observedElapsed: performance.now() - q.observedAt,
-                  observedBytes:
-                    (event.data.lifted?.floats?.byteLength ?? 0) +
-                    Object.values(mesh ?? {}).reduce<number>(
-                      (n: number, v: any) => n + (v?.byteLength ?? 0),
-                      0,
-                    ) +
-                    new TextEncoder().encode(JSON.stringify(event.data.result))
-                      .length,
-                });
-              }
-              handler?.call(this, event);
-            };
-            if (logs.indexOf(this.log) > 0 && delay) setTimeout(deliver, delay);
-            else deliver();
-          };
-        }
-        terminate() {
-          this.log.terminated = true;
-          super.terminate();
-        }
-      };
-    },
-    { delay },
-  );
-}
+import {
+  observeSpatial,
+  pngStill,
+  pngMetadata,
+} from "./spatial-family-helpers";
 for (const [format, target, construction, refinedView] of [
   ["torus", "tube", "orthotomic"],
   ["torus", "radius", "tangent-foot"],
@@ -800,26 +736,6 @@ test("spatial families do not silently drop a saved shadow's paired views", () =
 
 import { readFile } from "node:fs/promises";
 import { decodePng } from "./png";
-async function pngStill(page: Page) {
-  await page.getByRole("button", { name: "Export image", exact: true }).click();
-  await page
-    .getByRole("menuitemradio", { name: "1000 × 760", exact: true })
-    .click();
-  const download = page.waitForEvent("download");
-  await page.getByRole("menuitem", { name: /^PNG/ }).click();
-  return readFile((await (await download).path())!);
-}
-function pngMetadata(bytes: Buffer) {
-  for (let i = 8; i < bytes.length;) {
-    const n = bytes.readUInt32BE(i);
-    if (bytes.toString("ascii", i + 4, i + 8) === "iTXt") {
-      const body = bytes.subarray(i + 8, i + 8 + n);
-      return JSON.parse(body.toString("utf8").split("\0").at(-1)!);
-    }
-    i += n + 12;
-  }
-  return null;
-}
 test("spatial engraving PNGs carry slot provenance and invalid members remain inspectable", async ({
   page,
 }) => {
@@ -880,16 +796,30 @@ test("a spatial engraving suspends the source probe while preserving its setting
 
 import { frameDifference, pixelDifference, probe as probeVideo } from "./video";
 import { chooseColorScheme } from "./helpers";
-for (const format of ["mp4", "webp"] as const)
-  test(`spatial engraving ${format} decodes to direct seeks with exact duration and provenance`, async ({
+import {
+  surfaceSource,
+  surfaceSettings,
+} from "./spatial-surface-family-support";
+for (const [surface, format] of [
+  [false, "mp4"],
+  [false, "webp"],
+  [true, "mp4"],
+  [true, "webp"],
+] as const)
+  test(`${surface ? "surface" : "spatial"} engraving ${format} decodes to direct seeks with exact duration and provenance`, async ({
     page,
   }, info) => {
     test.slow();
     const s = {
-      ...source(),
-      family: { ...settings(), motion: "window" as const, width: 2 },
+      ...(surface ? surfaceSource() : source()),
+      family: {
+        ...(surface ? surfaceSettings() : settings()),
+        motion: "window" as const,
+        width: 2,
+      },
     };
     s.animation.duration = 1;
+    s.animation.repeat = "once";
     s.animation.camera = "current";
     s.view = {
       ...s.view,
@@ -1018,9 +948,9 @@ for (const format of ["mp4", "webp"] as const)
       }
     }
     expect(metadata.family.settings).toMatchObject(s.family);
-    expect(metadata.family.members.map((m: any) => m.id)).toEqual([
-      0, 1, 2, 3, 4,
-    ]);
+    expect(metadata.family.members.map((m: any) => m.id)).toEqual(
+      surface ? [0, 1, 2] : [0, 1, 2, 3, 4],
+    );
     expect(metadata.view).toMatchObject(s.view);
     expect(metadata.scheme).toBe("cobalt");
   });
