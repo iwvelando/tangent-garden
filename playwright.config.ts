@@ -47,6 +47,9 @@ export default defineConfig({
             name: "webkit",
             use: { browserName: "webkit" as const },
             testMatch: /(?:webkit|mobile-inputs)\.spec\.ts$/,
+            // Spent only on a test that lost its page to the browser
+            // (tests/crash-retry.ts).
+            retries: 1,
           },
         ]
       : []),

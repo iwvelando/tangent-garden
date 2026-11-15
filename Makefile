@@ -1,4 +1,4 @@
-.PHONY: install wasm bench preset-hashes preset-fixtures test test-go test-go-race test-go-cover test-wasm test-scripts test-browser test-webkit test-durations typecheck vet format format-check build dev dev-lan preview preview-lan check pre-pr clean share-card thumbnails
+.PHONY: install wasm bench preset-hashes preset-fixtures test test-go test-go-race test-go-cover test-wasm test-scripts test-browser test-webkit test-durations ci-failure typecheck vet format format-check build dev dev-lan preview preview-lan check pre-pr clean share-card thumbnails
 
 install:
 	npm ci
@@ -20,7 +20,7 @@ test-wasm: wasm
 	node scripts/test-dev-worker.mjs
 # Tests of the project scripts that need no engine.
 test-scripts:
-	node --test scripts/test-durations.test.mjs scripts/go-race.test.mjs
+	node --test scripts/test-durations.test.mjs scripts/go-race.test.mjs scripts/ci-failure.test.mjs
 # Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
 bench: wasm
 	node scripts/bench-spatial.mjs $(ARGS)
@@ -43,6 +43,12 @@ test-browser: build
 	npx playwright test
 test-webkit: build
 	WEBKIT=1 npx playwright test --project=webkit
+# Lists a CI run's failed tests as occurrence lines for an issue, with the
+# issues that already mention each test (docs/contributing.md, Recording
+# failures and bugs).
+ci-failure:
+	@test -n "$(RUN)" || { echo 'usage: make ci-failure RUN=<CI run id>'; exit 2; }
+	@node scripts/ci-failure.mjs $(RUN)
 # Records each spec file's mean duration over CI runs' timing reports, which
 # CI's Chromium shards are packed by (tests/shards.ts).
 test-durations:

@@ -1,10 +1,5 @@
-import {
-  test,
-  expect,
-  devices,
-  type Locator,
-  type Page,
-} from "@playwright/test";
+import { expect, devices, type Locator, type Page } from "@playwright/test";
+import { test } from "./crash-retry";
 import { decodePng } from "./png";
 
 for (const viewport of [
