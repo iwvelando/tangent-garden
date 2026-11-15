@@ -143,7 +143,7 @@ import {
   type Story,
 } from "./story";
 import { easedPath, withEase } from "../key-views";
-import { Field, FieldErrorContext } from "../Field";
+import { Field, FieldErrorContext, StudyError } from "../Field";
 import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
 import type { SpatialCamera } from "./link";
@@ -2250,11 +2250,7 @@ export function SpatialAnimationPanel({
             {exportNotice}
           </p>
         )}
-        {error && (
-          <p className="animation-error" role="alert">
-            {error}
-          </p>
-        )}
+        {error && <StudyError className="animation-error" message={error} />}
       </details>
     </section>
   );

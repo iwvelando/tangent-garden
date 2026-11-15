@@ -91,7 +91,8 @@ export default function HarmonicFitPreview({
     [renderError, setRenderError] = useState(""),
     [showSource, setShowSource] = useState(true),
     [showVectors, setShowVectors] = useState(true),
-    [computing, setComputing] = useState(false);
+    // The study whose drawing has arrived or failed.
+    [settled, setSettled] = useState<object | null>(null);
   useEffect(() => {
     client.current = new EngineClient();
     session.current = new HarmonicFitSession(
@@ -161,18 +162,17 @@ export default function HarmonicFitPreview({
       return;
     }
     let current = true;
-    setComputing(true);
     client.current
       ?.computeSpatial(study.config)
       .then((value) => {
         if (!current) return;
         setFrame(value);
-        setComputing(false);
+        setSettled(study);
       })
       .catch((e: Error) => {
         if (!current) return;
         setRenderError(e.message);
-        setComputing(false);
+        setSettled(study);
       });
     return () => {
       current = false;
@@ -200,7 +200,10 @@ export default function HarmonicFitPreview({
           : null,
     [frame, bounds, showSource, state.outline, state.open, state.error],
   );
-  const pending = state.pending || computing;
+  // Derived, not set by the effect that starts the drawing: that runs after
+  // the fit has been shown, and would leave the dialog reading as settled
+  // over the placeholder, or over the previous count's drawing, until then.
+  const pending = state.pending || (!!fit && !!study && settled !== study);
   const finish = (adopted?: SpatialStudy) => {
     session.current?.cancel();
     if (adopted) onAdopt(adopted, via.current);

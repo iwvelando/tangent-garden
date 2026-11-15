@@ -717,6 +717,46 @@ for (const name of ["A knot shedding filaments", "Down a torus's tunnel"]) {
   });
 }
 
+// A fit's drawing is computed after the fit arrives, and replaces a shorter
+// placeholder. The dialog stays pending across that step, so nothing reads
+// it as settled, or adopts from it, while the picture is still on its way.
+test("the dialog stays pending until the chosen fit is drawn", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const seen: { count?: string; pending?: string; placeholder: boolean }[] =
+      [];
+    Object.assign(window, { fitStates: seen });
+    new MutationObserver(() => {
+      const d = document.querySelector<HTMLElement>(".harmonic-fit");
+      if (!d) return;
+      seen.push({
+        count: d.dataset.count,
+        pending: d.dataset.pending,
+        placeholder: !!d.querySelector(".harmonic-fit-empty"),
+      });
+    }).observe(document, { subtree: true, childList: true, attributes: true });
+  });
+  await ready(page);
+  await open(page);
+  await fit(page);
+  await expect(dialog(page).locator("#journey-artwork")).toBeVisible();
+  await setTerms(page, 1);
+  await fit(page);
+  await setTerms(page, 3);
+  await fit(page);
+  const seen: { count?: string; pending: string; placeholder: boolean }[] =
+    await page.evaluate("fitStates");
+  // Never settled over the placeholder.
+  expect(seen.filter((s) => s.placeholder && s.pending !== "true")).toEqual([]);
+  // A newly chosen count is pending from the moment it shows.
+  const arrivals = seen.filter(
+    (s, i) => s.count !== undefined && s.count !== seen[i - 1]?.count,
+  );
+  expect(arrivals.map((s) => s.count)).toEqual(["4", "1", "3"]);
+  expect(arrivals.map((s) => s.pending)).toEqual(["true", "true", "true"]);
+});
+
 const layouts = {
   desktop: { width: 1280, height: 800 },
   "short desktop": { width: 1280, height: 560 },
