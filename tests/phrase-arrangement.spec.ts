@@ -779,6 +779,11 @@ test("a two-parameter phrase's MP4 and SVG match direct seeks at both ends, a ho
   await page
     .getByRole("combobox", { name: "Export frame rate", exact: true })
     .selectOption("15");
+  // This checks sampler/rendering parity. Minimize lossy codec error so a
+  // held frame's quantization cannot exhaust the geometric comparison bound.
+  await page
+    .getByRole("slider", { name: "Export quality", exact: true })
+    .fill("100");
   // 2.2 s: the lamp moves to the focus in 0.8–1.4 s and holds to 1.9 s.
   // 33 frames put frame 16 exactly halfway, at the seek control's 0.5.
   for (const [i, duration] of [0.1, 0.2, 0.2, 0.3, 0.6, 0.5, 0.3].entries())
