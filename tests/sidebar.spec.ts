@@ -175,6 +175,35 @@ for (const [notebook, url, section] of [
     await play.click();
     await expect(plot).toBeInViewport({ ratio: 1 });
   });
+
+  // Play may sit at the foot of the screen, with the refusal's place below
+  // it: the refusal is then brought into view, and the drawing still is not.
+  test(`a refused ${notebook} start with Play at the foot of a narrow screen shows its error`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(url);
+    const plot = page.locator(".plot-wrap");
+    await expect(plot).toBeVisible();
+    await open(page, section);
+    const duration = page.getByRole("spinbutton", {
+      name: "Duration (seconds)",
+    });
+    await duration.fill("0");
+    // Leaving the field ends the phone's own reveal of a focused field.
+    await duration.blur();
+    const play = page.getByRole("button", { name: "Play animation" });
+    await play.evaluate((button) => button.scrollIntoView({ block: "end" }));
+    const foot = (await play.boundingBox())!;
+    expect(foot.y + foot.height).toBeGreaterThan(844 - 8);
+    await play.click();
+    const refusal = page
+      .getByRole("alert")
+      .filter({ hasText: "Duration must be between 0.1 and 3600 seconds." });
+    await expect(refusal).toBeInViewport({ ratio: 1 });
+    await expect(play).toBeInViewport({ ratio: 1 });
+    await expect(plot).not.toBeInViewport();
+  });
 }
 
 test("a start refused after preparing, by the easing factor, keeps its error in view", async ({

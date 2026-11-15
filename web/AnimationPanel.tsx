@@ -115,7 +115,7 @@ import {
   type Formats,
 } from "./export-formats";
 import { saveFile } from "./export-image";
-import { Field, CheckSetting } from "./Field";
+import { Field, CheckSetting, StudyError } from "./Field";
 import { KeyViews, KeyViewEasing } from "./KeyViews";
 import {
   easedPath,
@@ -2121,9 +2121,10 @@ export function AnimationPanel({
           </p>
         )}
         {(error || (phraseProblem && !phraseProblemField(phraseProblem))) && (
-          <p className="animation-error" role="alert">
-            {phraseProblem || error}
-          </p>
+          <StudyError
+            className="animation-error"
+            message={phraseProblem || error}
+          />
         )}
       </details>
     </section>

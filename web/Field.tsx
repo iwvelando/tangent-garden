@@ -205,13 +205,21 @@ export function Field({
 // An error no field shows: the notebook's one alert, after the study's
 // controls. Like a field's error, it is brought into view when it appears,
 // since the controls may end below the screen or the sidebar's scroll.
-export function StudyError({ message }: { message: string }) {
+// A refused or stopped animation's error (`animation-error`) is the same:
+// Play may sit at the foot of a phone's screen, with the error below it.
+export function StudyError({
+  message,
+  className = "study-error",
+}: {
+  message: string;
+  className?: string;
+}) {
   const box = useRef<HTMLParagraphElement>(null);
   useLayoutEffect(() => {
     box.current?.scrollIntoView({ block: "nearest" });
   }, [message]);
   return (
-    <p className="study-error" role="alert" ref={box}>
+    <p className={className} role="alert" ref={box}>
       {message}
     </p>
   );
