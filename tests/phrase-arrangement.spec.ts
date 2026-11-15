@@ -10,6 +10,7 @@ import { decodePng } from "./png";
 import { readFile } from "node:fs/promises";
 import { watchEngines } from "./engines";
 import { presets } from "../web/presets";
+import { exportTiming } from "../web/export-quality";
 import {
   addPhraseTrack,
   compilePhrase,
@@ -778,21 +779,23 @@ test("a two-parameter phrase's MP4 and SVG match direct seeks at both ends, a ho
   await page
     .getByRole("combobox", { name: "Export frame rate", exact: true })
     .selectOption("15");
-  // 2 s: the lamp is carried to the focus in 0.8–1.1 s and held to 1.7 s.
-  for (const [i, duration] of [0.1, 0.2, 0.2, 0.3, 0.3, 0.6, 0.3].entries())
+  // 2.2 s: the lamp moves to the focus in 0.8–1.4 s and holds to 1.9 s.
+  // 33 frames put frame 16 exactly halfway, at the seek control's 0.5.
+  for (const [i, duration] of [0.1, 0.2, 0.2, 0.3, 0.6, 0.5, 0.3].entries())
     await page
       .getByRole("spinbutton", { name: `Phase ${i + 1} duration`, exact: true })
       .fill(String(duration));
   await play(page).click();
   await button(page, "Pause").click();
   const stills = [];
-  // 0.517 (frame 15 of 30, at 15/29 of 2 s within half a millisecond) is
-  // reached by scrubbing backward, while x and y both move.
-  for (const time of ["0", "0.7", "1", "0.517"]) {
+  // A moving still must sample exactly the same instant as its video frame.
+  expect(exportTiming(2.2, 15)[16].progress).toBe(0.5);
+  // Reach the moving frame by scrubbing backward, while x and y both move.
+  for (const time of ["0", "0.7", "1", "0.5"]) {
     await seek(page, time);
     const shown = await definition(page);
-    if (time === "0.517") {
-      const h = (1 - Math.cos(Math.PI * ((1.034 - 0.8) / 0.3))) / 2;
+    if (time === "0.5") {
+      const h = (1 - Math.cos(Math.PI * ((1.1 - 0.8) / 0.6))) / 2;
       expect(shown.source.position.x).toBeCloseTo(0.4 + 0.35 * h, 12);
       expect(shown.source.position.y).toBeCloseTo(-0.35 + 0.35 * h, 12);
     } else
@@ -817,28 +820,28 @@ test("a two-parameter phrase's MP4 and SVG match direct seeks at both ends, a ho
   const path = (await (await download).path())!;
   const data = probe(path);
   if (data) {
-    expect(data.frames).toBe(30);
-    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(2000);
+    expect(data.frames).toBe(33);
+    expect(data.durations.reduce((a, b) => a + b, 0)).toBe(2200);
     expect(data.times[0]).toBe(0);
     const match = (i: number, reference: (typeof stills)[number]) =>
       frameDifference(path, 2000, 1520, i, reference.rgba)!;
     for (const [i, reference] of [
       [0, stills[0]],
-      [15, stills[3]],
-      [20, stills[1]],
+      [16, stills[3]],
       [23, stills[1]],
-      [29, stills[2]],
+      [27, stills[1]],
+      [32, stills[2]],
     ] as const) {
       const difference = match(i, reference);
-      expect(difference.meanDifference).toBeLessThan(3);
-      expect(difference.unmatchedInk).toBeLessThan(0.05);
+      expect(difference.meanDifference, `frame ${i}`).toBeLessThan(3);
+      expect(difference.unmatchedInk, `frame ${i}`).toBeLessThan(0.05);
     }
     // The gathered caustic is not the open one, nor the frame on the way.
-    expect(match(20, stills[2]).unmatchedInk).toBeGreaterThan(0.3);
-    expect(match(15, stills[1]).unmatchedInk).toBeGreaterThan(0.3);
+    expect(match(23, stills[2]).unmatchedInk).toBeGreaterThan(0.3);
+    expect(match(16, stills[1]).unmatchedInk).toBeGreaterThan(0.3);
   }
   const video = await decodeVideo(page, await readFile(path));
-  expect(video.duration).toBeCloseTo(2, 3);
+  expect(video.duration).toBeCloseTo(2.2, 3);
   expect(video.first.hash).not.toBe(video.last.hash); // rays and caustic drawn
 });
 
