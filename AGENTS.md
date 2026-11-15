@@ -39,7 +39,8 @@ Before making one of these changes, read its section of `docs/contributing.md`. 
 - changing focus, menus or form inputs, which Safari and iOS treat differently;
 - adding side-by-side fields;
 - updating behavior described in help, definitions or limits (documentation and indirect behavior);
-- running targeted tests, or wondering why a thumbnail is hidden.
+- running targeted tests, or wondering why a thumbnail is hidden;
+- meeting a test failure the change did not cause, in CI or locally, or a bug outside the change (recording failures and bugs): search for its issue and record the occurrence there before rerunning, never only in a PR note.
 
 When reviewing a PR, follow [Reviewing changes](docs/reviewing.md). The repository's [tangent-garden-review skill](.agents/skills/tangent-garden-review/SKILL.md) provides a focused entry point for a fresh-context review; the same procedure applies without skill support. Independently assess the approach and affected callers, and distinguish demonstrated failures from coverage gaps and optional cleanup.
 
