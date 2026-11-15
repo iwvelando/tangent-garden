@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset } from "./helpers";
+import { choosePreset, expectFrenet } from "./helpers";
 import { probe, decodeVideo, frameDifference } from "./video";
 
 // Moving the parameter probe along t as an animation, through the real
@@ -99,7 +99,7 @@ test("probe playback visits every sample from the first to the last, then restor
   await point(page).focus();
   await page.keyboard.press("Home");
   await page.keyboard.press("ArrowRight");
-  const mine = "t = -9.405, sample 1 of 960";
+  const mine = "t = −9.40514, sample 1 of 960";
   await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
   const study = await pixels(page);
   await mode(page).selectOption("probe");
@@ -135,18 +135,19 @@ test("probe playback visits every sample from the first to the last, then restor
   await seek(page, "0.001");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = -9.405, sample 1 of 960",
+    "t = −9.40514, sample 1 of 960",
   );
   await seek(page, "0");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = -9.425, sample 0 of 960",
+    "t = −9.42478, sample 0 of 960",
   );
   await expect(page.locator(".animation-values")).toHaveText(
-    "Probe at t = -9.42478",
+    "Probe at t = −9.42478",
   );
-  // κ and τ are constant on a helix.
-  await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
+  // κ and τ are constant on a helix: (2 cos t, 2 sin t, t/3) has κ = 18/37
+  // and τ = 3/37.
+  await expectFrenet(page, [18 / 37, 37 / 18, 3 / 37]);
   const start = await pixels(page);
   expect(start).not.toBe(study);
   await seek(page, "0.5");
@@ -160,7 +161,7 @@ test("probe playback visits every sample from the first to the last, then restor
   await seek(page, "1");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 9.425, sample 960 of 960",
+    "t = 9.42478, sample 960 of 960",
   );
   expect(await pixels(page)).not.toBe(middle);
   // Resume carries on from the scrubbed time.
@@ -309,7 +310,7 @@ test("a probe playback export draws the probe at each frame's sample", async ({
   await expect(stage(page)).not.toHaveAttribute("data-progress");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 9.425, sample 960 of 960",
+    "t = 9.42478, sample 960 of 960",
   );
 });
 

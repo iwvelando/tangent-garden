@@ -1,6 +1,5 @@
+import { readout as formatNumber } from "../number-format";
 import type { SpatialResult } from "./types";
-
-const short = (v: number) => Number(v.toPrecision(3)).toString();
 
 // What the rulings join, whether the surface closes, where it stops or
 // pinches, and whether it is developable.
@@ -14,7 +13,7 @@ export function ruledNote(result: SpatialResult): string[] {
   if (q.closed) out.push("Both threads close, so the surface closes.");
   else if (q.gap > 0)
     out.push(
-      `The curve closes but its partner ends ${short(q.gap)} from where it began, so the surface has a seam.`,
+      `The curve closes but its partner ends ${formatNumber(q.gap)} from where it began, so the surface has a seam.`,
     );
   else out.push("The curve is open, so the surface has two free ends.");
   if (q.outside > 0)
@@ -41,7 +40,7 @@ export function ruledNote(result: SpatialResult): string[] {
     out.push(
       q.developable
         ? "The surface is developable: det(a′, d, d′) vanishes, so its normal is constant along each ruling."
-        : `The surface is not developable: its normal turns along the rulings (largest scale-free det(a′, d, d′) ≈ ${short(q.deviation)}).`,
+        : `The surface is not developable: its normal turns along the rulings (largest scale-free det(a′, d, d′) ≈ ${formatNumber(q.deviation)}).`,
     );
   return out;
 }

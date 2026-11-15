@@ -1,3 +1,4 @@
+import { readout as formatNumber, count as formatCount } from "./number-format";
 // A 2D camera path: the drawing's camera flown through key views, an
 // animation of the camera alone with the study fixed. The list of views and
 // the timing are shared with the 3D notebook (key-views.ts); this module says
@@ -54,7 +55,7 @@ export const planarPathHelp = {
   ),
   keys: tiered(
     `Up to ${maxKeys} views. Add the drawing's view; to adjust one, show it, change the drawing, and set it again.`,
-    `Leg times move with their view; a view that becomes the first loses its own. Views zoom up to ${plainZoom}×, or ${viewZoom.toLocaleString("en-US")}× in a study refined to its view.`,
+    `Leg times move with their view; a view that becomes the first loses its own. Views zoom up to ${plainZoom}×, or ${formatCount(viewZoom)}× in a study refined to its view.`,
   ),
 };
 
@@ -142,7 +143,7 @@ export function planarPathView(
 
 // A view's camera in words, for its hint.
 export const describeKey = (key: PlanarKeyView) =>
-  `zoom ${Number(key.zoom.toPrecision(4))}×, centered at (${Number(key.x.toPrecision(6))}, ${Number(key.y.toPrecision(6))})`;
+  `zoom ${formatNumber(key.zoom)}×, centered at (${formatNumber(key.x)}, ${formatNumber(key.y)})`;
 
 // A piece of a flight: a stretch of progress, [from, to), whose zoomed-in
 // frames are all drawn from one refinement, to the area they show and as

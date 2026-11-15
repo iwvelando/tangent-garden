@@ -88,7 +88,7 @@ test("a closed loop shows its seam, or distributes the correction, and Frenet is
   await ready(page);
   await choosePreset(page, seam);
   await settled(page);
-  await expect(note(page)).toContainText("returns turned by −156.6°");
+  await expect(note(page)).toContainText("returns turned by −156.619°");
   await expect(note(page)).toContainText("The seam is left visible");
   const exposed = await pixels(page);
   const box = page.getByRole("checkbox", { name: "Seam", exact: true });
@@ -99,7 +99,7 @@ test("a closed loop shows its seam, or distributes the correction, and Frenet is
     .getByLabel("Closed-loop seam", { exact: true })
     .selectOption("distribute");
   await settled(page);
-  await expect(note(page)).toContainText("156.6° of twist is spread");
+  await expect(note(page)).toContainText("156.619° of twist is spread");
   expect(await pixels(page)).not.toBe(exposed);
   // Half a turn of twist cannot close, and the seam says so.
   await field(page, "Twist (turns)").fill("1/2");

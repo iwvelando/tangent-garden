@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 // Seamless loops in the 3D notebook: which animations can loop, the words
 // that explain repeating and pacing, and the test a loop must pass before it
 // plays. A loop joins the motion's end to its start, so it is seamless only
@@ -72,7 +73,7 @@ export function loopGap(
   if (geometry === "shading")
     return `${lead} the drawing at the end is shaded differently from the drawing at the start.${advice}`;
   if (geometry > 0)
-    return `${lead} the drawing at the end lies up to ${geometry.toPrecision(2)} of the study's radius from the drawing at the start.${advice}`;
+    return `${lead} the drawing at the end lies up to ${formatNumber(geometry)} of the study's radius from the drawing at the start.${advice}`;
   const probe = (v: AnimationView) =>
     v.probe === undefined
       ? []

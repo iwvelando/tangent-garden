@@ -4,6 +4,7 @@ import { choosePreset, exportImage, open, openAnimation } from "./helpers";
 import { probe, decodeVideo, frameDifference } from "./video";
 import { distanceToStar, tip } from "./star";
 import { presets } from "../web/presets";
+import { readout } from "../web/number-format";
 
 // Flying the 2D camera through key views (planar-path.ts), through the real
 // notebook: views taken from the drawing and shown again, the flight at and
@@ -289,7 +290,7 @@ test("views are taken from the drawing, set again and removed, and a path refuse
   const drawn = await camera(page);
   await button(page, "+ Add the drawing's view").click();
   await expect(page.getByLabel("View 3 name")).toBeVisible();
-  const zoom = Number((drawn.scale / fit.scale).toPrecision(4));
+  const zoom = readout(drawn.scale / fit.scale);
   await expect(page.getByText(`zoom ${zoom}×`)).toBeVisible();
   // Shown again, it is the drawing it was taken from.
   await button(page, "Show view 1").click();

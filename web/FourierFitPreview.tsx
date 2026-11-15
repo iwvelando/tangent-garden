@@ -1,3 +1,4 @@
+import { readout as formatNumber, count as formatCount } from "./number-format";
 import {
   useEffect,
   useId,
@@ -96,7 +97,7 @@ function PaneZoom({
   return (
     <div className="fit-pane-zoom" role="group" aria-label={`${title} view`}>
       <span className="fit-zoom-readout" data-testid={`${noun}-zoom`}>
-        {view.camera.zoom.toFixed(1)}×
+        {formatNumber(view.camera.zoom)}×
       </span>
       <SteadyButton
         aria-label={`Zoom in on ${noun}`}
@@ -873,7 +874,7 @@ export function FourierFitPreview({
             <HelpText help={outlineViewHelp}>{fitOutlineViewHelp}</HelpText>
           </div>
           <p className="note">
-            {visiblePoints.length.toLocaleString("en-US")} / 4,096 points ·{" "}
+            {formatCount(visiblePoints.length)} / 4,096 points ·{" "}
             {imported
               ? state.outline?.joined
                 ? "Closed by a straight segment · original model units"
@@ -891,10 +892,10 @@ export function FourierFitPreview({
           {state.outline && (
             <p className="note" data-testid="source-sampling">
               Original sampled chord tolerance{" "}
-              {state.outline.tolerance.toPrecision(4)} model units ·{" "}
-              {state.outline.evaluations.toLocaleString("en-US")} evaluations.
-              Arc-length fitting reparameterizes the source; sampling is an
-              approximation, separate from the fit residuals.
+              {formatNumber(state.outline.tolerance)} model units ·{" "}
+              {formatCount(state.outline.evaluations)} evaluations. Arc-length
+              fitting reparameterizes the source; sampling is an approximation,
+              separate from the fit residuals.
               {state.editing?.changed &&
                 " Corrections edit the polygon; this tolerance applies only to the original."}
             </p>
@@ -1050,8 +1051,8 @@ export function FourierFitPreview({
           </label>
           {state.fit && (
             <p className="note" data-testid="fit-residuals">
-              Sample RMS {state.fit.rms.toPrecision(4)} · maximum{" "}
-              {state.fit.maxResidual.toPrecision(4)} model units, at 1,024
+              Sample RMS {formatNumber(state.fit.rms)} · maximum{" "}
+              {formatNumber(state.fit.maxResidual)} model units, at 1,024
               arc-length samples
               {state.fitEdited ? " of the edited outline" : ""}.
             </p>

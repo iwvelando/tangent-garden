@@ -4,6 +4,7 @@ import {
   chooseColorScheme,
   chooseNotebook,
   choosePreset,
+  displayedNumber,
   exportImage,
   openShapeExport,
 } from "./helpers";
@@ -1122,3 +1123,39 @@ for (const preset of ["A cube beyond a cube", name])
       /style="[^"]*background(?:-color)?: ?(#0b1517|rgb\(11, 21, 23\))/,
     );
   });
+
+test("the base point's coordinates keep their columns and read zero where they are zero", async ({
+  page,
+}) => {
+  await page.goto("/?study=4d");
+  await settle(page);
+  await choosePreset(page, { label: name });
+  await settle(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const base = () =>
+    page
+      .locator(".lift-readout span")
+      .filter({ hasText: /^Base point [xyz]:/ })
+      .locator("b")
+      .allTextContents();
+  const seen: string[][] = [];
+  for (const progress of ["0.25", "0.5", "0.75"]) {
+    await page
+      .getByRole("slider", { name: "Animation progress" })
+      .fill(progress);
+    await settle(page);
+    const values = await base();
+    seen.push(values);
+    // One sign column, one integer column and five decimals, every frame.
+    for (const value of values) expect(value).toMatch(/^[\u2007−]\d\.\d{5}$/);
+    // Independent: the base point lies on the unit sphere.
+    expect(
+      Math.hypot(...values.map((value) => displayedNumber(value))),
+    ).toBeCloseTo(1, 4);
+  }
+  // The moving base point crosses a coordinate plane in these frames.
+  expect(seen.flat()).toContain("\u20070.00000");
+});

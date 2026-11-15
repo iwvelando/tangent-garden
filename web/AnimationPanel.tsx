@@ -1,3 +1,11 @@
+import {
+  count as formatCount,
+  elapsed,
+  liveReadout,
+  mebibytes,
+  progressPercent,
+  readout as formatNumber,
+} from "./number-format";
 import { atlasSharedFrame } from "./atlas-framing";
 import {
   defaultFamilyAnimation,
@@ -935,19 +943,19 @@ export function AnimationPanel({
       );
     else if (view.phrase)
       setLive(
-        `${view.phrase.phase} · ${targetLabel(s.phrase!.target)} = ${targetValue(view.frame.config, s.phrase!.target, view.length).toPrecision(6)}`,
+        `${view.phrase.phase} · ${targetLabel(s.phrase!.target)} = ${liveReadout(view.phrase.value, view.phrase.range ?? [view.phrase.value, view.phrase.value])}`,
       );
     else if (s.mode === "reveal" && view.frame.result.attractor)
       setLive(
-        `Accumulated iterates = ${view.frame.result.attractor.accumulated.toLocaleString("en-US")}`,
+        `Accumulated iterates = ${formatCount(view.frame.result.attractor.accumulated)}`,
       );
     else if (s.mode === "trace")
       setLive(
-        `Optical path τ = ${(view.progress * s.timeline!.total).toPrecision(4)} · ${view.frame.result.derived.filter((q) => q).length.toLocaleString("en-US")} caustic points reached`,
+        `Optical path τ = ${liveReadout(view.progress * s.timeline!.total, [0, s.timeline!.total])} · ${formatCount(view.frame.result.derived.filter((q) => q).length)} caustic points reached`,
       );
     else if (s.mode === "reveal")
       setLive(
-        `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`,
+        `t = ${liveReadout(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress, [s.original.config.curve.min, s.original.config.curve.max])}`,
       );
     else if (s.mode === "probe") setLive(probeWhere(view));
     else if (s.mode === "path") setLive(pathLeg(s.path!, view.progress));
@@ -956,7 +964,7 @@ export function AnimationPanel({
         [
           ...s.tracks.map(
             (t) =>
-              `${targetLabel(t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
+              `${targetLabel(t.target)} = ${integerTargets.includes(t.target) ? formatCount(targetValue(view.frame.config, t.target, view.length)) : liveReadout(targetValue(view.frame.config, t.target, view.length), [t.from, t.to])}`,
           ),
           // A probe that moves as the parameters vary says where it stands.
           ...(s.probe && s.motion !== "stays" && view.probe !== undefined
@@ -968,7 +976,7 @@ export function AnimationPanel({
   // Where the probe stands in a frame, by its parameter.
   function probeWhere(view: AnimationView) {
     return view.probe
-      ? `Probe at t = ${Number(probeReadout(view.probe).t.toPrecision(6))}`
+      ? `Probe at t = ${formatNumber(probeReadout(view.probe).t)}`
       : "";
   }
   function fail(reason: unknown, what = "Animation") {
@@ -1424,9 +1432,7 @@ export function AnimationPanel({
       exportAbort.current = null;
       session.current = null;
       changeStatus("idle");
-      setExportNotice(
-        `Saved ${text.name} · ${(blob.size / (1024 * 1024)).toFixed(1)} MiB`,
-      );
+      setExportNotice(`Saved ${text.name} · ${mebibytes(blob.size)}`);
       return;
     }
     const firstView = await sample(s, 0);
@@ -2062,7 +2068,7 @@ export function AnimationPanel({
             <div className="timeline">
               <Field
                 label="Animation progress"
-                value={`${Math.round(progress * 100)}%`}
+                value={progressPercent(progress)}
               >
                 <ProgressSlider
                   progress={progress}
@@ -2083,7 +2089,7 @@ export function AnimationPanel({
                         ? "Paused"
                         : status === "preparing"
                           ? "Preparing"
-                          : `${(progress * duration).toFixed(1)} / ${duration} s`}
+                          : elapsed(progress * duration, duration)}
               </div>
               {!preview && (mode !== "phrase" || status === "exporting") && (
                 <AnimationValues text={live} />

@@ -1,6 +1,7 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset } from "./helpers";
+import { choosePreset, displayedNumber } from "./helpers";
 import { helpText } from "../web/help";
 import {
   defaultProbe,
@@ -508,7 +509,6 @@ const pixels = (page: Page) =>
   page
     .locator("#spatial-artwork")
     .evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
-const short = (v: number) => String(Number(v.toPrecision(4)));
 const beads = { label: "Beads that lose their envelope" };
 
 // The beads: spheres of radius R = 0.7(1 + 0.8 sin 2t) on the x-axis, a
@@ -561,7 +561,7 @@ test("the beads' surface reads its principal curvatures at a bead and a neck", a
   await row.fill("270");
   await expect(row).toHaveAttribute(
     "aria-valuetext",
-    "t = 0.7854, row 270 of 480",
+    "t = 0.785398, row 270 of 480",
   );
   await expect(readout(page)).toHaveText(beadReadout(Math.PI / 4));
   const bead = await pixels(page);
@@ -572,7 +572,7 @@ test("the beads' surface reads its principal curvatures at a bead and a neck", a
   const turn = along(page, "Around");
   await expect(turn).toHaveAttribute(
     "aria-valuetext",
-    "θ − θ₀ = 3.142, column 12 of 23",
+    "θ − θ₀ = 3.14159, column 12 of 23",
   );
   await turn.fill("5");
   await expect(turn).toHaveAttribute(
@@ -592,7 +592,7 @@ test("the beads' surface reads its principal curvatures at a bead and a neck", a
   // Both stand at the same place along t: row 210 is sample 420.
   await expect(page.getByRole("slider", { name: "Point" })).toHaveAttribute(
     "aria-valuetext",
-    "t = -0.7854, sample 420 of 960",
+    "t = −0.785398, sample 420 of 960",
   );
   await page
     .getByRole("checkbox", { name: "Frame, curvature & torsion at a point" })
@@ -685,7 +685,7 @@ test("a torus patch reads κ₁ and κ₂ against the closed form", async ({
   const v = along(page, "Along v");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 108 of 216",
+    "u = 3.14159, row 108 of 216",
   );
   await expect(v).toHaveAttribute("aria-valuetext", "v = 0, column 12 of 24");
   const expected = (v: number) => {
@@ -702,7 +702,7 @@ test("a torus patch reads κ₁ and κ₂ against the closed form", async ({
   await v.fill("24");
   await expect(v).toHaveAttribute(
     "aria-valuetext",
-    "v = 1.047, column 24 of 24",
+    "v = 1.0472, column 24 of 24",
   );
   await expect(readout(page)).toHaveText(expected(Math.PI / 3));
   // Reversing the normal reverses the curvatures, and their order.
@@ -756,7 +756,7 @@ test("a torus's offset reads the offset torus through the Offset d control", asy
   await settled(page);
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 108 of 216",
+    "u = 3.14159, row 108 of 216",
   );
   await expect(readout(page)).toHaveText(torus(1.2));
   await expect(status).toHaveText("");
@@ -811,8 +811,10 @@ function spunEvolute(a: number, c: number, v: number) {
 async function sheetReadout(page: Page) {
   const [k1, k2, , kh] = await readout(page).allTextContents();
   return {
-    sizes: [Math.abs(Number(k1)), Math.abs(Number(k2))].sort((x, y) => x - y),
-    gauss: Number(kh.split(", ")[0]),
+    sizes: [k1, k2]
+      .map((t) => Math.abs(displayedNumber(t)))
+      .sort((x, y) => x - y),
+    gauss: displayedNumber(kh.split(", ")[0]),
   };
 }
 const fourFigures = (got: number, want: number) =>
@@ -836,7 +838,7 @@ test("a spheroid's second focal sheet reads its spun evolute's curvatures", asyn
   const status = page.getByTestId("probe-status");
   await expect(along(page, "Along v")).toHaveAttribute(
     "aria-valuetext",
-    "v = 0.5236, column 48 of 72",
+    "v = 0.523599, column 48 of 72",
   );
   const check = async (c: number, v: number) => {
     const want = spunEvolute(1.2, c, v),
@@ -855,7 +857,7 @@ test("a spheroid's second focal sheet reads its spun evolute's curvatures", asyn
   await along(page, "Along v").fill("60");
   await expect(along(page, "Along v")).toHaveAttribute(
     "aria-valuetext",
-    "v = 1.047, column 60 of 72",
+    "v = 1.0472, column 60 of 72",
   );
   await check(0.8, Math.PI / 3);
   // The rim over the equator is a cuspidal edge, and the poles have no
@@ -885,7 +887,7 @@ test("a spheroid's second focal sheet reads its spun evolute's curvatures", asyn
   await describe(page).selectOption("surface");
   await settled(page);
   const q = 1.44 * 0.25 + 0.64 * 0.75;
-  const [k1, k2] = (await readout(page).allTextContents()).map(Number);
+  const [k1, k2] = (await readout(page).allTextContents()).map(displayedNumber);
   fourFigures(k1, -0.8 / (1.2 * Math.sqrt(q)));
   fourFigures(k2, -(1.2 * 0.8) / q ** 1.5);
 });
@@ -919,7 +921,7 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
     Math.max(
       ...(await readout(page).allTextContents())
         .slice(0, 2)
-        .map((t) => Math.abs(Number(t))),
+        .map((t) => Math.abs(displayedNumber(t))),
     );
   // Played between samples, the probe glides over both edges: back and
   // forth at a steady pace, time 0.2 is progress 0.4, u = 3π/2, and time
@@ -939,7 +941,7 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
   }
   await progress.fill("0.198");
   await expect(stage(page)).toHaveAttribute("data-time", "0.198");
-  await expect(u).toHaveAttribute("aria-valuetext", "u = 4.7");
+  await expect(u).toHaveAttribute("aria-valuetext", "u = 4.69982");
   await expect(u).toHaveValue("0.396");
   await expect(u).toBeDisabled();
   await expect(status).toHaveText(
@@ -953,7 +955,7 @@ test("the probe rides an ellipsoid's focal sheet over its cuspidal edges", async
   await settled(page);
   await expect(along(page, "Along v")).toHaveAttribute(
     "aria-valuetext",
-    "v = 0.3927, column 60 of 96",
+    "v = 0.392699, column 60 of 96",
   );
   await u.fill("20");
   await expect(status).toHaveText("");
@@ -1027,7 +1029,7 @@ test("an ellipsoid's parallel surface keeps the ellipsoid's centers", async ({
   await expect(surfaceSwitch(page)).toBeChecked();
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 4.712, row 32 of 80",
+    "u = 4.71239, row 32 of 80",
   );
   await expect(along(page, "Along v")).toHaveAttribute(
     "aria-valuetext",
@@ -1038,7 +1040,9 @@ test("an ellipsoid's parallel surface keeps the ellipsoid's centers", async ({
     `${short(-2.25 - d)}, ${short(-0.49 - d)}`,
   );
   const radii = async () =>
-    (await readout(page).nth(2).textContent())!.split(", ").map(Number);
+    (await readout(page).nth(2).textContent())!
+      .split(", ")
+      .map(displayedNumber);
   for (const column of ["40", "20", "70"]) {
     await along(page, "Along v").fill(column);
     await describe(page).selectOption("surface");
@@ -1095,11 +1099,11 @@ test("still exports record the surface probe; a link carries it", async ({
   await expect(surfaceSwitch(other)).toBeChecked();
   await expect(along(other, "Along t")).toHaveAttribute(
     "aria-valuetext",
-    "t = 0.7854, row 270 of 480",
+    "t = 0.785398, row 270 of 480",
   );
   await expect(along(other, "Around")).toHaveAttribute(
     "aria-valuetext",
-    "θ − θ₀ = 1.571, column 6 of 23",
+    "θ − θ₀ = 1.5708, column 6 of 23",
   );
   await expect(readout(other)).toHaveText(beadReadout(Math.PI / 4));
   await context.close();
@@ -1135,15 +1139,15 @@ test("the surface probe moves along t as an animation and returns on Stop", asyn
   await seek("0");
   await expect(along(page, "Along t")).toHaveAttribute(
     "aria-valuetext",
-    "t = -6.283, row 0 of 480",
+    "t = −6.28319, row 0 of 480",
   );
   await expect(page.locator(".animation-values")).toHaveText(
-    "Probe at t = -6.28319, θ − θ₀ = 3.14159",
+    "Probe at t = −6.28319, θ − θ₀ = 3.14159",
   );
   await seek("1");
   await expect(along(page, "Along t")).toHaveAttribute(
     "aria-valuetext",
-    "t = 6.283, row 480 of 480",
+    "t = 6.28319, row 480 of 480",
   );
   // Progress 0.562 is row 269.76 of 480: the nearest is 270, t = π/4.
   await seek("0.562");
@@ -1153,7 +1157,7 @@ test("the surface probe moves along t as an animation and returns on Stop", asyn
   await expect(along(page, "Along t")).toBeEnabled();
   await expect(along(page, "Along t")).toHaveAttribute(
     "aria-valuetext",
-    "t = 0.7854, row 270 of 480",
+    "t = 0.785398, row 270 of 480",
   );
   expect(await pixels(page)).toBe(study);
 });
@@ -1178,15 +1182,15 @@ const seam = { label: "The seam of a carried frame" };
 const band = { label: "A band around the trefoil" };
 const halfTurns = { label: "Chords of a rising helix" };
 const gauss = async (page: Page) =>
-  Number((await readout(page).nth(3).textContent())!.split(", ")[0]);
+  displayedNumber((await readout(page).nth(3).textContent())!.split(", ")[0]);
 // The readout as numbers: both curvatures, K and H. A custom curve's r‴ is
 // differenced, so curvatures that need it hold to about 5·10⁻⁵ inside the
 // domain and less at its ends, and the readout's fourth digit can turn.
 async function numbers(page: Page) {
   await expect(readout(page).first()).not.toHaveText("—");
   const [k0, k1, , kh] = await readout(page).allTextContents();
-  const [K, H] = kh.split(", ").map(Number);
-  return { k0: Number(k0), k1: Number(k1), K, H };
+  const [K, H] = kh.split(", ").map(displayedNumber);
+  return { k0: displayedNumber(k0), k1: displayedNumber(k1), K, H };
 }
 const within = (got: number, want: number, tol = 1e-3) =>
   expect(Math.abs(got - want)).toBeLessThanOrEqual(tol * Math.abs(want));
@@ -1223,7 +1227,13 @@ test("a helix's tangent ribbon reads τ/(κ|u|) across its rulings and K = 0", a
     "aria-valuetext",
     "u = 0.125, column 12 of 23",
   );
-  await expect(readout(page).nth(2)).toHaveText("∞, 0.75");
+  // The finite radius, 3/4, is differenced: it reads 0.75 to about 1e-5.
+  await expect(readout(page).nth(2)).toHaveText(/^∞, 0\.75/);
+  within(
+    displayedNumber((await readout(page).nth(2).textContent())!.split(", ")[1]),
+    0.75,
+    1e-4,
+  );
   let r = await numbers(page);
   expect([r.k0, r.K]).toEqual([0, 0]);
   within(r.k1, 4 / 3);
@@ -1236,7 +1246,7 @@ test("a helix's tangent ribbon reads τ/(κ|u|) across its rulings and K = 0", a
   await across.fill("0");
   await expect(across).toHaveAttribute(
     "aria-valuetext",
-    "u = -1.5, column 0 of 23",
+    "u = −1.5, column 0 of 23",
   );
   r = await numbers(page);
   expect([r.k0, r.K]).toEqual([0, 0]);
@@ -1245,10 +1255,17 @@ test("a helix's tangent ribbon reads τ/(κ|u|) across its rulings and K = 0", a
   // The same along t: the helix is homogeneous.
   await along(page, "Along t").fill("90");
   within((await numbers(page)).k1, 1 / 9);
-  await expect(page.locator(".probe-plot figcaption")).toHaveText([
+  // Differenced, the plotted 1/9 holds to about 1e-5 at six figures.
+  const plotted = page.locator(".probe-plot figcaption");
+  await expect(plotted).toHaveText([
     "κ along the ruling along t: constant at 0",
-    `κ across it along t: constant at ${short(1 / 9)}`,
+    /^κ across it along t: constant at 0\.1111\d*$/,
   ]);
+  within(
+    displayedNumber((await plotted.nth(1).textContent())!.split(" at ")[1]),
+    1 / 9,
+    1e-4,
+  );
   await expect(page.locator(".probe-legend li")).toHaveText([
     "Normal",
     "κ along the ruling: direction, circle & center",
@@ -1364,7 +1381,7 @@ test("half-turn chords of a helix cross its axis with K = −9", async ({
   );
   for (const row of ["100", "240"]) {
     await along(page, "Along t").fill(row);
-    await expect(readout(page).nth(3)).toHaveText(`-9, ${short(-Math.PI / 4)}`);
+    await expect(readout(page).nth(3)).toHaveText(`−9, ${short(-Math.PI / 4)}`);
   }
   // A ruled surface is never positively curved.
   for (const column of ["0", "6", "18", "24"]) {
@@ -1423,7 +1440,7 @@ test("a tangent ribbon's probe moves along t, returns on Stop, and travels in a 
   await expect(describe(other)).toHaveValue("surface");
   await expect(along(other, "Across the ruling")).toHaveAttribute(
     "aria-valuetext",
-    "u = -1.125, column 3 of 23",
+    "u = −1.125, column 3 of 23",
   );
   within((await numbers(other)).k1, 1 / 6.75);
   await context.close();
@@ -1946,11 +1963,11 @@ test("a spherical bowl's light reads Coddington's foci; its mirror is umbilic", 
   await settled(page);
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 4.712, row 75 of 150",
+    "u = 4.71239, row 75 of 150",
   );
   await expect(along(page, "Along v")).toHaveAttribute(
     "aria-valuetext",
-    "v = -0.9599, column 24 of 48",
+    "v = −0.959931, column 24 of 48",
   );
   await expect(readout(page)).toHaveText(coddington(35));
   await expect(page.getByTestId("probe-status")).toHaveText("");
@@ -1980,10 +1997,10 @@ test("a spherical bowl's light reads Coddington's foci; its mirror is umbilic", 
   await settled(page);
   await expect(surfaceSwitch(page)).toBeChecked();
   await expect(readout(page)).toHaveText([
-    "0.6667",
-    "0.6667",
+    "0.666667",
+    "0.666667",
     "1.5, 1.5",
-    "0.4444, 0.6667",
+    "0.444444, 0.666667",
   ]);
   await expect(page.getByTestId("probe-status")).toHaveText(
     "An umbilic: every direction is principal, so none is drawn.",
@@ -2122,7 +2139,7 @@ test("the light probe moves along the mirror as an animation and returns on Stop
   await seek("0");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.142, row 0 of 150",
+    "u = 3.14159, row 0 of 150",
   );
   // The bowl is a surface of revolution under axial light: every row reads
   // the same at its column.
@@ -2130,19 +2147,19 @@ test("the light probe moves along the mirror as an animation and returns on Stop
   await seek("1");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 6.283, row 150 of 150",
+    "u = 6.28319, row 150 of 150",
   );
   await expect(readout(page)).toHaveText(coddington(175 / 3));
   await seek("0.25");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 3.937, row 38 of 150",
+    "u = 3.93746, row 38 of 150",
   );
   await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(stage(page)).not.toHaveAttribute("data-progress");
   await expect(along(page, "Along u")).toHaveAttribute(
     "aria-valuetext",
-    "u = 4.712, row 75 of 150",
+    "u = 4.71239, row 75 of 150",
   );
   expect(await pixels(page)).toBe(study);
 });

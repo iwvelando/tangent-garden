@@ -1,4 +1,11 @@
 import {
+  readout as formatNumber,
+  liveReadout,
+  type ReadoutRange,
+  count as formatCount,
+  withoutResidue,
+} from "../number-format";
+import {
   rotationPair,
   windowPair,
   eyePair,
@@ -255,8 +262,12 @@ export type ObjectDescriptor = {
   spreadHelp: Help<string>;
   legend: "directions" | "sections" | "threads" | "latitudes";
   // Number, level and suffix columns of an indexed section or latitude key.
-  sectionKey?: (s: Section, index: number) => readonly [string, string, string];
-  sectionDetail: (section: Section) => string;
+  sectionKey?: (
+    s: Section,
+    index: number,
+    level?: string,
+  ) => readonly [string, string, string];
+  sectionDetail: (section: Section, range?: ReadoutRange) => string;
   diagnostics: (result: Result) => string;
   title: (config: Config) => string;
   limitations: string;
@@ -279,11 +290,11 @@ export const defaultConfig: Config = {
   samples: 64,
   clip: 4,
 };
-export function curvedSectionDetail(s: Section): string {
-  return `h = ${s.level.toPrecision(5).replace("-", "−")} · ${s.dimension === -1 ? "Empty section" : s.dimension === 0 ? "Point contact" : s.kind === "core-circle" ? "Core circle · section dimension 1" : `Solid section · dimension 3 · boundary radius ${(s.radius ?? 0).toPrecision(5)}`}`;
+export function curvedSectionDetail(s: Section, range?: ReadoutRange): string {
+  return `h = ${range ? liveReadout(s.level, range) : formatNumber(s.level)} · ${s.dimension === -1 ? "Empty section" : s.dimension === 0 ? "Point contact" : s.kind === "core-circle" ? "Core circle · section dimension 1" : `Solid section · dimension 3 · boundary radius ${formatNumber(s.radius ?? 0)}`}`;
 }
-function tesseractSectionDetail(s: Section): string {
-  return `h = ${s.level.toFixed(3)} · ${s.dimension === -1 ? "Empty section" : s.dimension === 0 ? "Point contact" : s.dimension === 1 ? "Line contact" : `${s.vertices} vertices · ${s.edges} edges · ${s.faces} faces`}`;
+function tesseractSectionDetail(s: Section, range?: ReadoutRange): string {
+  return `h = ${range ? liveReadout(s.level, range) : formatNumber(s.level)} · ${s.dimension === -1 ? "Empty section" : s.dimension === 0 ? "Point contact" : s.dimension === 1 ? "Line contact" : `${s.vertices} vertices · ${s.edges} edges · ${s.faces} faces`}`;
 }
 function diagnostics(noun: string, detail: (s: Section) => string) {
   return (result: Result): string =>
@@ -320,12 +331,8 @@ const curvedCommon = {
   constructionNumber: "02",
   legend: "sections" as const,
   sectionDetail: curvedSectionDetail,
-  sectionKey: (s: Section, i: number) =>
-    [
-      `${i + 1}: h = `,
-      s.level.toPrecision(3).replace("-", "−"),
-      s.level < 0 ? " (dashed)" : " (solid)",
-    ] as const,
+  sectionKey: (s: Section, i: number, level = formatNumber(s.level)) =>
+    [`${i + 1}: h = `, level, s.level < 0 ? " (dashed)" : " (solid)"] as const,
   familyPassage: true,
   motion: "slice" as const,
   passageHelp:
@@ -364,16 +371,19 @@ type Correspondence = NonNullable<
 // A dual coordinate, a whole number or a half.
 const rational = (n: number) =>
   (n < 0 ? "−" : "") + (Math.abs(n) === 0.5 ? "½" : String(Math.abs(n)));
-const signed = (n: number, digits: number) =>
-  n.toFixed(digits).replace("-", "−");
 function correspondenceReadouts(c: Correspondence) {
   return [
     { label: "Selected fiber", value: `${c.selected + 1} of ${c.fibers}` },
-    { label: "Moving point δ", value: c.parameter.toPrecision(5) },
-    // One coordinate each, so every value fits its readout column.
+    {
+      label: "Moving point δ",
+      value: liveReadout(c.parameter, [0, 2 * Math.PI]),
+    },
+    // One coordinate each, so every value fits its readout column. The
+    // point moves on the unit sphere: live columns, and a coordinate plane
+    // crossed in passing reads zero.
     ...c.base.map((n, i) => ({
       label: `Base point ${"xyz"[i]}`,
-      value: signed(n, 4),
+      value: liveReadout(withoutResidue(n), [-1, 1]),
     })),
   ];
 }
@@ -530,14 +540,20 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         ? [
             {
               label: "Missing radius",
-              value: r.lift.missingRadius.toPrecision(5),
+              value: formatNumber(r.lift.missingRadius),
             },
-            { label: "Slab half-thickness ε", value: String(r.lift.thickness) },
+            {
+              label: "Slab half-thickness ε",
+              value: formatNumber(r.lift.thickness),
+            },
             {
               label: "Present intervals",
-              value: String(r.lift.visibleIntervals),
+              value: formatCount(r.lift.visibleIntervals),
             },
-            { label: "Absent sources", value: String(r.lift.absentSources) },
+            {
+              label: "Absent sources",
+              value: formatCount(r.lift.absentSources),
+            },
           ]
         : [],
     viewLabel: "View operation",
@@ -814,9 +830,9 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     readouts: (r) =>
       r.bypass
         ? [
-            { label: "Current w", value: r.bypass.current[3].toPrecision(5) },
+            { label: "Current w", value: formatNumber(r.bypass.current[3]) },
             { label: "Route state", value: r.bypass.state },
-            { label: "4D clearance", value: r.bypass.clearance.toPrecision(5) },
+            { label: "4D clearance", value: formatNumber(r.bypass.clearance) },
           ]
         : [],
     comparisonLabel: "Same shadow, different points",
@@ -827,18 +843,21 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         ? [
             {
               label: "q₁: w",
-              value: r.markers
-                .find((m) => m.id === "bypass/q1")!
-                .fourPoint[3].toPrecision(5),
+              value: formatNumber(
+                r.markers.find((m) => m.id === "bypass/q1")!.fourPoint[3],
+              ),
             },
             {
               label: "q₂: w",
-              value: r.markers
-                .find((m) => m.id === "bypass/q2")!
-                .fourPoint[3].toPrecision(5),
+              value: formatNumber(
+                r.markers.find((m) => m.id === "bypass/q2")!.fourPoint[3],
+              ),
             },
-            { label: "XYZ separation", value: String(r.bypass.shadowDistance) },
-            { label: "4D separation", value: r.bypass.distance.toPrecision(5) },
+            {
+              label: "XYZ separation",
+              value: formatNumber(r.bypass.shadowDistance),
+            },
+            { label: "4D separation", value: formatNumber(r.bypass.distance) },
           ]
         : [],
     colorNote: (c) => {
@@ -944,12 +963,12 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     spreadHelp: "",
     sectionDetail: () => "",
     legend: "latitudes",
-    sectionKey: (s, i) =>
+    sectionKey: (s, i, level = formatNumber(s.level)) =>
       s.kind === "flower"
         ? ["1: ", "Spherical flower", ""]
         : ([
             `${i + 1}: α = `,
-            s.level.toPrecision(3),
+            level,
             s.kind === "circle" ? " (one circle)" : " (torus)",
           ] as const),
     countFields: (c) =>
@@ -1141,17 +1160,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
               : []),
             {
               label: "Complete circles",
-              value: String(r.weave.completeCircles),
+              value: formatCount(r.weave.completeCircles),
             },
-            { label: "Open arcs", value: String(r.weave.retainedArcs) },
-            { label: "Window contacts", value: String(r.weave.contacts) },
+            { label: "Open arcs", value: formatCount(r.weave.retainedArcs) },
+            { label: "Window contacts", value: formatCount(r.weave.contacts) },
             {
               label: "Outside the window",
-              value: String(r.weave.absentSources),
+              value: formatCount(r.weave.absentSources),
             },
             {
               label: "Retained where w ≤",
-              value: r.weave.window.toPrecision(5),
+              value: formatNumber(r.weave.window),
             },
           ]
         : [],
@@ -1397,11 +1416,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ? [
               {
                 label: "Shortest shadow edge",
-                value: p.shadowEdges[0].toFixed(3),
+                value: formatNumber(p.shadowEdges[0]),
               },
               {
                 label: "Longest shadow edge",
-                value: p.shadowEdges[1].toFixed(3),
+                value: formatNumber(p.shadowEdges[1]),
               },
               { label: "Cell edges in 4D", value: "√2 ≈ 1.414" },
             ]
@@ -1601,11 +1620,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ? [
               {
                 label: "Shortest shadow edge",
-                value: p.shadowEdges[0].toFixed(3),
+                value: formatNumber(p.shadowEdges[0]),
               },
               {
                 label: "Longest shadow edge",
-                value: p.shadowEdges[1].toFixed(3),
+                value: formatNumber(p.shadowEdges[1]),
               },
               { label: "Cube edges in 4D", value: "2" },
             ]
@@ -1767,17 +1786,26 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     // among the readouts.
     diagnostics: (r) =>
       r.root
-        ? `Two circuits of z, ${r.root.intervals.toLocaleString("en-US")} intervals over 0 ≤ t ≤ 4π. The bright trace is the last circuit behind the moving point.`
+        ? `Two circuits of z, ${formatCount(r.root.intervals)} intervals over 0 ≤ t ≤ 4π. The bright trace is the last circuit behind the moving point.`
         : "",
     readouts: (r) => {
       const d = r.root;
       if (!d) return [];
-      const n = (x: number) => signed(x, 4);
+      // z and w move within the norm bound: live columns, and an axis
+      // crossed at a quarter turn reads zero.
+      const n = (x: number) =>
+        liveReadout(withoutResidue(x, d.normBound), [
+          -d.normBound,
+          d.normBound,
+        ]);
       return [
-        { label: "Parameter t", value: d.parameter.toPrecision(5) },
+        {
+          label: "Parameter t",
+          value: liveReadout(d.parameter, [0, 4 * Math.PI]),
+        },
         {
           label: "Turns of z",
-          value: (d.parameter / (2 * Math.PI)).toFixed(3),
+          value: liveReadout(d.parameter / (2 * Math.PI), [0, 2]),
         },
         { label: "Circuit", value: `${d.circuit} of 2` },
         { label: "Re z", value: n(d.z[0]) },
@@ -1788,8 +1816,9 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           label: "w as a root of z",
           value: d.principal > 0 ? "+√z (principal)" : "−√z",
         },
-        { label: "Largest |w² − z|", value: d.residual.toExponential(1) },
-        { label: "Norm |(z, w)|", value: d.normBound.toPrecision(5) },
+        // A rounding-sized bound: two figures say all it means.
+        { label: "Largest |w² − z|", value: formatNumber(d.residual, 2) },
+        { label: "Norm |(z, w)|", value: formatNumber(d.normBound) },
       ];
     },
     colorNote: () =>

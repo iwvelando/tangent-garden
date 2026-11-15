@@ -2,6 +2,8 @@
 
 [Back to the project overview](../README.md)
 
+Readouts across the notebooks use clean significant digits, a mathematical minus (−), and scientific notation for small or large values; counts always group as en-US. Live parameter readouts keep fixed decimals for their playback range, with tabular digits. Formatting changes neither the computed geometry nor saved numerical values. Scalar fields accept a copied − in ordinary numbers and exponents, such as `−1e−7`; entered expressions remain exactly as typed.
+
 ## A guided journey
 
 Open **Browse notebook examples** in any notebook to choose a guided journey. Each stop has a short explanation and one control to try:

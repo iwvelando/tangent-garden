@@ -1,3 +1,8 @@
+import {
+  readout as formatNumber,
+  count as formatCount,
+  plural,
+} from "../number-format";
 import { tiered } from "../help";
 import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
@@ -330,22 +335,19 @@ export function hitCircle(
   return best;
 }
 
-const number = (v: number) =>
-  Number.isInteger(v) ? v.toLocaleString("en-US") : String(v);
 // A circle's number in the reader's terms: one-based breadth-first order.
-export const circleName = (i: number) => `Circle ${number(i + 1)}`;
-const radiusText = (r: number) =>
-  r >= 0.01 ? r.toPrecision(3) : r.toExponential(2);
+export const circleName = (i: number) => `Circle ${formatCount(i + 1)}`;
 const centerText = (r: GardenResult, i: number) =>
-  `(${r.x[i].toFixed(4)}, ${r.y[i].toFixed(4)})`;
-const signed = (v: number) => (v < 0 ? `(−${number(-v)})` : number(v));
+  `(${formatNumber(r.x[i])}, ${formatNumber(r.y[i])})`;
+const signed = (v: number) =>
+  v < 0 ? `(−${formatNumber(-v)})` : formatNumber(v);
 // One line describing a circle, for lists and buttons.
 export const describeCircle = (r: GardenResult, i: number) =>
-  `${circleName(i)} · curvature ${number(r.curvature[i])}`;
+  `${circleName(i)} · curvature ${formatNumber(r.curvature[i])}`;
 // The explanation shown beside the drawing for the selected circle.
 export function explain(r: GardenResult, i: number) {
   const b = r.curvature[i];
-  const facts = `Curvature ${number(b)} · radius ${radiusText(r.radius[i])} · center ${centerText(r, i)} · generation ${r.generation[i]}`;
+  const facts = `Curvature ${formatNumber(b)} · radius ${formatNumber(r.radius[i])} · center ${centerText(r, i)} · generation ${r.generation[i]}`;
   if (i === 0)
     return {
       facts,
@@ -361,7 +363,7 @@ export function explain(r: GardenResult, i: number) {
   const sum = r.curvature[j] + r.curvature[k] + r.curvature[l];
   return {
     facts,
-    text: `It fills the gap between ${circleName(j)}, ${circleName(k)} and ${circleName(l)}, tangent to all three. Descartes' theorem gives its curvature from theirs and from ${circleName(o)} on the gap's other side: 2 × (${[j, k, l].map((p) => signed(r.curvature[p])).join(" + ")}) − ${signed(r.curvature[o])} = ${number(2 * sum - r.curvature[o])}.`,
+    text: `It fills the gap between ${circleName(j)}, ${circleName(k)} and ${circleName(l)}, tangent to all three. Descartes' theorem gives its curvature from theirs and from ${circleName(o)} on the gap's other side: 2 × (${[j, k, l].map((p) => signed(r.curvature[p])).join(" + ")}) − ${signed(r.curvature[o])} = ${formatNumber(2 * sum - r.curvature[o])}.`,
   };
 }
 
@@ -376,14 +378,14 @@ export function cutoffSummary(r: GardenResult, q: GardenRequest, zoom = 1) {
   let smallest = Infinity;
   for (const v of r.radius) smallest = Math.min(smallest, v);
   const parts = [
-    `${number(n)} circles in generations 0–${deepest}; smallest radius ${radiusText(smallest)}.`,
+    `${formatCount(n)} circles in generations 0–${deepest}; smallest radius ${formatNumber(smallest)}.`,
   ];
-  const gaps = (n: number) => `${number(n)} ${n === 1 ? "gap" : "gaps"}`;
+  const gaps = (n: number) => plural(n, "gap");
   const cut = [
     r.omitted.radius &&
       (q.window
-        ? `${gaps(r.omitted.radius)} below this view's radius ${radiusText(q.minRadius)}`
-        : `${gaps(r.omitted.radius)} below the minimum radius ${q.minRadius}`),
+        ? `${gaps(r.omitted.radius)} below this view's radius ${formatNumber(q.minRadius)}`
+        : `${gaps(r.omitted.radius)} below the minimum radius ${formatNumber(q.minRadius)}`),
     r.omitted.depth && `${gaps(r.omitted.depth)} beyond depth ${q.depth}`,
     r.omitted.view && `${gaps(r.omitted.view)} outside the view`,
   ].filter(Boolean);
@@ -392,7 +394,7 @@ export function cutoffSummary(r: GardenResult, q: GardenRequest, zoom = 1) {
     // The smallest circles' radius on screen, in drawing units.
     const screen = q.minRadius * gardenScale * zoom;
     parts.push(
-      `Finer circles for this view reach ${screen.toFixed(2)} drawing units in radius${q.keep ? "; the selected circle and its generators are kept" : ""}.`,
+      `Finer circles for this view reach ${formatNumber(screen)} drawing units in radius${q.keep ? "; the selected circle and its generators are kept" : ""}.`,
     );
     if (r.omitted.depth)
       parts.push(
@@ -401,9 +403,9 @@ export function cutoffSummary(r: GardenResult, q: GardenRequest, zoom = 1) {
   }
   const stopped =
     r.stopped === "count"
-      ? `Stopped at the ${number(q.maxCircles)}-circle limit with ${number(r.pending)} configurations unexpanded, so the last generation is incomplete.`
+      ? `Stopped at the ${formatCount(q.maxCircles)}-circle limit with ${formatCount(r.pending)} configurations unexpanded, so the last generation is incomplete.`
       : r.stopped === "configurations"
-        ? `Stopped at the ${number(gardenLimits.configurations)}-gap work limit with ${number(r.pending)} configurations unexpanded, so the last generation is incomplete.`
+        ? `Stopped at the ${formatCount(gardenLimits.configurations)}-gap work limit with ${formatCount(r.pending)} configurations unexpanded, so the last generation is incomplete.`
         : "";
   return { text: parts.join(" "), stopped };
 }
@@ -418,8 +420,8 @@ export const gardenHelp = {
     "Each generation fills the gaps the previous one made. Near points of tangency, chains of circles shrink slowly, so depth can stop them before the minimum radius does.",
   ),
   maxCircles: tiered(
-    `Most circles kept, seeds included: 4–${number(gardenLimits.circles)}.`,
-    `Circles are generated breadth-first. Reaching this count stops generation, leaving the last generation incomplete; the summary says so. Generation also stops after examining ${number(gardenLimits.configurations)} gaps.`,
+    `Most circles kept, seeds included: 4–${formatCount(gardenLimits.circles)}.`,
+    `Circles are generated breadth-first. Reaching this count stops generation, leaving the last generation incomplete; the summary says so. Generation also stops after examining ${formatCount(gardenLimits.configurations)} gaps.`,
   ),
   presentation:
     "Show the whole packing, or only the selected circle and the three that generated it.",

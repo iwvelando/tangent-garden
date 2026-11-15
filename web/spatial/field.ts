@@ -1,6 +1,5 @@
+import { readout as formatNumber } from "../number-format";
 import type { SpatialFieldResult, Vec3 } from "./types";
-
-const time = (t: number) => String(Number(t.toPrecision(6)));
 
 // Where and why each trajectory that stopped early did, numbered from 1;
 // which seeds rest; and whether the field reads t. `carried` says whether a
@@ -16,16 +15,18 @@ export function fieldNote(
     if (reason === "escape" && t === min)
       return [`Seed ${n} is outside the escape sphere, so it has no path.`];
     if (reason === "escape")
-      return [`Trajectory ${n} leaves the escape sphere at t = ${time(t)}.`];
+      return [
+        `Trajectory ${n} leaves the escape sphere at t = ${formatNumber(t)}.`,
+      ];
     if (reason === "singular" && t === min)
       return [`The field is not finite at seed ${n}, so it has no path.`];
     if (reason === "singular")
       return [
-        `Trajectory ${n} stops at t = ${time(t)}, where the field stops being finite or changes too fast to follow.`,
+        `Trajectory ${n} stops at t = ${formatNumber(t)}, where the field stops being finite or changes too fast to follow.`,
       ];
     if (reason === "exhausted")
       return [
-        `Trajectory ${n} ran out of integration steps at t = ${time(t)}; a shorter interval needs fewer.`,
+        `Trajectory ${n} ran out of integration steps at t = ${formatNumber(t)}; a shorter interval needs fewer.`,
       ];
     return [];
   });

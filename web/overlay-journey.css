@@ -71,9 +71,11 @@
 .guided-overlay .playback .timeline .field {
   margin: 10px 0 4px;
 }
+/* Two lines: a step's live values wrap there on a phone, and every step
+   reserves the same height so the step navigation never moves. */
 .guided-overlay .playback .timeline > .note {
   margin: 0;
-  min-height: 3em;
+  min-height: 2lh;
 }
 .guided-overlay .playback .animation-values {
   display: none;

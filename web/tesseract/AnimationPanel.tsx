@@ -1,3 +1,4 @@
+import { elapsed, progressPercent } from "../number-format";
 import {
   MotionExportSettings,
   useMotionExport,
@@ -189,7 +190,7 @@ export function AnimationPanel(p: {
             <div className="timeline">
               <Field
                 label="Animation progress"
-                value={`${Math.round(p.progress * 100)}%`}
+                value={progressPercent(p.progress)}
               >
                 <ProgressSlider
                   progress={p.progress}
@@ -204,7 +205,7 @@ export function AnimationPanel(p: {
                     ? "Complete"
                     : !p.playing
                       ? "Paused"
-                      : `${(p.progress * p.duration).toFixed(1)} / ${p.duration} s`}
+                      : elapsed(p.progress * p.duration, p.duration)}
               </div>
               <p className="note playback-tip">
                 {p.exporting

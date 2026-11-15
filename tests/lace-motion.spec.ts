@@ -214,7 +214,7 @@ test("seeking draws the frozen patch moved by the path's isometry, and playback,
   const still = await markup(d);
   const unmoved = await corners(d);
   await expect(d.locator(".lace-motion-status")).toHaveText(
-    "0.0 / 10 s · offset 0.000, direction -0.224, rotation 0.000",
+    "0.0 / 10 s · offset 0.000000, direction −0.224399, rotation 0.00000",
   );
   // Forward, the turning point, the end and backward again: every tile
   // drawn where T(p) carries it, and the same tiles throughout.
@@ -229,14 +229,14 @@ test("seeking draws the frozen patch moved by the path's isometry, and playback,
   const middle = await corners(d);
   for (const p of middle) expect(Math.hypot(p.x, p.y)).toBeCloseTo(0.3007, 3);
   await expect(d.locator(".lace-motion-status")).toHaveText(
-    "5.0 / 10 s · offset 0.718, direction -0.224, rotation 0.000 · Paused",
+    "5.0 / 10 s · offset 0.718143, direction −0.224399, rotation 0.00000 · Paused",
   );
   await expect(d.locator(".garden-about")).toContainText(
-    "drawn at (0.0000, 0.0000) · hyperbolic distance 1.808 from the center tile and 0.000 from the disk's center · drawn 100% of a tile's size at the disk's center",
+    "drawn at (0, 0) · hyperbolic distance 1.8076 from the center tile and 0 from the disk's center · drawn 100% of a tile's size at the disk's center",
   );
   // The finite patch's edge nears the center on the far side: said so.
   await expect(d.locator(".lace-summary")).toContainText(
-    "Moved off center, it is complete only to radius 0.901 about the disk's center (hyperbolic distance 2.95); beyond, the tiling goes on but this finite patch stops.",
+    "Moved off center, it is complete only to radius 0.900501 about the disk's center (hyperbolic distance 2.94973); beyond, the tiling goes on but this finite patch stops.",
   );
   // The loop's end is its start: the very same drawing.
   await seek(d, "1");
@@ -386,7 +386,7 @@ test("the static isometry moves the drawing, refusals name their fields, and cen
   expectCorners(await corners(d), unmoved.map(isometry(start)));
   await expect(d.locator(".lace-summary")).toContainText("Moved off center");
   await expect(d.locator(".lace-motion-status")).toHaveText(
-    "0.0 / 10 s · offset 0.500, direction 1.571, rotation 0.300",
+    "0.0 / 10 s · offset 0.500000, direction 1.57080, rotation 0.300000",
   );
   // The motion starts from the static isometry.
   await seek(d, "0.25");

@@ -1,3 +1,4 @@
+import { count as formatCount } from "../number-format";
 // A camera path: the drawing's camera flown through key views, an animation
 // of the camera alone with the geometry fixed. This module holds the path's
 // fields, limits, words and rules, read by the animation panel, playback,
@@ -146,7 +147,7 @@ export const pathHelp = {
   ),
   keys: tiered(
     `Up to ${maxKeys} views. Add the drawing's view; to adjust one, show it, change the drawing, and set it again.`,
-    `Turns and leg time move with their view. A view that becomes the first, by moving or removal, loses them. Views zoom up to ${spatialPlainZoom}×, or ${viewZoom.toLocaleString("en-US")}× in a study refined to its view.`,
+    `Turns and leg time move with their view. A view that becomes the first, by moving or removal, loses them. Views zoom up to ${spatialPlainZoom}×, or ${formatCount(viewZoom)}× in a study refined to its view.`,
   ),
 };
 

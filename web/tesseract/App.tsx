@@ -1,3 +1,4 @@
+import { distinctReadouts } from "../number-format";
 import { Icon } from "../icons";
 import { AtlasContext } from "../AtlasContext";
 import type { JourneyVia } from "../JourneyContext";
@@ -64,6 +65,7 @@ import { Sampler } from "./sampler";
 import { tesseractPresets } from "./presets";
 import {
   motions,
+  passageExtent,
   sample,
   initialView,
   type Config,
@@ -626,6 +628,10 @@ export default function TesseractApp({
     : undefined;
   const curved = descriptor.legend === "sections";
   const indexed = curved || descriptor.legend === "latitudes";
+  const sectionLevels = distinctReadouts(
+    frame?.result.sections.map((section) => section.level) ?? [],
+    6,
+  );
   // What the drawing shows, by ink, and the drawn study's legend items.
   const drawn = frame ? drawnInks(frame.result, layers) : null;
   const drawnDescriptor = objects[(frame?.config ?? config).object];
@@ -809,7 +815,11 @@ export default function TesseractApp({
             layers.selectedSection ?? 0,
             frame!.result.sections.length - 1,
           ) + 1}{" "}
-          · {descriptor.sectionDetail(selected)}
+          ·{" "}
+          {descriptor.sectionDetail(selected, [
+            -passageExtent(config),
+            passageExtent(config),
+          ])}
         </p>
       ) : null}
       <p className="tesseract-diagnostics" role="status">
@@ -1453,7 +1463,7 @@ export default function TesseractApp({
                         // one too, while the layer that draws them is on.
                         (frame?.result.sections ?? []).map((s, i) => {
                           const [number, level, suffix] =
-                            descriptor.sectionKey!(s, i);
+                            descriptor.sectionKey!(s, i, sectionLevels[i]);
                           return {
                             key: s.id,
                             shown: layers.edges,

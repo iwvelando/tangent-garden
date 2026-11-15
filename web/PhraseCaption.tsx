@@ -1,3 +1,4 @@
+import { liveReadout } from "./number-format";
 import { targetLabel, type AnimationView } from "./animation";
 import type { PlotPalette } from "./palette";
 import { captionBand } from "./export-quality";
@@ -5,7 +6,7 @@ import { captionBand } from "./export-quality";
 type Presentation = NonNullable<AnimationView["phrase"]>;
 export const phraseCaptionText = (phrase: Presentation) => ({
   stage: phrase.phase,
-  parameter: `${targetLabel(phrase.target)} = ${phrase.value.toPrecision(6)}`,
+  parameter: `${targetLabel(phrase.target)} = ${liveReadout(phrase.value, phrase.range ?? [phrase.value, phrase.value])}`,
 });
 
 // Ordinary, non-announcing UI remains accessible when the optional visual
@@ -29,7 +30,8 @@ export function PhraseCaption({ phrase }: { phrase: Presentation }) {
 function wrapped(text: string, limit: number) {
   const lines: string[] = [];
   let line = "";
-  for (const word of text.split(/\s+/).filter(Boolean)) {
+  // Keep the figure spaces that reserve numeric columns through zero.
+  for (const word of text.split(/[^\S\u2007]+/).filter(Boolean)) {
     const letters = Array.from(word);
     if (line && Array.from(line).length + 1 + letters.length > limit) {
       lines.push(line);
@@ -73,6 +75,7 @@ export function SvgPhraseCaption({
           fontFamily="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
           fontSize={fontSize}
           fontWeight="400"
+          style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "pre" }}
           fill={dark ? "#91a4a9" : "#5f6d69"}
           stroke={palette.bg}
           strokeWidth="3"

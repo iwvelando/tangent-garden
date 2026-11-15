@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "./number-format";
 import { Field, HelpText, HelpToggle, useHelp } from "./Field";
 import { ProbePlot } from "./ProbePlot";
 import { probeColor } from "./probe";
@@ -15,10 +16,6 @@ import {
 } from "./planar-probe";
 import { refinesBetweenSamples, type Config, type Frame } from "./types";
 import { plural } from "./number-format";
-
-// Four significant figures: curvature is differenced numerically from the
-// curve's expressions to about 10⁻⁷ relative accuracy.
-const short = (v: number) => String(Number(v.toPrecision(4)));
 
 // The 2D probe's controls and readout. `frame` is the study's own result
 // with diagnostics, or null while they are computed. `at` is the probe it
@@ -118,7 +115,7 @@ export function PlanarProbePanel({
               )}
               <Field
                 label="Point"
-                value={`t = ${short(readout.t)}`}
+                value={`t = ${formatNumber(readout.t)}`}
                 className="probe-slider"
               >
                 {between ? (
@@ -133,7 +130,7 @@ export function PlanarProbePanel({
                         : probe.position
                     }
                     disabled={moving}
-                    aria-valuetext={`t = ${short(readout.t)}`}
+                    aria-valuetext={`t = ${formatNumber(readout.t)}`}
                     onChange={(e) => {
                       const position = e.target.valueAsNumber;
                       onProbe((p) => ({ ...p, position }));
@@ -147,7 +144,7 @@ export function PlanarProbePanel({
                     step={1}
                     value={at!.sample ?? Math.round(step)}
                     disabled={moving}
-                    aria-valuetext={`t = ${short(readout.t)}, sample ${at!.sample ?? Math.round(step)} of ${n}`}
+                    aria-valuetext={`t = ${formatNumber(readout.t)}, sample ${at!.sample ?? Math.round(step)} of ${n}`}
                     onChange={(e) => {
                       const position = e.target.valueAsNumber / n;
                       onProbe((p) => ({ ...p, position }));
@@ -164,21 +161,21 @@ export function PlanarProbePanel({
                       : "undefined: no point here"
                     : readout.flat
                       ? "0 (flat: no circle)"
-                      : `${short(readout.curvature)} (turning ${readout.curvature > 0 ? "left" : "right"})`}
+                      : `${formatNumber(readout.curvature)} (turning ${readout.curvature > 0 ? "left" : "right"})`}
                 </dd>
                 <dt>Radius 1/|κ|</dt>
                 <dd>
                   {readout.radius === null
                     ? "undefined"
                     : readout.infinite
-                      ? `${short(readout.radius)} (circle not drawn)`
-                      : short(readout.radius)}
+                      ? `${formatNumber(readout.radius)} (circle not drawn)`
+                      : formatNumber(readout.radius)}
                 </dd>
                 <dt>Arc length s</dt>
                 <dd>
                   {readout.length === null
                     ? "undefined"
-                    : short(readout.length)}
+                    : formatNumber(readout.length)}
                 </dd>
               </dl>
               {!probeStraight(frame!.result) && (

@@ -2840,7 +2840,7 @@ test("composite shell shows its intermediate point, shared-image points and crit
     near(await loomPoint(d, "image"), composite(z, 5), Math.exp(2.5)),
   ).toBe(true);
   const readout = d.locator(".loom-correspondence");
-  await expect(readout).toContainText("z⁵ = (2.4883, 0.0000) → w = (12.041");
+  await expect(readout).toContainText("z⁵ = (2.48832, 0) → w = (12.041, 0)");
   await expect(readout).toContainText("Regular map point");
   // The other source points with this image: four turns of z and the fifth
   // roots of 1.2⁵ + 2πik, k = −4…4 but 0, all with z's image.
@@ -2856,7 +2856,7 @@ test("composite shell shows its intermediate point, shared-image points and crit
   await d.getByLabel("Exact source parameter", { exact: true }).fill("pi");
   await expect.poll(() => loomPoint(d, "source")).toEqual({ x: 0, y: 0 });
   expect(await loomPoint(d, "image")).toEqual({ x: 1, y: 0 });
-  await expect(readout).toContainText("z⁵ = (0.0000, 0.0000) → w = (1.0000");
+  await expect(readout).toContainText("z⁵ = (0, 0) → w = (1, 0)");
   await expect(readout).toContainText("Critical point");
   await expect.poll(async () => (await translates(d)).length).toBe(40);
   const download = page.waitForEvent("download");
@@ -2884,7 +2884,7 @@ test("composite shell shows its intermediate point, shared-image points and crit
   await d.getByLabel("Complex map", { exact: true }).selectOption("exp-power");
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect.poll(async () => (await translates(d)).length).toBe(40);
-  await expect(readout).toContainText("z⁵ = (0.0000, 0.0000)");
+  await expect(readout).toContainText("z⁵ = (0, 0)");
 });
 
 test("changing the composite degree stops traversal and a copied link restores it", async ({
@@ -3100,15 +3100,15 @@ test("composite map motion grows a squared grid's fan into the web, and its map 
   expect(z).toEqual({ x: 1.25, y: -1.25 });
   expect(await loomPoint(d, "image")).toEqual({ x: 0, y: -3.125 });
   await expect(values).toContainText("s = 0.00000");
-  await expect(readout).toContainText("z² = (0.0000, -3.1250) → w = (0.0000");
+  await expect(readout).toContainText("z² = (0, −3.125) → w = (0, −3.125)");
   await progress.fill("0.5");
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect
     .poll(async () => near(await loomPoint(d, "image"), grown(z, 2, 0.5), 10))
     .toBe(true);
-  await expect(values).toContainText("s = 0.500000");
+  await expect(values).toContainText("s = 0.50000");
   // The intermediate point stays z², unscaled.
-  await expect(readout).toContainText("z² = (0.0000, -3.1250)");
+  await expect(readout).toContainText("z² = (0, −3.125)");
   await progress.fill("1");
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect
@@ -3275,7 +3275,7 @@ test("exponential map motion curls a strip from the identity into rings, and its
   await expect
     .poll(async () => near(await loomPoint(d, "image"), curled(z, 0.5), 10))
     .toBe(true);
-  await expect(values).toContainText("s = 0.500000");
+  await expect(values).toContainText("s = 0.50000");
   await progress.fill("1");
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect
@@ -3442,7 +3442,7 @@ test("power map motion folds circles from the identity into a flower and z⁶, a
   await expect
     .poll(async () => near(await loomPoint(d, "image"), folded(z, 0.5, 6)))
     .toBe(true);
-  await expect(values).toContainText("s = 0.500000");
+  await expect(values).toContainText("s = 0.50000");
   await progress.fill("1");
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect
@@ -4064,7 +4064,7 @@ test("general Möbius loom flows through the identity, follows edited coefficien
   await progress.fill("0.75");
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect.poll(() => at(0.5)).toBe(true);
-  await expect(d.locator(".animation-values")).toContainText("s = 0.500000");
+  await expect(d.locator(".animation-values")).toContainText("s = 0.50000");
   await progress.fill("1");
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect.poll(() => at(1)).toBe(true);
@@ -4327,7 +4327,7 @@ test("Path takes the loom from a study's curve to its derived curves, with their
     1e-12,
   );
   await expect(d.locator(".loom-correspondence")).toContainText(
-    "Base point (2.0000, 0.0000);",
+    "Base point (2, 0);",
   );
   await expect(d.locator("[data-gaps]")).toContainText("No gaps.");
   await d.getByLabel("Exact source parameter", { exact: true }).fill("pi/2");

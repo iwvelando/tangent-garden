@@ -1,3 +1,4 @@
+import { count as formatCount } from "../number-format";
 import { tiered } from "../help";
 import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
@@ -310,7 +311,6 @@ export const stopText: Record<string, string> = {
   work: "stops at the work limit",
 };
 
-const plain = (v: number) => v.toLocaleString("en-US");
 export const shortenHelp = {
   family: tiered(
     "A flower, which may be nonconvex, or a convex loop.",
@@ -371,5 +371,5 @@ export const shortenHelp = {
     "How the motion's time maps to the flow's.",
     "Early lingers where petals change fastest (t ∝ p³); equal radius shrinks a circle at a steady rate; physical time is linear in the flow's time.",
   ),
-  limits: `Solved on ${plain(shortenLimits.flower.nodes)} nodes for flowers and ${plain(shortenLimits.convex.nodes)} for convex loops.`,
+  limits: `Solved on ${formatCount(shortenLimits.flower.nodes)} nodes for flowers and ${formatCount(shortenLimits.convex.nodes)} for convex loops.`,
 };

@@ -1,3 +1,4 @@
+import { distinctReadouts, count as formatCount } from "./number-format";
 import {
   useEffect,
   useId,
@@ -48,7 +49,6 @@ import { sheetSvg } from "./atlas-sheet";
 import { renderToStaticMarkup } from "react-dom/server";
 import { planarSheetDefinition } from "./planar-sheet-definition";
 
-const short = (value: number) => Number(value.toPrecision(5)).toString();
 function inspectedFraming(frame: Frame, study: PlanarStudy) {
   const fit = fitFrame(frame.result, frame.config);
   const { x, y, zoom } = study.camera;
@@ -94,10 +94,10 @@ export function AtlasPreview({
   );
   const quality = (config: typeof study.config) =>
     config.curve.format === "attractor"
-      ? `${config.curve.attractor.iterates.toLocaleString("en-US")} accumulated iterates, ${config.curve.attractor.discard.toLocaleString("en-US")} discarded, grid up to ${config.curve.attractor.cells} × ${config.curve.attractor.cells} bins, ${config.lines} orbit segments`
+      ? `${formatCount(config.curve.attractor.iterates)} accumulated iterates, ${formatCount(config.curve.attractor.discard)} discarded, grid up to ${config.curve.attractor.cells} × ${config.curve.attractor.cells} bins, ${config.lines} orbit segments`
       : config.curve.format === "implicit"
-        ? `${config.curve.implicit.cells.toLocaleString("en-US")} grid cells along the window's longer side, ${config.lines} construction lines`
-        : `${config.samples.toLocaleString("en-US")} samples, ${config.lines} construction lines, refinement ${config.adaptive && refinesBetweenSamples(config.curve.format) ? "on" : "off"}`;
+        ? `${formatCount(config.curve.implicit.cells)} grid cells along the window's longer side, ${config.lines} construction lines`
+        : `${formatCount(config.samples)} samples, ${config.lines} construction lines, refinement ${config.adaptive && refinesBetweenSamples(config.curve.format) ? "on" : "off"}`;
   const [ranges, setRanges] = useState<AtlasRanges>(() =>
     atlasDefaults(study.config, pair),
   );
@@ -186,6 +186,12 @@ export function AtlasPreview({
   const selected = state.selection;
   const frame =
     focusStage.current === selected?.index ? undefined : selected?.frame;
+  const axisLabels = [0, 1].map((axis) =>
+    distinctReadouts(
+      state.cells.map((c) => c.values[axis]),
+      6,
+    ),
+  );
   const cell = selected && state.cells[selected.index];
   return (
     <dialog
@@ -434,9 +440,9 @@ export function AtlasPreview({
                         </div>
                       )}
                       <span className="atlas-values">
-                        {descriptor.axes[0].symbol} = {short(cell.values[0])}
+                        {descriptor.axes[0].symbol} = {axisLabels[0][index]}
                         <br />
-                        {descriptor.axes[1].symbol} = {short(cell.values[1])}
+                        {descriptor.axes[1].symbol} = {axisLabels[1][index]}
                       </span>
                     </button>
                     {cell.error && <p className="field-error">{cell.error}</p>}
@@ -467,10 +473,10 @@ export function AtlasPreview({
                   </h3>
                   <p className="note">
                     {descriptor.axes[0].symbol} ={" "}
-                    {cell && short(cell.values[0])} ·{" "}
+                    {cell && axisLabels[0][selected!.index]} ·{" "}
                     {descriptor.axes[1].symbol} ={" "}
-                    {cell && short(cell.values[1])} · Original quality and
-                    manual camera
+                    {cell && axisLabels[1][selected!.index]} · Original quality
+                    and manual camera
                   </p>
                 </div>
                 <button

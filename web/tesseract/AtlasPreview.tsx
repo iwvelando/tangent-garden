@@ -1,3 +1,4 @@
+import { distinctReadouts } from "../number-format";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   AtlasRangeFields,
@@ -46,8 +47,6 @@ import { frameAtlasResult } from "./atlas-art";
 import { exportBaseSize } from "../export-quality";
 import { tesseractSheetDefinition } from "./atlas-definition";
 
-const short = (n: number) =>
-  Number(n.toPrecision(6)).toString().replace("-", "−");
 export default function TesseractAtlasPreview({
   request,
   onReturn,
@@ -169,6 +168,12 @@ export default function TesseractAtlasPreview({
     typeof countNote === "function" ? countNote(study.config) : countNote;
   const selected = state.selection,
     cell = selected && state.cells[selected.index];
+  const axisLabels = [0, 1].map((axis) =>
+    distinctReadouts(
+      state.cells.map((c) => c.values[axis]),
+      6,
+    ),
+  );
   const paired =
     !!objects[study.config.object].pairedModes &&
     study.config.mode === "paired";
@@ -444,9 +449,9 @@ export default function TesseractAtlasPreview({
                         </div>
                       )}
                       <span className="atlas-values">
-                        {descriptor?.axes[0].symbol} = {short(c.values[0])}
+                        {descriptor?.axes[0].symbol} = {axisLabels[0][i]}
                         <br />
-                        {descriptor?.axes[1].symbol} = {short(c.values[1])}
+                        {descriptor?.axes[1].symbol} = {axisLabels[1][i]}
                       </span>
                     </button>
                     {c.error && <p className="field-error">{c.error}</p>}
@@ -483,10 +488,10 @@ export default function TesseractAtlasPreview({
                   </h3>
                   <p className="note">
                     {descriptor?.axes[0].symbol} ={" "}
-                    {cell && short(cell.values[0])} ·{" "}
+                    {cell && axisLabels[0][selected!.index]} ·{" "}
                     {descriptor?.axes[1].symbol} ={" "}
-                    {cell && short(cell.values[1])} · Original quality and both
-                    source cameras
+                    {cell && axisLabels[1][selected!.index]} · Original quality
+                    and both source cameras
                   </p>
                 </div>
                 <button

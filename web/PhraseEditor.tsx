@@ -1,3 +1,4 @@
+import { count as formatCount } from "./number-format";
 import { useMemo } from "react";
 import { Field, FieldErrorContext } from "./Field";
 import { targetLabel, type Target } from "./animation";
@@ -16,7 +17,7 @@ export const phrasePaceHelp = tiered(
 export const phraseRayLengthHelp = "Ray length keys must be 0.01–100.";
 export const phraseCameraHelp = tiered(
   "Hold the view, move to a key view, or return to the opening view.",
-  `The camera arrives as the phase ends, at the phase's pace, together with its value and reveal. Set to drawing takes the drawing's pan and zoom. Views zoom up to ${plainZoom}×, or ${viewZoom.toLocaleString("en-US")}× in a study refined to its view.`,
+  `The camera arrives as the phase ends, at the phase's pace, together with its value and reveal. Set to drawing takes the drawing's pan and zoom. Views zoom up to ${plainZoom}×, or ${formatCount(viewZoom)}× in a study refined to its view.`,
 );
 type PhaseCamera = "hold" | "view" | "entry";
 
@@ -184,10 +185,8 @@ export function PhraseEditor({
       </ol>
       <p className="note">
         Total:{" "}
-        {phrase.phases
-          .reduce((sum, p) => sum + p.duration, 0)
-          .toLocaleString("en-US")}{" "}
-        s. Holds keep the preceding value.
+        {formatCount(phrase.phases.reduce((sum, p) => sum + p.duration, 0))} s.
+        Holds keep the preceding value.
       </p>
     </FieldErrorContext.Provider>
   );

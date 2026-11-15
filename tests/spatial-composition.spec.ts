@@ -100,8 +100,8 @@ test("a translated expression keeps its tangent ribbon and probe curvature acros
     .check();
   await settled(page);
   // The foot curve is regular at the base cusp: κ = √8, radius 1/√8.
-  await expect(page.locator(".probe-readout dd").nth(0)).toHaveText("2.828");
-  await expect(page.locator(".probe-readout dd").nth(1)).toHaveText("0.3536");
+  await expect(page.locator(".probe-readout dd").nth(0)).toHaveText("2.82843");
+  await expect(page.locator(".probe-readout dd").nth(1)).toHaveText("0.353553");
   // Check the actual exported drawing, including the intervals on both
   // sides of the cusp, rather than relying on a changed diagnostic alone.
   await page.getByRole("button", { name: "Export image", exact: true }).click();

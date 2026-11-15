@@ -1,4 +1,12 @@
 import {
+  count as formatCount,
+  elapsed,
+  liveReadout,
+  mebibytes,
+  progressPercent,
+  readout as formatNumber,
+} from "../number-format";
+import {
   sampleSpatialFamily,
   type SpatialFamilySettings,
   type SpatialFamilyMember,
@@ -259,7 +267,7 @@ export const redraws = (s: Pick<Session, "mode" | "between">) =>
 const holdsHelp = (story: Story) =>
   tiered(
     `The level rests at c = ${story.levels.before} and c = ${story.levels.after} as it passes them.`,
-    `Each rest takes ${Math.round(holdShare * 100)}% of the duration, and the level moves steadily between them, every frame calculated. It applies only while the study keeps its story's expression and box.`,
+    `Each rest takes ${progressPercent(holdShare)} of the duration, and the level moves steadily between them, every frame calculated. It applies only while the study keeps its story's expression and box.`,
   );
 
 type Props = {
@@ -1014,16 +1022,16 @@ export function SpatialAnimationPanel({
     setLive(
       s.mode === "path"
         ? leg
-        : [readout(s, view), leg, riding].filter(Boolean).join(" · "),
+        : [animationReadout(s, view), leg, riding].filter(Boolean).join(" · "),
     );
   }
-  function readout(s: Session, view: AnimationView) {
+  function animationReadout(s: Session, view: AnimationView) {
     if (s.family)
       return `${view.frame.result.engraving!.visible.length} family slots shown`;
     if (s.mode === "reveal" && s.original.config.format === "implicit") {
       // A level surface reveals upward through its box.
       const { zMin, zMax } = s.original.config.implicit.box;
-      return `z = ${(zMin + (zMax - zMin) * view.progress).toPrecision(6)}`;
+      return `z = ${liveReadout(zMin + (zMax - zMin) * view.progress, [zMin, zMax])}`;
     }
     if (
       s.mode === "reveal" &&
@@ -1032,21 +1040,21 @@ export function SpatialAnimationPanel({
     ) {
       // A surface or mirror reveals along u.
       const { uMin, uMax } = s.original.config.surface;
-      return `u = ${(uMin + (uMax - uMin) * view.progress).toPrecision(6)}`;
+      return `u = ${liveReadout(uMin + (uMax - uMin) * view.progress, [uMin, uMax])}`;
     }
     if (s.mode === "reveal")
-      return `t = ${(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress).toPrecision(6)}`;
+      return `t = ${liveReadout(s.original.config.curve.min + (s.original.config.curve.max - s.original.config.curve.min) * view.progress, [s.original.config.curve.min, s.original.config.curve.max])}`;
     if (s.mode === "trace")
-      return `Optical path τ = ${(view.progress * s.timeline!.total).toPrecision(4)} · ${view.frame.result
-        .rays!.caustics.reduce(
+      return `Optical path τ = ${liveReadout(view.progress * s.timeline!.total, [0, s.timeline!.total])} · ${formatCount(
+        view.frame.result.rays!.caustics.reduce(
           (n, c) => n + c.points.flat().filter((q) => q).length,
           0,
-        )
-        .toLocaleString("en-US")} caustic points reached`;
+        ),
+      )} caustic points reached`;
     if (s.mode === "orbit")
-      return `Camera rotation · ${Math.round(view.progress * 360)}°`;
+      return `Camera rotation · ${formatCount(Math.round(view.progress * 360))}°`;
     if (s.mode === "cut")
-      return `Cut at d = ${view.cut!.plane.offset.toPrecision(6)}`;
+      return `Cut at d = ${liveReadout(view.cut!.plane.offset, s.extent!)}`;
     if (s.mode === "probe")
       return `Probe at ${probeWhere(view.frame.result, view.frame.config, s.probe!, view.probe!)}`;
     // A probe that moves as the parameters vary says where it stands.
@@ -1062,7 +1070,7 @@ export function SpatialAnimationPanel({
     return [
       ...s.tracks.map(
         (t) =>
-          `${targetLabel(view.frame.config, t.target)} = ${targetValue(view.frame.config, t.target, view.length).toPrecision(6)}`,
+          `${targetLabel(view.frame.config, t.target)} = ${integerTargets.includes(t.target) ? formatCount(targetValue(view.frame.config, t.target, view.length)) : liveReadout(targetValue(view.frame.config, t.target, view.length), [t.from, t.to])}`,
       ),
       ...probed,
     ].join(" · ");
@@ -1435,9 +1443,7 @@ export function SpatialAnimationPanel({
         exportAbort.current = null;
         session.current = null;
         changeStatus("idle");
-        setExportNotice(
-          `Saved ${text.name} · ${(blob.size / (1024 * 1024)).toFixed(1)} MiB`,
-        );
+        setExportNotice(`Saved ${text.name} · ${mebibytes(blob.size)}`);
         return;
       }
       const firstView = await sample(s, 0);
@@ -1579,7 +1585,7 @@ export function SpatialAnimationPanel({
         onChange={(change) => setPath((p) => ({ ...p, keys: change(p.keys) }))}
         asFirst={asFirst}
         describe={(key) =>
-          `yaw ${degrees(key.yaw)}°, pitch ${degrees(key.pitch)}°, zoom ${key.zoom.toFixed(2)}×${key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}`
+          `yaw ${formatNumber(degrees(key.yaw))}°, pitch ${formatNumber(degrees(key.pitch))}°, zoom ${formatNumber(key.zoom)}×${key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}`
         }
         fields={(key, k, change) => (
           <Field
@@ -1621,7 +1627,6 @@ export function SpatialAnimationPanel({
   // The ride's crossing as drawn: the nearest to the one chosen.
   const choices = frame ? rideChoices(frame.result, frame.config) : null;
   const snapped = frame ? snapRide(frame.result, ride) : ride;
-  const parameter = (x: number) => String(+x.toPrecision(4));
   const rideEditor = choices && (
     <>
       <div className="pair">
@@ -1643,7 +1648,7 @@ export function SpatialAnimationPanel({
             >
               {choices[axis].map((c) => (
                 <option key={c.index} value={c.index}>
-                  {axis} = {parameter(c.value)}
+                  {axis} = {formatNumber(c.value)}
                 </option>
               ))}
             </select>
@@ -2195,7 +2200,7 @@ export function SpatialAnimationPanel({
             <div className="timeline">
               <Field
                 label="Animation progress"
-                value={`${Math.round(progress * 100)}%`}
+                value={progressPercent(progress)}
               >
                 <ProgressSlider
                   progress={progress}
@@ -2216,7 +2221,7 @@ export function SpatialAnimationPanel({
                         ? "Paused"
                         : status === "preparing"
                           ? "Preparing"
-                          : `${(progress * duration).toFixed(1)} / ${duration} s`}
+                          : elapsed(progress * duration, duration)}
               </div>
               {!preview && <AnimationValues text={live} />}
               <p className="note playback-tip" hidden={preview}>

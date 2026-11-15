@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 import { Field, HelpText, HelpToggle, useHelp } from "../Field";
 import { ProbePlot } from "../ProbePlot";
 import { hex, lineColor } from "./palette";
@@ -44,9 +45,8 @@ import {
 import type { Frame, SpatialConfig, SurfaceDiagnostics } from "./types";
 import { plural } from "../number-format";
 
-// Four significant figures: τ from expressions or an integrated path is
-// differenced numerically to about 10⁻⁵ relative accuracy.
-const short = (v: number) => String(Number(v.toPrecision(4)));
+// Torsion from expressions or an integrated path is approximate; its
+// shared display precision does not establish numerical accuracy.
 
 // One diagnostic along the whole base, in the probe's ink (../ProbePlot.tsx).
 function Plot({
@@ -259,7 +259,7 @@ export function ProbePanel({
               )}
               <Field
                 label="Point"
-                value={`t = ${short(readout.t)}`}
+                value={`t = ${formatNumber(readout.t)}`}
                 className="probe-slider"
               >
                 {between ? (
@@ -274,7 +274,7 @@ export function ProbePanel({
                         : probe.position
                     }
                     disabled={moving !== undefined}
-                    aria-valuetext={`t = ${short(readout.t)}`}
+                    aria-valuetext={`t = ${formatNumber(readout.t)}`}
                     onChange={(e) => {
                       const position = e.target.valueAsNumber;
                       onProbe((p) => ({ ...p, position }));
@@ -288,7 +288,7 @@ export function ProbePanel({
                     step={1}
                     value={at!.sample ?? Math.round(step)}
                     disabled={moving !== undefined}
-                    aria-valuetext={`t = ${short(readout.t)}, sample ${at!.sample ?? Math.round(step)} of ${n}`}
+                    aria-valuetext={`t = ${formatNumber(readout.t)}, sample ${at!.sample ?? Math.round(step)} of ${n}`}
                     onChange={(e) => {
                       const position = e.target.valueAsNumber / n;
                       onProbe((p) => ({ ...p, position }));
@@ -303,20 +303,20 @@ export function ProbePanel({
                     ? "unknown here"
                     : readout.flat
                       ? "0 (flat: N, B and τ undefined)"
-                      : short(readout.curvature)}
+                      : formatNumber(readout.curvature)}
                 </dd>
                 <dt>Radius 1/κ</dt>
                 <dd>
                   {readout.radius === null
                     ? "undefined"
                     : readout.infinite
-                      ? `${short(readout.radius)} (circle not drawn)`
-                      : short(readout.radius)}
+                      ? `${formatNumber(readout.radius)} (circle not drawn)`
+                      : formatNumber(readout.radius)}
                 </dd>
                 <dt>Torsion τ</dt>
                 <dd>
                   {readout.torsion !== null
-                    ? short(readout.torsion)
+                    ? formatNumber(readout.torsion)
                     : readout.flat || readout.curvature === null
                       ? "undefined"
                       : "unknown here"}
@@ -475,14 +475,14 @@ function SurfaceProbe({
   // No surface or no normal here: every value is blank.
   const blank = r.missing || r.singular;
   const value = (k: number | null) =>
-    blank ? "—" : k === null ? "unknown here" : short(k);
+    blank ? "—" : k === null ? "unknown here" : formatNumber(k);
 
   return (
     <>
       <div className="pair">
         <Field
           label={terms.sliders[0]}
-          value={`${terms.along} = ${short(r.u)}`}
+          value={`${terms.along} = ${formatNumber(r.u)}`}
           className="probe-slider"
         >
           {between ? (
@@ -493,7 +493,7 @@ function SurfaceProbe({
               step="any"
               value={probe.position}
               disabled={moved}
-              aria-valuetext={`${terms.along} = ${short(r.u)}`}
+              aria-valuetext={`${terms.along} = ${formatNumber(r.u)}`}
               onChange={(e) => {
                 const position = e.target.valueAsNumber;
                 onProbe((p) => ({ ...p, position }));
@@ -507,7 +507,7 @@ function SurfaceProbe({
               step={1}
               value={row}
               disabled={moving !== undefined}
-              aria-valuetext={`${terms.along} = ${short(r.u)}, row ${row} of ${rows}`}
+              aria-valuetext={`${terms.along} = ${formatNumber(r.u)}, row ${row} of ${rows}`}
               onChange={(e) => {
                 const position = e.target.valueAsNumber / rows;
                 onProbe((p) => ({ ...p, position }));
@@ -517,7 +517,7 @@ function SurfaceProbe({
         </Field>
         <Field
           label={terms.sliders[1]}
-          value={`${terms.around} = ${short(r.v)}`}
+          value={`${terms.around} = ${formatNumber(r.v)}`}
           className="probe-slider"
         >
           {between ? (
@@ -528,7 +528,7 @@ function SurfaceProbe({
               step="any"
               value={probe.across}
               disabled={moved}
-              aria-valuetext={`${terms.around} = ${short(r.v)}`}
+              aria-valuetext={`${terms.around} = ${formatNumber(r.v)}`}
               onChange={(e) => {
                 const across = e.target.valueAsNumber;
                 onProbe((p) => ({ ...p, across }));
@@ -542,7 +542,7 @@ function SurfaceProbe({
               step={1}
               value={column}
               disabled={moving !== undefined}
-              aria-valuetext={`${terms.around} = ${short(r.v)}, column ${column} of ${columns - 1}`}
+              aria-valuetext={`${terms.around} = ${formatNumber(r.v)}, column ${column} of ${columns - 1}`}
               onChange={(e) => {
                 const across =
                   e.target.valueAsNumber / (d.periodic ? columns : columns - 1);
@@ -585,7 +585,7 @@ function SurfaceProbe({
                         ? "unknown"
                         : x === null || r.infinite[b]
                           ? "∞"
-                          : short(x),
+                          : formatNumber(x),
                     )
                     .join(", ")}
             </dd>
@@ -595,7 +595,7 @@ function SurfaceProbe({
                 ? "—"
                 : r.gauss === null || r.mean === null
                   ? "unknown here"
-                  : `${short(r.gauss)}, ${short(r.mean)}`}
+                  : `${formatNumber(r.gauss)}, ${formatNumber(r.mean)}`}
             </dd>
           </dl>
           <p
@@ -711,20 +711,25 @@ function LightReadout({
   const blank = r.state !== "traced";
   // Signed along the ray: a virtual focus, behind the surface, is negative.
   const focus = (b: number) =>
-    r.infinite[b] || r.distance[b] === null ? "∞" : short(r.distance[b]!);
-  const angle = (x: number | null) => (x === null ? "—" : `${short(x)}°`);
+    r.infinite[b] || r.distance[b] === null
+      ? "∞"
+      : formatNumber(r.distance[b]!);
+  const angle = (x: number | null) =>
+    x === null ? "—" : `${formatNumber(x)}°`;
   return (
     <>
       {/* Always five rows and a two-line status, as the surface probe's. */}
       <dl className="probe-readout">
         <dt>{terms.branches[0]}</dt>
-        <dd>{blank ? "—" : short(r.curvature[0]!)}</dd>
+        <dd>{blank ? "—" : formatNumber(r.curvature[0]!)}</dd>
         <dt>{terms.branches[1]}</dt>
-        <dd>{blank ? "—" : short(r.curvature[1]!)}</dd>
+        <dd>{blank ? "—" : formatNumber(r.curvature[1]!)}</dd>
         <dt>Foci 1/μ along the ray</dt>
         <dd>{blank ? "—" : `${focus(0)}, ${focus(1)}`}</dd>
         <dt>Astigmatic interval</dt>
-        <dd>{blank ? "—" : r.interval === null ? "∞" : short(r.interval)}</dd>
+        <dd>
+          {blank ? "—" : r.interval === null ? "∞" : formatNumber(r.interval)}
+        </dd>
         <dt>{refract ? "Angles θ, θ′" : "Angle of incidence θ"}</dt>
         <dd>
           {refract

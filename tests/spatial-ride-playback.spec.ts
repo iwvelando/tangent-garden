@@ -101,7 +101,7 @@ async function headOffCenter(page: Page, layer: string) {
 
 for (const [uSamples, middle, sixth] of [
   [96, "48", "u = 0.8"],
-  [150, "75", "u = 0.7893"],
+  [150, "75", "u = 0.789333"],
 ] as const)
   test(`a ray is ridden only while light is traced, chosen at a crossing, with its distances under the camera (${uSamples} u samples)`, async ({
     page,

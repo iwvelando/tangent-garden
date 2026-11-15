@@ -1,3 +1,4 @@
+import { count as formatCount } from "./number-format";
 import {
   applyTracks,
   availableTargets,
@@ -237,7 +238,7 @@ export function phraseError(config: Config, phrase: Phrase): string | null {
     if (p.reveal && !Object.values(p.reveal).every(fraction))
       return `Phase ${i + 1} reveal fractions must be between 0 and 1.`;
     if (p.view !== undefined && p.view !== "entry" && !validView(p.view))
-      return `Phase ${i + 1} view must be a finite center with a zoom of 0.1–${viewZoom.toLocaleString("en-US")}×, or the opening view.`;
+      return `Phase ${i + 1} view must be a finite center with a zoom of 0.1–${formatCount(viewZoom)}×, or the opening view.`;
   }
   const duration = phrase.phases.reduce((sum, p) => sum + p.duration, 0);
   return !Number.isFinite(duration) || duration > 3600
@@ -510,7 +511,11 @@ export function createPhraseSampler(options: {
               ...(refined && { view: refined }),
               ...(between && within && { probe: { t } }),
             });
-      cached = { value: state.value, area: key, frame };
+      cached = {
+        value: state.value,
+        area: key,
+        frame,
+      };
       frames.set(engine, cached);
       const entry = cached;
       frame.catch(() => {
@@ -527,7 +532,10 @@ export function createPhraseSampler(options: {
       ridesHead(current.result);
     let followed = drawing ? tracks.get(engine) : undefined;
     if (drawing && followed?.value !== state.value) {
-      followed = { value: state.value, track: engine.track!(current.config) };
+      followed = {
+        value: state.value,
+        track: engine.track!(current.config),
+      };
       tracks.set(engine, followed);
       const entry = followed;
       followed.track.catch(() => {
@@ -570,6 +578,10 @@ export function createPhraseSampler(options: {
         reveal: state.reveal,
         target: phrase.target,
         value: state.value,
+        range: [
+          Math.min(...phrase.phases.flatMap((p) => [p.from.value, p.to.value])),
+          Math.max(...phrase.phases.flatMap((p) => [p.from.value, p.to.value])),
+        ],
       },
       ...(held && reached && { probe: held }),
       ...(!reached

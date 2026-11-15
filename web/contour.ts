@@ -1,3 +1,4 @@
+import { count as formatCount } from "./number-format";
 import type { ContourResult } from "./types";
 import { plural } from "./number-format";
 
@@ -27,7 +28,7 @@ export function contourNote(result: ContourResult) {
     );
   if (result.nonfinite)
     notes.push(
-      `F is not a finite number at ${plural(result.nonfinite, "grid point")} of ${((result.columns + 1) * (result.rows + 1)).toLocaleString("en-US")}; the cells beside them are left out.`,
+      `F is not a finite number at ${plural(result.nonfinite, "grid point")} of ${formatCount((result.columns + 1) * (result.rows + 1))}; the cells beside them are left out.`,
     );
   return notes.join(" ");
 }

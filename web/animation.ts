@@ -114,6 +114,7 @@ export type AnimationView = {
     reveal: PhraseReveal;
     target: Target;
     value: number;
+    range?: readonly [number, number];
     inDrawing?: boolean;
   };
   family?: FamilyComposition;

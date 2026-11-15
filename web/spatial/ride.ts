@@ -1,3 +1,4 @@
+import { readout as formatNumber } from "../number-format";
 // The camera that rides a ray: while light is traced (raytrace.ts), the
 // drawing is seen through a perspective camera (scene.ts's Lens) that
 // follows one representative ray a little behind its head, through its
@@ -298,7 +299,6 @@ export function rideReadout(
   config: SpatialConfig,
   tau: number,
 ): string {
-  const value = (x: number) => String(+x.toPrecision(4));
   const { u, v } = parameters(result, config, path.i, path.j);
-  return `Riding the ray at u = ${value(u)}, v = ${value(v)} · ${ridePose(path, tau).stage}`;
+  return `Riding the ray at u = ${formatNumber(u)}, v = ${formatNumber(v)} · ${ridePose(path, tau).stage}`;
 }

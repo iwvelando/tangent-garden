@@ -110,7 +110,13 @@ fieldset:disabled {
 .subsection .check {
   margin-top: 14px;
 }
+.timeline .note {
+  font-variant-numeric: tabular-nums;
+  white-space: pre-wrap;
+}
 .animation-values {
+  font-variant-numeric: tabular-nums;
+  white-space: pre-wrap;
   font:
     12px/1.8 ui-monospace,
     SFMono-Regular,
@@ -910,6 +916,7 @@ h1 {
   font-weight: 600;
 }
 .phrase-caption-value {
+  white-space: pre-wrap;
   font:
     12px/18px ui-monospace,
     SFMono-Regular,
@@ -1305,6 +1312,8 @@ h1 {
     margin: 10px 0 4px;
   }
   .playback.active .animation-values {
+    font-variant-numeric: tabular-nums;
+    white-space: pre-wrap;
     margin-top: 0;
   }
   .playback.active .playback-tip {

@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { percent, readout as formatNumber } from "../web/number-format";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { changedPixels, choosePreset, exportImage } from "./helpers";
@@ -207,6 +208,10 @@ test("an open curve appears as it is, and is fitted only once closed", async ({
   // Its corners need every frequency: never exact, and never said to be.
   expect(f.maxResidual).toBeGreaterThan(1e-3 * f.extent);
   await expect(page.getByTestId("fit-error")).not.toContainText("rounding");
+  // The largest error's share of the diagonal is the shared percentage.
+  await expect(page.getByTestId("fit-error")).toContainText(
+    `largest ${formatNumber(f.maxResidual)}, ${percent(f.maxResidual / f.extent)} of the source's ${formatNumber(f.extent)} diagonal`,
+  );
   await expect(page.getByTestId("fit-closure")).toContainText(
     "straight segment of length 1.57",
   );

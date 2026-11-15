@@ -280,12 +280,12 @@ test("notes report total internal reflection and where the receiver's light went
   await choosePreset(page, dome);
   await settled(page);
   await expect(note(page)).toHaveText(
-    "Caustic 1 (μ₁) is real, ahead of the interface: a surface. Caustic 2 (μ₂) is real, ahead of the interface: a curve. 151 samples are chart singularities, with no normal and no refraction. The receiver on z = −1.9 collects over 99.9% of the light the surface intercepts (4.82 units of beam area); under 0.1% falls in cells at the edge of the light. Its shade is irradiance on a logarithmic scale over three decades up to its peak, 233 times the beam's own, averaged over each bin, with no Fresnel losses or shadows.",
+    "Caustic 1 (μ₁) is real, ahead of the interface: a surface. Caustic 2 (μ₂) is real, ahead of the interface: a curve. 151 samples are chart singularities, with no normal and no refraction. The receiver on z = −1.9 collects over 99.9% of the light the surface intercepts (4.81518 units of beam area); 0.0384% falls in cells at the edge of the light. Its shade is irradiance on a logarithmic scale over three decades up to its peak, 233.436 times the beam's own, averaged over each bin, with no Fresnel losses or shadows.",
   );
   await choosePreset(page, floor);
   await settled(page);
   await expect(note(page)).toContainText(
-    "The receiver on z = −0.5 collects 87.0% of the light the surface intercepts (2.72 units of beam area); 4.7% lands on the plane outside the window, 8.3% never crosses the plane ahead of its rays and under 0.1% falls in cells at the edge of the light.",
+    "The receiver on z = −0.5 collects 87% of the light the surface intercepts (2.71895 units of beam area); 4.67% lands on the plane outside the window, 8.33% never crosses the plane ahead of its rays and 0.0106% falls in cells at the edge of the light.",
   );
   // A lamp's flux is a solid angle, and a plane behind the rays gets
   // nothing.

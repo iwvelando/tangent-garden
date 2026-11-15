@@ -1,3 +1,4 @@
+import { count as formatCount } from "../number-format";
 import { HelpText, HelpToggle, useHelp } from "../Field";
 import { tiered } from "../help";
 import type { AdaptiveResult, RefinedPath, SpatialConfig } from "./types";
@@ -12,7 +13,7 @@ export const surfaceVertices = 131072;
 // links made before it.
 export const surfaceRefineHelp = tiered(
   "Adds rings or rulings between samples wherever the curves on the surface gained points.",
-  `Columns go where the curve, a partner thread, strand or meridian, or the surface’s own edges or seams gained points, coarsest bisections first, up to ${surfaceVertices.toLocaleString("en-US")} added vertices. Rulings, cross-lines, contact circles, the probe and framing keep the even samples. A gap an edge or seam finds between samples leaves those faces out.`,
+  `Columns go where the curve, a partner thread, strand or meridian, or the surface’s own edges or seams gained points, coarsest bisections first, up to ${formatCount(surfaceVertices)} added vertices. Rulings, cross-lines, contact circles, the probe and framing keep the even samples. A gap an edge or seam finds between samples leaves those faces out.`,
 );
 
 // Whether the study's construction draws a surface on its curve.

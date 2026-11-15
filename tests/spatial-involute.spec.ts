@@ -293,7 +293,7 @@ test("restarting after a break unwinds every stretch of the curve, and uncheckin
   expect((await config(page)).involute.restart).toBe(true);
   await expect(note).toContainText("0 regular samples");
   await expect(note).toContainText(
-    /Arc length restarts past each break, from anchors at t = -1\.\d+, 1\.\d+\./,
+    /Arc length restarts past each break, from anchors at t = −1\.\d+, 1\.\d+\./,
   );
   expect(await pixels(page)).not.toBe(before);
   await restart.uncheck();
@@ -321,7 +321,7 @@ test("restarting after a break unwinds every stretch of the curve, and uncheckin
   expect("restart" in restarted.involute).toBe(false);
   await expect(composition).not.toContainText("beyond the involute's reach");
   await expect(composition).toContainText(
-    /its arc length restarts, from anchors at t = -1\.\d+, 1\.\d+\./,
+    /its arc length restarts, from anchors at t = −1\.\d+, 1\.\d+\./,
   );
   await expect(composition).toContainText("3 cusps");
 });

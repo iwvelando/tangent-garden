@@ -53,7 +53,7 @@ test("a refusal names what differs and what to do", () => {
   expect(
     markupRefusal(a, drawing("M10,20 L30,43 "), " Choose Back and forth."),
   ).toBe(
-    "Repeat can loop only motion that ends where it starts, but the drawing at the end lies up to 3.0 pixels from the drawing at the start. Choose Back and forth.",
+    "Repeat can loop only motion that ends where it starts, but the drawing at the end lies up to 3 pixels from the drawing at the start. Choose Back and forth.",
   );
   expect(markupRefusal(a, drawing("M10,20 "), " Choose Back and forth.")).toBe(
     "Repeat can loop only motion that ends where it starts, but the drawing at the end has different pieces from the drawing at the start. Choose Back and forth.",

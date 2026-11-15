@@ -115,7 +115,7 @@ test("a plane casts the study's shadow beside its 2D construction, and taking it
   expect(shadow.at).toBeLessThan(-0.85);
   await expect(at(page)).toHaveValue(String(shadow.at));
   await expect(note(page)).toHaveText(
-    /^The shadow of the 3D tangent-foot curve parts from the 2D pedal of the shadow, by up to \d+% of its size\. Rust is the 2D construction, slate the 3D one's shadow\.$/,
+    /^The shadow of the 3D tangent-foot curve parts from the 2D pedal of the shadow, by up to 28\.9% of its size\. Rust is the 2D construction, slate the 3D one's shadow\.$/,
   );
   for (const entry of ["Shadow", "2D construction", "3D construction's shadow"])
     await expect(legend).toContainText(entry);
@@ -168,7 +168,7 @@ test("a flat curve's shadow reduces exactly, and a lifted one parts", async ({
     await settled(page);
     await expect(note(page)).toHaveText(
       new RegExp(
-        `^The shadow of the 3D ${own} lies on the 2D ${planar} of the shadow, within \\d × 10⁻[⁰¹²³⁴⁵⁶⁷⁸⁹]+ of its size\\.`,
+        `^The shadow of the 3D ${own} lies on the 2D ${planar} of the shadow, within \\d(?:\\.\\d{1,2})?e−\\d+% of its size\\.`,
       ),
     );
     await shape(page).fill("0.05");

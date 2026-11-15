@@ -1,3 +1,7 @@
+import {
+  readout as formatNumber,
+  percent as formatPercent,
+} from "../number-format";
 import { describeColors, type ColorScheme } from "../color-schemes";
 import { causticEdgesNote } from "./cuspidal";
 import {
@@ -16,12 +20,7 @@ const shapes: Record<Exclude<FocalShape, "none">, string> = {
   point: "a point",
 };
 // A share never rounds to nothing or to everything unless it is.
-const percent = (part: number, whole: number) =>
-  part > 0 && part < 5e-4 * whole
-    ? "under 0.1%"
-    : part < whole && part > (1 - 5e-4) * whole
-      ? "over 99.9%"
-      : `${((100 * part) / whole).toFixed(1)}%`;
+const percent = (part: number, whole: number) => formatPercent(part / whole);
 // The plane's cyclic coordinates, as Go orders them.
 export const receiverAxes = {
   x: ["y", "z"],
@@ -115,8 +114,8 @@ export function receiverNote(g: ReceiverResult, light: RaysConfig): string[] {
     .map(([flux, where]) => `${percent(flux, g.emitted)} ${where}`);
   const received = `The receiver on ${plane} collects ${percent(g.received, g.emitted)} of the ${
     parallel
-      ? `light the surface intercepts (${g.emitted.toPrecision(3)} units of beam area)`
-      : `lamp's light the surface intercepts (${g.emitted.toPrecision(3)} sr)`
+      ? `light the surface intercepts (${formatNumber(g.emitted)} units of beam area)`
+      : `lamp's light the surface intercepts (${formatNumber(g.emitted)} sr)`
   }${
     lost.length
       ? `; ${lost.length > 1 ? `${lost.slice(0, -1).join(", ")} and ${lost.at(-1)}` : lost[0]}`
@@ -125,7 +124,7 @@ export function receiverNote(g: ReceiverResult, light: RaysConfig): string[] {
   return [
     received,
     g.peak > 0
-      ? `Its shade is irradiance on a logarithmic scale over three decades up to its peak, ${g.peak.toPrecision(3)} ${
+      ? `Its shade is irradiance on a logarithmic scale over three decades up to its peak, ${formatNumber(g.peak)} ${
           parallel ? "times the beam's own" : "per unit area at unit intensity"
         }, averaged over each bin, with no Fresnel losses or shadows.`
       : "No light lands in its window.",

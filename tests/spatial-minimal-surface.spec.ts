@@ -1,3 +1,4 @@
+import { readout as short } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { choosePreset, open as openDetails } from "./helpers";
@@ -39,7 +40,6 @@ const pixels = (page: Page) =>
   page
     .locator("#spatial-artwork")
     .evaluate((canvas: HTMLCanvasElement) => canvas.toDataURL());
-const short = (v: number) => String(Number(v.toPrecision(4)));
 // The readout at v for scale s: κ₁, κ₂, the radii, and K, H.
 const minimal = (s: number, v: number) => {
   const k = 1 / (s * Math.cosh(v) ** 2);

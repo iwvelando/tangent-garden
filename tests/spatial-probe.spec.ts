@@ -1,8 +1,9 @@
+import { readout as formatNumber } from "../web/number-format";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { wireStudy } from "./study-link-wire";
-import { choosePreset } from "./helpers";
+import { choosePreset, displayedNumber, expectFrenet } from "./helpers";
 import { helpText } from "../web/help";
 import {
   probeBatches,
@@ -651,6 +652,22 @@ const probeSwitch = (page: Page) =>
   });
 const point = (page: Page) => page.getByRole("slider", { name: "Point" });
 const readout = (page: Page) => page.locator(".probe-readout dd");
+// Six displayed digits reveal the finite-difference torsion error that the
+// previous four-digit strings hid. Keep exact clean strings for curvature
+// and radius, and a tighter relative analytic bound for returned torsion.
+async function helixReadout(page: Page, radius = 2, rise = 1 / 3) {
+  const kappa = radius / (radius * radius + rise * rise);
+  const tau = rise / (radius * radius + rise * rise);
+  const texts = await readout(page).allTextContents();
+  const torsion = displayedNumber(texts[2]);
+  expect(Math.abs(torsion - tau)).toBeLessThan(Math.abs(tau) * 5e-5);
+  await expect(readout(page)).toHaveText([
+    formatNumber(kappa),
+    formatNumber(1 / kappa),
+    formatNumber(torsion),
+  ]);
+}
+
 const pixels = (page: Page) =>
   page
     .locator("#spatial-artwork")
@@ -703,7 +720,7 @@ test("the helix's probe reads its analytic curvature and torsion", async ({
   await settled(page);
   // r = (2 cos t, 2 sin t, t/3): κ = 2/(4 + 1/9) = 18/37 and τ =
   // (1/3)/(4 + 1/9) = 3/37 at every point, radius 37/18.
-  await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
+  await helixReadout(page);
   await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 0, /);
   const centered = await pixels(page);
   // One-pixel lines: the circle alone spans more than 50 pixels.
@@ -711,11 +728,14 @@ test("the helix's probe reads its analytic curvature and torsion", async ({
   // The last sample, t = 3π, where the curvature is the same.
   await point(page).focus();
   await page.keyboard.press("End");
-  await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 9\.425, /);
-  await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    /^t = 9\.42478, /,
+  );
+  await helixReadout(page);
   expect(await pixels(page)).not.toBe(centered);
   await expect(page.locator(".probe-plot figcaption").first()).toHaveText(
-    /^κ from 0 to 0\.4865/,
+    /^κ from 0 to 0\.486486/,
   );
   // Switching the probe off restores the drawing exactly.
   await probeSwitch(page).uncheck();
@@ -740,17 +760,17 @@ test("a miniature translated helix keeps its visible curvature and torsion", asy
   }
   await settled(page);
   // Radius 1/1024, rise per radian 1/2048: κ = 819.2, τ = 409.6.
-  await expect(readout(page)).toHaveText(["819.2", "0.001221", "409.6"]);
+  await helixReadout(page, 1 / 1024, 1 / 2048);
   await point(page).focus();
   await page.keyboard.press("End");
-  await expect(readout(page)).toHaveText(["819.2", "0.001221", "409.6"]);
+  await helixReadout(page, 1 / 1024, 1 / 2048);
   // Exercise the between-sample probe as well as the sampled endpoint.
   await page
     .getByRole("checkbox", { name: "At any t, between samples" })
     .check();
   await point(page).fill("0.371");
   await settled(page);
-  await expect(readout(page)).toHaveText(["819.2", "0.001221", "409.6"]);
+  await helixReadout(page, 1 / 1024, 1 / 2048);
   expect(await colored(page, await pixels(page), probeColor())).toBeGreaterThan(
     50,
   );
@@ -767,7 +787,7 @@ test("edits reach the probe through pending scalar evaluation", async ({
   const a = page.getByRole("textbox", { name: "Shape parameter a" });
   await a.fill("2*phi/phi");
   await settled(page);
-  await expect(readout(page)).toHaveText(["0.45", "2.222", "0.15"]);
+  await helixReadout(page, 2, 2 / 3);
 });
 
 test("a straight base curve says so, and a curved one does not", async ({
@@ -798,7 +818,7 @@ test("a straight base curve says so, and a curved one does not", async ({
   await expect(probeSwitch(page)).not.toBeChecked();
   await probeSwitch(page).check();
   await settled(page);
-  await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
+  await helixReadout(page);
   await expect(note).toHaveCount(0);
 });
 
@@ -811,7 +831,10 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await settled(page);
   await point(page).focus();
   await page.keyboard.press("Home");
-  await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = -9\.425, /);
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    /^t = −9\.42478, /,
+  );
   // Another preset opens with the probe off, as its own study; turned on,
   // the probe stands at the middle of its curve.
   await choosePreset(page, { label: "Trefoil · (2, 3)" });
@@ -819,7 +842,10 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await expect(probeSwitch(page)).not.toBeChecked();
   await probeSwitch(page).check();
   await settled(page);
-  await expect(point(page)).toHaveAttribute("aria-valuetext", /^t = 3\.142, /);
+  await expect(point(page)).toHaveAttribute(
+    "aria-valuetext",
+    /^t = 3\.14159, /,
+  );
   await expect(readout(page)).toHaveCount(3);
   // A surface study has no curve to probe: the probe describes its surface.
   await choosePreset(page, { label: "A torus revealing its centers" });
@@ -838,7 +864,7 @@ test("the probe follows presets and formats, and describes a surface study's sur
   await expect(probeSwitch(page)).not.toBeChecked();
   await probeSwitch(page).check();
   await settled(page);
-  await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
+  await helixReadout(page);
 });
 
 test("still exports include the probe as drawn; a reveal draws it once reached", async ({
@@ -908,7 +934,7 @@ test("still exports include the probe as drawn; a reveal draws it once reached",
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   await expect(point(page)).toHaveAttribute(
     "aria-valuetext",
-    "t = 9.425, sample 960 of 960",
+    "t = 9.42478, sample 960 of 960",
   );
   await expect(point(page)).toBeDisabled();
   expect(await pixels(page)).toBe(probed);
@@ -931,7 +957,7 @@ test("an orbit, a peel and a camera path draw the probe at the user's point", as
   await probeSwitch(page).check();
   await settled(page);
   await point(page).fill("300");
-  const mine = "t = -3.534, sample 300 of 960";
+  const mine = "t = −3.53429, sample 300 of 960";
   await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
@@ -949,7 +975,7 @@ test("an orbit, a peel and a camera path draw the probe at the user's point", as
     await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
     await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
     await expect(point(page)).toBeDisabled();
-    await expect(readout(page)).toHaveText(["0.4865", "2.056", "0.08108"]);
+    await helixReadout(page);
     expect(
       await colored(page, await pixels(page), probeColor()),
     ).toBeGreaterThan(50);
@@ -1009,7 +1035,7 @@ test("a link carries the probe; links without it open with it off", async ({
   await page.keyboard.press("Home");
   for (let i = 0; i < 24; i++) await page.keyboard.press("ArrowRight");
   const where = await point(page).getAttribute("aria-valuetext");
-  expect(where).toMatch(/^t = -8\.954, sample 24 of 960$/);
+  expect(where).toMatch(/^t = −8\.95354, sample 24 of 960$/);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy link", exact: true }).click();
   await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
@@ -1022,7 +1048,7 @@ test("a link carries the probe; links without it open with it off", async ({
   await settled(other);
   await expect(probeSwitch(other)).toBeChecked();
   await expect(point(other)).toHaveAttribute("aria-valuetext", where!);
-  await expect(readout(other)).toHaveText(["0.4865", "2.056", "0.08108"]);
+  await helixReadout(other);
   // The same study without a probe field, as links made before it were.
   const study = {
     v: 1,
@@ -1053,10 +1079,10 @@ test("the trefoil example flies round its probe, face on and edge on", async ({
   });
   await settled(page);
   await expect(probeSwitch(page)).toBeChecked();
-  const mine = "t = 3.142, sample 480 of 960";
+  const mine = "t = 3.14159, sample 480 of 960";
   await expect(point(page)).toHaveAttribute("aria-valuetext", mine);
   // κ = 1/2, radius 2 and τ = −2/9.
-  await expect(readout(page)).toHaveText(["0.5", "2", "-0.2222"]);
+  await expectFrenet(page, [0.5, 2, -2 / 9]);
   const panel = page.locator("#spatial-animation-section");
   if ((await panel.getAttribute("open")) === null)
     await panel.locator(":scope > summary").click();

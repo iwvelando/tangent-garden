@@ -85,8 +85,14 @@ func legacyCurve(s string, a *float64) (Expr, error) {
 }
 
 // legacyScalar accepts constants and arithmetic, but never a curve-dependent variable.
+// It reads the text as Scalar does: the original byte budget, then the
+// readout minus and spacing (scalarText), so the two evaluators are compared
+// on the same source.
 func legacyScalar(s string) (float64, error) {
-	_, e, err := legacyParse(s, nil, nil)
+	if len(s) > 1024 {
+		return 0, fmt.Errorf("expression exceeds 1024 characters")
+	}
+	_, e, err := legacyParse(scalarText(s), nil, nil)
 	if err != nil {
 		return 0, err
 	}
