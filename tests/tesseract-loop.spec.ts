@@ -5,6 +5,7 @@ import { choosePreset, openShapeAnimation, openShapeExport } from "./helpers";
 import { tesseractPresets } from "../web/tesseract/presets";
 import { initialView } from "../web/tesseract/types";
 import { motions } from "../web/tesseract/types";
+import { defaultTesseractPhrase } from "../web/tesseract/phrase";
 
 // Seamless loops, back and forth, and easing in the 4D notebook, through
 // the real notebook, worker, engine and exporter. Whole turns and slice
@@ -116,12 +117,24 @@ test("every preset's whole turn passes the closure check, and a slice passage on
 }) => {
   // Every passage, a family's included, reaches beyond the shape by half
   // its spread, so none is refused.
+  // A phrase loops when its end draws its opening: each admitted study's
+  // starter phrase returns its value exactly.
+  test.setTimeout(240000);
   const refused = new Set<string>();
   for (const [i, p] of tesseractPresets.entries()) {
     const looping = motions(p.config).filter((c) => c.loops);
     for (const choice of looping) {
       const name = `${p.name} ${choice.value}`;
-      await open(page, study(i, { motion: choice.value, repeat: "loop" }));
+      await open(
+        page,
+        study(i, {
+          motion: choice.value,
+          repeat: "loop",
+          ...(choice.value === "phrase" && {
+            phrase: p.phrase ?? defaultTesseractPhrase(p.config),
+          }),
+        }),
+      );
       await button(page, "Play animation").click();
       if (refused.has(name)) {
         await expect(error(page), name).toContainText(
@@ -291,7 +304,9 @@ test("the loop preset brings its repeat and pace and passes the closure check; o
     await choosePreset(page, { label: p.name });
     await settled(page);
     await expect(repeat(page)).toHaveValue("loop");
-    await expect(pace(page)).toHaveValue(p.pace ?? "steady");
+    // A phrase paces each of its phases instead.
+    if (p.phrase) await expect(pace(page)).toHaveCount(0);
+    else await expect(pace(page)).toHaveValue(p.pace ?? "steady");
     await button(page, "Play animation").click();
     await expect(button(page, "Pause"), p.name).toBeVisible();
     await expect(error(page)).toHaveCount(0);

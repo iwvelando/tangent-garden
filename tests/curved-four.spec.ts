@@ -395,9 +395,10 @@ test("object selector restores work and offers valid small-radius studies", asyn
     await object.selectOption(target);
     await settle(page);
     await expect(page.getByRole("alert")).toHaveCount(0);
+    // The tesseract's two rotations and Play a phrase.
     await expect(
       page.getByRole("combobox", { name: "Animate" }).locator("option"),
-    ).toHaveCount(target === "tesseract" ? 2 : 1);
+    ).toHaveCount(target === "tesseract" ? 3 : 1);
     await expect(
       page
         .getByRole("combobox", {

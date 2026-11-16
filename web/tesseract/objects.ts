@@ -28,6 +28,7 @@ import type {
   Bypass,
   Weave,
   Root,
+  TesseractTarget,
 } from "./types";
 export const modes = {
   perspective: "Perspective shadow",
@@ -109,7 +110,7 @@ export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
   loop: tiered(
     "Plays again and again; the last frame must match the first.",
-    "A whole rotation returns to its start, and so does a slice passage that is empty at both ends; other motions offer Back and forth instead. Play says what differs when the ends don't match. Exports drop the repeated last frame and loop forever.",
+    "A whole rotation returns to its start, and so do a slice passage empty at both ends and a phrase ending on its opening; other motions offer Back and forth instead. Play says what differs when the ends don't match. Exports drop the repeated last frame and loop forever.",
   ),
   "back-and-forth": backAndForthHelp,
 };
@@ -127,6 +128,19 @@ export const rotationMotions: MotionChoice[] = [
     loops: true,
   },
 ];
+// Play a phrase: offered by every object whose descriptor names phrase
+// parameters for the study. Whether it loops is checked on its drawing.
+export const phraseMotion: MotionChoice = {
+  value: "phrase",
+  label: "Play a phrase",
+  help: tiered(
+    "Moves up to three parameters and the camera through phases you arrange.",
+    "Add, remove, rename and reorder phases; edit their durations, end values and camera views. Empty end values hold the preceding value. Each phase lasts at least 0.1 seconds, with 1–12 phases and at most 3600 seconds in total. Stop restores your study and views.",
+  ),
+  loops: true,
+};
+// The rotation angles a phrase can move, xw first.
+const phraseRotations: TesseractTarget[] = ["xw", "yw", "zw", "xy", "xz", "yz"];
 type Explanation = readonly [string, string, string];
 export type LegendItem = {
   label: string;
@@ -274,6 +288,9 @@ export type ObjectDescriptor = {
   defaults: (previous: Config) => Config;
   enterMode?: (c: Config, mode: Config["mode"]) => Config;
   motion: Motion;
+  // The continuous values a phrase may move in this study, its default
+  // first; none, or absent, and the object offers no phrase (./phrase.ts).
+  phrase?: (c: Config) => TesseractTarget[];
 };
 export const defaultConfig: Config = {
   object: "tesseract",
@@ -465,6 +482,18 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     limitations: "transparent illustrative faces; no opaque visibility",
     defaults: () => structuredClone(defaultConfig),
     motion: "double",
+    phrase: (c) =>
+      c.mode === "section"
+        ? [
+            "slice",
+            ...(c.count > 1 ? (["spread"] as const) : []),
+            ...phraseRotations,
+          ]
+        : [
+            ...phraseRotations,
+            ...(c.mode === "perspective" ? (["distance"] as const) : []),
+            ...(c.mode === "stereo" ? (["clip"] as const) : []),
+          ],
   },
   ball: {
     ...curvedCommon,
@@ -1267,6 +1296,23 @@ export const objects: Record<Object4, ObjectDescriptor> = {
                 ]),
           ]
         : weaveMotions,
+    phrase: (c) =>
+      c.mode === "paired"
+        ? [
+            "weave.trace",
+            "weave.alpha",
+            ...(c.weave!.path === "flower"
+              ? (["weave.amplitude"] as const)
+              : []),
+            ...phraseRotations,
+            "clip",
+          ]
+        : [
+            "weave.alpha",
+            ...(c.count > 1 ? (["weave.spread"] as const) : []),
+            ...phraseRotations,
+            "clip",
+          ],
   },
   cell24: {
     atlas: {
@@ -1851,5 +1897,6 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         loops: true,
       },
     ],
+    phrase: () => ["root.t", "root.radius", ...phraseRotations],
   },
 };

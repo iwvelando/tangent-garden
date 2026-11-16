@@ -1,7 +1,12 @@
 import { readout as formatNumber } from "../number-format";
 import { tiered, type Help } from "../help";
 import type { LineWeight } from "../line-weight";
-import { objects, rotationMotions, type MotionChoice } from "./objects";
+import {
+  objects,
+  phraseMotion,
+  rotationMotions,
+  type MotionChoice,
+} from "./objects";
 export type Vec3 = [number, number, number];
 export type Object4 =
   | "tesseract"
@@ -326,7 +331,28 @@ export type Motion =
   | "return"
   | "latitude"
   | "trace"
-  | "crystal";
+  | "crystal"
+  // A phrase the user arranges (./phrase.ts), offered by the descriptor.
+  | "phrase";
+// A continuous value a 4D phrase can move (./phrase.ts): a rotation angle,
+// a view setting, or one of an object's own parameters.
+export type TesseractTarget =
+  | "xy"
+  | "xz"
+  | "yz"
+  | "xw"
+  | "yw"
+  | "zw"
+  | "distance"
+  | "clip"
+  | "slice"
+  | "spread"
+  | "weave.alpha"
+  | "weave.spread"
+  | "weave.amplitude"
+  | "weave.trace"
+  | "root.t"
+  | "root.radius";
 // Playback and export use this exact sampler. The base definition is immutable.
 export function sample(
   config: Config,
@@ -335,6 +361,8 @@ export function sample(
 ): Config {
   const q = structuredClone(config),
     p = Math.max(0, Math.min(1, progress));
+  // A phrase samples its own compiled timeline (./phrase.ts).
+  if (motion === "phrase") return q;
   if (q.root && motion === "trace") {
     q.root.trace = p;
   } else if (q.weave && motion === "trace") {
@@ -380,8 +408,12 @@ function passageHelp(config: Config): Help<string> {
 }
 // Choices describe the mathematical study, independently of the notebook name.
 export function motions(config: Config): MotionChoice[] {
+  const phrase = objects[config.object].phrase?.(config).length
+    ? [phraseMotion]
+    : [];
   const own = objects[config.object].motionChoices;
-  if (own) return typeof own === "function" ? own(config) : own;
+  if (own)
+    return [...(typeof own === "function" ? own(config) : own), ...phrase];
   const choices: MotionChoice[] = [
     ...rotationMotions,
     ...(config.mode === "section" && objects[config.object].sectionMotion
@@ -398,7 +430,10 @@ export function motions(config: Config): MotionChoice[] {
         ]
       : []),
   ];
-  return choices.filter(
-    (choice) => choice.value === "slice" || objects[config.object].rotations,
-  );
+  return [
+    ...choices.filter(
+      (choice) => choice.value === "slice" || objects[config.object].rotations,
+    ),
+    ...phrase,
+  ];
 }

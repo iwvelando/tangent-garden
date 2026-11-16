@@ -92,6 +92,7 @@ import {
   choosePreset,
   open,
   openAnimation,
+  openShapeAnimation,
 } from "./helpers";
 import {
   decodeVideo,
@@ -2394,6 +2395,74 @@ test("phrase camera buttons set and show a key view in WebKit at phone width", a
     "d",
     fitted!,
   );
+});
+
+// The 4D phrase's second camera, at phone width where the panes stack: its
+// buttons act on the click alone, and Show returns the base sphere's view to
+// its key; the selection cut is a native select.
+test("a 4D phrase keys the base sphere's camera and cuts the selection in WebKit at phone width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await choosePreset(page, { label: "A bouquet answers its path" });
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await openShapeAnimation(page);
+  const camera = page.getByRole("combobox", {
+    name: "Phase 1 camera 2",
+    exact: true,
+  });
+  await camera.selectOption("view");
+  const hint = page
+    .locator(".phrase-phases li")
+    .first()
+    .locator("p.hint", { hasText: /^yaw / });
+  await expect(hint).toContainText("zoom 1×");
+  const base = async () =>
+    JSON.parse(
+      (await page.locator("#tesseract-artwork > desc").textContent())!,
+    ).views.find((v: { operation: string }) => v.operation === "base").view;
+  await page.locator("#tesseract-base").hover();
+  await page.mouse.wheel(0, -300);
+  await expect.poll(async () => (await base()).zoom).toBeGreaterThan(1);
+  await page
+    .getByRole("button", {
+      name: "Set phase 1 view 2 to the drawing's view",
+      exact: true,
+    })
+    .click();
+  await expect(hint).not.toContainText("zoom 1×");
+  const keyed = await base();
+  await page.getByRole("button", { name: "Reset view", exact: true }).click();
+  await expect.poll(async () => (await base()).zoom).toBe(1);
+  await page
+    .getByRole("button", { name: "Show phase 1 view 2", exact: true })
+    .click();
+  await expect.poll(base).toEqual(keyed);
+  await page
+    .getByRole("combobox", { name: "Phase 2 selected fiber", exact: true })
+    .selectOption({ value: "3" });
+  await expect(
+    page.getByRole("combobox", { name: "Phase 2 selected fiber", exact: true }),
+  ).toHaveValue("3");
+  // The keyed base sphere no longer returns to its opening, so the film
+  // plays once rather than looping.
+  await page
+    .getByRole("combobox", { name: "Repeat", exact: true })
+    .selectOption("once");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .fill("0.3");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  expect(
+    JSON.parse((await stage.getAttribute("data-config"))!).weave.selected,
+  ).toBe(3);
 });
 
 // Safari leaves a pressed button unfocused, so focus reaches a moved or

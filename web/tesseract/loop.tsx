@@ -7,6 +7,7 @@ import { Composition } from "./Composition";
 import type { EngineClient } from "../engine-client";
 import { exportBaseSize, type ExportLayout } from "../export-quality";
 import { loopRefusal } from "../loop-check";
+import { createTesseractPhraseSampler, type PhraseSession } from "./phrase";
 import {
   sample,
   type Config,
@@ -25,11 +26,22 @@ export async function tesseractLoopGap(o: {
   diagramView: View;
   layers: Layers;
   layout?: ExportLayout;
+  // A prepared phrase, whose start and end are compared in both views.
+  phrase?: Pick<PhraseSession, "compiled" | "original">;
 }): Promise<string | null> {
   const size = exportBaseSize(o.layout);
+  const phrased = o.phrase
+    ? createTesseractPhraseSampler({
+        phrase: o.phrase.compiled,
+        original: o.phrase.original,
+      })
+    : null;
   const draw = async (p: number) => {
-    const config = sample(o.config, o.motion, p),
-      result = await o.client.tesseract(config);
+    const frame = phrased
+      ? await phrased(p * o.phrase!.compiled.duration, o.client)
+      : null;
+    const config = frame?.config ?? sample(o.config, o.motion, p),
+      result = frame?.result ?? (await o.client.tesseract(config));
     return renderToStaticMarkup(
       <svg
         xmlns="http://www.w3.org/2000/svg"
@@ -37,7 +49,13 @@ export async function tesseractLoopGap(o: {
         height={size.height}
         viewBox={`0 0 ${size.width} ${size.height}`}
       >
-        <Composition {...o} dark={false} config={config} result={result} />
+        <Composition
+          {...o}
+          {...(frame && { view: frame.view, diagramView: frame.diagramView })}
+          dark={false}
+          config={config}
+          result={result}
+        />
       </svg>,
     );
   };

@@ -86,6 +86,23 @@ import {
   type TesseractStudy,
 } from "./link";
 import { cycles, progressAt, type Pace, type Repeat } from "../timing";
+import { liveReadout } from "../number-format";
+import { phraseDuration, phraseKeyField } from "../phrase-timeline";
+import {
+  compileTesseractPhrase,
+  createTesseractPhraseSampler,
+  defaultTesseractPhrase,
+  phraseConfig,
+  phraseRanges,
+  tesseractPhraseAt,
+  tesseractPhraseError,
+  tesseractPhraseKeys,
+  tesseractPhraseTargets,
+  type PhraseSession,
+  type TesseractPhrase,
+} from "./phrase";
+import { TesseractPhraseEditor } from "./PhraseControls";
+
 import "./style.css";
 
 // An SVG export's page is the still's size, as a 3D export's is, so a
@@ -156,6 +173,11 @@ export default function TesseractApp({
     [repeat, setRepeat] = useState<Repeat>("once"),
     [pace, setPace] = useState<Pace>("steady"),
     [loopError, setLoopError] = useState("");
+  // The phrase the user arranged, if any (a starter is offered until then),
+  // the refusal that stopped it, and the session Play prepared from it.
+  const [phrase, setPhrase] = useState<TesseractPhrase | undefined>(),
+    [phraseProblem, setPhraseProblem] = useState<string>(),
+    [session, setSession] = useState<PhraseSession | null>(null);
   const [frame, setFrame] = useState<{ config: Config; result: Result } | null>(
       null,
     ),
@@ -197,19 +219,45 @@ export default function TesseractApp({
   const scalarBusy = Object.values(scalars).some((s) => s.pending),
     scalarState = Object.values(scalars).find((s) => s.error),
     scalarError = scalarState?.error;
+  // A phrase paces each phase itself; its duration is its phases'.
+  const phraseMode = motion === "phrase",
+    phraseTargets = tesseractPhraseTargets(config),
+    phraseDraft =
+      phrase ??
+      (phraseTargets.length ? defaultTesseractPhrase(config) : undefined),
+    timelinePace: Pace = phraseMode ? "steady" : pace,
+    timelineDuration =
+      phraseMode && phraseDraft
+        ? (session?.compiled.duration ?? phraseDuration(phraseDraft))
+        : duration;
   // Only a single pass completes; a repeating animation is never finished.
   const complete = repeat === "once" && progress >= 1,
-    motionProgress = progressAt(progress, repeat, pace);
-  // Playback holds the view buttons; a finished animation hands them back.
-  const held = preview && (playing || !complete);
-  const request = preview ? sample(config, motion, motionProgress) : config,
+    motionProgress = progressAt(progress, repeat, timelinePace);
+  // A phrase's whole state at this time: its study and both views.
+  const phraseState =
+    preview && phraseMode && session
+      ? tesseractPhraseAt(
+          session.compiled,
+          motionProgress * session.compiled.duration,
+        )
+      : null;
+  // Playback holds the view buttons; a finished animation hands them back,
+  // except a phrase's, whose views are the phrase's until Back to study.
+  const held = preview && (playing || !complete || phraseMode);
+  const request = phraseState
+      ? phraseState.config
+      : preview
+        ? sample(config, motion, motionProgress)
+        : config,
     key = JSON.stringify(request);
+  const shownView = phraseState?.view ?? view,
+    shownDiagramView = phraseState?.companionView ?? diagramView;
   // The study apart from the timeline's position. Changing it, starting
   // or stopping playback, or leaving the notebook drops every result in
   // flight; moving along a paused timeline does not, so a quick scrub
   // shows each frame the engine finishes, as playback does.
   const definition = preview
-    ? JSON.stringify([config, motion, repeat, pace])
+    ? JSON.stringify([config, motion, repeat, pace, phraseMode && phrase])
     : key;
   // Busy while the study itself is being computed. A scrub's frame catching
   // up with the scrubber only lags, as in the 3D notebook: it leaves the
@@ -290,7 +338,14 @@ export default function TesseractApp({
   useEffect(() => {
     if (!playing || !ready || !active) return;
     const ticket = ++epoch.current,
-      played = JSON.stringify([config, motion, repeat, pace]);
+      played = JSON.stringify([
+        config,
+        motion,
+        repeat,
+        pace,
+        phraseMode && phrase,
+      ]);
+    const phrased = phraseMode ? session : null;
     // Every frame is calculated; while one engine calculates, a helper,
     // alive only while playback runs, can calculate the next.
     const helper =
@@ -298,6 +353,13 @@ export default function TesseractApp({
         ? new EngineClient()
         : null;
     const frameAt = async (engine: EngineClient, p: number) => {
+      if (phrased) {
+        const f = await phrased.sample(
+          progressAt(p, repeat, "steady") * phrased.compiled.duration,
+          engine,
+        );
+        return { config: f.config, result: f.result };
+      }
       const q = sample(config, motion, progressAt(p, repeat, pace));
       return { config: q, result: await engine.tesseract(q) };
     };
@@ -305,7 +367,7 @@ export default function TesseractApp({
     // intermediate times instead of queuing work.
     const halt = playFrames({
       from: progress,
-      duration: duration * 1000,
+      duration: (phrased?.compiled.duration ?? duration) * 1000,
       repeat: cycles(repeat),
       lanes: [client.current!, ...(helper ? [helper] : [])].map(
         (engine) => (p: number) => frameAt(engine, p),
@@ -355,6 +417,7 @@ export default function TesseractApp({
     setProgress(0);
     setPreview(false);
     setLoopError("");
+    setSession(null);
   };
   // A descriptor choice can change the available motions as a view can.
   // Reconcile the actual state; a native select displaying its first
@@ -377,6 +440,8 @@ export default function TesseractApp({
     setProgress(0);
     setPreview(false);
     setLoopError("");
+    setSession(null);
+    setPhraseProblem(undefined);
     setPreset(null);
     setConfig(change);
   };
@@ -434,6 +499,9 @@ export default function TesseractApp({
     setRepeat(study.repeat);
     setPace(study.pace);
     setLoopError("");
+    setPhrase(study.phrase && structuredClone(study.phrase));
+    setPhraseProblem(undefined);
+    setSession(null);
     setProgress(0);
     setPreview(false);
     setView(study.view);
@@ -495,6 +563,10 @@ export default function TesseractApp({
     duration,
     repeat,
     pace,
+    // The phrase arranged, or the starter a phrase animation plays.
+    ...((phrase ?? (phraseMode ? phraseDraft : undefined)) && {
+      phrase: structuredClone(phrase ?? phraseDraft),
+    }),
   });
   useEffect(() => {
     if (!active) {
@@ -524,8 +596,95 @@ export default function TesseractApp({
       }
     }
   }, [active, atlasWaiting, busy, preview, scalarError, error]);
+  // Prepares the phrase over the study as it stands: each key resolved by
+  // Go on its own, so a refusal names its field; every phase end that moves
+  // a parameter computed once, so a refusal stops Play under the end value
+  // that caused it rather than mid-film. Null once refused or superseded.
+  const preparePhrase = async (): Promise<PhraseSession | null> => {
+    const ticket = ++checks.current,
+      engine = client.current!,
+      draft = phraseDraft;
+    setPhraseProblem(undefined);
+    const refuse = (problem: string) => {
+      if (ticket === checks.current) setPhraseProblem(problem);
+      return null;
+    };
+    if (!draft) return refuse("This study has no value for a phrase to move.");
+    const problem = tesseractPhraseError(config, draft);
+    if (problem) return refuse(problem);
+    const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
+    const keys: number[] = [];
+    for (const key of tesseractPhraseKeys(draft)) {
+      try {
+        keys.push((await engine.scalars([key.text]))[0]);
+      } catch (e) {
+        return refuse(`${phraseKeyField(key.phase, key.track)}: ${reason(e)}`);
+      }
+      if (ticket !== checks.current) return null;
+    }
+    const compiled = compileTesseractPhrase(config, draft, keys, {
+      view,
+      diagramView,
+    });
+    const at = (values: number[], selected?: number) =>
+      phraseConfig(compiled, values, selected);
+    let original: PhraseSession["original"];
+    try {
+      original = {
+        config: compiled.config,
+        result: await engine.tesseract(compiled.config),
+      };
+    } catch (e) {
+      return refuse(reason(e));
+    }
+    if (ticket !== checks.current) return null;
+    for (const [i, phase] of compiled.phases.entries()) {
+      if (!phase.moves) continue;
+      try {
+        await engine.tesseract(at(phase.to.values, phase.to.selected));
+      } catch (e) {
+        if (ticket !== checks.current) return null;
+        // With several parameters moving, each but the last is tried alone.
+        const moved = phase.to.values.flatMap((v, k) =>
+          v !== phase.from.values[k] ? [k] : [],
+        );
+        let blamed = moved[moved.length - 1];
+        for (const k of moved.slice(0, -1)) {
+          const alone = phase.from.values.map((v, j) =>
+            j === k ? phase.to.values[k] : v,
+          );
+          const refused = await engine
+            .tesseract(at(alone, phase.to.selected))
+            .then(
+              () => false,
+              () => true,
+            );
+          if (ticket !== checks.current) return null;
+          if (refused) {
+            blamed = k;
+            break;
+          }
+        }
+        return refuse(`${phraseKeyField(i, blamed)}: ${reason(e)}`);
+      }
+      if (ticket !== checks.current) return null;
+    }
+    return {
+      compiled,
+      original,
+      sample: createTesseractPhraseSampler({ phrase: compiled, original }),
+    };
+  };
   const play = async () => {
     setLoopError("");
+    // A phrase is prepared from the study when Play starts it, and kept
+    // while it is paused or finished.
+    let phrased = phraseMode ? session : null;
+    if (phraseMode && (!phrased || !preview)) {
+      phrased = await preparePhrase();
+      if (!phrased) return;
+      setSession(phrased);
+    }
     // A loop joins the end to the start, so they must be the same drawing.
     if (repeat === "loop") {
       const ticket = ++checks.current;
@@ -539,6 +698,7 @@ export default function TesseractApp({
           diagramView,
           layers,
           layout,
+          ...(phrased && { phrase: phrased }),
         });
         if (ticket !== checks.current) return;
         if (gap) {
@@ -580,8 +740,12 @@ export default function TesseractApp({
     setExporting("Preparing…");
     setExportProgress(0);
     try {
+      const phrased = phraseMode ? await preparePhrase() : null;
+      if (phraseMode && !phrased) return;
+      abort.signal.throwIfAborted();
       const { exportMotion } = await import("./export");
       const blob = await exportMotion({
+        ...(phrased && { phrase: phrased }),
         config: structuredClone(config),
         motion,
         view: { ...view },
@@ -835,7 +999,19 @@ export default function TesseractApp({
       <AppHeader theme={theme} inert={journey.active}>
         <ShareLink
           notebook="4d"
-          study={snapshot}
+          study={() => {
+            const study = snapshot();
+            // A hidden draft may name a target or camera of a different
+            // view. Keep it locally, without making an ordinary study's
+            // link impossible to open. Valid dormant phrases still travel.
+            if (
+              study.motion !== "phrase" &&
+              study.phrase &&
+              tesseractPhraseError(study.config, study.phrase)
+            )
+              delete study.phrase;
+            return study;
+          }}
           disabled={busy || !!error || !!scalarError}
         />
         <AnimationButton section="shape-animation-section" />
@@ -971,6 +1147,8 @@ export default function TesseractApp({
                       generation.current++;
                       setScalars({});
                       setMotion(objects[object].motion);
+                      // A phrase names the values of one object.
+                      setPhrase(undefined);
                       update((c) => {
                         const saved = remembered.current[object];
                         if (saved) return structuredClone(saved);
@@ -1316,14 +1494,47 @@ export default function TesseractApp({
                 config,
                 layout,
                 motion,
-                duration,
                 repeat,
                 pace,
                 preview,
                 playing,
                 exporting,
               }}
+              duration={timelineDuration}
               complete={!exporting && complete}
+              phraseEditor={
+                phraseMode && phraseDraft ? (
+                  <TesseractPhraseEditor
+                    config={config}
+                    phrase={phraseDraft}
+                    problem={phraseProblem}
+                    onChange={(change) => {
+                      // Any edit returns to the study.
+                      resetMotion();
+                      setPhraseProblem(undefined);
+                      setPhrase((previous) => change(previous ?? phraseDraft));
+                    }}
+                    drawn={(pane) => (pane === "view" ? view : diagramView)}
+                    onShow={(pane, shown) => {
+                      resetMotion();
+                      setSpinning(false);
+                      if (pane === "view") setView(shown);
+                      else setDiagramView(shown);
+                    }}
+                  />
+                ) : undefined
+              }
+              phraseStage={
+                phraseState && session
+                  ? [
+                      phraseState.phase,
+                      ...phraseRanges(session.compiled).map(
+                        (range, k) =>
+                          `${session.compiled.labels[k]} = ${liveReadout(phraseState.values[k], range)}`,
+                      ),
+                    ].join(" · ")
+                  : undefined
+              }
               // Export renders frames apart from the live preview, whose
               // progress would otherwise resample the drawing on every frame.
               progress={exporting ? exportProgress : progress}
@@ -1422,7 +1633,9 @@ export default function TesseractApp({
                 <StudyPlot
                   result={frame.result}
                   config={frame.config}
-                  {...{ view, diagramView, layers, dark, scheme }}
+                  view={shownView}
+                  diagramView={shownDiagramView}
+                  {...{ layers, dark, scheme }}
                   layout={liveLayout}
                   onSelect={
                     selection?.visible(frame.config) ? select : undefined

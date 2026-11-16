@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { elapsed, progressPercent } from "../number-format";
 import {
   MotionExportSettings,
@@ -45,6 +46,10 @@ export function AnimationPanel(p: {
   onStop: () => void;
   onSeek: (n: number) => void;
   onExport: (options: MotionExport) => void;
+  // A phrase's editor, shown in place of the duration and pace, and the
+  // stage and values of the frame shown while it plays.
+  phraseEditor?: ReactNode;
+  phraseStage?: string;
 }) {
   const section = useDisclosure("shape-animation", true),
     exportSection = useDisclosure("shape-export");
@@ -105,19 +110,21 @@ export function AnimationPanel(p: {
               ))}
             </select>
           </Field>
-          <Field label="Duration (seconds)">
-            <input
-              type="number"
-              min="0.1"
-              max="3600"
-              step="any"
-              value={Number.isNaN(p.duration) ? "" : p.duration}
-              onChange={(e) =>
-                p.onDuration(e.target.value === "" ? NaN : +e.target.value)
-              }
-            />
-          </Field>
-          <div className="pair">
+          {p.phraseEditor ?? (
+            <Field label="Duration (seconds)">
+              <input
+                type="number"
+                min="0.1"
+                max="3600"
+                step="any"
+                value={Number.isNaN(p.duration) ? "" : p.duration}
+                onChange={(e) =>
+                  p.onDuration(e.target.value === "" ? NaN : +e.target.value)
+                }
+              />
+            </Field>
+          )}
+          <div className={p.phraseEditor ? undefined : "pair"}>
             <Field label="Repeat" help={repeatHelp[p.repeat]}>
               <select
                 value={p.repeat}
@@ -132,22 +139,26 @@ export function AnimationPanel(p: {
                   ))}
               </select>
             </Field>
-            <Field label="Pace" help={paceHelp[p.pace]}>
-              <select
-                value={p.pace}
-                onChange={(e) => p.onPace(e.target.value as Pace)}
-              >
-                {paceChoices.map((c) => (
-                  <option key={c.value} value={c.value}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            {!p.phraseEditor && (
+              <Field label="Pace" help={paceHelp[p.pace]}>
+                <select
+                  value={p.pace}
+                  onChange={(e) => p.onPace(e.target.value as Pace)}
+                >
+                  {paceChoices.map((c) => (
+                    <option key={c.value} value={c.value}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
           </div>
           <p className="hint">
-            {objects[p.config.object].animationFramingHelp?.(p.config) ??
-              "Animation holds your current view. Drag, pan, or zoom before playback to choose the framing."}
+            {p.phraseEditor
+              ? "The phrase opens at the views you leave before Play; its camera keys move them from there."
+              : (objects[p.config.object].animationFramingHelp?.(p.config) ??
+                "Animation holds your current view. Drag, pan, or zoom before playback to choose the framing.")}
           </p>
           <MotionExportSettings
             state={exportState}
@@ -198,6 +209,9 @@ export function AnimationPanel(p: {
                   onSeek={p.onSeek}
                 />
               </Field>
+              {p.phraseStage && (
+                <p className="note phrase-stage">{p.phraseStage}</p>
+              )}
               <div className="note" role="status" aria-live="off">
                 {p.exporting
                   ? `Exporting ${text.short}… ${p.exporting}`
@@ -211,7 +225,9 @@ export function AnimationPanel(p: {
                 {p.exporting
                   ? "Cancel export discards the file; your study stays as it was."
                   : p.complete
-                    ? "Orbit the finished drawing, scrub the timeline, or save this frame as an image. Back to study restores your study."
+                    ? p.phraseEditor
+                      ? "Scrub the timeline, or save this frame as an image. Back to study restores your study and views."
+                      : "Orbit the finished drawing, scrub the timeline, or save this frame as an image. Back to study restores your study."
                     : "Pause to scrub or save this frame as an image. Stop restores your study and manual view."}
               </p>
             </div>

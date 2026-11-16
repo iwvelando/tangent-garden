@@ -1,4 +1,5 @@
 import type { Config, Motion } from "./types";
+import type { TesseractPhrase } from "./phrase";
 import type { Pace, Repeat } from "../timing";
 import { defaultConfig, objects } from "./objects";
 const base = defaultConfig;
@@ -18,6 +19,8 @@ export const tesseractPresets: {
   // Once and steady unless given (../timing.ts).
   repeat?: Repeat;
   pace?: Pace;
+  // The phrase Play a phrase plays, for a preset that opens with one.
+  phrase?: TesseractPhrase;
 }[] = [
   {
     name: "A cube beyond a cube",
@@ -233,6 +236,71 @@ export const tesseractPresets: {
     },
     motion: "trace",
     repeat: "loop",
+  },
+  // Opens a seven-petal flower over its bouquet, at the sample halfway round
+  // (whose fiber is a clear ellipse), at the views every preset opens with, and plays its phrase as a loop: one
+  // fiber traces the whole bouquet, the petals open, the weave turns once in
+  // xw while the fibers' view orbits once, and the petals close again. The
+  // end is the opening drawing: whole turns of the trace, xw and the camera.
+  {
+    name: "A bouquet answers its path",
+    detail:
+      "Trace a flower on the base sphere and one fiber sweeps out its bouquet. Open the petals and every fiber follows; turn in four dimensions and the base point stays put.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 28,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.2, 0.15, 0.3, 0.2, 0.1],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 14,
+        path: "flower",
+        amplitude: Math.PI / 7,
+        petals: 7,
+      },
+    },
+    motion: "phrase",
+    repeat: "loop",
+    phrase: {
+      target: "weave.trace",
+      also: ["weave.amplitude", "xw"],
+      phases: [
+        { name: "Trace the flower", duration: 6, pace: "steady", key: "1" },
+        {
+          name: "Open the petals",
+          duration: 3,
+          pace: "ease",
+          keys: { "weave.amplitude": "pi/5" },
+        },
+        {
+          name: "Turn in four dimensions",
+          duration: 8,
+          pace: "ease",
+          keys: { xw: "0.3 + 2*pi" },
+          view: {
+            yaw: 0.32,
+            pitch: 0.35,
+            zoom: 1,
+            panX: 0,
+            panY: 0,
+            turns: 1,
+          },
+        },
+        {
+          name: "Close the petals",
+          duration: 3,
+          pace: "ease",
+          keys: { "weave.amplitude": "pi/7" },
+        },
+      ],
+    },
   },
   // Opens one cell of the 24-cell, its center and the dual edges from it,
   // turning in a seamless double rotation.

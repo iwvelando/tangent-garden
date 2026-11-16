@@ -155,15 +155,16 @@ test("4D animation adapts to the study and shares export defaults, limits and di
   await expect(page.locator("#tesseract-artwork")).toBeVisible();
   await openShapeExport(page);
   const animate = page.getByRole("combobox", { name: "Animate", exact: true });
-  await expect(animate.locator("option")).toHaveCount(2);
+  // Two rotations and Play a phrase.
+  await expect(animate.locator("option")).toHaveCount(3);
   await choosePreset(page, { label: "An octahedron within" });
   await expect(animate).toHaveValue("slice");
-  await expect(animate.locator("option")).toHaveCount(3);
+  await expect(animate.locator("option")).toHaveCount(4);
   await page
     .getByRole("combobox", { name: "View of the tesseract" })
     .selectOption("stereo");
   await expect(animate).toHaveValue("double");
-  await expect(animate.locator("option")).toHaveCount(2);
+  await expect(animate.locator("option")).toHaveCount(3);
   const scale = page.getByRole("slider", {
     name: "Export resolution",
     exact: true,
