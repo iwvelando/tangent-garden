@@ -146,6 +146,32 @@ import { easedPath, withEase } from "../key-views";
 import { Field, FieldErrorContext, StudyError } from "../Field";
 import { tiered, withMore } from "../help";
 import { useDisclosure } from "../useDisclosure";
+import {
+  compileSpatialPhrase,
+  createSpatialPhraseSampler,
+  defaultSpatialPhrase,
+  spatialPhraseError,
+  spatialPhraseKeys,
+  spatialPhraseProblemField,
+  spatialPhraseTargets,
+  spatialPhraseViewError,
+  type CompiledSpatialPhrase,
+  type SpatialPhrase,
+  type SpatialPhraseView,
+} from "./phrase";
+import { phraseDuration, phraseKeyField } from "../phrase-timeline";
+import {
+  PhraseTimelineEditor,
+  phraseParameterHelp,
+  phrasePaceHelp,
+} from "../PhraseEditor";
+import {
+  PhaseLayers,
+  PhaseTurns,
+  spatialPhraseCameraHelp,
+  spatialPhraseHelp,
+  spatialReveal,
+} from "./PhraseControls";
 import type { SpatialCamera } from "./link";
 import {
   defaultPath,
@@ -241,6 +267,10 @@ type Session = {
   // Present only while riding a ray: its polyline, the bounds its lens is
   // framed about, and the trace's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
+  // Present only while playing a phrase: its compiled boundaries, and the
+  // sampler every frame of playback, seeking and export comes from.
+  phrase?: CompiledSpatialPhrase;
+  phraseSample?: ReturnType<typeof createSpatialPhraseSampler>;
   camera: CameraMode;
   heldView?: Viewport;
   // Present only while parameters vary under the current view in a study
@@ -261,8 +291,13 @@ type Session = {
 // aim for 60 a second: they are calculated while parameters vary or the
 // probe moves between samples, and every other mode draws the prepared
 // study.
-export const redraws = (s: Pick<Session, "mode" | "between">) =>
-  !(s.mode === "parameters" || (s.mode === "probe" && !!s.between));
+// A phrase calculates its frames while one of its phases moves a parameter.
+export const redraws = (s: Pick<Session, "mode" | "between" | "phrase">) =>
+  !(
+    s.mode === "parameters" ||
+    (s.mode === "probe" && !!s.between) ||
+    !!s.phrase?.phases.some((p) => p.moves)
+  );
 // The rests' help: where the level rests, and for how long.
 const holdsHelp = (story: Story) =>
   tiered(
@@ -325,6 +360,9 @@ type Props = {
   // The curated event the study is, while it is its story's (story.ts),
   // whose level can rest beside the event; else null.
   event?: Story | null;
+  // The layers the study offers, with their labels, which a phrase's
+  // phases can show or hide.
+  layerOptions?: readonly (readonly [keyof Layers, string])[];
 };
 
 export function SpatialAnimationPanel({
@@ -354,6 +392,7 @@ export function SpatialAnimationPanel({
   restore,
   onShowView,
   event = null,
+  layerOptions = [],
 }: Props) {
   const [modeChoice, setMode] = useState<AnimationMode>("reveal");
   const mode = family ? "reveal" : modeChoice;
@@ -400,6 +439,27 @@ export function SpatialAnimationPanel({
   const [fullRefinement, setFullRefinement] = useState(false);
   // Whether a story's level rests beside its event (story.ts's holdPlan).
   const [holds, setHolds] = useState(false);
+  // The phrase a phrase animation plays, once edited or linked; until then
+  // a starter over the current study. A refusal that names one of its
+  // fields is shown under that field until the phrase or study changes.
+  const [phrase, setPhrase] = useState<SpatialPhrase | undefined>();
+  const [phraseProblem, setPhraseProblem] = useState<string | undefined>();
+  const phrasable = !!frame && spatialPhraseTargets(frame.config).length > 0;
+  const phraseDraft =
+    phrase ??
+    (frame && phrasable ? defaultSpatialPhrase(frame.config) : undefined);
+  // A phrase's pace is its phases' own: the one they share, or the last
+  // chosen when a link gives them several.
+  const sharedPace = (p: SpatialPhrase, chosen: Pace) =>
+    p.phases.every((phase) => phase.pace === p.phases[0].pace)
+      ? p.phases[0].pace
+      : chosen;
+  // A phrase's duration is its phases'.
+  const total =
+    mode === "phrase" && phraseDraft ? phraseDuration(phraseDraft) : duration;
+  useEffect(() => {
+    if (frame && !phrasable && modeChoice === "phrase") setMode("reveal");
+  }, [!!frame, phrasable, modeChoice]);
   const motions =
     frame && probing
       ? probeMotions(
@@ -421,7 +481,9 @@ export function SpatialAnimationPanel({
   }, [modeChoice, cameraChoice]);
   // The path mode flies the key views with the geometry fixed; the path
   // camera flies them while it moves. The orbit turns the camera itself.
-  const flies = mode === "path" || (camera === "path" && mode !== "orbit");
+  const flies =
+    mode === "path" ||
+    (camera === "path" && mode !== "orbit" && mode !== "phrase");
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
@@ -538,6 +600,7 @@ export function SpatialAnimationPanel({
       probeMotion,
       ...(fullRefinement && { fullRefinement }),
       ...(holds && { holds }),
+      ...(modeChoice === "phrase" && phraseDraft && { phrase: phraseDraft }),
       path,
       ride,
       repeat: repeatChoice,
@@ -556,6 +619,8 @@ export function SpatialAnimationPanel({
     setProbeMotion(restore.settings.probeMotion);
     setFullRefinement(!!restore.settings.fullRefinement);
     setHolds(!!restore.settings.holds);
+    setPhrase(restore.settings.phrase);
+    setPhraseProblem(undefined);
     setPath(restore.settings.path);
     setRide(restore.settings.ride);
     setRepeat(restore.settings.repeat);
@@ -592,7 +657,14 @@ export function SpatialAnimationPanel({
   };
   useEffect(() => {
     stop();
+    setPhraseProblem(undefined);
   }, [revision]);
+  // A phrase compiles its layer events from the study's layers as it
+  // begins; changing them returns to the study.
+  const layerKey = JSON.stringify(layers);
+  useEffect(() => {
+    if (session.current?.phrase) stop();
+  }, [layerKey]);
   // Turning the probe off ends an animation that draws it.
   useEffect(() => {
     if (!probing && session.current?.probe) stop();
@@ -673,6 +745,22 @@ export function SpatialAnimationPanel({
         s.length,
         s.camera === "current" ? "current" : "hold",
       );
+    if (s.phrase) {
+      // The phrase at its own seconds: repeating maps the timeline onto
+      // them; each phase keeps its own pace.
+      const progress = progressAt(time, s.repeat, "steady");
+      const view = await s.phraseSample!(
+        progress * s.phrase.duration,
+        engine,
+        playing && s.coarse && !(s.repeat === "once" && time === 1),
+      );
+      return {
+        ...view,
+        progress,
+        time,
+        complete: s.repeat === "once" && time === 1,
+      };
+    }
     const view = await frameAt(
       s,
       progressAt(time, s.repeat, s.pace),
@@ -1020,9 +1108,18 @@ export function SpatialAnimationPanel({
         )
       : "";
     setLive(
-      s.mode === "path"
-        ? leg
-        : [animationReadout(s, view), leg, riding].filter(Boolean).join(" · "),
+      view.phrase
+        ? [
+            view.phrase.phase,
+            ...view.phrase.tracks.map(
+              (t) => `${t.label} = ${liveReadout(t.value, t.range)}`,
+            ),
+          ].join(" · ")
+        : s.mode === "path"
+          ? leg
+          : [animationReadout(s, view), leg, riding]
+              .filter(Boolean)
+              .join(" · "),
     );
   }
   function animationReadout(s: Session, view: AnimationView) {
@@ -1080,9 +1177,12 @@ export function SpatialAnimationPanel({
     session.current = null;
     onView(null);
     changeStatus("idle");
-    setError(
-      `${what} stopped: ${reason instanceof Error ? reason.message : String(reason)}`,
-    );
+    const message = reason instanceof Error ? reason.message : String(reason);
+    // A phrase's refusal that names one of its fields is shown there.
+    if (mode === "phrase" && spatialPhraseProblemField(message)) {
+      setPhraseProblem(message);
+      setError("");
+    } else setError(`${what} stopped: ${message}`);
   }
   function schedule(s: Session, from: number) {
     cancel(true);
@@ -1091,14 +1191,15 @@ export function SpatialAnimationPanel({
     // Parameter frames are calculated; while one engine calculates, a helper
     // can calculate the next. A flight's pieces are shared between the two
     // (see piece). Other modes draw from the prepared study.
+    const calculates = s.mode === "parameters" || !redraws(s);
     if (
-      (s.mode === "parameters" || s.pieces) &&
+      (calculates || s.pieces) &&
       !helper.current &&
       playbackEngineCount() > 1
     )
       helper.current = new EngineClient();
     const engines =
-      s.mode === "parameters" && helper.current
+      calculates && helper.current
         ? [client.current!, helper.current]
         : [client.current!];
     // Each engine holds at most one calculation. Slow devices skip
@@ -1139,10 +1240,18 @@ export function SpatialAnimationPanel({
       (mode === "parameters" && camera === "current" && getFocus?.()) ||
       undefined;
     try {
-      if (!Number.isFinite(duration) || duration < 0.1 || duration > 3600)
+      if (
+        mode !== "phrase" &&
+        (!Number.isFinite(duration) || duration < 0.1 || duration > 3600)
+      )
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
       if (!heldView) throw new Error("The current view is not ready yet.");
-      if (save) exportTiming(duration, fps);
+      if (save) exportTiming(total, fps);
+      if (mode === "phrase") {
+        const s = await phraseSession(heldView, token);
+        if (s) await launch(s, token, save);
+        return;
+      }
       let numeric: NumericTrack[] = [];
       if (mode === "parameters") {
         if (!tracks.length)
@@ -1395,65 +1504,209 @@ export function SpatialAnimationPanel({
         length,
         progress: 0,
       };
-      // A loop plays only when its last frame is its first.
-      if (repeat === "loop") {
-        const [a, b] = await Promise.all([frameAt(s, 0), frameAt(s, 1)]);
-        if (epoch.current !== token) return;
-        const gap = loopGap(a, b, layers);
-        if (gap) throw new Error(gap);
-      }
-      session.current = s;
-      if (save) {
-        const controller = new AbortController();
-        exportAbort.current = controller;
-        changeStatus("exporting");
-        setProgress(0);
-        onView(null);
-        const { exportAnimation } = await import("./export");
-        if (epoch.current !== token) return;
-        // Spatial meshes are larger than planar paths. Keep one numerical
-        // frame and one GPU upload in flight, including during export.
-        const engine = client.current;
-        const blob = await exportAnimation({
-          format: chosen,
-          duration,
-          fps: fps,
-          // A repeating animation loops forever.
-          loop: chosen === "webp" && (loop || cycles(s.repeat)),
-          cyclic: cycles(s.repeat),
-          settings: { scale: exportScale, quality, layout, captions },
-          grid: planeViews
-            ? { views: planeViews, weight: sight.weight }
-            : undefined,
-          dark,
-          scheme,
-          layers: { ...layers },
-          cut: s.cut,
-          sight: s.sight,
-          signal: controller.signal,
-          sample: (p) => sample(s, p, engine),
-          onProgress: (completed, total) => {
-            if (epoch.current !== token) return;
-            setProgress(completed / total);
-            setLive(`Rendering frame ${completed} of ${total}`);
-          },
-        });
-        if (epoch.current !== token) return;
-        saveFile(blob, `tangent-garden-spatial-${mode}.${text.extension}`);
-        exportAbort.current = null;
-        session.current = null;
-        changeStatus("idle");
-        setExportNotice(`Saved ${text.name} · ${mebibytes(blob.size)}`);
-        return;
-      }
-      const firstView = await sample(s, 0);
-      if (epoch.current !== token) return;
-      display(s, firstView);
-      onReveal();
-      schedule(s, 0);
+      await launch(s, token, save);
     } catch (error) {
       if (epoch.current === token) fail(error, save ? "Export" : "Animation");
     }
+  }
+  // Plays or exports a prepared session: a loop first checks that its last
+  // frame is its first.
+  async function launch(s: Session, token: number, save: boolean) {
+    // A loop plays only when its last frame is its first.
+    if (s.repeat === "loop") {
+      const [a, b] = await Promise.all(
+        s.phrase
+          ? [sample(s, 0), sample(s, 1)]
+          : [frameAt(s, 0), frameAt(s, 1)],
+      );
+      if (epoch.current !== token) return;
+      const gap = loopGap(a, b, layers);
+      if (gap) throw new Error(gap);
+    }
+    session.current = s;
+    if (save) {
+      const controller = new AbortController();
+      exportAbort.current = controller;
+      changeStatus("exporting");
+      setProgress(0);
+      onView(null);
+      const { exportAnimation } = await import("./export");
+      if (epoch.current !== token) return;
+      // Spatial meshes are larger than planar paths. Keep one numerical
+      // frame and one GPU upload in flight, including during export.
+      const engine = client.current!;
+      const blob = await exportAnimation({
+        format: chosen,
+        duration: s.duration,
+        fps: fps,
+        // A repeating animation loops forever.
+        loop: chosen === "webp" && (loop || cycles(s.repeat)),
+        cyclic: cycles(s.repeat),
+        settings: { scale: exportScale, quality, layout, captions },
+        grid: planeViews
+          ? { views: planeViews, weight: sight.weight }
+          : undefined,
+        dark,
+        scheme,
+        layers: { ...layers },
+        cut: s.cut,
+        sight: s.sight,
+        signal: controller.signal,
+        sample: (p) => sample(s, p, engine),
+        onProgress: (completed, total) => {
+          if (epoch.current !== token) return;
+          setProgress(completed / total);
+          setLive(`Rendering frame ${completed} of ${total}`);
+        },
+      });
+      if (epoch.current !== token) return;
+      saveFile(blob, `tangent-garden-spatial-${s.mode}.${text.extension}`);
+      exportAbort.current = null;
+      session.current = null;
+      changeStatus("idle");
+      setExportNotice(`Saved ${text.name} · ${mebibytes(blob.size)}`);
+      return;
+    }
+    const firstView = await sample(s, 0);
+    if (epoch.current !== token) return;
+    display(s, firstView);
+    onReveal();
+    schedule(s, 0);
+  }
+  // Prepares a phrase over the study as it stands: each key resolved by Go
+  // on its own, so a refusal names its field; every phase end that moves a
+  // parameter computed once, so a refusal stops Play under the end value
+  // that caused it rather than mid-film; and the sampler every frame comes
+  // from. Returns null once superseded.
+  async function phraseSession(
+    heldView: Viewport,
+    token: number,
+  ): Promise<Session | null> {
+    const draft = phraseDraft;
+    if (!frame || !client.current || !draft)
+      throw new Error(
+        "This study has no continuous parameter for a phrase to move.",
+      );
+    if (probing)
+      throw new Error(
+        "A phrase doesn't draw the probe. Turn the probe off to play it.",
+      );
+    const problem =
+      spatialPhraseError(frame.config, draft) ??
+      spatialPhraseViewError(draft, refineView ? viewZoom : spatialPlainZoom);
+    if (problem) throw new Error(problem);
+    const engine = client.current;
+    const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
+    const keys = await Promise.all(
+      spatialPhraseKeys(draft).map(async (key) => {
+        try {
+          return (await engine.scalars([key.text]))[0];
+        } catch (e) {
+          throw new Error(
+            `${phraseKeyField(key.phase, key.track)}: ${reason(e)}`,
+          );
+        }
+      }),
+    );
+    if (epoch.current !== token) return null;
+    const compiled = compileSpatialPhrase(
+      frame.config,
+      layers,
+      length,
+      draft,
+      keys,
+      { around: frame.result.bounds, entry: heldView },
+    );
+    const at = (values: number[]) =>
+      applyTracks(
+        compiled.config,
+        compiled.targets.map((target, k) => ({
+          target,
+          from: values[k],
+          to: values[k],
+        })),
+        0,
+        length,
+      ).config;
+    for (const [i, phase] of compiled.phases.entries()) {
+      if (!phase.moves) continue;
+      try {
+        await engine.computeSpatial(at(phase.to.values));
+      } catch (e) {
+        if (epoch.current !== token) return null;
+        // With several parameters moving, each but the last is tried alone.
+        const moved = phase.to.values.flatMap((v, k) =>
+          v !== phase.from.values[k] ? [k] : [],
+        );
+        let blamed = moved[moved.length - 1];
+        for (const k of moved.slice(0, -1)) {
+          const alone = phase.from.values.map((v, j) =>
+            j === k ? phase.to.values[k] : v,
+          );
+          const refused = await engine.computeSpatial(at(alone)).then(
+            () => false,
+            () => true,
+          );
+          if (epoch.current !== token) return null;
+          if (refused) {
+            blamed = k;
+            break;
+          }
+        }
+        throw new Error(`${phraseKeyField(i, blamed)}: ${reason(e)}`);
+      }
+      if (epoch.current !== token) return null;
+    }
+    const original = withoutReceiverInset(frame);
+    // In a study refined to its view, a flown phrase refines its zoomed
+    // frames to their own views, at the page's size, and draws the others
+    // from the study refined to no view; one that holds its view refines
+    // every calculated frame to it, as the still is.
+    const page = compiled.flies && refineView ? getPage?.() : undefined;
+    if (compiled.flies && refineView && !page)
+      throw new Error("The current view is not ready yet.");
+    const focus = (!compiled.flies && getFocus?.()) || undefined;
+    const plain =
+      page && getFocus?.()
+        ? await engine.computeSpatial(original.config)
+        : undefined;
+    // A harmonic chain follows the curve's head while it is drawn.
+    const draws = compiled.phases.some(
+      (p) => p.from.reveal < 1 || p.to.reveal < 1,
+    );
+    const chains =
+      draws && frame.result.harmonic
+        ? await engine.harmonicChains(frame.config)
+        : undefined;
+    if (epoch.current !== token) return null;
+    const moves = compiled.phases.some((p) => p.moves);
+    return {
+      original,
+      first: original,
+      final: original,
+      tracks: [],
+      mode: "phrase",
+      cut,
+      sight,
+      camera: "current",
+      heldView,
+      coarse: moves && !fullRefinement && lowersRefinement(frame.config),
+      duration: compiled.duration,
+      repeat,
+      pace: "steady",
+      length,
+      progress: 0,
+      phrase: compiled,
+      phraseSample: createSpatialPhraseSampler({
+        phrase: compiled,
+        original,
+        ...(plain && { plain }),
+        ...(page && { page }),
+        ...(focus && { focus }),
+        ...(chains && { chains }),
+        coarse: playbackRefinement,
+      }),
+    };
   }
   // A click can reach Pause after playback ended, before Replay is drawn
   // in its place; the animation stays complete.
@@ -1508,6 +1761,8 @@ export function SpatialAnimationPanel({
     const d = Math.round((((x * 180) / Math.PI) % 360) + 360) % 360;
     return d > 180 ? d - 360 : d;
   };
+  const describeView = (key: SpatialPhraseView) =>
+    `yaw ${formatNumber(degrees(key.yaw))}°, pitch ${formatNumber(degrees(key.pitch))}°, zoom ${formatNumber(key.zoom)}×${key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}`;
   const pathEditor = (
     <>
       <Field
@@ -1584,9 +1839,7 @@ export function SpatialAnimationPanel({
         keys={path.keys}
         onChange={(change) => setPath((p) => ({ ...p, keys: change(p.keys) }))}
         asFirst={asFirst}
-        describe={(key) =>
-          `yaw ${formatNumber(degrees(key.yaw))}°, pitch ${formatNumber(degrees(key.pitch))}°, zoom ${formatNumber(key.zoom)}×${key.panX !== 0 || key.panY !== 0 ? ", panned" : ""}`
-        }
+        describe={describeView}
         fields={(key, k, change) => (
           <Field
             label="Turns"
@@ -1698,9 +1951,15 @@ export function SpatialAnimationPanel({
         </summary>
         <fieldset
           hidden={preview}
-          disabled={running || status === "paused" || disabled}
+          disabled={
+            mode === "phrase"
+              ? disabled
+              : running || status === "paused" || disabled
+          }
           onChangeCapture={() => {
-            if (status === "complete") stop();
+            // A phrase stays editable while it plays; an edit returns to
+            // the study.
+            if (status === "complete" || (mode === "phrase" && active)) stop();
           }}
         >
           {family && (
@@ -1765,58 +2024,62 @@ export function SpatialAnimationPanel({
               label="Animate"
               topic="animation modes"
               help={
-                mode === "path"
-                  ? pathHelp.mode
-                  : mode === "cut"
-                    ? tiered(
-                        "Sweep the cut plane along its normal, peeling the drawing away until all it cuts is hidden. Geometry stays fixed.",
-                        "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
-                      )
-                    : mode === "probe"
-                      ? gridded(target) &&
-                        frame &&
-                        probe &&
-                        probeBetweenGrid(frame.config, probe)
-                        ? tiered(
-                            `Move the probe through every ${surfaceTerms(frame.config, target).along} of the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
-                            `It runs from its first ${surfaceTerms(frame.config, target).along} to its last at its ${surfaceTerms(frame.config, target).around}, between the grid's rows, with its principal directions and circles.`,
-                          )
-                        : gridded(target) && frame
+                mode === "phrase"
+                  ? spatialPhraseHelp
+                  : mode === "path"
+                    ? pathHelp.mode
+                    : mode === "cut"
+                      ? tiered(
+                          "Sweep the cut plane along its normal, peeling the drawing away until all it cuts is hidden. Geometry stays fixed.",
+                          "The plane moves from the farthest point it reaches to the nearest, peeling from the side the normal points to; flip the normal to peel from the other side. Other planes move with the first, by as much, so a notch or a box keeps its shape while it grows or shrinks.",
+                        )
+                      : mode === "probe"
+                        ? gridded(target) &&
+                          frame &&
+                          probe &&
+                          probeBetweenGrid(frame.config, probe)
                           ? tiered(
-                              `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
-                              `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
+                              `Move the probe through every ${surfaceTerms(frame.config, target).along} of the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                              `It runs from its first ${surfaceTerms(frame.config, target).along} to its last at its ${surfaceTerms(frame.config, target).around}, between the grid's rows, with its principal directions and circles.`,
                             )
-                          : probe && frame && probeBetween(frame.config, probe)
+                          : gridded(target) && frame
                             ? tiered(
-                                "Move the probe through every t of the curve. Geometry stays fixed.",
-                                "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                                `Move the probe along the ${surfaceTerms(frame.config, target).surface}. Geometry stays fixed.`,
+                                `It runs from its first ${surfaceTerms(frame.config, target).along} to its last, row by row at its ${surfaceTerms(frame.config, target).around}, with its principal directions and circles.`,
                               )
-                            : tiered(
-                                "Move the probe along the curve, sample by sample. Geometry stays fixed.",
-                                "It carries its frame, osculating circle and readout from the start of the curve to its end.",
-                              )
-                      : mode === "trace"
-                        ? tiered(
-                            "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
-                            "Parallel light comes in from past the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
-                          )
-                        : mode === "orbit"
-                          ? "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
-                          : mode === "reveal"
-                            ? frame?.config.format === "implicit"
-                              ? "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
-                              : "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
-                            : tiered<ReactNode>(
-                                "Tracks vary together, linearly. Endpoints accept constants.",
-                                <>
-                                  Use <var>a</var> in a curve expression to
-                                  animate any coefficient, for example{" "}
-                                  <code>
-                                    <var>a</var>*cos(t)
-                                  </code>
-                                  . Integer counts change in whole steps.
-                                </>,
-                              )
+                            : probe &&
+                                frame &&
+                                probeBetween(frame.config, probe)
+                              ? tiered(
+                                  "Move the probe through every t of the curve. Geometry stays fixed.",
+                                  "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                                )
+                              : tiered(
+                                  "Move the probe along the curve, sample by sample. Geometry stays fixed.",
+                                  "It carries its frame, osculating circle and readout from the start of the curve to its end.",
+                                )
+                        : mode === "trace"
+                          ? tiered(
+                              "Send light from the source to the surface and on; each caustic point appears as its ray reaches it.",
+                              "Parallel light comes in from past the edge of the view. Light slows to c/n in each medium, so wavefronts stay together.",
+                            )
+                          : mode === "orbit"
+                            ? "Turn the camera once around the study, from your current orientation. Geometry stays fixed."
+                            : mode === "reveal"
+                              ? frame?.config.format === "implicit"
+                                ? "Reveal the level surface upward through its box, with the parts of its sections below, preserving the final mesh."
+                                : "Reveal the sampled space curve and its tangent ribbon, preserving the final sample grid and every gap."
+                              : tiered<ReactNode>(
+                                  "Tracks vary together, linearly. Endpoints accept constants.",
+                                  <>
+                                    Use <var>a</var> in a curve expression to
+                                    animate any coefficient, for example{" "}
+                                    <code>
+                                      <var>a</var>*cos(t)
+                                    </code>
+                                    . Integer counts change in whole steps.
+                                  </>,
+                                )
               }
             >
               <select
@@ -1840,6 +2103,7 @@ export function SpatialAnimationPanel({
                 )}
                 {cutting && <option value="cut">Peel away with the cut</option>}
                 <option value="path">Fly through key views</option>
+                {phrasable && <option value="phrase">Play a phrase</option>}
               </select>
             </Field>
           </div>
@@ -1964,16 +2228,85 @@ export function SpatialAnimationPanel({
             </>
           )}
           {mode === "path" && pathEditor}
-          <Field label="Duration (seconds)">
-            <input
-              type="number"
-              min="0.1"
-              max="3600"
-              step="any"
-              value={Number.isNaN(duration) ? "" : duration}
-              onChange={(e) => setDuration(e.target.valueAsNumber)}
+          {mode === "phrase" && phraseDraft && frame && (
+            <PhraseTimelineEditor
+              phrase={phraseDraft}
+              targets={spatialPhraseTargets(frame.config)}
+              label={(t) => targetLabel(frame.config, t)}
+              current={(t) => String(targetValue(frame.config, t, length))}
+              onChange={(change) => {
+                // Arranging and Set to drawing edit outside a change event;
+                // any edit returns to the study.
+                if (active) stop();
+                setPhraseProblem(undefined);
+                setPhrase((previous) => change(previous ?? phraseDraft));
+              }}
+              problem={phraseProblem}
+              problemField={spatialPhraseProblemField}
+              parameterHelp={(_, track) =>
+                track === 0 ? phraseParameterHelp : undefined
+              }
+              reveal={spatialReveal}
+              camera={{
+                drawn: () => {
+                  const key = drawn();
+                  if (!key) return null;
+                  const { name: _, leg: __, ...view } = key;
+                  return view;
+                },
+                keep: (old, view) => ({ ...view, turns: old.turns }),
+                onShow: (view) => {
+                  if (active) stop();
+                  onShowView({
+                    yaw: view.yaw,
+                    pitch: view.pitch,
+                    zoom: view.zoom,
+                    panX: view.panX,
+                    panY: view.panY,
+                  });
+                },
+                describe: describeView,
+                help: spatialPhraseCameraHelp,
+              }}
+              extra={(phase, i, patch) => (
+                <>
+                  <PhaseTurns
+                    phase={phase}
+                    index={i}
+                    onChange={(turns) =>
+                      patch((p) =>
+                        typeof p.view === "object"
+                          ? { ...p, view: { ...p.view, turns } }
+                          : p,
+                      )
+                    }
+                  />
+                  <PhaseLayers
+                    phase={phase}
+                    index={i}
+                    offered={layerOptions}
+                    onChange={(events) =>
+                      patch(({ layers: _, ...p }) =>
+                        events ? { ...p, layers: events } : p,
+                      )
+                    }
+                  />
+                </>
+              )}
             />
-          </Field>
+          )}
+          {mode !== "phrase" && (
+            <Field label="Duration (seconds)">
+              <input
+                type="number"
+                min="0.1"
+                max="3600"
+                step="any"
+                value={Number.isNaN(duration) ? "" : duration}
+                onChange={(e) => setDuration(e.target.valueAsNumber)}
+              />
+            </Field>
+          )}
           <div className="pair">
             <Field label="Repeat" help={repeatHelp[repeat]}>
               <select
@@ -1989,10 +2322,29 @@ export function SpatialAnimationPanel({
                   ))}
               </select>
             </Field>
-            <Field label="Pace" help={paceHelp[pace]}>
+            <Field
+              label="Pace"
+              help={mode === "phrase" ? phrasePaceHelp : paceHelp[pace]}
+            >
               <select
-                value={pace}
-                onChange={(e) => setPace(e.target.value as Pace)}
+                value={
+                  mode === "phrase" && phraseDraft
+                    ? sharedPace(phraseDraft, pace)
+                    : pace
+                }
+                onChange={(e) => {
+                  const next = e.target.value as Pace;
+                  setPace(next);
+                  // A phrase's pace applies to every phase.
+                  if (mode === "phrase" && phraseDraft)
+                    setPhrase({
+                      ...phraseDraft,
+                      phases: phraseDraft.phases.map((p) => ({
+                        ...p,
+                        pace: next,
+                      })),
+                    });
+                }}
               >
                 {paceChoices.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -2002,7 +2354,7 @@ export function SpatialAnimationPanel({
               </select>
             </Field>
           </div>
-          {mode !== "path" && (
+          {mode !== "path" && mode !== "phrase" && (
             <Field
               label="Animation camera"
               help={
@@ -2221,7 +2573,7 @@ export function SpatialAnimationPanel({
                         ? "Paused"
                         : status === "preparing"
                           ? "Preparing"
-                          : elapsed(progress * duration, duration)}
+                          : elapsed(progress * total, total)}
               </div>
               {!preview && <AnimationValues text={live} />}
               <p className="note playback-tip" hidden={preview}>

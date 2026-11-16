@@ -1976,6 +1976,9 @@ export default function SpatialApp({
         : shownFrame,
     [shownFrame, receiverView, receiverPending],
   );
+  // A phrase shows and hides layers as its phases begin; the drawing, its
+  // legend, face-on views and stills follow it.
+  const drawnLayers = animation?.phrase?.layers ?? layers;
   const camera = animation ? animationCamera(animation) : undefined,
     // A finished animation hands its camera over to be explored.
     override = animation?.complete ? undefined : camera,
@@ -2284,7 +2287,7 @@ export default function SpatialApp({
     const snapshot = structuredClone({
       frame: shown,
       view: viewport.current,
-      layers,
+      layers: drawnLayers,
       dark: theme.dark,
       scheme: theme.scheme,
       cut: drawnCut,
@@ -3254,6 +3257,161 @@ export default function SpatialApp({
       </p>
     </StudyExplanation>
   );
+  // The layers the study offers, with their labels: the controls under
+  // Reveal the construction, and what a phrase's phases can show or hide.
+  // The curve alone, unless a field or harmonic, has none.
+  const layerOptions: readonly (readonly [keyof Layers, string])[] =
+    curveless || !(none && !flowing && !chasing && config.format !== "harmonic")
+      ? leveled
+        ? ([
+            ["surface", "Level surface"],
+            ["sections", "Section curves"],
+            ["planes", "Section planes"],
+            ["box", "Box, cuts & open edges"],
+          ] as const)
+        : mirroring
+          ? ([
+              ["surface", refracting ? "Interface" : "Mirror"],
+              ["curves", "Parameter curves"],
+              [
+                "incident",
+                config.rays.light === "point"
+                  ? "Incident rays & source"
+                  : "Incident rays",
+              ],
+              ["reflected", refracting ? "Transmitted rays" : "Reflected rays"],
+              ["focal1", "Caustic 1 · μ₁"],
+              ["focal2", "Caustic 2 · μ₂"],
+              ...(config.rays.edges
+                ? ([["cusps", "Cuspidal edges"]] as const)
+                : []),
+              ["virtual", "Virtual rays & caustics"],
+              ...(receiving
+                ? ([["receiver", "Receiver irradiance"]] as const)
+                : []),
+            ] as const)
+          : surfacing
+            ? ([
+                ["surface", "Surface patch"],
+                ["curves", "Parameter curves"],
+                ["normals", "Normal lines"],
+                ...(config.surface.ridges
+                  ? ([["ridges", "Ridges"]] as const)
+                  : []),
+                ...(surfaceCapabilities[config.surface.kind].offset
+                  ? ([["offset", "Offset surface"]] as const)
+                  : []),
+                ...(locatesEdges(config.surface)
+                  ? ([["cusps", "Cuspidal edges"]] as const)
+                  : []),
+                ...(surfaceCapabilities[config.surface.kind].focal
+                  ? ([
+                      ["focal1", "Focal sheet 1 · κ₁"],
+                      ["focal2", "Focal sheet 2 · κ₂"],
+                    ] as const)
+                  : []),
+                ...(config.surface.geodesics
+                  ? ([
+                      ["threads", "Geodesic threads"],
+                      ["selected", "Selected thread"],
+                    ] as const)
+                  : []),
+                ...(config.surface.geodesics?.transport
+                  ? ([
+                      ...(config.surface.geodesics.transport.path === "triangle"
+                        ? ([["route", "Octant triangle"]] as const)
+                        : []),
+                      ["carried", "Carried arrow"],
+                      ["references", "Reference arrows"],
+                    ] as const)
+                  : []),
+              ] as const)
+            : [
+                ...(none
+                  ? []
+                  : canal
+                    ? ([
+                        ["surface", "Canal surface"],
+                        ["circles", "Contact circles"],
+                        ["meridians", "Meridians"],
+                        ["frames", "Frames"],
+                        ...(canalShown?.frame?.closed
+                          ? ([["seam", "Seam"]] as const)
+                          : []),
+                      ] as const)
+                    : ruled
+                      ? ([
+                          ["surface", "Ruled surface"],
+                          ["rulings", "Rulings"],
+                          ["edges", "Partner thread"],
+                        ] as const)
+                      : framed
+                        ? ([
+                            ["surface", "Ribbon surface"],
+                            ["rulings", "Cross-lines"],
+                            ["edges", "Ribbon edges"],
+                            ["strands", "Strands"],
+                            ["frames", "Frames"],
+                            ...(frameResult?.closed
+                              ? ([["seam", "Seam"]] as const)
+                              : []),
+                          ] as const)
+                        : inversion
+                          ? ([
+                              ["inverse", "Inverted curve"],
+                              ["correspondences", "Correspondence segments"],
+                              ["sphere", "Inversion sphere & center"],
+                              ...(config.inversion.input === "base"
+                                ? []
+                                : ([["source", "Projection & pole"]] as const)),
+                            ] as const)
+                          : projection
+                            ? ([
+                                ["projection", projectionName],
+                                ["connectors", "Perpendiculars & tangent feet"],
+                                ["pole", "Pole marker"],
+                              ] as const)
+                            : involute
+                              ? ([
+                                  ["filaments", "Involute filaments"],
+                                  ["strings", "Unwinding strings"],
+                                ] as const)
+                              : ([
+                                  ["surface", "Ribbon surface"],
+                                  ["rulings", "Tangent rulings"],
+                                  ["edges", "Ribbon edges"],
+                                ] as const)),
+                ...(composing
+                  ? ([
+                      ["parent", "Base curve"],
+                      ["connectors", curveInputs[config.input].connectors],
+                      ...(curveInputs[config.input].pole
+                        ? ([["pole", "Pole marker"]] as const)
+                        : []),
+                    ] as const)
+                  : []),
+                ...(config.format === "harmonic"
+                  ? ([
+                      ["vectors", "Vector sums"],
+                      ["ellipses", "Generating ellipses"],
+                    ] as const)
+                  : []),
+                ...(flowing
+                  ? ([
+                      ["trajectories", "Other trajectories"],
+                      ["arrows", "Field directions"],
+                      ["seeds", "Seeds & early stops"],
+                    ] as const)
+                  : []),
+                ...(chasing
+                  ? ([
+                      ["trajectories", "Other pursuers"],
+                      ["polygons", "Connecting polygons"],
+                      ["seeds", "Starts & capture"],
+                    ] as const)
+                  : []),
+              ]
+      : [];
   return (
     <div
       style={theme.style}
@@ -4002,180 +4160,10 @@ export default function SpatialApp({
             Constant expressions welcome: pi, e, phi.
           </p>
           {/* The curve alone, unless a field or harmonic, has no layers. */}
-          {(curveless ||
-            !(
-              none &&
-              !flowing &&
-              !chasing &&
-              config.format !== "harmonic"
-            )) && (
+          {layerOptions.length > 0 && (
             <fieldset className="spatial-layers">
               <legend>Reveal the construction</legend>
-              {(leveled
-                ? ([
-                    ["surface", "Level surface"],
-                    ["sections", "Section curves"],
-                    ["planes", "Section planes"],
-                    ["box", "Box, cuts & open edges"],
-                  ] as const)
-                : mirroring
-                  ? ([
-                      ["surface", refracting ? "Interface" : "Mirror"],
-                      ["curves", "Parameter curves"],
-                      [
-                        "incident",
-                        config.rays.light === "point"
-                          ? "Incident rays & source"
-                          : "Incident rays",
-                      ],
-                      [
-                        "reflected",
-                        refracting ? "Transmitted rays" : "Reflected rays",
-                      ],
-                      ["focal1", "Caustic 1 · μ₁"],
-                      ["focal2", "Caustic 2 · μ₂"],
-                      ...(config.rays.edges
-                        ? ([["cusps", "Cuspidal edges"]] as const)
-                        : []),
-                      ["virtual", "Virtual rays & caustics"],
-                      ...(receiving
-                        ? ([["receiver", "Receiver irradiance"]] as const)
-                        : []),
-                    ] as const)
-                  : surfacing
-                    ? ([
-                        ["surface", "Surface patch"],
-                        ["curves", "Parameter curves"],
-                        ["normals", "Normal lines"],
-                        ...(config.surface.ridges
-                          ? ([["ridges", "Ridges"]] as const)
-                          : []),
-                        ...(surfaceCapabilities[config.surface.kind].offset
-                          ? ([["offset", "Offset surface"]] as const)
-                          : []),
-                        ...(locatesEdges(config.surface)
-                          ? ([["cusps", "Cuspidal edges"]] as const)
-                          : []),
-                        ...(surfaceCapabilities[config.surface.kind].focal
-                          ? ([
-                              ["focal1", "Focal sheet 1 · κ₁"],
-                              ["focal2", "Focal sheet 2 · κ₂"],
-                            ] as const)
-                          : []),
-                        ...(config.surface.geodesics
-                          ? ([
-                              ["threads", "Geodesic threads"],
-                              ["selected", "Selected thread"],
-                            ] as const)
-                          : []),
-                        ...(config.surface.geodesics?.transport
-                          ? ([
-                              ...(config.surface.geodesics.transport.path ===
-                              "triangle"
-                                ? ([["route", "Octant triangle"]] as const)
-                                : []),
-                              ["carried", "Carried arrow"],
-                              ["references", "Reference arrows"],
-                            ] as const)
-                          : []),
-                      ] as const)
-                    : [
-                        ...(none
-                          ? []
-                          : canal
-                            ? ([
-                                ["surface", "Canal surface"],
-                                ["circles", "Contact circles"],
-                                ["meridians", "Meridians"],
-                                ["frames", "Frames"],
-                                ...(canalShown?.frame?.closed
-                                  ? ([["seam", "Seam"]] as const)
-                                  : []),
-                              ] as const)
-                            : ruled
-                              ? ([
-                                  ["surface", "Ruled surface"],
-                                  ["rulings", "Rulings"],
-                                  ["edges", "Partner thread"],
-                                ] as const)
-                              : framed
-                                ? ([
-                                    ["surface", "Ribbon surface"],
-                                    ["rulings", "Cross-lines"],
-                                    ["edges", "Ribbon edges"],
-                                    ["strands", "Strands"],
-                                    ["frames", "Frames"],
-                                    ...(frameResult?.closed
-                                      ? ([["seam", "Seam"]] as const)
-                                      : []),
-                                  ] as const)
-                                : inversion
-                                  ? ([
-                                      ["inverse", "Inverted curve"],
-                                      [
-                                        "correspondences",
-                                        "Correspondence segments",
-                                      ],
-                                      ["sphere", "Inversion sphere & center"],
-                                      ...(config.inversion.input === "base"
-                                        ? []
-                                        : ([
-                                            ["source", "Projection & pole"],
-                                          ] as const)),
-                                    ] as const)
-                                  : projection
-                                    ? ([
-                                        ["projection", projectionName],
-                                        [
-                                          "connectors",
-                                          "Perpendiculars & tangent feet",
-                                        ],
-                                        ["pole", "Pole marker"],
-                                      ] as const)
-                                    : involute
-                                      ? ([
-                                          ["filaments", "Involute filaments"],
-                                          ["strings", "Unwinding strings"],
-                                        ] as const)
-                                      : ([
-                                          ["surface", "Ribbon surface"],
-                                          ["rulings", "Tangent rulings"],
-                                          ["edges", "Ribbon edges"],
-                                        ] as const)),
-                        ...(composing
-                          ? ([
-                              ["parent", "Base curve"],
-                              [
-                                "connectors",
-                                curveInputs[config.input].connectors,
-                              ],
-                              ...(curveInputs[config.input].pole
-                                ? ([["pole", "Pole marker"]] as const)
-                                : []),
-                            ] as const)
-                          : []),
-                        ...(config.format === "harmonic"
-                          ? ([
-                              ["vectors", "Vector sums"],
-                              ["ellipses", "Generating ellipses"],
-                            ] as const)
-                          : []),
-                        ...(flowing
-                          ? ([
-                              ["trajectories", "Other trajectories"],
-                              ["arrows", "Field directions"],
-                              ["seeds", "Seeds & early stops"],
-                            ] as const)
-                          : []),
-                        ...(chasing
-                          ? ([
-                              ["trajectories", "Other pursuers"],
-                              ["polygons", "Connecting polygons"],
-                              ["seeds", "Starts & capture"],
-                            ] as const)
-                          : []),
-                      ]
-              ).map(([key, label]) => (
+              {layerOptions.map(([key, label]) => (
                 <label key={key}>
                   <input
                     type="checkbox"
@@ -4582,6 +4570,7 @@ export default function SpatialApp({
             dark={theme.dark}
             scheme={theme.scheme}
             layers={layers}
+            layerOptions={layerOptions}
             getCurrentView={() =>
               viewport.current ? structuredClone(viewport.current) : undefined
             }
@@ -4785,7 +4774,7 @@ export default function SpatialApp({
                       result={shown.result}
                       dark={theme.dark}
                       scheme={theme.scheme}
-                      layers={layers}
+                      layers={drawnLayers}
                       reset={reset}
                       spinning={spinning && active}
                       override={override}
@@ -4838,7 +4827,7 @@ export default function SpatialApp({
                         framing={plane.framing!}
                         locked={plane.locked}
                         onCamera={plane.setCamera}
-                        layers={layers}
+                        layers={drawnLayers}
                         dark={theme.dark}
                         scheme={theme.scheme}
                         weight={userSight.spec.weight}
@@ -4854,7 +4843,7 @@ export default function SpatialApp({
                 feed={geometryFeed.current}
                 config={shown?.config ?? config}
                 result={shown?.result}
-                layers={layers}
+                layers={drawnLayers}
                 cutEdge={!!drawnCut?.edge}
               />
               <span>

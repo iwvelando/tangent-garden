@@ -2475,6 +2475,63 @@ test("phrase phases are arranged and a second parameter keyed in WebKit at phone
   ]);
 });
 
+// The 3D phrase editor shares the 2D one; its own parts, the layers
+// disclosure, turns and Set to drawing, act on the click alone, and a moved
+// phase keeps its views, turns and layer events.
+test("spatial phrase layers, turns and arranging work in WebKit at phone width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=3d");
+  const stage = page.locator(".spatial-stage");
+  await expect(stage).toHaveAttribute("aria-busy", "false");
+  await choosePreset(page, { label: "Threads that find the hole" });
+  await expect(stage).toHaveAttribute("aria-busy", "false", {
+    timeout: 60000,
+  });
+  const panel = page.locator("#spatial-animation-section");
+  if ((await panel.getAttribute("open")) === null)
+    await panel.locator(":scope > summary").click();
+  const button = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  const turns = page.getByRole("spinbutton", {
+    name: "Phase 6 turns",
+    exact: true,
+  });
+  await expect(turns).toHaveValue("1");
+  await turns.fill("2");
+  await button("About animation modes").click();
+  await expect(turns).toHaveValue("2");
+  // Set to drawing takes the drawing's view and keeps the phase's turns.
+  const hint = page
+    .locator(".phrase-phases li")
+    .nth(5)
+    .locator("p.hint")
+    .first();
+  await expect(hint).toContainText("pitch 54°");
+  await button("Set phase 6 view to the drawing's view").click();
+  await expect(hint).not.toContainText("pitch 54°");
+  await expect(turns).toHaveValue("2");
+  // The layers disclosure opens on a tap and its choice applies.
+  const thinned = "hide Geodesic threads; hide Reference arrows";
+  await page.getByText(thinned, { exact: true }).click();
+  await page
+    .getByRole("combobox", { name: "Phase 2 Surface patch", exact: true })
+    .selectOption("hide");
+  const summary = `hide Surface patch; ${thinned}`;
+  await expect(page.getByText(summary, { exact: true })).toBeVisible();
+  // Arranging moves a phase with everything it holds.
+  await button("Move phase 6 up").click();
+  await expect(button("Move phase 5 up")).toBeFocused();
+  await expect(
+    page.getByRole("spinbutton", { name: "Phase 5 turns", exact: true }),
+  ).toHaveValue("2");
+  await expect(page.getByLabel("Phase 6 name", { exact: true })).toHaveValue(
+    "Through the hole",
+  );
+  await expect(page.getByText(summary, { exact: true })).toBeVisible();
+});
+
 test("phrase keys survive scalar blur, invalid drafts and seek in WebKit at phone width", async ({
   page,
 }) => {

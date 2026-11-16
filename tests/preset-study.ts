@@ -166,6 +166,13 @@ export const spatial: Notebook<SpatialStudy> = {
     }
     expect(a.duration).toBe(f.duration);
     expect(a.path).toEqual(f.path);
+    // A phrase is the whole motion, its camera its own.
+    if (f.phrase) {
+      expect(a.mode).toBe("phrase");
+      expect(a.phrase).toEqual(f.phrase);
+      return;
+    }
+    expect(a).not.toHaveProperty("phrase");
     if (!f.animate) {
       expect(a.mode).toBe("path");
       return;

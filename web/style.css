@@ -79,6 +79,19 @@ fieldset:disabled {
 .phrase-arrange {
   margin-top: 14px;
 }
+/* A 3D phase's layer events: a summary of its changes, opening on a list
+   of the study's layers, each with Keep, Show or Hide beside its name. */
+.phrase-layers > summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.phrase-layer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 8px;
+}
 /* A camera path's key view: its fields, where it stands, and its actions. */
 .path-view-buttons {
   display: flex;

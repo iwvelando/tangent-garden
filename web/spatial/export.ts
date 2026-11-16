@@ -403,9 +403,11 @@ export async function exportAnimation(options: {
       );
       renderer.setCut(view.cut ?? options.cut);
       renderer.setSight(options.sight);
+      // A phrase shows and hides layers as its phases begin.
+      const layers = view.phrase?.layers ?? options.layers;
       renderer.draw(
         animationCamera(view),
-        options.layers,
+        layers,
         options.dark,
         cells
           ? {
@@ -436,7 +438,7 @@ export async function exportAnimation(options: {
                     view.probe,
                   ),
           },
-          options.layers,
+          layers,
           options.dark,
           options.scheme ?? "default",
           options.settings.captions

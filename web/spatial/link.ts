@@ -58,6 +58,14 @@ import {
 import { defaultRide, rideRange, type Ride } from "./ride";
 import type { Pace, Repeat } from "../timing";
 import { loops } from "./loop";
+import {
+  spatialPhraseError,
+  spatialPhraseTargets,
+  type SpatialPhrase,
+  type SpatialPhrasePhase,
+  type SpatialPhraseView,
+} from "./phrase";
+import { maxPhases, maxPhraseTracks, phraseDuration } from "../phrase-timeline";
 import { storyIds, type StoryId } from "./story";
 
 // The manual camera: orbit angles in radians, zoom, and pan, about the
@@ -93,6 +101,9 @@ export type SpatialAnimation = Omit<
   // story.ts's holdPlan); off, and left out, unless chosen, as in links
   // made before it. It applies only while the study is its story's.
   holds?: true;
+  // The phrase a phrase animation plays (see phrase.ts); links made before
+  // phrases have none.
+  phrase?: SpatialPhrase;
 };
 export type SpatialStudy = {
   family?: SpatialFamilySettings;
@@ -140,6 +151,13 @@ function flightAnimation(flight?: Flight): SpatialAnimation {
     pace: flight.pace ?? defaultAnimation.pace,
   };
   const { animate, ride } = flight;
+  if (flight.phrase)
+    return {
+      ...flown,
+      mode: "phrase",
+      duration: phraseDuration(flight.phrase),
+      phrase: structuredClone(flight.phrase),
+    };
   if (!animate) return { ...flown, mode: "path" };
   return {
     ...flown,
@@ -567,6 +585,121 @@ function cameraPath(value: unknown): CameraPath {
   return out;
 }
 
+// A phrase over the linked study: its tracks among the targets the study
+// offers a phrase, every phase within the shared limits, and each view a
+// key view within the orbit and zoom limits, or "entry".
+function animationPhrase(value: unknown, config: SpatialConfig): SpatialPhrase {
+  const offered = spatialPhraseTargets(config);
+  const targetOptions = {
+    options: Object.fromEntries(offered.map((t) => [t, true])) as Record<
+      Target,
+      true
+    >,
+  };
+  type Phases = Omit<SpatialPhrase, "phases"> & {
+    phases: Omit<SpatialPhrasePhase, "view">[];
+  };
+  const schema: SchemaOf<Phases> = {
+    fields: {
+      target: targetOptions,
+      // Further parameters; spatialPhraseError refuses repeats.
+      also: { optional: { list: targetOptions, max: maxPhraseTracks - 1 } },
+      opening: { range: [0, 1] },
+      phases: {
+        list: {
+          fields: {
+            name: "text",
+            duration: { range: [0.1, 3600] },
+            pace: { options: { steady: true, ease: true } },
+            key: { optional: "text" },
+            // A further parameter's key, by its target.
+            keys: {
+              optional: {
+                fields: Object.fromEntries(
+                  offered.map((t) => [t, { optional: "text" }]),
+                ) as Record<Target, { optional: "text" }>,
+              },
+            },
+            layers: {
+              optional: {
+                fields: Object.fromEntries(
+                  Object.keys(defaultLayers).map((k) => [
+                    k,
+                    { optional: "boolean" },
+                  ]),
+                ) as SchemaOf<Partial<Layers>> extends { fields: infer F }
+                  ? F
+                  : never,
+              },
+            },
+            reveal: { optional: { range: [0, 1] } },
+          },
+        },
+        max: maxPhases,
+      },
+    },
+  };
+  // A phase's view is a key view or "entry", which the schema cannot state
+  // as one field: it is checked on its own below.
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const rawPhases = Array.isArray(record?.phases) ? record.phases : undefined;
+  const views = rawPhases?.map((p) =>
+    typeof p === "object" && p !== null && !Array.isArray(p)
+      ? (p as Record<string, unknown>).view
+      : undefined,
+  );
+  const phrase: SpatialPhrase = conform<Phases>(
+    rawPhases
+      ? {
+          ...record,
+          phases: rawPhases.map((p) => {
+            if (typeof p !== "object" || p === null || Array.isArray(p))
+              return p;
+            const { view: _, ...rest } = p as Record<string, unknown>;
+            return rest;
+          }),
+        }
+      : value,
+    schema,
+    undefined,
+    "animation.phrase",
+  );
+  views?.forEach((view, i) => {
+    if (view === undefined || view === "entry") {
+      if (view) phrase.phases[i].view = view;
+      return;
+    }
+    const field = `animation.phrase.phases[${i}].view`;
+    const key = conform<SpatialPhraseView>(
+      view,
+      {
+        fields: {
+          yaw: "number",
+          pitch: { range: pitchRange },
+          zoom: { range: [zoomRange[0], viewZoom] },
+          panX: "number",
+          panY: "number",
+          turns: { range: [-maxTurns, maxTurns] },
+        },
+      },
+      undefined,
+      field,
+    );
+    if (!Number.isInteger(key.turns))
+      throw new LinkError(
+        `${field}.turns`,
+        `${field}.turns must be a whole number.`,
+      );
+    phrase.phases[i].view = key;
+  });
+  const error = spatialPhraseError(config, phrase);
+  if (error) throw new LinkError("animation.phrase", error);
+  return phrase;
+}
+
 // The ride's crossing, −1 for the middle one, and its distances within
 // their limits; the lower limit itself is refused below.
 const crossing: { range: [number, number] } = { range: [-1, 100000] };
@@ -685,6 +818,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
     probeMotion,
     fullRefinement,
     holds,
+    phrase,
     ...shared
   } = grouped ? (raw.animation as Record<string, unknown>) : {};
   const flying = shared.camera === "path",
@@ -700,6 +834,7 @@ export function spatialStudy(value: unknown): SpatialStudy {
       probe: true,
       cut: true,
       path: true,
+      phrase: true,
     },
     availableTargets(study.config),
     { ...defaultAnimation, camera: "hold" },
@@ -726,11 +861,19 @@ export function spatialStudy(value: unknown): SpatialStudy {
     ...(conform<boolean>(holds, "boolean", false, "animation.holds") && {
       holds: true as const,
     }),
+    ...(phrase !== undefined && {
+      phrase: animationPhrase(phrase, study.config),
+    }),
   };
+  if (animation.mode === "phrase" && !animation.phrase)
+    throw new LinkError(
+      "animation.phrase",
+      "A phrase animation needs phase settings.",
+    );
   if (animation.repeat === "loop" && !loops(animation.mode))
     throw new LinkError(
       "animation.repeat",
-      "animation.repeat loops only an orbit, parameter tracks, the probe or a camera path, which can return to their start.",
+      "animation.repeat loops only an orbit, parameter tracks, the probe, a camera path or a phrase, which can return to their start.",
     );
   if (rides && animation.mode !== "trace")
     throw new LinkError(
