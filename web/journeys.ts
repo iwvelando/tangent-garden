@@ -94,7 +94,13 @@ export type JourneyAdoption = {
 // edit: an atlas adoption changes two fields of the study rather than
 // replacing it, so controls keep their raw text and Reset view keeps
 // returning where it did, as after any edit.
-export type AdoptedJourney = JourneyAdoption & { id: number; edit?: true };
+// phrase: an atlas path, adopted as an edit that also sets the study's
+// motion to its phrase.
+export type AdoptedJourney = JourneyAdoption & {
+  id: number;
+  edit?: true;
+  phrase?: true;
+};
 
 export function journeyStudy<S extends JourneyStep>(
   step: S,

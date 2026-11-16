@@ -23,6 +23,8 @@ import {
 } from "./types";
 import { parameterAt } from "./planar-probe";
 import { tiered } from "./help";
+import { pathRefusal } from "./atlas-path";
+import { phraseTargets } from "./phrase";
 
 export {
   roundedGenerated,
@@ -127,12 +129,14 @@ const catalog: readonly AtlasPair[] = [
         label: "Rolling radius",
         symbol: "r",
         path: ["curve", "roulette", "radius"],
+        track: "rollRadius",
       },
       {
         key: "arm",
         label: "Tracing distance",
         symbol: "d",
         path: ["curve", "roulette", "arm"],
+        track: "rollArm",
       },
     ],
     supports: (c) => c.curve.format === "roulette",
@@ -150,6 +154,7 @@ const catalog: readonly AtlasPair[] = [
         label: "Frequency m",
         symbol: "m",
         path: ["curve", "lissajous", "frequencyX"],
+        track: "lissajousM",
         integer: true,
       },
       {
@@ -157,6 +162,7 @@ const catalog: readonly AtlasPair[] = [
         label: "Frequency n",
         symbol: "n",
         path: ["curve", "lissajous", "frequencyY"],
+        track: "lissajousN",
         integer: true,
       },
     ],
@@ -183,6 +189,7 @@ const catalog: readonly AtlasPair[] = [
         label: termLabels.Frequency(k + 1),
         symbol: `k${subscript(k + 1)}`,
         path: ["curve", "terms", k, "frequency"],
+        track: `term${k + 1}Frequency`,
         integer: true,
       },
       {
@@ -190,6 +197,7 @@ const catalog: readonly AtlasPair[] = [
         label: termLabels.Radius(k + 1),
         symbol: `r${subscript(k + 1)}`,
         path: ["curve", "terms", k, "radius"],
+        track: `term${k + 1}Radius`,
       },
     ],
     supports: ({ curve: { format, terms } }) =>
@@ -212,12 +220,14 @@ const catalog: readonly AtlasPair[] = [
         label: "Level c",
         symbol: "c",
         path: ["curve", "implicit", "level"],
+        track: "contourLevel",
       },
       {
         key: "a",
         label: "Shape parameter a",
         symbol: "a",
         path: ["curve", "a"],
+        track: "a",
       },
     ],
     supports: (c, facts) => c.curve.format === "implicit" && !!facts.usesA,
@@ -230,8 +240,20 @@ const catalog: readonly AtlasPair[] = [
     id: "pole",
     label: "Pedal pole x / y",
     axes: [
-      { key: "x", label: "Pole x", symbol: "x", path: ["pole", "x"] },
-      { key: "y", label: "Pole y", symbol: "y", path: ["pole", "y"] },
+      {
+        key: "x",
+        label: "Pole x",
+        symbol: "x",
+        path: ["pole", "x"],
+        track: "poleX",
+      },
+      {
+        key: "y",
+        label: "Pole y",
+        symbol: "y",
+        path: ["pole", "y"],
+        track: "poleY",
+      },
     ],
     supports: (c) =>
       !["implicit", "attractor"].includes(c.curve.format) &&
@@ -247,12 +269,14 @@ const catalog: readonly AtlasPair[] = [
         label: "Source x",
         symbol: "x",
         path: ["source", "position", "x"],
+        track: "sourceX",
       },
       {
         key: "y",
         label: "Source y",
         symbol: "y",
         path: ["source", "position", "y"],
+        track: "sourceY",
       },
     ],
     supports: (c) => {
@@ -273,12 +297,14 @@ const catalog: readonly AtlasPair[] = [
         label: "Coefficient a",
         symbol: "a",
         path: ["curve", "attractor", "a"],
+        track: "mapA",
       },
       {
         key: "b",
         label: "Coefficient b",
         symbol: "b",
         path: ["curve", "attractor", "b"],
+        track: "mapB",
       },
     ],
     supports: (c) =>
@@ -292,6 +318,15 @@ const catalog: readonly AtlasPair[] = [
 export const atlasPairs = (config: Config, facts: AtlasFacts = {}) =>
   catalog.filter((p) => p.supports(config, facts));
 export const atlasPair = (id: AtlasPairId) => catalog.find((p) => p.id === id)!;
+// Why this pair cannot become a path (atlas-path.ts), or null. Only phrase
+// parameters move; the implicit pair, offered when Go reports that F reads
+// a, also needs F to read a visibly, as for any phrase.
+export function atlasPathRefusal(
+  config: Config,
+  pair: AtlasPairId,
+): string | null {
+  return pathRefusal(atlasPair(pair).axes, phraseTargets(config));
+}
 export const atlasControlHelp = {
   pair: "Only pairs used by your current study are offered.",
   size: "Includes both range endpoints.",

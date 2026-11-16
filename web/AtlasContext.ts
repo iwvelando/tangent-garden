@@ -11,7 +11,8 @@ export type AtlasRequest = {
   // What the study's settled frame reported, such as whether F reads a.
   facts: AtlasFacts;
   via: JourneyVia;
-  restoreFocus: (via: JourneyVia) => void;
+  // play: the adoption plays a path; Play follows (focusPlayWhenReady).
+  restoreFocus: (via: JourneyVia, play?: boolean) => void;
 };
 
 // The 3D notebook's atlas (spatial/atlas.ts).
@@ -19,12 +20,14 @@ export type SpatialAtlasRequest = {
   study: SpatialStudy;
   facts: SpatialAtlasFacts;
   via: JourneyVia;
-  restoreFocus: (via: JourneyVia) => void;
+  // play: the adoption plays a path; Play follows (focusPlayWhenReady).
+  restoreFocus: (via: JourneyVia, play?: boolean) => void;
 };
 export type TesseractAtlasRequest = {
   study: TesseractStudy;
   via: JourneyVia;
-  restoreFocus: (via: JourneyVia) => void;
+  // play: the adoption plays a path; Play follows (focusPlayWhenReady).
+  restoreFocus: (via: JourneyVia, play?: boolean) => void;
 };
 // The Notebook owns the three notebooks' atlases.
 export const AtlasContext = createContext<{

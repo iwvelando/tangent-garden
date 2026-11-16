@@ -2007,6 +2007,76 @@ for (const width of [390, 1440])
     await expect(page.locator("#artwork")).toBeVisible();
   });
 
+test("an atlas path is planned by taps, adopted, and brings Play into view, focusing it after keyboard use, in WebKit at phone width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "Hypotrochoid & its evolute" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entry = page.getByRole("button", {
+    name: "Explore parameter atlas",
+    exact: true,
+  });
+  const atlas = page.getByRole("dialog", {
+    name: "A field of possible flowers",
+    exact: true,
+  });
+  for (const via of ["pointer", "keyboard"] as const) {
+    await entry.click();
+    await expect(atlas.locator('.atlas-cell[data-state="valid"]')).toHaveCount(
+      9,
+    );
+    // The label's text, away from the radio's own box, chooses the mode.
+    await atlas
+      .locator(".atlas-choice label", { hasText: "Plan a path" })
+      .click({
+        position: { x: 12, y: 12 },
+      });
+    await expect(
+      atlas.getByRole("radio", { name: "Plan a path", exact: true }),
+    ).toBeChecked();
+    for (const cell of [
+      "row 1, column 1",
+      "row 2, column 2",
+      "row 3, column 3",
+    ])
+      await atlas
+        .getByRole("button", { name: `Add ${cell} to the path` })
+        .click();
+    await expect(atlas.locator(".atlas-stops")).toHaveText(["1", "2", "3"]);
+    await atlas.getByText("Return to the first stop", { exact: true }).click();
+    await expect(
+      atlas.getByLabel("Return to the first stop", { exact: true }),
+    ).toBeChecked();
+    const animate = atlas.getByRole("button", {
+      name: "Animate this path",
+      exact: true,
+    });
+    if (via === "keyboard") {
+      await animate.focus();
+      await page.keyboard.press("Enter");
+    } else await animate.click();
+    await expect(atlas).toBeHidden();
+    const play = page.getByRole("button", {
+      name: "Play animation",
+      exact: true,
+    });
+    await expect(play).toBeEnabled();
+    if (via === "keyboard") await expect(play).toBeFocused();
+    else await expect(play).toBeInViewport();
+  }
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
+});
+
 test("atlas portrait Generate clearance survives first open and landscape rotation", async ({
   page,
 }) => {

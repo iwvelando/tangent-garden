@@ -232,12 +232,14 @@ export function CheckSetting({
   checked,
   onChange,
   help: text,
+  disabled,
 }: {
   label: string;
   topic: string;
   checked: boolean;
   onChange: (on: boolean) => void;
   help: Help;
+  disabled?: boolean;
 }) {
   const help = useHelp();
   return (
@@ -247,6 +249,7 @@ export function CheckSetting({
           <input
             type="checkbox"
             checked={checked}
+            disabled={disabled}
             onChange={(e) => onChange(e.target.checked)}
           />
           {label}

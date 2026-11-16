@@ -1804,7 +1804,10 @@ for (const viewport of [
         const label = root
           .querySelector(".atlas-controls .field-label")!
           .getBoundingClientRect();
-        const grid = root.querySelector(".atlas-grid")!.getBoundingClientRect();
+        // The grid column opens on the cell choice (Inspect / Plan a path).
+        const grid = root
+          .querySelector(".atlas-grid-side")!
+          .getBoundingClientRect();
         return { label: label.top, grid: grid.top };
       });
       expect(Math.abs(alignment.label - alignment.grid)).toBeLessThan(1);

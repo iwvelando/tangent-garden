@@ -1,4 +1,5 @@
 import { distinctReadouts } from "../number-format";
+import { focusPlayWhenReady } from "../atlas-dialog";
 import { Icon } from "../icons";
 import { AtlasContext } from "../AtlasContext";
 import type { JourneyVia } from "../JourneyContext";
@@ -543,10 +544,20 @@ export default function TesseractApp({
     };
   }, [journey.requested, atlasRequested]);
   useEffect(() => {
-    if (adoption?.notebook === "4d")
-      adoption.edit
-        ? update(() => structuredClone(adoption.study.config))
-        : openStudy(adoption.study, adoption.custom ? null : adoption.preset);
+    if (adoption?.notebook !== "4d") return;
+    if (!adoption.edit)
+      return openStudy(
+        adoption.study,
+        adoption.custom ? null : adoption.preset,
+      );
+    update(() => structuredClone(adoption.study.config));
+    // A path also brings its phrase; cameras, layers and timing stay.
+    if (adoption.phrase) {
+      setMotion(adoption.study.motion);
+      setPhrase(
+        adoption.study.phrase && structuredClone(adoption.study.phrase),
+      );
+    }
   }, [adoption?.id]);
   useEffect(() => {
     if (journey.requested || atlasRequested) {
@@ -586,11 +597,12 @@ export default function TesseractApp({
         atlasOwner.beginTesseract({
           study: structuredClone(snapshot()),
           via,
-          restoreFocus: (returnVia) => {
+          restoreFocus: (returnVia, play) => {
             if (returnVia === "pointer") atlasQuiet.onPointerDown();
             else atlasQuiet.onKeyDownCapture();
             atlasQuiet.quiet();
             atlasButton.current?.focus({ preventScroll: true });
+            if (play) focusPlayWhenReady(atlasButton.current, returnVia);
           },
         });
       }

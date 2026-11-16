@@ -8,9 +8,15 @@ import {
 // cells drawn as the notebook draws by atlas-paint.ts.
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  AtlasChoiceGroup,
+  AtlasPathPanel,
   AtlasRangeFields,
   AtlasTabs,
   atlasCellKeyDown,
+  pathCellLabel,
+  PathStops,
+  stopsAt,
+  useAtlasPath,
   useAtlasModal,
   useAtlasRanges,
   useAtlasTabs,
@@ -21,6 +27,10 @@ import {
   rememberAtlasGridSize,
 } from "../atlas";
 import type { AtlasRanges, AtlasSize } from "../atlas-queue";
+import { addStop, pathTimeline } from "../atlas-path";
+import { phraseDuration } from "../phrase-timeline";
+import type { Target } from "./animation";
+
 import type { SpatialAtlasRequest } from "../AtlasContext";
 import { EngineClient } from "../engine-client";
 import { Field } from "../Field";
@@ -39,6 +49,7 @@ import {
   spatialPreviewConfig,
   type SpatialAtlasState,
   type SpatialPairId,
+  spatialPathRefusal,
 } from "./atlas";
 import {
   AtlasPainter,
@@ -99,7 +110,8 @@ export default function SpatialAtlasPreview({
 }: {
   request: SpatialAtlasRequest;
   onReturn: (via: JourneyVia) => void;
-  onAdopt: (study: SpatialStudy, via: JourneyVia) => void;
+  // play: the study plays a planned path as its phrase.
+  onAdopt: (study: SpatialStudy, via: JourneyVia, play?: boolean) => void;
 }) {
   const study = request.study;
   const facts = request.facts;
@@ -161,9 +173,11 @@ export default function SpatialAtlasPreview({
     scalars.client.current = engine;
     return atlas;
   };
+  const planned = useAtlasPath();
   const scalars = useAtlasRanges(() => {
     const slot = numerical.current;
     slot?.atlas.cancel();
+    planned.clear();
     // Synchronous Go cannot service scalars while meshing. Stop the old
     // worker before ScalarInput queues its evaluation; later endpoint
     // edits share the fresh parser so their pending evaluations survive.
@@ -306,6 +320,36 @@ export default function SpatialAtlasPreview({
   );
   const cell = selected && state.cells[selected.index];
   const inspection = images.inspection;
+  const pathRefusal = spatialPathRefusal(study.config, pair);
+  const choice = pathRefusal ? "inspect" : planned.choice;
+  const describe = (index: number) =>
+    `${descriptor.axes[0].symbol} = ${axisLabels[0][index]}, ${descriptor.axes[1].symbol} = ${axisLabels[1][index]}`;
+  // The source at the first stop's exact values, playing the path as its
+  // phrase. Every other setting, layer and the camera stay the source's.
+  const animatePath = () => {
+    const start = numerical.current?.atlas.variantAt(planned.path.stops[0]);
+    if (!start) return;
+    const timeline = pathTimeline(
+      planned.path,
+      state.cells,
+      descriptor.axes.map((a) => a.track as Target) as [Target, Target],
+    );
+    finish(() =>
+      onAdopt(
+        {
+          ...start,
+          animation: {
+            ...start.animation,
+            mode: "phrase",
+            duration: phraseDuration(timeline),
+            phrase: { ...timeline, opening: 1 },
+          },
+        },
+        via.current,
+        true,
+      ),
+    );
+  };
   const capped =
     preview.format === "surface"
       ? preview.surface.uSamples < study.config.surface.uSamples ||
@@ -418,13 +462,14 @@ export default function SpatialAtlasPreview({
               <button
                 type="button"
                 disabled={blocked}
-                onClick={() =>
+                onClick={() => {
+                  planned.clear();
                   scheduler.current?.generate(study, ranges, {
                     pair,
                     size,
                     facts,
-                  })
-                }
+                  });
+                }}
               >
                 Generate atlas
               </button>
@@ -490,77 +535,110 @@ export default function SpatialAtlasPreview({
                 </p>
               </details>
             </div>
-            <div className="atlas-grid-scroll">
-              <div
-                className="atlas-grid"
-                data-size={size}
-                role="group"
-                aria-label={`${descriptor.label} variants`}
-              >
-                {state.cells.map((cell, index) => {
-                  const image = images[index];
-                  return (
-                    <div
-                      className="atlas-cell"
-                      key={index}
-                      data-state={
-                        cell.frame
-                          ? "valid"
-                          : cell.error
-                            ? "invalid"
-                            : "pending"
-                      }
-                    >
-                      <button
-                        type="button"
-                        disabled={!cell.frame || blocked}
-                        aria-pressed={selected?.index === index}
-                        aria-label={`Inspect row ${Math.floor(index / size) + 1}, column ${(index % size) + 1}`}
-                        onClick={() => select(index)}
-                        onKeyDown={(event) =>
-                          atlasCellKeyDown(event, index, size)
+            <div className="atlas-grid-side">
+              <AtlasChoiceGroup
+                choice={choice}
+                setChoice={planned.setChoice}
+                refusal={pathRefusal}
+              />
+              <div className="atlas-grid-scroll">
+                <div
+                  className="atlas-grid"
+                  data-size={size}
+                  role="group"
+                  aria-label={`${descriptor.label} variants`}
+                >
+                  {state.cells.map((cell, index) => {
+                    const image = images[index];
+                    return (
+                      <div
+                        className="atlas-cell"
+                        key={index}
+                        data-state={
+                          cell.frame
+                            ? "valid"
+                            : cell.error
+                              ? "invalid"
+                              : "pending"
                         }
                       >
-                        {cell.frame && image?.status === "ready" ? (
-                          <div className="atlas-art">
-                            <img
-                              src={image.url}
-                              alt=""
-                              data-view={JSON.stringify(image.view)}
-                            />
-                          </div>
-                        ) : (
-                          <div className="atlas-placeholder">
-                            {cell.error
-                              ? "Unavailable"
-                              : !cell.frame
-                                ? "Pending"
-                                : waitingForSharedFrame
-                                  ? "Waiting for shared scale"
-                                  : image?.status === "failed"
-                                    ? "Could not be drawn"
-                                    : "Drawing…"}
-                          </div>
+                        <button
+                          type="button"
+                          disabled={!cell.frame || blocked}
+                          aria-pressed={
+                            choice === "inspect"
+                              ? selected?.index === index
+                              : undefined
+                          }
+                          aria-label={
+                            choice === "inspect"
+                              ? `Inspect row ${Math.floor(index / size) + 1}, column ${(index % size) + 1}`
+                              : pathCellLabel(planned.path, index, size)
+                          }
+                          onClick={() =>
+                            choice === "inspect"
+                              ? select(index)
+                              : planned.setPath((p) => addStop(p, index))
+                          }
+                          onKeyDown={(event) =>
+                            atlasCellKeyDown(event, index, size)
+                          }
+                        >
+                          {cell.frame && image?.status === "ready" ? (
+                            <div className="atlas-art">
+                              <img
+                                src={image.url}
+                                alt=""
+                                data-view={JSON.stringify(image.view)}
+                              />
+                            </div>
+                          ) : (
+                            <div className="atlas-placeholder">
+                              {cell.error
+                                ? "Unavailable"
+                                : !cell.frame
+                                  ? "Pending"
+                                  : waitingForSharedFrame
+                                    ? "Waiting for shared scale"
+                                    : image?.status === "failed"
+                                      ? "Could not be drawn"
+                                      : "Drawing…"}
+                            </div>
+                          )}
+                          <span className="atlas-values">
+                            {descriptor.axes[0].symbol} = {axisLabels[0][index]}
+                            <br />
+                            {descriptor.axes[1].symbol} = {axisLabels[1][index]}
+                            {choice === "path" && (
+                              <PathStops stops={stopsAt(planned.path, index)} />
+                            )}
+                          </span>
+                        </button>
+                        {cell.error && (
+                          <p className="field-error">{cell.error}</p>
                         )}
-                        <span className="atlas-values">
-                          {descriptor.axes[0].symbol} = {axisLabels[0][index]}
-                          <br />
-                          {descriptor.axes[1].symbol} = {axisLabels[1][index]}
-                        </span>
-                      </button>
-                      {cell.error && (
-                        <p className="field-error">{cell.error}</p>
-                      )}
-                      {cell.frame?.result.implicit && (
-                        <MeshDetails frame={cell.frame} preview />
-                      )}
-                      {cell.frame && image?.status === "failed" && (
-                        <p className="field-error">{image.message}</p>
-                      )}
-                    </div>
-                  );
-                })}
+                        {cell.frame?.result.implicit && (
+                          <MeshDetails frame={cell.frame} preview />
+                        )}
+                        {cell.frame && image?.status === "failed" && (
+                          <p className="field-error">{image.message}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+              {choice === "path" && (
+                <AtlasPathPanel
+                  path={planned.path}
+                  setPath={planned.setPath}
+                  cells={state.cells}
+                  axes={descriptor.axes}
+                  describe={describe}
+                  blocked={blocked}
+                  onAnimate={animatePath}
+                />
+              )}
             </div>
           </div>
         </div>

@@ -112,6 +112,79 @@
 .atlas-controls > .atlas-sheet-export {
   margin-bottom: 16px;
 }
+.atlas-grid-side {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+.notebook-mode.atlas-choice {
+  grid-template-columns: repeat(2, 1fr);
+  margin: 0;
+}
+.notebook-mode.atlas-choice label:has(:disabled) {
+  opacity: 0.55;
+}
+.notebook-mode.atlas-choice input:disabled {
+  cursor: default;
+}
+.atlas-choice-note {
+  margin: 0;
+}
+.atlas-path {
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.atlas .atlas-path h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.atlas-path-stops {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.atlas-path-stops li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.atlas-path-stops li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.atlas-path-stops button {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding-block: 2px;
+}
+.atlas-path-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.atlas-values:has(.atlas-stops) {
+  position: relative;
+}
+.atlas-stops {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-weight: 600;
+  color: var(--paper);
+  background: var(--base-ink);
+}
+.atlas-path input[type="number"] {
+  max-width: 140px;
+}
 .atlas-grid-scroll {
   min-width: 0;
   overflow-x: auto;

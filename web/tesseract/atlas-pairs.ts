@@ -29,12 +29,14 @@ const xw: AtlasAxis = {
   label: "xw angle",
   symbol: "xw",
   path: ["angles", 3],
+  track: "xw",
 };
 const alpha: AtlasAxis = {
   key: "alpha",
   label: "Central latitude α",
   symbol: "α",
   path: ["weave", "alpha"],
+  track: "weave.alpha",
 };
 const projected = (c: Config) => c.mode !== "section";
 export const rotationPair: TesseractAtlasPair = {
@@ -42,7 +44,13 @@ export const rotationPair: TesseractAtlasPair = {
   label: "4D rotations xw / yw",
   axes: [
     xw,
-    { key: "yw", label: "yw angle", symbol: "yw", path: ["angles", 4] },
+    {
+      key: "yw",
+      label: "yw angle",
+      symbol: "yw",
+      path: ["angles", 4],
+      track: "yw",
+    },
   ],
   supports: projected,
   ranges: (c) => ({ xw: around(c.angles[3]), yw: around(c.angles[4]) }),
@@ -57,6 +65,7 @@ export const windowPair: TesseractAtlasPair = {
       label: "Projection window radius",
       symbol: "C",
       path: ["clip"],
+      track: "clip",
     },
   ],
   supports: (c) => c.mode === "stereo" || c.mode === "paired",
@@ -72,6 +81,7 @@ export const eyePair: TesseractAtlasPair = {
       label: "4D eye distance",
       symbol: "d",
       path: ["distance"],
+      track: "distance",
     },
   ],
   supports: (c) => c.mode === "perspective",
@@ -90,6 +100,7 @@ export const flowerPair: TesseractAtlasPair = {
       label: "Flower amplitude A",
       symbol: "A",
       path: ["weave", "amplitude"],
+      track: "weave.amplitude",
     },
   ],
   // Missing optional amplitude means zero in older links. It must exist in
