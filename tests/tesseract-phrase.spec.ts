@@ -822,6 +822,65 @@ test("a phrase round-trips through a link, old links keep their motion, and a ba
   );
 });
 
+test("sharing an ordinary motion omits an unavailable phrase without discarding its local draft", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/?study=4d");
+  await settled(page);
+  await openShapeAnimation(page);
+  await page.getByLabel("Animate", { exact: true }).selectOption("phrase");
+  await page
+    .getByLabel("Phrase parameter", { exact: true })
+    .selectOption("distance");
+  await page.getByLabel("Phase 1 key", { exact: true }).fill("5");
+  await page
+    .getByLabel("View of the tesseract", { exact: true })
+    .selectOption("orthographic");
+  await settled(page);
+  await page.getByLabel("Animate", { exact: true }).selectOption("xw");
+  await button(page, "Copy link").click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const opened = await context.newPage();
+  await opened.goto(link);
+  await expect(opened).not.toHaveURL(/#s=/);
+  await settled(opened);
+  await expect(opened.locator(".link-notice")).toHaveCount(0);
+  await openShapeAnimation(opened);
+  expect((await shownConfig(opened)).mode).toBe("orthographic");
+  await expect(opened.getByLabel("Animate", { exact: true })).toHaveValue("xw");
+  await opened.close();
+  // Sharing does not erase the draft. Back in its view it is offered,
+  // and a valid dormant phrase still travels in an ordinary motion's link.
+  await page
+    .getByLabel("View of the tesseract", { exact: true })
+    .selectOption("perspective");
+  await settled(page);
+  await button(page, "Copy link").click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .not.toBe(link);
+  const validLink = await page.evaluate(() => navigator.clipboard.readText());
+  await page.getByLabel("Animate", { exact: true }).selectOption("phrase");
+  await expect(
+    page.getByLabel("Phrase parameter", { exact: true }),
+  ).toHaveValue("distance");
+  await expect(page.getByLabel("Phase 1 key", { exact: true })).toHaveValue(
+    "5",
+  );
+  await page.goto("about:blank");
+  await page.goto(validLink);
+  await settled(page);
+  await openShapeAnimation(page);
+  await expect(page.getByLabel("Animate", { exact: true })).toHaveValue("xw");
+  await page.getByLabel("Animate", { exact: true }).selectOption("phrase");
+  await expect(page.getByLabel("Phase 1 key", { exact: true })).toHaveValue(
+    "5",
+  );
+});
+
 test("scrubbing a phrase keeps redrawing without making a control blink", async ({
   page,
 }) => {

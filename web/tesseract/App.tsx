@@ -999,7 +999,19 @@ export default function TesseractApp({
       <AppHeader theme={theme} inert={journey.active}>
         <ShareLink
           notebook="4d"
-          study={snapshot}
+          study={() => {
+            const study = snapshot();
+            // A hidden draft may name a target or camera of a different
+            // view. Keep it locally, without making an ordinary study's
+            // link impossible to open. Valid dormant phrases still travel.
+            if (
+              study.motion !== "phrase" &&
+              study.phrase &&
+              tesseractPhraseError(study.config, study.phrase)
+            )
+              delete study.phrase;
+            return study;
+          }}
           disabled={busy || !!error || !!scalarError}
         />
         <AnimationButton section="shape-animation-section" />
