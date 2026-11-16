@@ -30,6 +30,7 @@ import {
 } from "./phrase-timeline";
 import { tiered, type Help } from "./help";
 import { plainZoom, viewZoom } from "./refinement";
+import { useQuietFocus } from "./quiet-focus";
 
 export const phraseHelp = tiered(
   "Reveal, move and hold one study through labeled phases you arrange.",
@@ -152,6 +153,7 @@ export function PhraseTimelineEditor<
   // goes to the phase now in that place. The way is kept with the move,
   // since Safari leaves a pressed button unfocused.
   const list = useRef<HTMLOListElement>(null);
+  const { quiet, ring, ...via } = useQuietFocus(list);
   const settle = useRef<string[] | null>(null);
   useLayoutEffect(() => {
     const names = settle.current;
@@ -160,7 +162,10 @@ export function PhraseTimelineEditor<
       const b = list.current?.querySelector<HTMLButtonElement>(
         `button[aria-label="${name}"]`,
       );
-      if (b && !b.disabled) return b.focus();
+      if (b && !b.disabled) {
+        quiet();
+        return b.focus();
+      }
     }
   }, [phrase.phases]);
   const patch = (i: number, change: (phase: P) => P) =>
@@ -235,7 +240,14 @@ export function PhraseTimelineEditor<
       >
         + Add a parameter
       </button>
-      <ol className="phrase-phases" ref={list}>
+      <ol
+        className="phrase-phases"
+        ref={list}
+        {...via}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) ring();
+        }}
+      >
         {phrase.phases.map((phase, i) => {
           const update = (change: Partial<P>) =>
             patch(i, (p) => ({ ...p, ...change }));

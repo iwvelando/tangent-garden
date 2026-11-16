@@ -663,7 +663,13 @@ export function SpatialAnimationPanel({
   // begins; changing them returns to the study.
   const layerKey = JSON.stringify(layers);
   useEffect(() => {
-    if (session.current?.phrase) stop();
+    // Preparation has no installed session yet, but already owns the
+    // entry layers. Invalidate its scalar and endpoint requests too.
+    if (
+      session.current?.phrase ||
+      (mode === "phrase" && status === "preparing")
+    )
+      stop();
   }, [layerKey]);
   // Turning the probe off ends an animation that draws it.
   useEffect(() => {

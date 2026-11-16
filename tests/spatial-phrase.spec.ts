@@ -762,6 +762,96 @@ test("an edit during preparation discards it, and the phrase round-trips through
   expect((await shownConfig(page)).surface.geodesics!.direction).toBe(70);
 });
 
+for (const action of ["play", "export"] as const)
+  test(`a layer edit cancels phrase ${action} while scalar preparation is pending`, async ({
+    page,
+  }) => {
+    await openStudy(page, presetStudy(index("Threads that find the hole")));
+    if (action === "export") {
+      await openDetails(page, "#spatial-export-settings");
+      await expect(
+        page.getByRole("button", { name: /Export MP4/ }),
+      ).toBeEnabled();
+    }
+    // Hold the actual worker requests until the layer changes, rather than
+    // depending on the machine being slow enough to catch preparation.
+    await page.evaluate(() => {
+      const post = Worker.prototype.postMessage;
+      const pending: (() => Promise<void>)[] = [];
+      const gate = {
+        pending,
+        release: () => {
+          Worker.prototype.postMessage = post;
+          return Promise.all(pending.splice(0).map((send) => send()));
+        },
+      };
+      (window as unknown as { phraseGate: typeof gate }).phraseGate = gate;
+      Worker.prototype.postMessage = function (
+        this: Worker,
+        ...args: Parameters<Worker["postMessage"]>
+      ) {
+        const data = args[0] as { action: string; id: number };
+        if (data.action !== "scalars") return post.apply(this, args);
+        pending.push(
+          () =>
+            new Promise<void>((resolve) => {
+              const received = (event: MessageEvent) => {
+                if (event.data.id !== data.id) return;
+                this.removeEventListener("message", received);
+                resolve();
+              };
+              this.addEventListener("message", received);
+              post.apply(this, args);
+            }),
+        );
+      } as Worker["postMessage"];
+    });
+    const downloads: string[] = [];
+    page.on("download", (file) => downloads.push(file.suggestedFilename()));
+    await (
+      action === "play"
+        ? button(page, "Play animation")
+        : page.getByRole("button", { name: /Export MP4/ })
+    ).click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as unknown as { phraseGate: { pending: unknown[] } })
+              .phraseGate.pending.length,
+        ),
+      )
+      .toBeGreaterThan(0);
+    await page
+      .getByRole("checkbox", { name: "Surface patch", exact: true })
+      .uncheck();
+    try {
+      await expect(button(page, "Play animation")).toBeEnabled();
+      await expect(button(page, "Stop")).toBeDisabled();
+    } finally {
+      await page.evaluate(async () => {
+        await (
+          window as unknown as {
+            phraseGate: { release: () => Promise<unknown> };
+          }
+        ).phraseGate.release();
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        );
+      });
+    }
+    await expect(stage(page)).not.toHaveAttribute("data-mode", "phrase");
+    await expect(button(page, "Pause")).toHaveCount(0);
+    await expect(
+      page.getByRole("checkbox", { name: "Surface patch", exact: true }),
+    ).not.toBeChecked();
+    expect(downloads).toEqual([]);
+    // The new layers belong to the next session, which must still work.
+    await playAndPause(page);
+    expect(await surfaceShown(page)).toBe(false);
+    await button(page, "Stop").click();
+  });
+
 test("a level phrase through a curated event computes every frame at its level and reads each state from the drawn frame", async ({
   page,
 }) => {

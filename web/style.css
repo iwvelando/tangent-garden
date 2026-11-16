@@ -1490,7 +1490,8 @@ h1 {
 }
 /* And into or out of a menu a tap opened (quiet-focus.ts). */
 .scheme-picker[data-quiet] :focus-visible,
-.export-menu[data-quiet] :focus-visible {
+.export-menu[data-quiet] :focus-visible,
+.phrase-phases[data-quiet] :focus-visible {
   outline: none;
 }
 .animation-jump span {

@@ -2417,6 +2417,15 @@ test("phrase phases are arranged and a second parameter keyed in WebKit at phone
       .evaluateAll((all) => all.map((e) => (e as HTMLTextAreaElement).value));
   await button("Move phase 3 down").click();
   await expect(button("Move phase 4 down")).toBeFocused();
+  await expect(page.locator(".phrase-phases")).toHaveAttribute(
+    "data-quiet",
+    "",
+  );
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".phrase-phases")).not.toHaveAttribute(
+    "data-quiet",
+    "",
+  );
   expect((await names()).slice(2, 4)).toEqual([
     "Cross the axis",
     "Find the caustic",
@@ -2523,6 +2532,10 @@ test("spatial phrase layers, turns and arranging work in WebKit at phone width",
   // Arranging moves a phase with everything it holds.
   await button("Move phase 6 up").click();
   await expect(button("Move phase 5 up")).toBeFocused();
+  await expect(page.locator(".phrase-phases")).toHaveAttribute(
+    "data-quiet",
+    "",
+  );
   await expect(
     page.getByRole("spinbutton", { name: "Phase 5 turns", exact: true }),
   ).toHaveValue("2");
@@ -2530,6 +2543,21 @@ test("spatial phrase layers, turns and arranging work in WebKit at phone width",
     "Through the hole",
   );
   await expect(page.getByText(summary, { exact: true })).toBeVisible();
+  // Keyboard arrangement restores visible focus; removing by pointer is
+  // quiet again. iOS's focus-visible heuristic still needs a device check.
+  await button("Move phase 5 up").press("Enter");
+  await expect(button("Move phase 4 up")).toBeFocused();
+  await expect(page.locator(".phrase-phases")).not.toHaveAttribute(
+    "data-quiet",
+    "",
+  );
+  await expect(button("Move phase 4 up")).toHaveCSS("outline-style", "solid");
+  await button("Remove phase 4").click();
+  await expect(button("Remove phase 4")).toBeFocused();
+  await expect(page.locator(".phrase-phases")).toHaveAttribute(
+    "data-quiet",
+    "",
+  );
 });
 
 test("phrase keys survive scalar blur, invalid drafts and seek in WebKit at phone width", async ({
