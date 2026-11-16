@@ -13,6 +13,8 @@ import {
 } from "../atlas-queue";
 import type { EngineClient } from "../engine-client";
 import { tiered } from "../help";
+import { pathRefusal } from "../atlas-path";
+import { spatialPhraseTargets } from "./phrase";
 import type { SpatialStudy } from "./link";
 import { implicitGrid } from "./implicit";
 import { surfaceShape } from "./surface";
@@ -70,12 +72,14 @@ const catalog: readonly SpatialAtlasPair[] = [
         label: "Level c",
         symbol: "c",
         path: ["implicit", "level"],
+        track: "level",
       },
       {
         key: "a",
         label: "Shape parameter a",
         symbol: "a",
         path: ["implicit", "a"],
+        track: "implicitA",
       },
     ],
     supports: (c, facts) => c.format === "implicit" && facts.usesA === true,
@@ -118,12 +122,14 @@ const catalog: readonly SpatialAtlasPair[] = [
         label: axisLabel("a"),
         symbol: "a",
         path: ["surface", "a"],
+        track: "surfaceA",
       },
       {
         key: "b",
         label: axisLabel("b"),
         symbol: "b",
         path: ["surface", "b"],
+        track: "surfaceB",
       },
     ],
     // A mirror's patch is not a surface study.
@@ -137,6 +143,12 @@ export const spatialAtlasPairs = (
 ) => catalog.filter((p) => p.supports(config, facts));
 export const spatialAtlasPair = (id: SpatialPairId) =>
   catalog.find((p) => p.id === id)!;
+// Why this pair cannot become a path (../atlas-path.ts), or null. A torus
+// knot's windings are no phrase parameter: fractional windings are no knot.
+export const spatialPathRefusal = (
+  config: SpatialConfig,
+  pair: SpatialPairId,
+) => pathRefusal(spatialAtlasPair(pair).axes, spatialPhraseTargets(config));
 export function spatialAtlasDefaults(
   config: SpatialConfig,
   pair: SpatialPairId = spatialAtlasPairs(config)[0]?.id ?? "windings",

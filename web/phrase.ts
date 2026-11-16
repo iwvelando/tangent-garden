@@ -12,7 +12,7 @@ import {
   type Viewport,
 } from "./animation";
 import type { EngineClient } from "./engine-client";
-import { roundedGenerated } from "./atlas";
+import { roundedGenerated } from "./atlas-queue";
 import {
   parameterAt,
   probeBetween,
@@ -310,6 +310,21 @@ export function phraseTargets(config: Config): Target[] {
       !integerTargets.includes(t) &&
       (t !== "a" || expressions.some((e) => /\ba\b/.test(e))),
   );
+}
+
+// Frequencies are whole in the atlas and in closed figures, but a phrase
+// moves them continuously: say so wherever one is a track, in the phrase's
+// own words (owner decision, #419). Null when no track is a frequency.
+const frequency = (t: Target) =>
+  t === "lissajousM" || t === "lissajousN" || /^term\d+Frequency$/.test(t);
+export function phraseFrequencyNote(phrase: Pick<Phrase, "target" | "also">) {
+  const swept = phraseTrackTargets(phrase).filter(frequency).map(targetLabel);
+  if (!swept.length) return null;
+  const names =
+    swept.length === 1
+      ? swept[0]
+      : `${swept.slice(0, -1).join(", ")} and ${swept.at(-1)}`;
+  return `${names} ${swept.length === 1 ? "moves" : "move"} through fractional values, where the curve generally does not close.`;
 }
 
 export function phraseError(config: Config, phrase: Phrase): string | null {

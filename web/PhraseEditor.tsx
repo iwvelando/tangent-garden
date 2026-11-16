@@ -11,6 +11,7 @@ import {
   type PhrasePhase,
   type PhraseView,
   type RevealChoice,
+  phraseFrequencyNote,
 } from "./phrase";
 import {
   addPhraseTrack,
@@ -574,6 +575,12 @@ export function PhraseEditor({
           withPhaseReveal(phase, choice as RevealChoice, layers),
       }}
       camera={{ drawn, onShow, describe, help: phraseCameraHelp }}
+      holds={[
+        "An empty end value holds the preceding value.",
+        phraseFrequencyNote(phrase),
+      ]
+        .filter(Boolean)
+        .join(" ")}
     />
   );
 }

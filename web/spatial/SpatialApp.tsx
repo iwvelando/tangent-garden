@@ -1,4 +1,5 @@
 import { SpatialFamilyPanel, useSpatialFamily } from "./SpatialFamilyPanel";
+import { focusPlayWhenReady } from "../atlas-dialog";
 import { spatialEngravingError } from "./engraving";
 import {
   composeSpatialFamily,
@@ -2047,11 +2048,12 @@ export default function SpatialApp({
           facts: spatialAtlasFacts(frame, config),
           study: structuredClone(snapshot()),
           via,
-          restoreFocus: (returnVia) => {
+          restoreFocus: (returnVia, play) => {
             if (returnVia === "pointer") atlasQuiet.onPointerDown();
             else atlasQuiet.onKeyDownCapture();
             atlasQuiet.quiet();
             atlasButton.current?.focus({ preventScroll: true });
+            if (play) focusPlayWhenReady(atlasButton.current, returnVia);
           },
         });
       }

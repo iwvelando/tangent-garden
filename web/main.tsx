@@ -1,4 +1,5 @@
 import { readout as formatNumber, count as formatCount } from "./number-format";
+import { focusPlayWhenReady } from "./atlas-dialog";
 import { Icon, type IconName } from "./icons";
 import { LoomContext, type LoomEntry } from "./loom/Context";
 import { GardenContext, type GardenEntry } from "./garden/Context";
@@ -1600,11 +1601,12 @@ function App({
           study: structuredClone(snapshot()),
           facts,
           via: atlasWaiting,
-          restoreFocus: (via) => {
+          restoreFocus: (via, play) => {
             if (via === "pointer") atlasQuiet.onPointerDown();
             else atlasQuiet.onKeyDownCapture();
             atlasQuiet.quiet();
             atlasButton.current?.focus({ preventScroll: true });
+            if (play) focusPlayWhenReady(atlasButton.current, via);
           },
         });
       }
@@ -3512,7 +3514,7 @@ function Notebook() {
                     setAtlas(null);
                     setFit(null);
                   }}
-                  onAdopt={(study, via) => {
+                  onAdopt={(study, via, play) => {
                     links.current++;
                     setShared((s) => ({ ...s, "2d": undefined }));
                     setAdoptions((a) => ({
@@ -3525,7 +3527,7 @@ function Notebook() {
                         id: ++adoptionId.current,
                       },
                     }));
-                    restoreFocus.current = () => atlas.restoreFocus(via);
+                    restoreFocus.current = () => atlas.restoreFocus(via, play);
                     setAtlas(null);
                     setFit(null);
                   }}
@@ -3551,7 +3553,7 @@ function Notebook() {
                         spatialAtlas.restoreFocus(via);
                       setSpatialAtlas(null);
                     }}
-                    onAdopt={(study, via) => {
+                    onAdopt={(study, via, play) => {
                       links.current++;
                       setShared((s) => ({ ...s, "3d": undefined }));
                       setAdoptions((a) => ({
@@ -3566,7 +3568,7 @@ function Notebook() {
                         },
                       }));
                       restoreFocus.current = () =>
-                        spatialAtlas.restoreFocus(via);
+                        spatialAtlas.restoreFocus(via, play);
                       setSpatialAtlas(null);
                     }}
                   />
@@ -3592,7 +3594,7 @@ function Notebook() {
                         tesseractAtlas.restoreFocus(via);
                       setTesseractAtlas(null);
                     }}
-                    onAdopt={(study, via) => {
+                    onAdopt={(study, via, play) => {
                       links.current++;
                       setShared((s) => ({ ...s, "4d": undefined }));
                       setAdoptions((a) => ({
@@ -3603,11 +3605,12 @@ function Notebook() {
                           custom: true,
                           preset: 0,
                           edit: true,
+                          ...(play && { phrase: true as const }),
                           id: ++adoptionId.current,
                         },
                       }));
                       restoreFocus.current = () =>
-                        tesseractAtlas.restoreFocus(via);
+                        tesseractAtlas.restoreFocus(via, play);
                       setTesseractAtlas(null);
                     }}
                   />

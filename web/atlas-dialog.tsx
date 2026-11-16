@@ -4,6 +4,7 @@
 // the range fields with their scalar evaluation.
 import {
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -13,8 +14,16 @@ import {
 } from "react";
 import type { AtlasAxis, AtlasRanges } from "./atlas-queue";
 import { atlasRangeHelp, atlasWholeRangeHelp } from "./atlas";
+import {
+  emptyPath,
+  maxPathStops,
+  pathError,
+  removeStop,
+  stepSeconds,
+  type AtlasPath,
+} from "./atlas-path";
 import type { EngineClient } from "./engine-client";
-import { Field, FieldErrorContext } from "./Field";
+import { CheckSetting, Field, FieldErrorContext } from "./Field";
 import type { JourneyVia } from "./JourneyContext";
 import type { useQuietFocus } from "./quiet-focus";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
@@ -331,4 +340,232 @@ export function AtlasRangeFields({
       </FieldErrorContext.Provider>
     </ScalarStatus.Provider>
   );
+}
+
+// What activating a cell does: open its full-quality variant, or add it to
+// a path (../atlas-path.ts). Planning is offered only when the pair's
+// parameters are phrase parameters; otherwise the reason shows beneath.
+export type AtlasChoice = "inspect" | "path";
+export function AtlasChoiceGroup({
+  choice,
+  setChoice,
+  refusal,
+}: {
+  choice: AtlasChoice;
+  setChoice: (choice: AtlasChoice) => void;
+  refusal: string | null;
+}) {
+  const name = useId();
+  return (
+    <>
+      <div
+        className="notebook-mode atlas-choice"
+        role="radiogroup"
+        aria-label="Choosing a cell"
+      >
+        {(
+          [
+            ["inspect", "Inspect a variant"],
+            ["path", "Plan a path"],
+          ] as const
+        ).map(([value, label]) => (
+          <label key={value}>
+            <input
+              type="radio"
+              name={name}
+              aria-label={label}
+              checked={choice === value}
+              disabled={value === "path" && !!refusal}
+              onChange={() => setChoice(value)}
+            />
+            {label}
+          </label>
+        ))}
+      </div>
+      {refusal && <p className="note atlas-choice-note">{refusal}</p>}
+    </>
+  );
+}
+
+// A path's stops beside its grid, until a range, pair or size edit
+// regenerates the cells.
+export function useAtlasPath() {
+  const [choice, setChoice] = useState<AtlasChoice>("inspect");
+  const [path, setPath] = useState<AtlasPath>(emptyPath);
+  return {
+    choice,
+    setChoice,
+    path,
+    setPath,
+    clear: () => setPath((p) => (p.stops.length ? { ...p, stops: [] } : p)),
+  };
+}
+// The 1-based stops a cell stands for, for its caption.
+export const stopsAt = (path: AtlasPath, index: number) =>
+  path.stops.flatMap((stop, i) => (stop === index ? [i + 1] : []));
+export const pathCellLabel = (path: AtlasPath, index: number, size: number) => {
+  const stops = stopsAt(path, index);
+  return `Add row ${Math.floor(index / size) + 1}, column ${(index % size) + 1} to the path${stops.length ? ` (${stops.length === 1 ? "stop" : "stops"} ${stops.join(", ")})` : ""}`;
+};
+export const atlasPathHelp = {
+  seconds: "Each move's duration, 0.1–300 seconds, eased in and out.",
+  closed: "Adds a last move back, so a loop closes exactly.",
+};
+
+export function AtlasPathPanel({
+  path,
+  setPath,
+  cells,
+  axes,
+  describe,
+  blocked,
+  onAnimate,
+}: {
+  path: AtlasPath;
+  setPath: (change: (path: AtlasPath) => AtlasPath) => void;
+  cells: readonly { values: [number, number]; frame?: unknown }[];
+  axes: readonly AtlasAxis[];
+  // A cell's values, as its caption shows them.
+  describe: (index: number) => string;
+  blocked: boolean;
+  onAnimate: () => void;
+}) {
+  const error = pathError(path, cells);
+  const ends = path.stops.length >= 2 && path.stops[0] === path.stops.at(-1);
+  const whole = axes.filter((a) => a.integer).map((a) => a.symbol);
+  return (
+    <section className="atlas-path" aria-label="Path">
+      <h3>Path</h3>
+      {path.stops.length ? (
+        <ol className="atlas-path-stops">
+          {path.stops.map((index, i) => (
+            <li key={i}>
+              <span>
+                Stop {i + 1} · {describe(index)}
+              </span>
+              <button
+                type="button"
+                aria-label={`Remove stop ${i + 1}`}
+                onClick={() => setPath((p) => removeStop(p, i))}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="note">Choose cells in the order to visit them.</p>
+      )}
+      {path.stops.length >= maxPathStops && (
+        <p className="note">A path holds at most {maxPathStops} stops.</p>
+      )}
+      {whole.length > 0 && (
+        <p className="note atlas-path-whole">
+          Between stops, {whole.join(" and ")} sweep
+          {whole.length === 1 ? "s" : ""} through fractional values: genuine
+          curves that generally do not close. Only the stops are whole.
+        </p>
+      )}
+      <CheckSetting
+        label="Return to the first stop"
+        topic="Return to the first stop"
+        help={atlasPathHelp.closed}
+        checked={ends || path.closed}
+        disabled={ends}
+        onChange={(closed) => setPath((p) => ({ ...p, closed }))}
+      />
+      <Field label="Seconds per step" help={atlasPathHelp.seconds}>
+        <input
+          type="number"
+          min={stepSeconds[0]}
+          max={stepSeconds[1]}
+          step="any"
+          value={Number.isNaN(path.seconds) ? "" : path.seconds}
+          onChange={(e) => {
+            const seconds = e.target.valueAsNumber;
+            setPath((p) => ({ ...p, seconds }));
+          }}
+        />
+      </Field>
+      {path.stops.length > 0 && error && (
+        <p className="note" role="status">
+          {error}
+        </p>
+      )}
+      <div className="atlas-path-actions">
+        <button
+          type="button"
+          disabled={!path.stops.length}
+          onClick={() => setPath((p) => ({ ...p, stops: [] }))}
+        >
+          Clear path
+        </button>
+        <button type="button" disabled={blocked || !!error} onClick={onAnimate}>
+          Animate this path
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// A cell's place in the path: a badge in its caption's corner, which never
+// changes the cell's height. The cell's own name says it to assistive
+// technology (pathCellLabel).
+export function PathStops({ stops }: { stops: number[] }) {
+  if (!stops.length) return null;
+  return (
+    <span className="atlas-stops" aria-hidden="true">
+      {stops.join(", ")}
+    </span>
+  );
+}
+
+// After a path is adopted, playing it is the next step. Focus returns to
+// the atlas button as after any adoption, and the notebook's animation
+// section opens. Whenever its Play button is enabled (it waits for the
+// adopted study's frame, the previous study's can be enabled before that,
+// and the adopted study's layout can move it), it takes focus after keyboard
+// use, or else comes into view: iOS would ring a focus moved after a tap.
+// This stops once the reader taps, types or scrolls, or after ten seconds.
+export function focusPlayWhenReady(from: HTMLElement | null, via: JourneyVia) {
+  const root = from?.closest(".app");
+  if (!from || !root) return;
+  // As from the header's Animation button (AnimationButton.tsx).
+  const section = root.querySelector<HTMLDetailsElement>(
+    ".animation-section > details[id]",
+  );
+  if (section) section.open = true;
+  const play = () =>
+    [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === "Play animation" && b.checkVisibility(),
+    );
+  const check = () => {
+    const button = play();
+    if (!button || button.disabled) return;
+    if (via === "keyboard") {
+      if (document.activeElement !== button) button.focus();
+      return;
+    }
+    // Clear of the phone's sticky notebook navigation, too.
+    const { top, bottom } = button.getBoundingClientRect();
+    if (top < innerHeight * 0.15 || bottom > innerHeight)
+      button.scrollIntoView({ block: "center" });
+  };
+  const done = () => {
+    observer.disconnect();
+    clearTimeout(timer);
+    for (const type of stops) document.removeEventListener(type, done, true);
+  };
+  // The reader's own input, including scrolling, ends it.
+  const stops = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+  const observer = new MutationObserver(check);
+  observer.observe(root, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["disabled"],
+  });
+  const timer = setTimeout(done, 10_000);
+  for (const type of stops) document.addEventListener(type, done, true);
+  requestAnimationFrame(check);
 }

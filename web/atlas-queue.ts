@@ -10,6 +10,9 @@ export type AtlasAxis = {
   symbol: string;
   path: readonly (string | number)[];
   integer?: boolean;
+  // The phrase parameter that moves this field, when the notebook's
+  // phrases can move it (atlas-path.ts).
+  track?: string;
 };
 export type AtlasRanges = Record<string, [number, number]>;
 export type AtlasCell<F> = {
@@ -262,6 +265,12 @@ export abstract class AtlasQueue<
     const selection = this.state.selection;
     if (!selection?.frame || !this.source) return null;
     return this.variant(selection.index);
+  }
+  // The source study at a valid cell's values: a path's first stop.
+  variantAt(index: number): S | null {
+    return this.state.cells[index]?.frame && this.source
+      ? this.variant(index)
+      : null;
   }
   protected variant(index: number) {
     const study = structuredClone(this.source!);

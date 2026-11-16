@@ -1,4 +1,5 @@
 import { tesseractAtlasEntryHelp } from "../web/tesseract/atlas";
+import { atlasPathHelp } from "../web/atlas-dialog";
 import { spatialAtlasEntryHelp } from "../web/spatial/atlas";
 import { test, expect, type Page } from "@playwright/test";
 import { chooseNotebook, choosePreset, exampleTitles } from "./helpers";
@@ -271,6 +272,8 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("3D phrase turns", spatialPhraseTurnsHelp);
   add("3D phrase layers", spatialPhraseLayersHelp);
   table("atlas controls", atlasControlHelp, ["size", "framing"]);
+  // Shown in the atlas's path mode.
+  table("atlas path", atlasPathHelp);
   add("once", onceHelp);
   add("back and forth", backAndForthHelp);
   table("pace", paceHelp);

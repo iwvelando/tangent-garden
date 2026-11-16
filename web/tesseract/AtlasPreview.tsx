@@ -1,9 +1,15 @@
 import { distinctReadouts } from "../number-format";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
+  AtlasChoiceGroup,
+  AtlasPathPanel,
   AtlasRangeFields,
   AtlasTabs,
   atlasCellKeyDown,
+  pathCellLabel,
+  PathStops,
+  stopsAt,
+  useAtlasPath,
   useAtlasModal,
   useAtlasRanges,
   useAtlasTabs,
@@ -14,6 +20,8 @@ import {
   rememberAtlasGridSize,
 } from "../atlas";
 import type { AtlasRanges, AtlasSize } from "../atlas-queue";
+import { addStop, pathTimeline } from "../atlas-path";
+import type { TesseractTarget } from "./types";
 import type { TesseractAtlasRequest } from "../AtlasContext";
 import { EngineClient } from "../engine-client";
 import { Field } from "../Field";
@@ -34,6 +42,7 @@ import {
   tesseractAtlasPair,
   tesseractAtlasPairs,
   tesseractAtlasRangeError,
+  tesseractPathRefusal,
   tesseractPreviewConfig,
   type TesseractAtlasState,
   type TesseractPairId,
@@ -54,7 +63,8 @@ export default function TesseractAtlasPreview({
 }: {
   request: TesseractAtlasRequest;
   onReturn: (via: JourneyVia) => void;
-  onAdopt: (study: TesseractStudy, via: JourneyVia) => void;
+  // play: the study plays a planned path as its phrase.
+  onAdopt: (study: TesseractStudy, via: JourneyVia, play?: boolean) => void;
 }) {
   const study = request.study;
   const theme = useTheme();
@@ -108,9 +118,11 @@ export default function TesseractAtlasPreview({
     scalars.client.current = engine;
     return atlas;
   };
+  const planned = useAtlasPath();
   const scalars = useAtlasRanges(() => {
     const slot = numerical.current;
     slot?.atlas.cancel();
+    planned.clear();
     // A numerical edit must not queue parsing behind synchronous Go work.
     if (slot?.working && !slot.atlas.state.failed) {
       numerical.current = null;
@@ -184,6 +196,34 @@ export default function TesseractAtlasPreview({
     numerical.current?.atlas.cancel();
     dialog.current?.close();
     action();
+  };
+  const pathRefusal = descriptor
+    ? tesseractPathRefusal(study.config, pair)
+    : null;
+  const choice = pathRefusal ? "inspect" : planned.choice;
+  const describe = (index: number) =>
+    `${descriptor?.axes[0].symbol} = ${axisLabels[0][index]}, ${descriptor?.axes[1].symbol} = ${axisLabels[1][index]}`;
+  // The source at the first stop's exact values, playing the path as its
+  // phrase. Every other setting, layer, both cameras and the timing stay
+  // the source's.
+  const animatePath = () => {
+    const start = numerical.current?.atlas.variantAt(planned.path.stops[0]);
+    if (!start || !descriptor) return;
+    const timeline = pathTimeline(
+      planned.path,
+      state.cells,
+      descriptor.axes.map((a) => a.track as TesseractTarget) as [
+        TesseractTarget,
+        TesseractTarget,
+      ],
+    );
+    finish(() =>
+      onAdopt(
+        { ...start, motion: "phrase", phrase: timeline },
+        via.current,
+        true,
+      ),
+    );
   };
   return (
     <dialog
@@ -294,12 +334,13 @@ export default function TesseractAtlasPreview({
               <button
                 type="button"
                 disabled={blocked}
-                onClick={() =>
+                onClick={() => {
+                  planned.clear();
                   numerical.current?.atlas.generate(study, ranges, {
                     pair,
                     size,
-                  })
-                }
+                  });
+                }}
               >
                 Generate atlas
               </button>
@@ -405,65 +446,96 @@ export default function TesseractAtlasPreview({
                 </p>
               </details>
             </div>
-            <div className="atlas-grid-scroll">
-              <div
-                className="atlas-grid"
-                data-size={size}
-                role="group"
-                aria-label={`${descriptor?.label ?? "Parameter"} variants`}
-              >
-                {state.cells.map((c, i) => (
-                  <div
-                    className="atlas-cell"
-                    key={i}
-                    data-state={
-                      c.frame ? "valid" : c.error ? "invalid" : "pending"
-                    }
-                  >
-                    <button
-                      type="button"
-                      disabled={!c.frame || blocked}
-                      aria-pressed={selected?.index === i}
-                      aria-label={`Inspect row ${Math.floor(i / size) + 1}, column ${(i % size) + 1}`}
-                      onClick={() => {
-                        numerical.current?.atlas.inspect(i);
-                        tabs.showVariant();
-                      }}
-                      onKeyDown={(e) => atlasCellKeyDown(e, i, size)}
+            <div className="atlas-grid-side">
+              <AtlasChoiceGroup
+                choice={choice}
+                setChoice={planned.setChoice}
+                refusal={pathRefusal}
+              />
+              <div className="atlas-grid-scroll">
+                <div
+                  className="atlas-grid"
+                  data-size={size}
+                  role="group"
+                  aria-label={`${descriptor?.label ?? "Parameter"} variants`}
+                >
+                  {state.cells.map((c, i) => (
+                    <div
+                      className="atlas-cell"
+                      key={i}
+                      data-state={
+                        c.frame ? "valid" : c.error ? "invalid" : "pending"
+                      }
                     >
-                      {c.frame && !waiting ? (
-                        <AtlasArtwork
-                          frame={c.frame}
-                          study={study}
-                          dark={theme.dark}
-                          scheme={theme.scheme}
-                          radii={shared}
-                        />
-                      ) : (
-                        <div className="atlas-placeholder">
-                          {c.error
-                            ? "Unavailable"
-                            : c.frame
-                              ? "Waiting for shared scale"
-                              : "Pending"}
-                        </div>
+                      <button
+                        type="button"
+                        disabled={!c.frame || blocked}
+                        aria-pressed={
+                          choice === "inspect"
+                            ? selected?.index === i
+                            : undefined
+                        }
+                        aria-label={
+                          choice === "inspect"
+                            ? `Inspect row ${Math.floor(i / size) + 1}, column ${(i % size) + 1}`
+                            : pathCellLabel(planned.path, i, size)
+                        }
+                        onClick={() => {
+                          if (choice === "path")
+                            return planned.setPath((p) => addStop(p, i));
+                          numerical.current?.atlas.inspect(i);
+                          tabs.showVariant();
+                        }}
+                        onKeyDown={(e) => atlasCellKeyDown(e, i, size)}
+                      >
+                        {c.frame && !waiting ? (
+                          <AtlasArtwork
+                            frame={c.frame}
+                            study={study}
+                            dark={theme.dark}
+                            scheme={theme.scheme}
+                            radii={shared}
+                          />
+                        ) : (
+                          <div className="atlas-placeholder">
+                            {c.error
+                              ? "Unavailable"
+                              : c.frame
+                                ? "Waiting for shared scale"
+                                : "Pending"}
+                          </div>
+                        )}
+                        <span className="atlas-values">
+                          {descriptor?.axes[0].symbol} = {axisLabels[0][i]}
+                          <br />
+                          {descriptor?.axes[1].symbol} = {axisLabels[1][i]}
+                          {choice === "path" && (
+                            <PathStops stops={stopsAt(planned.path, i)} />
+                          )}
+                        </span>
+                      </button>
+                      {c.error && <p className="field-error">{c.error}</p>}
+                      {c.frame?.result.weave && (
+                        <p className="note atlas-diagnostic">
+                          {c.frame.result.weave.retainedArcs} open arcs ·{" "}
+                          {c.frame.result.weave.absentSources} outside window
+                        </p>
                       )}
-                      <span className="atlas-values">
-                        {descriptor?.axes[0].symbol} = {axisLabels[0][i]}
-                        <br />
-                        {descriptor?.axes[1].symbol} = {axisLabels[1][i]}
-                      </span>
-                    </button>
-                    {c.error && <p className="field-error">{c.error}</p>}
-                    {c.frame?.result.weave && (
-                      <p className="note atlas-diagnostic">
-                        {c.frame.result.weave.retainedArcs} open arcs ·{" "}
-                        {c.frame.result.weave.absentSources} outside window
-                      </p>
-                    )}
-                  </div>
-                ))}
+                    </div>
+                  ))}
+                </div>
               </div>
+              {choice === "path" && descriptor && (
+                <AtlasPathPanel
+                  path={planned.path}
+                  setPath={planned.setPath}
+                  cells={state.cells}
+                  axes={descriptor.axes}
+                  describe={describe}
+                  blocked={blocked}
+                  onAnimate={animatePath}
+                />
+              )}
             </div>
           </div>
         </div>

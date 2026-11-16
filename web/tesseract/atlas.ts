@@ -7,6 +7,7 @@ import {
 } from "../atlas-queue";
 import type { EngineClient } from "../engine-client";
 import { tiered } from "../help";
+import { pathRefusal } from "../atlas-path";
 import { objects } from "./objects";
 import type { TesseractStudy } from "./link";
 import type { Config, Result } from "./types";
@@ -19,6 +20,13 @@ export const tesseractAtlasPairs = (c: Config) =>
   (objects[c.object].atlas?.pairs ?? []).filter((p) => p.supports(c));
 export const tesseractAtlasPair = (c: Config, id: TesseractPairId) =>
   objects[c.object].atlas?.pairs.find((p) => p.id === id);
+// Why this pair cannot become a path (../atlas-path.ts), or null: the
+// descriptor's phrase must move both axes.
+export const tesseractPathRefusal = (c: Config, id: TesseractPairId) =>
+  pathRefusal(
+    tesseractAtlasPair(c, id)?.axes ?? [],
+    objects[c.object].phrase?.(c) ?? [],
+  ) ?? null;
 export function tesseractAtlasDefaults(
   c: Config,
   pair = tesseractAtlasPairs(c)[0]?.id,
