@@ -148,7 +148,7 @@ export function FamilyPanel({
           onChange={(enabled) => change({ enabled })}
           help={tiered(
             "Overlay full-quality constructions from one changing parameter.",
-            "Supports active light, pole and shape parameters; roulette geometry; Lissajous amplitudes and phase; or implicit levels without a native stack. Densities, integrated paths and nested stacks are excluded. Disabling restores the source study. Reveal members or move a band in Animation.",
+            "Supports active light, pole and shape parameters; roulette geometry; Lissajous amplitudes and phase; or implicit levels without a native stack. Densities, integrated paths and nested stacks are excluded. Disabling restores the source study. Reveal members, move a band or play a phrase in Animation.",
           )}
         />
         {f.enabled && (

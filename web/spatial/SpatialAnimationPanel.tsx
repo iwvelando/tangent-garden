@@ -12,6 +12,21 @@ import {
   type SpatialFamilyMember,
 } from "./family";
 import { familyMotionHelp } from "../family-motion";
+import { engravingReadout } from "../engraving-phrase";
+import {
+  EngravingPhraseEditor,
+  engravingProblemField,
+} from "../EngravingPhraseEditor";
+import {
+  compileSpatialEngraving,
+  defaultSpatialEngraving,
+  engravingBounds,
+  sampleSpatialEngraving,
+  spatialEngravingCameraHelp,
+  spatialEngravingError,
+  spatialEngravingLayersHelp,
+  type CompiledSpatialEngraving,
+} from "./engraving";
 import {
   fullRefinementHelp,
   lowersRefinement,
@@ -218,6 +233,8 @@ type Session = {
     settings: SpatialFamilySettings;
     members: readonly SpatialFamilyMember[];
   };
+  // Present only while playing an engraving phrase over the family.
+  engraving?: CompiledSpatialEngraving;
   original: Frame;
   // Present only while revealing a harmonic study: its chain at every sample.
   chains?: HarmonicChainTrack;
@@ -450,13 +467,25 @@ export function SpatialAnimationPanel({
     (frame && phrasable ? defaultSpatialPhrase(frame.config) : undefined);
   // A phrase's pace is its phases' own: the one they share, or the last
   // chosen when a link gives them several.
-  const sharedPace = (p: SpatialPhrase, chosen: Pace) =>
+  const sharedPace = (p: { phases: { pace: Pace }[] }, chosen: Pace) =>
     p.phases.every((phase) => phase.pace === p.phases[0].pace)
       ? p.phases[0].pace
       : chosen;
+  // An engraving phrase over the family, once chosen or linked, and the
+  // first field it refuses.
+  const engraving =
+    family?.settings.motion === "phrase" ? family.settings.phrase : undefined;
+  const engravingProblem =
+    family && engraving
+      ? (spatialEngravingError(engraving, family.settings.count) ?? undefined)
+      : undefined;
+  const phrasing = mode === "phrase" || !!engraving;
   // A phrase's duration is its phases'.
-  const total =
-    mode === "phrase" && phraseDraft ? phraseDuration(phraseDraft) : duration;
+  const total = engraving
+    ? phraseDuration(engraving)
+    : mode === "phrase" && phraseDraft
+      ? phraseDuration(phraseDraft)
+      : duration;
   useEffect(() => {
     if (frame && !phrasable && modeChoice === "phrase") setMode("reveal");
   }, [!!frame, phrasable, modeChoice]);
@@ -626,7 +655,7 @@ export function SpatialAnimationPanel({
     setRepeat(restore.settings.repeat);
     setPace(restore.settings.pace);
   }, [restore]);
-  const actionDisabled = disabled || !!family?.error;
+  const actionDisabled = disabled || !!family?.error || !!engravingProblem;
   const running =
     status === "playing" || status === "preparing" || status === "exporting";
   const active = status !== "idle";
@@ -736,6 +765,23 @@ export function SpatialAnimationPanel({
     engine = client.current!,
     playing = false,
   ): Promise<AnimationView> {
+    if (s.family && s.engraving) {
+      // Once and back and forth, each phase at its own pace.
+      const progress = progressAt(
+        time,
+        s.repeat === "loop" ? "back-and-forth" : s.repeat,
+        "steady",
+      );
+      return sampleSpatialEngraving(
+        s.engraving,
+        s.original.config,
+        s.family.settings,
+        s.family.members,
+        progress * s.engraving.duration,
+        { progress, time, complete: s.repeat === "once" && time === 1 },
+        s.length,
+      );
+    }
     if (s.family)
       return sampleSpatialFamily(
         s.original.config,
@@ -1114,18 +1160,20 @@ export function SpatialAnimationPanel({
         )
       : "";
     setLive(
-      view.phrase
-        ? [
-            view.phrase.phase,
-            ...view.phrase.tracks.map(
-              (t) => `${t.label} = ${liveReadout(t.value, t.range)}`,
-            ),
-          ].join(" · ")
-        : s.mode === "path"
-          ? leg
-          : [animationReadout(s, view), leg, riding]
-              .filter(Boolean)
-              .join(" · "),
+      view.phrase?.members
+        ? engravingReadout({ phase: view.phrase.phase, ...view.phrase.members })
+        : view.phrase
+          ? [
+              view.phrase.phase,
+              ...view.phrase.tracks.map(
+                (t) => `${t.label} = ${liveReadout(t.value, t.range)}`,
+              ),
+            ].join(" · ")
+          : s.mode === "path"
+            ? leg
+            : [animationReadout(s, view), leg, riding]
+                .filter(Boolean)
+                .join(" · "),
     );
   }
   function animationReadout(s: Session, view: AnimationView) {
@@ -1253,6 +1301,48 @@ export function SpatialAnimationPanel({
         throw new Error("Duration must be between 0.1 and 3600 seconds.");
       if (!heldView) throw new Error("The current view is not ready yet.");
       if (save) exportTiming(total, fps);
+      if (family && engraving) {
+        if (engravingProblem) throw new Error(engravingProblem);
+        const around = engravingBounds(family.members);
+        if (!around) throw new Error("No family members are available.");
+        // Keys are taken about the members' shared bounds; the phrase opens
+        // at the manual view. Nothing here asks the engine.
+        const compiled = compileSpatialEngraving(
+          engraving,
+          family.settings.count,
+          layers,
+          { around, entry: heldView },
+        );
+        const s: Session = {
+          original: frame,
+          first: frame,
+          final: frame,
+          tracks: [],
+          mode: "reveal",
+          cut,
+          sight,
+          camera: "hold",
+          heldView,
+          coarse: false,
+          duration: compiled.duration,
+          repeat,
+          pace,
+          length,
+          progress: 0,
+          // A phrase draws the family as its still does, whatever the
+          // presentation.
+          family: {
+            settings: {
+              ...structuredClone(family.settings),
+              presentation: "family",
+            },
+            members: family.members,
+          },
+          engraving: compiled,
+        };
+        await launch(s, token, save);
+        return;
+      }
       if (mode === "phrase") {
         const s = await phraseSession(heldView, token);
         if (s) await launch(s, token, save);
@@ -1958,14 +2048,12 @@ export function SpatialAnimationPanel({
         <fieldset
           hidden={preview}
           disabled={
-            mode === "phrase"
-              ? disabled
-              : running || status === "paused" || disabled
+            phrasing ? disabled : running || status === "paused" || disabled
           }
           onChangeCapture={() => {
             // A phrase stays editable while it plays; an edit returns to
             // the study.
-            if (status === "complete" || (mode === "phrase" && active)) stop();
+            if (status === "complete" || (phrasing && active)) stop();
           }}
         >
           {family && (
@@ -1979,16 +2067,92 @@ export function SpatialAnimationPanel({
                   onChange={(e) => {
                     const motion = e.target
                       .value as SpatialFamilySettings["motion"];
-                    family.onChange((previous) => ({
-                      ...(previous ?? family.settings),
-                      motion,
-                    }));
+                    family.onChange((previous) => {
+                      const settings = previous ?? family.settings;
+                      // A phrase starts from the current family and
+                      // selection.
+                      return {
+                        ...settings,
+                        motion,
+                        ...(motion === "phrase" &&
+                          !settings.phrase &&
+                          frame && {
+                            phrase: defaultSpatialEngraving(
+                              frame.config,
+                              settings,
+                              layers,
+                              layerOptions.map(([key]) => key),
+                            ),
+                          }),
+                      };
+                    });
+                    if (motion === "phrase") setPace("ease");
                   }}
                 >
                   <option value="reveal">Reveal members</option>
                   <option value="window">Moving band</option>
+                  <option value="phrase">Play a phrase</option>
                 </select>
               </Field>
+              {engraving && (
+                <EngravingPhraseEditor
+                  phrase={engraving}
+                  count={family.settings.count}
+                  problem={engravingProblem}
+                  layers={layerOptions}
+                  layersHelp={spatialEngravingLayersHelp}
+                  onChange={(change) => {
+                    // Arranging and Set to drawing edit outside a change
+                    // event; any edit returns to the study.
+                    if (active) stop();
+                    family.onChange((previous) => {
+                      const settings = previous ?? family.settings;
+                      return settings.phrase
+                        ? { ...settings, phrase: change(settings.phrase) }
+                        : settings;
+                    });
+                  }}
+                  camera={{
+                    drawn: () => {
+                      const view = getCurrentView();
+                      const around = engravingBounds(family.members);
+                      if (!view || !around) return null;
+                      const {
+                        name: _,
+                        leg: __,
+                        ...key
+                      } = keyFromView(view, around, "", spatialPlainZoom);
+                      return key;
+                    },
+                    keep: (old, view) => ({ ...view, turns: old.turns }),
+                    onShow: (view) => {
+                      if (active) stop();
+                      onShowView({
+                        yaw: view.yaw,
+                        pitch: view.pitch,
+                        zoom: view.zoom,
+                        panX: view.panX,
+                        panY: view.panY,
+                      });
+                    },
+                    describe: describeView,
+                    help: spatialEngravingCameraHelp,
+                  }}
+                  extra={(phase, i, patch) => (
+                    <PhaseTurns
+                      phase={phase}
+                      index={i}
+                      onChange={(turns) =>
+                        patch((p) =>
+                          typeof p.view === "object"
+                            ? { ...p, view: { ...p.view, turns } }
+                            : p,
+                        )
+                      }
+                    />
+                  )}
+                />
+              )}
               {family.settings.motion === "window" && (
                 <FieldErrorContext.Provider
                   value={{
@@ -2301,7 +2465,7 @@ export function SpatialAnimationPanel({
               )}
             />
           )}
-          {mode !== "phrase" && (
+          {!phrasing && (
             <Field label="Duration (seconds)">
               <input
                 type="number"
@@ -2330,17 +2494,37 @@ export function SpatialAnimationPanel({
             </Field>
             <Field
               label="Pace"
-              help={mode === "phrase" ? phrasePaceHelp : paceHelp[pace]}
+              help={phrasing ? phrasePaceHelp : paceHelp[pace]}
             >
               <select
                 value={
-                  mode === "phrase" && phraseDraft
-                    ? sharedPace(phraseDraft, pace)
-                    : pace
+                  engraving
+                    ? sharedPace(engraving, pace)
+                    : mode === "phrase" && phraseDraft
+                      ? sharedPace(phraseDraft, pace)
+                      : pace
                 }
                 onChange={(e) => {
                   const next = e.target.value as Pace;
                   setPace(next);
+                  if (family && engraving) {
+                    family.onChange((previous) => {
+                      const settings = previous ?? family.settings;
+                      return settings.phrase
+                        ? {
+                            ...settings,
+                            phrase: {
+                              ...settings.phrase,
+                              phases: settings.phrase.phases.map((p) => ({
+                                ...p,
+                                pace: next,
+                              })),
+                            },
+                          }
+                        : settings;
+                    });
+                    return;
+                  }
                   // A phrase's pace applies to every phase.
                   if (mode === "phrase" && phraseDraft)
                     setPhrase({
@@ -2360,7 +2544,7 @@ export function SpatialAnimationPanel({
               </select>
             </Field>
           </div>
-          {mode !== "path" && mode !== "phrase" && (
+          {mode !== "path" && !phrasing && (
             <Field
               label="Animation camera"
               help={
@@ -2608,7 +2792,13 @@ export function SpatialAnimationPanel({
             {exportNotice}
           </p>
         )}
-        {error && <StudyError className="animation-error" message={error} />}
+        {(error ||
+          (engravingProblem && !engravingProblemField(engravingProblem))) && (
+          <StudyError
+            className="animation-error"
+            message={error || engravingProblem!}
+          />
+        )}
       </details>
     </section>
   );

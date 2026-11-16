@@ -11,6 +11,7 @@ import { familyMotionMembers, familyProgressAt } from "../family-motion";
 import type { Pace } from "../timing";
 import type { AnimationView } from "./animation";
 import type { View } from "./renderer";
+import { spatialEngravingLink, type SpatialEngravingPhrase } from "./engraving";
 export type SpatialFamilySettings = {
   enabled: boolean;
   target: "radius" | "tube" | "a" | "surfaceA" | "surfaceB" | "surfaceC";
@@ -19,8 +20,11 @@ export type SpatialFamilySettings = {
   count: number;
   selected: number;
   presentation: "family" | "selected";
-  motion: "reveal" | "window";
+  motion: "reveal" | "window" | "phrase";
   width: number;
+  // The phases a phrase plays, present once one has been chosen or linked
+  // (engraving.ts).
+  phrase?: SpatialEngravingPhrase;
 };
 const surfaceFields = { surfaceA: "a", surfaceB: "b", surfaceC: "c" } as const;
 function surfaceField(target: SpatialFamilySettings["target"]) {
@@ -174,7 +178,7 @@ export function spatialFamilyBudget(
                   : [undefined, undefined];
   return { points, numbers, work, nodes, triangles, field, error };
 }
-const schema: SchemaOf<SpatialFamilySettings> = {
+const schema: SchemaOf<Omit<SpatialFamilySettings, "phrase">> = {
   fields: {
     enabled: "boolean",
     target: {
@@ -192,13 +196,28 @@ const schema: SchemaOf<SpatialFamilySettings> = {
     count: "number",
     selected: "number",
     presentation: { options: { family: true, selected: true } },
-    motion: { options: { reveal: true, window: true } },
+    motion: { options: { reveal: true, window: true, phrase: true } },
     width: "number",
   },
 };
-export function spatialFamilyLink(raw: unknown, c: SpatialConfig) {
+export function spatialFamilyLink(
+  raw: unknown,
+  c: SpatialConfig,
+): SpatialFamilySettings | undefined {
   if (raw === undefined) return undefined;
-  const f = conform(raw, schema, spatialFamilyDefaults(c), "family");
+  // A phrase is conformed against the member count, after the rest.
+  const record =
+    typeof raw === "object" && raw !== null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : undefined;
+  const { phrase: rawPhrase, ...rest } = record ?? {};
+  const { phrase: _, ...defaults } = spatialFamilyDefaults(c);
+  const f: SpatialFamilySettings = conform(
+    record ? rest : raw,
+    schema,
+    defaults,
+    "family",
+  );
   // Disabled settings still need bounded indices and counts. Applicability and
   // work are evaluated when enabled, so a source edit can remain shareable.
   const check = spatialFamilyBudget(c, f);
@@ -208,6 +227,13 @@ export function spatialFamilyLink(raw: unknown, c: SpatialConfig) {
       (check.field !== undefined && check.field !== "Family parameter"))
   )
     throw new LinkError("family", check.error);
+  if (rawPhrase !== undefined)
+    f.phrase = spatialEngravingLink(rawPhrase, f.count, "family.phrase");
+  if (f.motion === "phrase" && !f.phrase)
+    throw new LinkError(
+      "family.phrase",
+      "family.phrase is needed to play a phrase.",
+    );
   return f;
 }
 
@@ -416,21 +442,25 @@ export function spatialFamilyVisible(
 ) {
   if (f.presentation === "selected") return [f.selected];
   const slots = Array.from({ length: n }, (_, i) => i);
-  // The planar engraving's slot timing, applied to slot indices.
-  return progress === undefined
+  // The planar engraving's slot timing, applied to slot indices. A phrase
+  // gives its own slots (composeSpatialFamily's visible).
+  return progress === undefined || f.motion === "phrase"
     ? slots
     : familyMotionMembers(slots, { mode: f.motion, width: f.width, progress });
 }
+// visible, when given, is the slots a phrase shows at this frame.
 export function composeSpatialFamily(
   config: SpatialConfig,
   settings: SpatialFamilySettings,
   members: readonly SpatialFamilyMember[],
   progress?: number,
+  shown?: number[],
 ): Frame {
   const bounds = sharedBounds(
     members.flatMap((m) => (m.frame ? [m.frame.result.bounds] : [])),
   ) ?? { center: { x: 0, y: 0, z: 0 }, radius: 1 };
-  const visible = spatialFamilyVisible(settings, members.length, progress);
+  const visible =
+    shown ?? spatialFamilyVisible(settings, members.length, progress);
   const result: SpatialResult = {
     base: [],
     minus: [],

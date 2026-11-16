@@ -11,6 +11,14 @@ import { repeatHelp as planarRepeatHelp } from "../web/animation";
 import { presets } from "../web/presets";
 import { familyMotionHelp } from "../web/family-motion";
 import {
+  engravingCameraHelp,
+  engravingLayersHelp,
+} from "../web/planar-engraving";
+import {
+  spatialEngravingCameraHelp,
+  spatialEngravingLayersHelp,
+} from "../web/spatial/engraving";
+import {
   phraseCameraHelp,
   phraseHelp,
   phraseKeyHelp,
@@ -244,7 +252,12 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("current-curve Fourier input", fitSourceHelp);
   add("Fourier outline correction", fitCorrectionHelp);
   add("Fourier outline view", fitOutlineViewHelp);
-  table("family motion", familyMotionHelp);
+  // The engraving phrase's member fields sit in pairs.
+  table("family motion", familyMotionHelp, ["members", "opening"]);
+  add("engraving phrase layers", engravingLayersHelp);
+  add("engraving phrase camera", engravingCameraHelp);
+  add("3D engraving phrase layers", spatialEngravingLayersHelp);
+  add("3D engraving phrase camera", spatialEngravingCameraHelp);
   add("phrase mode", phraseHelp);
   add("phrase pace", phrasePaceHelp, true);
   add("phrase ray length", phraseRayLengthHelp);

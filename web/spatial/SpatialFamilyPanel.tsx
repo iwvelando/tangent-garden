@@ -116,7 +116,7 @@ export function SpatialFamilyPanel({
           onChange={(enabled) => change({ enabled })}
           help={tiered(
             "Overlay space curves or surface grids from one changing shape parameter.",
-            "Supports analytic patch shapes, torus radii or expression a. Curves admit no construction, tangent-foot, orthotomic or base inversion. Shadows, native geodesic fans and edge/ridge tracing are excluded. Only the selected visible member supplies sheets and guides. Disable to restore the source study; reveal members or move a band in Animation.",
+            "Supports analytic patch shapes, torus radii or expression a. Curves admit no construction, tangent-foot, orthotomic or base inversion. Shadows, native geodesic fans and edge/ridge tracing are excluded. Only the selected visible member supplies sheets and guides. Disable to restore the source study; reveal members, move a band or play a phrase in Animation.",
           )}
         />
         {f.enabled && (

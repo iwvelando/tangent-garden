@@ -16,6 +16,21 @@ import {
   type FamilyComposition,
   type PreparedFamily,
 } from "./family-motion";
+import { engravingReadout } from "./engraving-phrase";
+import {
+  compilePlanarEngraving,
+  defaultPlanarEngraving,
+  engravingCameraHelp,
+  engravingLayersHelp,
+  planarEngravingError,
+  samplePlanarEngraving,
+  type CompiledPlanarEngraving,
+} from "./planar-engraving";
+import { completeLayers, planarLayerChoices } from "./planar-layers";
+import {
+  EngravingPhraseEditor,
+  engravingProblemField,
+} from "./EngravingPhraseEditor";
 import type { ColorScheme } from "./color-schemes";
 import { AnimationValues } from "./AnimationValues";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -173,6 +188,8 @@ type Session = {
   phrase?: CompiledPhrase;
   phraseSample?: ReturnType<typeof createPhraseSampler>;
   family?: PreparedFamily;
+  // Present only while playing an engraving phrase over the family.
+  engraving?: CompiledPlanarEngraving;
   owner?: string;
   original: Frame;
   first: Frame;
@@ -246,7 +263,12 @@ export const redraws = (
 type Props = {
   // Same controls and lifecycle, with a separately saved family setup.
   family?: FamilyComposition & {
-    onAnimation: (patch: Partial<FamilyAnimation>) => void;
+    // A patch, or a function of the latest setup giving one.
+    onAnimation: (
+      patch:
+        | Partial<FamilyAnimation>
+        | ((latest: FamilyAnimation) => Partial<FamilyAnimation>),
+    ) => void;
   };
   // Preserve the ordinary setup while its notebook shows a family.
   suspended?: boolean;
@@ -379,6 +401,15 @@ export function AnimationPanel({
       : setOrdinaryRepeat(value);
   const setPace = (value: Pace) =>
     family ? family.onAnimation({ pace: value }) : setOrdinaryPace(value);
+  // An engraving phrase over the family, once chosen or linked, and the
+  // first field it refuses.
+  const engraving =
+    familySetup?.mode === "phrase" ? familySetup.phrase : undefined;
+  const engravingProblem =
+    family && engraving
+      ? (planarEngravingError(engraving, family.settings.count) ?? undefined)
+      : undefined;
+  const phrasing = mode === "phrase" || !!engraving;
   const [tracks, setTracks] = useState<Track[]>([]);
   const [phrase, setPhrase] = useState<Phrase | undefined>();
   const [phraseLabelInDrawing, setPhraseLabelInDrawing] = useState(false);
@@ -387,12 +418,15 @@ export function AnimationPanel({
     (frame
       ? defaultPhrase(frame.config, length, undefined, layers)
       : undefined);
-  const duration =
-    mode === "phrase" && phraseDraft
+  const duration = engraving
+    ? phraseDuration(engraving)
+    : mode === "phrase" && phraseDraft
       ? phraseDuration(phraseDraft)
       : simpleDuration;
   // A phrase whose phases move the camera opens at the chosen view.
-  const flown = mode === "phrase" && !!phraseDraft && phraseFlies(phraseDraft);
+  const flown = engraving
+    ? engraving.phases.some((p) => p.view !== undefined)
+    : mode === "phrase" && !!phraseDraft && phraseFlies(phraseDraft);
   const phraseSignature = JSON.stringify([phraseDraft, frame?.config, length]);
   const [resolvedPhrase, setResolvedPhrase] = useState<{
     signature: string;
@@ -423,20 +457,24 @@ export function AnimationPanel({
       ? phraseViewError(phraseDraft, refineView ? viewZoom : plainZoom)
       : null;
   const phraseReady =
-    mode !== "phrase" ||
-    (!knownRefusal &&
-      !deepView &&
-      resolvedPhrase.signature === phraseSignature &&
-      !!resolvedPhrase.compiled);
+    !engravingProblem &&
+    (mode !== "phrase" ||
+      (!knownRefusal &&
+        !deepView &&
+        resolvedPhrase.signature === phraseSignature &&
+        !!resolvedPhrase.compiled));
   const phraseProblem =
-    mode === "phrase"
+    engravingProblem ??
+    (mode === "phrase"
       ? (knownRefusal ??
         (resolvedPhrase.signature === phraseSignature
           ? resolvedPhrase.error
           : undefined) ??
         deepView ??
         undefined)
-      : undefined;
+      : undefined);
+  // The control a problem names, which shows it under that control.
+  const problemField = engraving ? engravingProblemField : phraseProblemField;
   useEffect(() => {
     if (mode !== "phrase" || !frame || !phraseDraft || !client.current) return;
     let current = true;
@@ -742,6 +780,20 @@ export function AnimationPanel({
     time: number,
     engine = client.current!,
   ): Promise<AnimationView> {
+    if (s.family && s.engraving) {
+      // Once and back and forth, at the phases' own paces.
+      const p = progressAt(time, s.repeat, "steady");
+      return samplePlanarEngraving(
+        s.engraving,
+        s.family,
+        s.original,
+        p * s.engraving.duration,
+        { progress: p, time, complete: s.repeat === "once" && time === 1 },
+        s.length,
+        s.stop,
+        s.owner!,
+      );
+    }
     if (s.family)
       return sampleFamily(
         s.family,
@@ -976,7 +1028,8 @@ export function AnimationPanel({
     setProgress(s.progress);
     lastView.current = view;
     onView(view);
-    if (view.family)
+    if (view.engraving) setLive(engravingReadout(view.engraving));
+    else if (view.family)
       setLive(
         `${familyMotionMembers(view.family.members, view.family.motion!).length} / ${view.family.members.length} members · selected ${view.family.settings.selected + 1}`,
       );
@@ -1092,6 +1145,44 @@ export function AnimationPanel({
           mode === "phrase" ? resolvedPhrase.compiled!.duration : duration,
           fps,
         );
+      if (family && familySetup && engraving) {
+        if (engravingProblem) throw new Error(engravingProblem);
+        const fitted = atlasSharedFrame(family.members);
+        if (!fitted) throw new Error("No family members are available.");
+        // Keys are taken about the family's held framing; the phrase opens
+        // there or at the current view. Nothing here asks the engine.
+        const compiled = compilePlanarEngraving(
+          engraving,
+          family.settings.count,
+          completeLayers(layers),
+          fitted,
+          heldView ?? fitted,
+        );
+        const s: Session = {
+          original: frame,
+          first: frame,
+          final: frame,
+          tracks: [],
+          mode: "reveal",
+          camera,
+          duration: compiled.duration,
+          repeat,
+          pace,
+          length,
+          stop: stopAtCaustic,
+          progress: 0,
+          owner: revision,
+          family: {
+            settings: structuredClone(family.settings),
+            members: family.members,
+            setup: { ...familySetup },
+            view: heldView ?? fitted,
+          },
+          engraving: compiled,
+        };
+        await launch(s, save, token);
+        return;
+      }
       if (family && familySetup) {
         if (
           !Number.isInteger(familySetup.width) ||
@@ -1567,9 +1658,7 @@ export function AnimationPanel({
         <fieldset
           hidden={preview}
           disabled={
-            mode === "phrase"
-              ? disabled
-              : running || status === "paused" || disabled
+            phrasing ? disabled : running || status === "paused" || disabled
           }
           onChangeCapture={(event) => {
             if (
@@ -1578,8 +1667,8 @@ export function AnimationPanel({
               )
             )
               return;
-            if (mode === "phrase") setError("");
-            if (status === "complete" || (mode === "phrase" && active)) stop();
+            if (phrasing) setError("");
+            if (status === "complete" || (phrasing && active)) stop();
           }}
         >
           <Field
@@ -1627,18 +1716,33 @@ export function AnimationPanel({
           >
             <select
               value={familySetup?.mode ?? mode}
-              onChange={(e) =>
-                family
-                  ? family.onAnimation({
-                      mode: e.target.value as FamilyAnimation["mode"],
-                    })
-                  : parameterMode(e.target.value as typeof mode)
-              }
+              onChange={(e) => {
+                if (!family) {
+                  parameterMode(e.target.value as typeof mode);
+                  return;
+                }
+                const next = e.target.value as FamilyAnimation["mode"];
+                // A phrase starts from the current family and selection.
+                family.onAnimation({
+                  mode: next,
+                  ...(next === "phrase" &&
+                    !familySetup?.phrase &&
+                    frame && {
+                      phrase: defaultPlanarEngraving(
+                        frame.config,
+                        family.settings,
+                        completeLayers(layers),
+                      ),
+                      pace: "ease",
+                    }),
+                });
+              }}
             >
               {family ? (
                 <>
                   <option value="reveal">Reveal member by member</option>
                   <option value="window">Moving band</option>
+                  <option value="phrase">Play a phrase</option>
                 </>
               ) : (
                 <>
@@ -1710,6 +1814,47 @@ export function AnimationPanel({
                     fitFrame(frame.result, frame.config),
                   ),
                 );
+              }}
+            />
+          )}
+          {family && engraving && frame && (
+            <EngravingPhraseEditor
+              phrase={engraving}
+              count={family.settings.count}
+              problem={engravingProblem}
+              layers={(() => {
+                const groups = planarLayerChoices(frame.config);
+                return [
+                  ...groups.curves,
+                  ...groups.construction,
+                  ...groups.reference,
+                ].map(({ key, label }) => [key, label] as const);
+              })()}
+              layersHelp={engravingLayersHelp}
+              onChange={(change) => {
+                // Arranging and Set to drawing edit outside a change event;
+                // any edit returns to the study.
+                if (active) stop();
+                family.onAnimation((latest) =>
+                  latest.phrase ? { phrase: change(latest.phrase) } : {},
+                );
+              }}
+              camera={{
+                help: engravingCameraHelp,
+                describe: (view) => describeKey({ name: "", ...view }),
+                drawn: () => {
+                  const view = getCurrentView();
+                  const fit = atlasSharedFrame(family.members);
+                  if (!view || !fit) return null;
+                  const { name: _, ...key } = keyFromViewport(view, fit);
+                  return key;
+                },
+                onShow: (view) => {
+                  const fit = atlasSharedFrame(family.members);
+                  if (!fit) return;
+                  if (active) stop();
+                  onShowCamera(keyCamera({ name: "", ...view }, fit));
+                },
               }}
             />
           )}
@@ -1890,7 +2035,7 @@ export function AnimationPanel({
               </button>
             </>
           )}
-          {mode !== "phrase" && (
+          {!phrasing && (
             <Field label="Duration (seconds)">
               <input
                 type="number"
@@ -1919,12 +2064,29 @@ export function AnimationPanel({
             </Field>
             <Field
               label="Pace"
-              help={mode === "phrase" ? phrasePaceHelp : paceHelp[pace]}
+              help={phrasing ? phrasePaceHelp : paceHelp[pace]}
             >
               <select
                 value={pace}
                 onChange={(e) => {
                   const pace = e.target.value as Pace;
+                  if (family && engraving) {
+                    family.onAnimation((latest) =>
+                      latest.phrase
+                        ? {
+                            pace,
+                            phrase: {
+                              ...latest.phrase,
+                              phases: latest.phrase.phases.map((p) => ({
+                                ...p,
+                                pace,
+                              })),
+                            },
+                          }
+                        : { pace },
+                    );
+                    return;
+                  }
                   setPace(pace);
                   if (mode === "phrase" && phraseDraft)
                     setPhrase({
@@ -2184,7 +2346,7 @@ export function AnimationPanel({
             {exportNotice}
           </p>
         )}
-        {(error || (phraseProblem && !phraseProblemField(phraseProblem))) && (
+        {(error || (phraseProblem && !problemField(phraseProblem))) && (
           <StudyError
             className="animation-error"
             message={phraseProblem || error}

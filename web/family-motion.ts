@@ -4,12 +4,17 @@ import type { Frame } from "./types";
 import type { FamilySettings } from "./planar-family";
 import { progressAt, type Pace } from "./timing";
 import type { FamilyMember } from "./planar-family";
+import type { PlanarEngravingPhrase } from "./planar-engraving";
 
-export type FamilyMotion = {
-  mode: "reveal" | "window";
-  width: number;
-  progress: number;
-};
+export type FamilyMotion =
+  | {
+      mode: "reveal" | "window";
+      width: number;
+      progress: number;
+    }
+  // An engraving phrase's span of member numbers, from 1, both included
+  // (engraving-phrase.ts).
+  | { mode: "phrase"; first: number; last: number; progress: number };
 
 // Slice the frozen slots, including unavailable ones. The returned references
 // share the prepared geometry; neither seek nor playback makes engine requests.
@@ -17,6 +22,8 @@ export function familyMotionMembers<T = FamilyMember>(
   members: readonly T[],
   motion: FamilyMotion,
 ) {
+  if (motion.mode === "phrase")
+    return members.slice(motion.first - 1, motion.last);
   const n = members.length;
   const p = Math.max(0, Math.min(1, motion.progress));
   if (motion.mode === "reveal")
@@ -29,6 +36,8 @@ export function familyMotionMembers<T = FamilyMember>(
 
 export type FamilyAnimation = {
   mode: FamilyMotion["mode"];
+  // The phases a phrase plays, present once one has been chosen or linked.
+  phrase?: PlanarEngravingPhrase;
   width: number;
   duration: number;
   repeat: "once" | "back-and-forth";
@@ -90,7 +99,12 @@ export function sampleFamily(
     family: {
       settings: family.settings,
       members: family.members,
-      motion: { mode: family.setup.mode, width: family.setup.width, progress },
+      // A phrase samples its own frames (planar-engraving.ts).
+      motion: {
+        mode: family.setup.mode as "reveal" | "window",
+        width: family.setup.width,
+        progress,
+      },
     },
   };
 }
@@ -105,6 +119,15 @@ export const familyMotionHelp = {
   window: tiered(
     "Move a fixed-width band through the finite family.",
     motionDetails,
+  ),
+  phrase: tiered(
+    "Show spans of the family, its layers and camera through labeled phases you arrange.",
+    "Members are prepared once and never recomputed, so phases cannot move a parameter. Layers change at phase starts; views zoom up to 20×. Each phase lasts at least 0.1 seconds, with 1–12 phases and at most 3600 seconds in total. Stop restores your study.",
+  ),
+  opening: "Members shown as the phrase opens.",
+  members: tiered(
+    "Members shown as the phase ends; empty holds the span.",
+    "Whole numbers from 1 to the family size, the first no greater than the last. During the phase each end moves one member at a time. Unavailable members keep their places and draw nothing.",
   ),
   width: "Show 1–32 consecutive members, up to the family size.",
   construction: tiered(

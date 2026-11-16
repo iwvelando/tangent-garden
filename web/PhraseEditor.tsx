@@ -126,19 +126,24 @@ export function PhraseTimelineEditor<
   camera,
   companion,
   extra,
+  opening,
+  inputs,
+  holds = "An empty end value holds the preceding value.",
 }: {
   phrase: F;
-  targets: T[];
-  label: (target: T) => string;
+  // The parameters a phrase can move; absent, the phrase has no tracks
+  // (an engraving phrase), and neither tracks nor end values are shown.
+  targets?: T[];
+  label?: (target: T) => string;
   // A target's value in the study, as text for a retargeted track's keys.
-  current: (target: T) => string;
+  current?: (target: T) => string;
   // Applied to the latest phrase, as a functional update.
   onChange: (change: (phrase: F) => F) => void;
   problem?: string;
   // The field a problem names, shown under that control.
   problemField: (problem?: string) => string | undefined;
   // The help beside a track's parameter.
-  parameterHelp: (target: T, track: number) => Help<string> | undefined;
+  parameterHelp?: (target: T, track: number) => Help<string> | undefined;
   // What a phase reveals; a notebook without reveals leaves it out.
   reveal?: PhraseEditorReveal<P>;
   camera: PhraseEditorCamera<V>;
@@ -151,6 +156,16 @@ export function PhraseTimelineEditor<
     index: number,
     patch: (change: (phase: P) => P) => void,
   ) => ReactNode;
+  // Controls for how the phrase opens, before its phases.
+  opening?: ReactNode;
+  // A notebook's own end values for a phase, after its duration.
+  inputs?: (
+    phase: P,
+    index: number,
+    patch: (change: (phase: P) => P) => void,
+  ) => ReactNode;
+  // What an empty end value does, in the note below the phases.
+  holds?: string;
 }) {
   const fieldError = useMemo(() => {
     const label = problemField(problem);
@@ -158,9 +173,9 @@ export function PhraseTimelineEditor<
       ? { label, message: problem, claim: () => {}, touch: () => {} }
       : null;
   }, [problem, problemField]);
-  const tracks = phraseTrackTargets(phrase);
+  const tracks = targets ? phraseTrackTargets(phrase) : [];
   const several = tracks.length > 1;
-  const free = targets.filter((t) => !tracks.includes(t));
+  const free = (targets ?? []).filter((t) => !tracks.includes(t));
   // Focus follows a moved phase to its new place, onto the same way's
   // button while it can move further, else the other's; after a removal it
   // goes to the phase now in that place. The way is kept with the move,
@@ -188,6 +203,7 @@ export function PhraseTimelineEditor<
     }));
   const parameter = (track: number) => {
     const target = tracks[track];
+    if (!targets || !label || !current) return null;
     return (
       <Field
         key={track}
@@ -199,7 +215,7 @@ export function PhraseTimelineEditor<
               : "Third parameter"
         }
         topic={`Phrase parameter${track ? ` ${track + 1}` : ""}`}
-        help={parameterHelp(target, track)}
+        help={parameterHelp?.(target, track)}
       >
         <select
           aria-label={`Phrase parameter${track ? ` ${track + 1}` : ""}`}
@@ -225,34 +241,39 @@ export function PhraseTimelineEditor<
   };
   return (
     <FieldErrorContext.Provider value={fieldError}>
-      {parameter(0)}
-      {tracks.slice(1).map((target, k) => (
-        <div className="phrase-track" key={k}>
-          {parameter(k + 1)}
+      {targets && (
+        <>
+          {parameter(0)}
+          {tracks.slice(1).map((target, k) => (
+            <div className="phrase-track" key={k}>
+              {parameter(k + 1)}
+              <button
+                type="button"
+                className="text-button"
+                aria-label={`Remove phrase parameter ${k + 2}`}
+                onClick={() => onChange((p) => removePhraseTrack(p, target))}
+              >
+                Remove parameter
+              </button>
+            </div>
+          ))}
           <button
             type="button"
-            className="text-button"
-            aria-label={`Remove phrase parameter ${k + 2}`}
-            onClick={() => onChange((p) => removePhraseTrack(p, target))}
+            className="phrase-add-track"
+            disabled={tracks.length >= maxPhraseTracks || free.length === 0}
+            onClick={() =>
+              onChange((p) => {
+                const used = phraseTrackTargets(p);
+                const next = targets.find((t) => !used.includes(t));
+                return next ? addPhraseTrack(p, next) : p;
+              })
+            }
           >
-            Remove parameter
+            + Add a parameter
           </button>
-        </div>
-      ))}
-      <button
-        type="button"
-        className="phrase-add-track"
-        disabled={tracks.length >= maxPhraseTracks || free.length === 0}
-        onClick={() =>
-          onChange((p) => {
-            const used = phraseTrackTargets(p);
-            const next = targets.find((t) => !used.includes(t));
-            return next ? addPhraseTrack(p, next) : p;
-          })
-        }
-      >
-        + Add a parameter
-      </button>
+        </>
+      )}
+      {opening}
       <ol
         className="phrase-phases"
         ref={list}
@@ -269,7 +290,7 @@ export function PhraseTimelineEditor<
           const keyField = (track: number) => (
             <Field
               key={track}
-              label={several ? label(tracks[track]) : "End value"}
+              label={several ? label!(tracks[track]) : "End value"}
               topic={phraseKeyField(i, track)}
               help={i === 0 && track === 0 ? phraseKeyHelp : undefined}
             >
@@ -366,6 +387,21 @@ export function PhraseTimelineEditor<
               </>
             );
           };
+          const seconds = (
+            <Field label="Seconds" topic={`Phase ${i + 1} duration`}>
+              <input
+                aria-label={`Phase ${i + 1} duration`}
+                type="number"
+                min="0.1"
+                max="3600"
+                step="any"
+                value={Number.isNaN(phase.duration) ? "" : phase.duration}
+                onChange={(e) =>
+                  update({ duration: e.target.valueAsNumber } as Partial<P>)
+                }
+              />
+            </Field>
+          );
           return (
             <li className="animation-track" key={i}>
               <Field label="Name" topic={`Phase ${i + 1} name`}>
@@ -375,22 +411,15 @@ export function PhraseTimelineEditor<
                   onChange={(name) => update({ name } as Partial<P>)}
                 />
               </Field>
-              <div className="pair">
-                <Field label="Seconds" topic={`Phase ${i + 1} duration`}>
-                  <input
-                    aria-label={`Phase ${i + 1} duration`}
-                    type="number"
-                    min="0.1"
-                    max="3600"
-                    step="any"
-                    value={Number.isNaN(phase.duration) ? "" : phase.duration}
-                    onChange={(e) =>
-                      update({ duration: e.target.valueAsNumber } as Partial<P>)
-                    }
-                  />
-                </Field>
-                {keyField(0)}
-              </div>
+              {targets ? (
+                <div className="pair">
+                  {seconds}
+                  {keyField(0)}
+                </div>
+              ) : (
+                seconds
+              )}
+              {inputs?.(phase, i, (change) => patch(i, change))}
               {tracks.length === 2 && keyField(1)}
               {tracks.length === 3 && (
                 <div className="pair">
@@ -484,8 +513,8 @@ export function PhraseTimelineEditor<
       <p className="note">
         Total:{" "}
         {formatCount(phrase.phases.reduce((sum, p) => sum + p.duration, 0))} s.{" "}
-        {formatCount(phrase.phases.length)} of {formatCount(maxPhases)} phases.
-        An empty end value holds the preceding value.
+        {formatCount(phrase.phases.length)} of {formatCount(maxPhases)} phases.{" "}
+        {holds}
       </p>
     </FieldErrorContext.Provider>
   );

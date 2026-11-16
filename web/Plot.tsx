@@ -186,7 +186,9 @@ export function Plot({
   transparent = false,
   id = "artwork",
 }: Props) {
-  const layers = completeLayers(animation?.phrase?.layers ?? studyLayers);
+  const layers = completeLayers(
+    animation?.phrase?.layers ?? animation?.engraving?.layers ?? studyLayers,
+  );
   // Every stroke's regular width, at the chosen line weight.
   const stroke = svgStroke(weight);
   const [camera, setCamera] = useState(() =>
@@ -744,6 +746,9 @@ export function Plot({
                 camera: animation.camera,
                 heldView: animation.heldView,
                 ...(animation.phrase && { phrase: phraseMetadata }),
+                ...(animation.engraving && {
+                  engraving: { phase: animation.engraving.phase },
+                }),
               }
             : undefined,
           // Recorded only when it is not the drawing as it always was.

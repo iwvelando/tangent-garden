@@ -2,7 +2,8 @@
 // turns and layer events, and their help. The timeline, tracks and
 // arrangement are the shared PhraseTimelineEditor's.
 import { count as formatCount } from "../number-format";
-import { Field, HelpText, HelpToggle, useHelp } from "../Field";
+import { Field } from "../Field";
+import { PhaseLayers as SharedPhaseLayers } from "../PhaseLayers";
 import { tiered } from "../help";
 import { spatialPlainZoom, viewZoom } from "../refinement";
 import type { PhraseEditorReveal } from "../PhraseEditor";
@@ -83,73 +84,7 @@ export function PhaseTurns({
   );
 }
 
-type LayerChoice = "keep" | "show" | "hide";
-// The layers a phase shows or hides, among those the study offers; any
-// other a link names stays as it is.
-export function PhaseLayers({
-  phase,
-  index,
-  offered,
-  onChange,
-}: {
-  phase: SpatialPhrasePhase;
-  index: number;
-  offered: readonly (readonly [keyof Layers, string])[];
-  onChange: (layers: Partial<Layers> | undefined) => void;
-}) {
-  const help = useHelp();
-  if (!offered.length) return null;
-  const events = phase.layers ?? {};
-  const named = offered.filter(([key]) => events[key] !== undefined);
-  const summary = named.length
-    ? named
-        .map(([key, label]) => `${events[key] ? "show" : "hide"} ${label}`)
-        .join("; ")
-    : "keep";
-  return (
-    <div className="field">
-      <div className="field-label">
-        <span id={`${help.id}-label`}>Layers</span>
-        {index === 0 && (
-          <HelpToggle topic={`Phase ${index + 1} layers`} help={help} />
-        )}
-      </div>
-      <details className="phrase-layers">
-        <summary aria-label={`Phase ${index + 1} layers: ${summary}`}>
-          {summary}
-        </summary>
-        {offered.map(([key, label]) => (
-          <label className="phrase-layer" key={key}>
-            <span>{label}</span>
-            <select
-              aria-label={`Phase ${index + 1} ${label}`}
-              value={
-                events[key] === undefined
-                  ? "keep"
-                  : events[key]
-                    ? "show"
-                    : "hide"
-              }
-              onChange={(e) => {
-                const choice = e.target.value as LayerChoice;
-                const { [key]: _, ...others } = events;
-                const next =
-                  choice === "keep"
-                    ? others
-                    : { ...others, [key]: choice === "show" };
-                onChange(Object.keys(next).length ? next : undefined);
-              }}
-            >
-              <option value="keep">Keep</option>
-              <option value="show">Show</option>
-              <option value="hide">Hide</option>
-            </select>
-          </label>
-        ))}
-      </details>
-      {index === 0 && (
-        <HelpText help={help}>{spatialPhraseLayersHelp}</HelpText>
-      )}
-    </div>
-  );
-}
+// The 3D notebook's layer events, with its help.
+export const PhaseLayers = (
+  props: Omit<Parameters<typeof SharedPhaseLayers<keyof Layers>>[0], "help">,
+) => <SharedPhaseLayers {...props} help={spatialPhraseLayersHelp} />;

@@ -329,7 +329,7 @@ export function phraseError(config: Config, phrase: Phrase): string | null {
 }
 const fraction = (v: number) => Number.isFinite(v) && v >= 0 && v <= 1;
 
-const validView = (view: unknown) => {
+export const validView = (view: unknown) => {
   if (typeof view !== "object" || view === null) return false;
   const { x, y, zoom } = view as PhraseView;
   return (
@@ -439,17 +439,22 @@ const legPath = (from: Viewport, to: Viewport, fit: Fit): PlanarPath => ({
 // throughout a hold, and otherwise a steady planar leg at the phase's eased
 // progress: log zoom linear, and the framed point moving straight to the
 // middle (mathematics.md#planar-camera-paths).
-function viewAt(
-  phrase: CompiledPhrase,
+export function phraseLegView(
+  fit: Fit,
   from: Viewport,
   to: Viewport,
   p: number,
 ): Viewport {
   if (p === 0 || sameView(from, to)) return from;
   if (p === 1) return to;
-  const fit = phrase.camera!.fit;
   return planarPathView(legPath(from, to, fit), fit, p);
 }
+const viewAt = (
+  phrase: CompiledPhrase,
+  from: Viewport,
+  to: Viewport,
+  p: number,
+) => phraseLegView(phrase.camera!.fit, from, to, p);
 export function phraseAt(phrase: CompiledPhrase, seconds: number) {
   const { phase, p } = locatePhase(phrase, seconds);
   const mix = (a: number, b: number) => (a === b ? a : a * (1 - p) + b * p);

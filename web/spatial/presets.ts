@@ -6104,10 +6104,15 @@ export const spatialPresets: {
     },
   },
   // Sixteen full trefoils and their orthotomics, changing tube radius. Only
-  // the selected member has guides; reveal playback uses this same frozen set.
+  // the selected member has guides. Play is an engraving phrase over this
+  // frozen set: it opens on the whole print, withdraws into member 8 as the
+  // camera closes in, shows its perpendiculars and pole, then turns once
+  // about the knot and pulls back as the family returns, keeping member 8's
+  // perpendiculars and pole in view through the orbit. It ends at the
+  // opening view with them still shown; Stop restores the still.
   {
     name: "A knot remembers",
-    timing: { duration: 3, repeat: "back-and-forth", pace: "steady" },
+    timing: { duration: 3, repeat: "once", pace: "ease" },
     detail: "Sixteen shapes held in one spatial engraving",
     config: {
       ...base,
@@ -6125,8 +6130,33 @@ export const spatialPresets: {
       count: 16,
       selected: 7,
       presentation: "family",
-      motion: "reveal",
+      motion: "phrase",
       width: 4,
+      phrase: {
+        opening: { first: 1, last: 16 },
+        phases: [
+          {
+            name: "Withdraw into one knot",
+            duration: 3,
+            pace: "ease",
+            members: { first: 8, last: 8 },
+            view: { ...initialView, zoom: 1.4, turns: 0 },
+          },
+          {
+            name: "Its perpendiculars and pole",
+            duration: 2.5,
+            pace: "ease",
+            layers: { connectors: true, pole: true },
+          },
+          {
+            name: "The family returns",
+            duration: 4.5,
+            pace: "ease",
+            members: { first: 1, last: 16 },
+            view: { ...initialView, turns: 1 },
+          },
+        ],
+      },
     },
     view: { ...initialView },
     layers: { connectors: false, pole: false },

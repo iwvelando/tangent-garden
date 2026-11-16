@@ -66,10 +66,12 @@ export function phraseKeys<T extends string>(
 // Arranging a phrase. Each returns the same phrase when the change is not
 // available, and never alters another phase or track.
 // A one-second hold after a phase, at that phase's pace.
+// The operations that only move phases accept any timeline, including an
+// engraving phrase's, which has no parameter tracks.
+type Phased<P> = { phases: P[] };
 export function insertPhase<
-  T extends string,
-  P extends TimelinePhase<T>,
-  F extends Timeline<T, P>,
+  P extends Pick<TimelinePhase<string>, "name" | "duration" | "pace">,
+  F extends Phased<P>,
 >(phrase: F, after: number): F {
   if (phrase.phases.length >= maxPhases || !phrase.phases[after]) return phrase;
   const hold = { name: "Hold", duration: 1, pace: phrase.phases[after].pace };
@@ -82,14 +84,14 @@ export function insertPhase<
     ],
   };
 }
-export function removePhase<F extends Timeline<string, TimelinePhase<string>>>(
+export function removePhase<F extends Phased<unknown>>(
   phrase: F,
   index: number,
 ): F {
   if (phrase.phases.length <= 1 || !phrase.phases[index]) return phrase;
   return { ...phrase, phases: phrase.phases.filter((_, i) => i !== index) };
 }
-export function movePhase<F extends Timeline<string, TimelinePhase<string>>>(
+export function movePhase<F extends Phased<unknown>>(
   phrase: F,
   from: number,
   to: number,
@@ -219,17 +221,11 @@ export function timelineError<T extends string, P extends TimelinePhase<T>>(
     return "Phrase parameters must be distinct: each owns one value of the study.";
   if (!also.every((t) => available.includes(t)))
     return "Every phrase parameter must be a consumed continuous target available in this study.";
-  if (!phrase.phases.length || phrase.phases.length > maxPhases)
-    return `A phrase must contain 1–${maxPhases} phases.`;
-  const opening = checks.opening?.();
-  if (opening) return opening;
-  for (const [i, p] of phrase.phases.entries()) {
-    if (!p.name.trim() || p.name.length > maxPhaseName)
-      return `Phase ${i + 1} name must contain 1–${maxPhaseName} characters.`;
-    if (!Number.isFinite(p.duration) || p.duration < 0.1)
-      return `Phase ${i + 1} duration must be at least 0.1 seconds.`;
-    if (p.pace !== "steady" && p.pace !== "ease")
-      return `Phase ${i + 1} pace must be steady or eased.`;
+  return phasesError(phrase.phases, {
+    opening: checks.opening,
+    phase: (p, i) => keysError(p, i) ?? checks.phase?.(p, i) ?? null,
+  });
+  function keysError(p: P, i: number) {
     if (p.key !== undefined && !p.key.trim())
       return `Phase ${i + 1} key must be a finite constant.`;
     for (const [target, text] of Object.entries(p.keys ?? {})) {
@@ -239,10 +235,38 @@ export function timelineError<T extends string, P extends TimelinePhase<T>>(
       if (typeof text !== "string" || !text.trim())
         return `${phraseKeyField(i, track + 1)} must be a finite constant.`;
     }
+    return null;
+  }
+}
+// The phase checks every timeline shares, with or without parameter
+// tracks: the phase count, the notebook's opening checks, each phase's
+// name, duration and pace followed by its own checks, and the total.
+export function phasesError<P extends TimelinePhase<string>>(
+  phases: readonly P[],
+  checks: {
+    opening?: () => string | null;
+    phase?: (phase: P, index: number) => string | null;
+  } = {},
+): string | null {
+  if (!phases.length || phases.length > maxPhases)
+    return `A phrase must contain 1–${maxPhases} phases.`;
+  const opening = checks.opening?.();
+  if (opening) return opening;
+  for (const [i, p] of phases.entries()) {
+    if (
+      typeof p.name !== "string" ||
+      !p.name.trim() ||
+      p.name.length > maxPhaseName
+    )
+      return `Phase ${i + 1} name must contain 1–${maxPhaseName} characters.`;
+    if (!Number.isFinite(p.duration) || p.duration < 0.1)
+      return `Phase ${i + 1} duration must be at least 0.1 seconds.`;
+    if (p.pace !== "steady" && p.pace !== "ease")
+      return `Phase ${i + 1} pace must be steady or eased.`;
     const own = checks.phase?.(p, i);
     if (own) return own;
   }
-  const duration = phrase.phases.reduce((sum, p) => sum + p.duration, 0);
+  const duration = phases.reduce((sum, p) => sum + p.duration, 0);
   return !Number.isFinite(duration) || duration > maxPhraseSeconds
     ? `Total phrase duration must be between 0.1 and ${maxPhraseSeconds} seconds.`
     : null;
