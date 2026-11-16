@@ -213,7 +213,7 @@ test("display sites delegate formatting; exclusions are exact machine-output or 
     "spatial/presets.ts": [
       "x: Number((1 / Math.sqrt(0.55 - 0.04 * k)).toFixed(4)),",
     ],
-    "phrase.ts": [
+    "phrase-timeline.ts": [
       "Number(phrase.phases.reduce((sum, p) => sum + p.duration, 0).toPrecision(12));",
     ],
   };

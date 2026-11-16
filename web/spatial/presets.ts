@@ -4,6 +4,7 @@ import type { Cut } from "./cut";
 import type { Sight } from "./sight";
 import type { CameraPath } from "./path";
 import type { Ride } from "./ride";
+import type { SpatialPhrase } from "./phrase";
 import type { AnimationMode, CameraMode, Track } from "./animation";
 import type { SpatialConfig } from "./types";
 import { initialView, type Layers, type Projection } from "./scene";
@@ -206,6 +207,9 @@ export type Flight = {
   pace?: Pace;
   // A story's level rests beside its event (story.ts's holdPlan).
   holds?: true;
+  // A phrase played in place of every other motion (see phrase.ts); its
+  // phases set the duration and pace, and its camera is its own.
+  phrase?: SpatialPhrase;
 };
 // A composed opening is also the reveal camera: keep its pan and zoom
 // while the fixed geometry is drawn, including detail and perspective views.
@@ -5791,6 +5795,114 @@ export const spatialPresets: {
     },
     view: { ...initialView, zoom: 2.3, panX: 0, panY: 0 },
     flight: { ...revealInPlace, duration: 14 },
+  },
+  // A short film over one torus study. Nine geodesics 40 long leave one
+  // point of the outer equator of the ring torus R = 2, r = 0.8, at
+  // 44°–56° from the parallel, an arrow carried at a right angle along the
+  // middle one. Each keeps Clairaut's ρ cos ψ = 2.8 cos β, which for every
+  // one of them exceeds R − r = 1.2, so the fan turns back before the
+  // inner equator and weaves a band round the outside. The fan thins to
+  // its middle thread, which turns steeper: at 62° it still turns back, at
+  // 64.4° (just short of arccos(3/7) ≈ 64.6°) it hugs the inner equator,
+  // and at 67° it winds through the hole, which the camera circles once
+  // before the fan returns.
+  {
+    name: "Threads that find the hole",
+    detail:
+      "A fan of geodesics weaves round a torus; one thread turns steeper until it slips through the hole",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        uSamples: 96,
+        vSamples: 48,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 50,
+          spread: 12,
+          count: 9,
+          length: 40,
+          samples: 2000,
+          selected: 5,
+          transport: { path: "thread", angle: 90, size: 0.45, arrows: 12 },
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, zoom: 2.3, panX: 0, panY: 0 },
+    flight: {
+      duration: 25,
+      path: { style: "steady", keys: [] },
+      phrase: {
+        target: "geodesicDirection",
+        opening: 0,
+        phases: [
+          {
+            name: "Threads leave one point",
+            duration: 5,
+            pace: "ease",
+            reveal: 1,
+          },
+          {
+            name: "Follow one thread",
+            duration: 3,
+            pace: "ease",
+            layers: { threads: false, references: false },
+            view: {
+              yaw: 0.3,
+              pitch: 0.95,
+              zoom: 2.3,
+              panX: 0,
+              panY: 0,
+              turns: 0,
+            },
+          },
+          {
+            name: "It turns back nearer the hole",
+            duration: 4,
+            pace: "ease",
+            key: "62",
+          },
+          {
+            name: "Onto the inner equator",
+            duration: 3,
+            pace: "ease",
+            key: "64.4",
+          },
+          { name: "Through the hole", duration: 2, pace: "ease", key: "67" },
+          {
+            name: "All the way round",
+            duration: 4,
+            pace: "ease",
+            view: {
+              yaw: 0.3,
+              pitch: 0.95,
+              zoom: 2.3,
+              panX: 0,
+              panY: 0,
+              turns: 1,
+            },
+          },
+          {
+            name: "Back to the fan",
+            duration: 4,
+            pace: "ease",
+            key: "50",
+            layers: { threads: true, references: true },
+            view: "entry",
+          },
+        ],
+      },
+    },
   },
   // A helicoid's stair, u in [−0.85π, 0.85π] and v in [−1.2, 1.2], bent
   // through the associated family into a catenoid's neck and back: the

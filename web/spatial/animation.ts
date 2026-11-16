@@ -36,9 +36,16 @@ export type Viewport = View;
 // the caustics (mirror and interface studies only), or move the parameter
 // probe along the curve (while the probe is on), or peel the drawing away
 // with the cut plane (while the cut is on), or fly the camera through key
-// views (see path.ts).
+// views (see path.ts), or play a phrase (see phrase.ts).
 export type AnimationMode =
-  "reveal" | "parameters" | "orbit" | "trace" | "probe" | "cut" | "path";
+  | "reveal"
+  | "parameters"
+  | "orbit"
+  | "trace"
+  | "probe"
+  | "cut"
+  | "path"
+  | "phrase";
 // The animation camera of every mode but the orbit and the path, which move
 // the camera themselves. "path" flies the key views while the geometry
 // moves; "ride" rides a ray in perspective while light is traced (see
@@ -173,6 +180,9 @@ export type AnimationView = {
   // The ray the camera rides while light is traced, the bounds its lens
   // was framed about, and the timeline's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
+  // A phrase's stage, camera, layers and parameter readouts at this frame,
+  // when the animation plays one: its camera is the whole camera.
+  phrase?: import("./phrase").SpatialPhrasePresentation;
 };
 export const targetLabels: Record<NamedTarget, string> = {
   poleX: "Pole x",
@@ -1355,6 +1365,7 @@ export const flightLens = (
   ...(held?.projection === "chosen" && { lensAngle: held.lensAngle }),
 });
 export function animationCamera(view: AnimationView): View {
+  if (view.phrase) return view.phrase.view;
   // A camera path is the whole camera, about the study's own bounds, at the
   // time of the frame it draws.
   // It flies in the held view's projection: key views have none of their

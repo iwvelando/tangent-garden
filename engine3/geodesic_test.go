@@ -439,3 +439,76 @@ func TestGeodesicReturnNeedsPositionAndDirection(t *testing.T) {
 		}
 	}
 }
+
+// The spatial phrase "Threads that find the hole" turns its middle thread
+// past Clairaut's threshold: a torus geodesic from the outer equator at β
+// from the parallel keeps ρ cos ψ = (R + r) cos β, so it reaches the inner
+// equator, ρ = R − r, only if (R + r) cos β ≤ R − r. At the opening
+// direction every thread of the fan turns back outside it, at
+// ρ = (R + r) cos β, as the middle one still does at the phrase's keys of
+// 62° and 64.4°; at its key of 67° it winds through the hole. Read from
+// the preset as the notebook sends it, and from the returned points.
+func TestPhraseFilmCrossesClairautThreshold(t *testing.T) {
+	req, ok := spatialPresets(t)["Threads that find the hole"]
+	if !ok {
+		t.Fatal("no preset Threads that find the hole")
+	}
+	const R, r = 2.0, 0.8
+	if req.Surface.A != R || req.Surface.B != r {
+		t.Fatalf("the film's torus is R = %g, r = %g", req.Surface.A, req.Surface.B)
+	}
+	threshold := math.Acos((R-r)/(R+r)) * 180 / math.Pi
+	inner := func(th GeodesicThread) float64 {
+		m := math.Inf(1)
+		for _, p := range th.Points {
+			m = math.Min(m, math.Hypot(p.X, p.Y))
+		}
+		return m
+	}
+	at := func(direction float64) *GeodesicResult {
+		q := req
+		g := *req.Surface.Geodesics
+		g.Direction = direction
+		q.Surface.Geodesics = &g
+		res, err := Compute(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Surface.Geodesics
+	}
+	// The opening fan: every thread turns back where Clairaut says.
+	open := at(req.Surface.Geodesics.Direction)
+	if len(open.Threads) != req.Surface.Geodesics.Count {
+		t.Fatalf("%d threads of %d", len(open.Threads), req.Surface.Geodesics.Count)
+	}
+	for k, th := range open.Threads {
+		want := (R + r) * math.Cos(th.Direction*math.Pi/180)
+		if th.Direction >= threshold || inner(th) < want-1e-6 || inner(th) > want+1e-3 {
+			t.Fatalf("opening thread %d at %g° turns back at ρ = %.9g, not (R + r) cos β = %.9g", k, th.Direction, inner(th), want)
+		}
+	}
+	// The middle thread at each key.
+	for _, c := range []struct {
+		direction float64
+		through   bool
+	}{{62, false}, {64.4, false}, {67, true}} {
+		fan := at(c.direction)
+		th := fan.Threads[fan.Selected-1]
+		if th.Direction != c.direction || (th.Direction > threshold) != c.through {
+			t.Fatalf("the middle thread at %g° is not the key %g° on its side of %.4g°", th.Direction, c.direction, threshold)
+		}
+		want := (R + r) * math.Cos(c.direction*math.Pi/180)
+		if c.through {
+			// It passes the inner equator, to within a sample.
+			if inner(th) > R-r+1e-3 {
+				t.Fatalf("at %g° it comes no nearer the axis than %g", c.direction, inner(th))
+			}
+		} else if inner(th) < want-1e-6 {
+			t.Fatalf("at %g° it comes to ρ = %.9g, inside its turning radius %.9g", c.direction, inner(th), want)
+		} else if c.direction == 64.4 && inner(th) > R-r+0.02 {
+			// Just short of the threshold it comes within 0.02 of the
+			// inner equator: it hugs it.
+			t.Fatalf("at 64.4° it comes only to ρ = %.9g", inner(th))
+		}
+	}
+}

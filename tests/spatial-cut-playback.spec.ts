@@ -93,6 +93,7 @@ test("peeling is offered only while the cut is on and valid", async ({
     "orbit",
     "cut",
     "path",
+    "phrase",
   ]);
   await expect(page.locator("#spatial-animation-section")).toContainText(
     "Sweep the cut plane along its normal",

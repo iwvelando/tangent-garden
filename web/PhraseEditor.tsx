@@ -1,9 +1,17 @@
 import { count as formatCount } from "./number-format";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { Field, FieldErrorContext } from "./Field";
 import { targetLabel, type Target } from "./animation";
 import { ViewName } from "./KeyViews";
 import type { Layers } from "./Plot";
+import {
+  phaseRevealChoice,
+  withPhaseReveal,
+  type Phrase,
+  type PhrasePhase,
+  type PhraseView,
+  type RevealChoice,
+} from "./phrase";
 import {
   addPhraseTrack,
   insertPhase,
@@ -11,21 +19,18 @@ import {
   maxPhraseTracks,
   movePhase,
   phaseKey,
-  phaseRevealChoice,
   phraseKeyField,
   phraseTrackTargets,
   removePhase,
   removePhraseTrack,
   retargetPhraseTrack,
   setPhaseKey,
-  withPhaseReveal,
-  type Phrase,
-  type PhrasePhase,
-  type PhraseView,
-  type RevealChoice,
-} from "./phrase";
-import { tiered } from "./help";
+  type Timeline,
+  type TimelinePhase,
+} from "./phrase-timeline";
+import { tiered, type Help } from "./help";
 import { plainZoom, viewZoom } from "./refinement";
+import { useQuietFocus } from "./quiet-focus";
 
 export const phraseHelp = tiered(
   "Reveal, move and hold one study through labeled phases you arrange.",
@@ -72,37 +77,74 @@ const revealLabels: Record<RevealChoice, string> = {
 export const phraseProblemField = (problem?: string) =>
   /^Phase \d+ (duration|key \d|key|view|name)\b/.exec(problem ?? "")?.[0];
 
-export function PhraseEditor({
+// What a notebook's phases reveal and how their views are taken, shown and
+// described; the timeline, tracks and arrangement are shared.
+type EditorPhase<T extends string, V> = TimelinePhase<T> & {
+  view?: V | "entry";
+};
+export type PhraseEditorReveal<P> = {
+  value: (phase: P) => string;
+  options: readonly (readonly [string, string])[];
+  // The label of a value the options do not name, as a link may carry.
+  custom: string;
+  apply: (phase: P, choice: string) => P;
+  help: Help<string>;
+};
+export type PhraseEditorCamera<V> = {
+  drawn: () => V | null;
+  onShow: (view: V) => void;
+  describe: (view: V) => string;
+  help: Help<string>;
+  // What of a phase's own view the drawing's view keeps when it replaces
+  // it; absent, the drawing's view replaces it whole.
+  keep?: (old: V, view: V) => V;
+};
+
+export function PhraseTimelineEditor<
+  T extends string,
+  V extends object,
+  P extends EditorPhase<T, V>,
+  F extends Timeline<T, P>,
+>({
   phrase,
   targets,
-  layers,
+  label,
   current,
   onChange,
   problem,
-  drawn,
-  onShow,
-  describe,
+  problemField,
+  parameterHelp,
+  reveal: revealing,
+  camera,
+  extra,
 }: {
-  phrase: Phrase;
-  targets: Target[];
-  // The study's layers, whose construction subsets a drawn reveal keeps.
-  layers: Layers;
+  phrase: F;
+  targets: T[];
+  label: (target: T) => string;
   // A target's value in the study, as text for a retargeted track's keys.
-  current: (target: Target) => string;
+  current: (target: T) => string;
   // Applied to the latest phrase, as a functional update.
-  onChange: (change: (phrase: Phrase) => Phrase) => void;
+  onChange: (change: (phrase: F) => F) => void;
   problem?: string;
-  // The drawing's view as a key, or null before it is drawn.
-  drawn: () => PhraseView | null;
-  onShow: (view: PhraseView) => void;
-  describe: (view: PhraseView) => string;
+  // The field a problem names, shown under that control.
+  problemField: (problem?: string) => string | undefined;
+  // The help beside a track's parameter.
+  parameterHelp: (target: T, track: number) => Help<string> | undefined;
+  reveal: PhraseEditorReveal<P>;
+  camera: PhraseEditorCamera<V>;
+  // A notebook's own controls for a phase, after its camera.
+  extra?: (
+    phase: P,
+    index: number,
+    patch: (change: (phase: P) => P) => void,
+  ) => ReactNode;
 }) {
   const fieldError = useMemo(() => {
-    const label = phraseProblemField(problem);
+    const label = problemField(problem);
     return label && problem
       ? { label, message: problem, claim: () => {}, touch: () => {} }
       : null;
-  }, [problem]);
+  }, [problem, problemField]);
   const tracks = phraseTrackTargets(phrase);
   const several = tracks.length > 1;
   const free = targets.filter((t) => !tracks.includes(t));
@@ -111,6 +153,7 @@ export function PhraseEditor({
   // goes to the phase now in that place. The way is kept with the move,
   // since Safari leaves a pressed button unfocused.
   const list = useRef<HTMLOListElement>(null);
+  const { quiet, ring, ...via } = useQuietFocus(list);
   const settle = useRef<string[] | null>(null);
   useLayoutEffect(() => {
     const names = settle.current;
@@ -119,10 +162,13 @@ export function PhraseEditor({
       const b = list.current?.querySelector<HTMLButtonElement>(
         `button[aria-label="${name}"]`,
       );
-      if (b && !b.disabled) return b.focus();
+      if (b && !b.disabled) {
+        quiet();
+        return b.focus();
+      }
     }
   }, [phrase.phases]);
-  const patch = (i: number, change: (phase: PhrasePhase) => PhrasePhase) =>
+  const patch = (i: number, change: (phase: P) => P) =>
     onChange((p) => ({
       ...p,
       phases: p.phases.map((phase, j) => (j === i ? change(phase) : phase)),
@@ -140,30 +186,24 @@ export function PhraseEditor({
               : "Third parameter"
         }
         topic={`Phrase parameter${track ? ` ${track + 1}` : ""}`}
-        help={
-          target === "rayLength"
-            ? phraseRayLengthHelp
-            : track === 0
-              ? phraseParameterHelp
-              : undefined
-        }
+        help={parameterHelp(target, track)}
       >
         <select
           aria-label={`Phrase parameter${track ? ` ${track + 1}` : ""}`}
           value={target}
           onChange={(e) => {
-            const next = e.target.value as Target;
+            const next = e.target.value as T;
             onChange((p) => retargetPhraseTrack(p, track, next, current(next)));
           }}
         >
           {!targets.includes(target) && (
-            <option value={target}>Unavailable: {targetLabel(target)}</option>
+            <option value={target}>Unavailable: {label(target)}</option>
           )}
           {targets
             .filter((t) => t === target || !tracks.includes(t))
             .map((t) => (
               <option key={t} value={t}>
-                {targetLabel(t)}
+                {label(t)}
               </option>
             ))}
         </select>
@@ -200,15 +240,23 @@ export function PhraseEditor({
       >
         + Add a parameter
       </button>
-      <ol className="phrase-phases" ref={list}>
+      <ol
+        className="phrase-phases"
+        ref={list}
+        {...via}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) ring();
+        }}
+      >
         {phrase.phases.map((phase, i) => {
-          const update = (change: Partial<PhrasePhase>) =>
+          const update = (change: Partial<P>) =>
             patch(i, (p) => ({ ...p, ...change }));
-          const reveal = phaseRevealChoice(phase);
+          const shown = revealing.value(phase);
+          const named = revealing.options.some(([value]) => value === shown);
           const keyField = (track: number) => (
             <Field
               key={track}
-              label={several ? targetLabel(tracks[track]) : "End value"}
+              label={several ? label(tracks[track]) : "End value"}
               topic={phraseKeyField(i, track)}
               help={i === 0 && track === 0 ? phraseKeyHelp : undefined}
             >
@@ -230,7 +278,7 @@ export function PhraseEditor({
                 <ViewName
                   aria-label={`Phase ${i + 1} name`}
                   value={phase.name}
-                  onChange={(name) => update({ name })}
+                  onChange={(name) => update({ name } as Partial<P>)}
                 />
               </Field>
               <div className="pair">
@@ -243,7 +291,7 @@ export function PhraseEditor({
                     step="any"
                     value={Number.isNaN(phase.duration) ? "" : phase.duration}
                     onChange={(e) =>
-                      update({ duration: e.target.valueAsNumber })
+                      update({ duration: e.target.valueAsNumber } as Partial<P>)
                     }
                   />
                 </Field>
@@ -259,22 +307,20 @@ export function PhraseEditor({
               <Field
                 label="Reveal"
                 topic={`Phase ${i + 1} reveal`}
-                help={i === 0 ? phraseRevealHelp : undefined}
+                help={i === 0 ? revealing.help : undefined}
               >
                 <select
                   aria-label={`Phase ${i + 1} reveal`}
-                  value={reveal}
+                  value={named ? shown : "custom"}
                   onChange={(e) => {
-                    const choice = e.target.value as RevealChoice;
-                    patch(i, (p) => withPhaseReveal(p, choice, layers));
+                    const choice = e.target.value;
+                    patch(i, (p) => revealing.apply(p, choice));
                   }}
                 >
-                  {reveal === "custom" && (
-                    <option value="custom">Partly drawn, as linked</option>
-                  )}
-                  {(Object.keys(revealLabels) as RevealChoice[]).map((c) => (
-                    <option key={c} value={c}>
-                      {revealLabels[c]}
+                  {!named && <option value="custom">{revealing.custom}</option>}
+                  {revealing.options.map(([value, text]) => (
+                    <option key={value} value={value}>
+                      {text}
                     </option>
                   ))}
                 </select>
@@ -282,7 +328,7 @@ export function PhraseEditor({
               <Field
                 label="Camera"
                 topic={`Phase ${i + 1} view`}
-                help={i === 0 ? phraseCameraHelp : undefined}
+                help={i === 0 ? camera.help : undefined}
               >
                 <select
                   aria-label={`Phase ${i + 1} camera`}
@@ -296,11 +342,12 @@ export function PhraseEditor({
                   onChange={(e) => {
                     const choice = e.target.value as PhaseCamera;
                     if (choice === "hold")
-                      patch(i, ({ view: _, ...rest }) => rest);
-                    else if (choice === "entry") update({ view: "entry" });
+                      patch(i, ({ view: _, ...rest }) => rest as P);
+                    else if (choice === "entry")
+                      update({ view: "entry" } as Partial<P>);
                     else {
-                      const view = drawn();
-                      if (view) update({ view });
+                      const view = camera.drawn();
+                      if (view) update({ view } as Partial<P>);
                     }
                   }}
                 >
@@ -311,13 +358,13 @@ export function PhraseEditor({
               </Field>
               {typeof phase.view === "object" && (
                 <>
-                  <p className="hint">{describe(phase.view)}</p>
+                  <p className="hint">{camera.describe(phase.view as V)}</p>
                   <div className="path-view-buttons">
                     <button
                       type="button"
                       className="text-button"
                       aria-label={`Show phase ${i + 1} view`}
-                      onClick={() => onShow(phase.view as PhraseView)}
+                      onClick={() => camera.onShow(phase.view as V)}
                     >
                       Show
                     </button>
@@ -326,8 +373,15 @@ export function PhraseEditor({
                       className="text-button"
                       aria-label={`Set phase ${i + 1} view to the drawing's view`}
                       onClick={() => {
-                        const view = drawn();
-                        if (view) update({ view });
+                        const view = camera.drawn();
+                        if (!view) return;
+                        patch(i, (p) => ({
+                          ...p,
+                          view:
+                            camera.keep && typeof p.view === "object"
+                              ? camera.keep(p.view as V, view)
+                              : view,
+                        }));
                       }}
                     >
                       Set to drawing
@@ -335,6 +389,7 @@ export function PhraseEditor({
                   </div>
                 </>
               )}
+              {extra?.(phase, i, (change) => patch(i, change))}
               <div className="path-view-buttons phrase-arrange">
                 {(["up", "down"] as const).map((way) => {
                   const to = way === "up" ? i - 1 : i + 1;
@@ -395,5 +450,63 @@ export function PhraseEditor({
         An empty end value holds the preceding value.
       </p>
     </FieldErrorContext.Provider>
+  );
+}
+
+const planarReveal: PhraseEditorReveal<PhrasePhase> = {
+  value: (phase) => phaseRevealChoice(phase),
+  options: Object.entries(revealLabels),
+  custom: "Partly drawn, as linked",
+  apply: (phase) => phase,
+  help: phraseRevealHelp,
+};
+export function PhraseEditor({
+  phrase,
+  targets,
+  layers,
+  current,
+  onChange,
+  problem,
+  drawn,
+  onShow,
+  describe,
+}: {
+  phrase: Phrase;
+  targets: Target[];
+  // The study's layers, whose construction subsets a drawn reveal keeps.
+  layers: Layers;
+  // A target's value in the study, as text for a retargeted track's keys.
+  current: (target: Target) => string;
+  // Applied to the latest phrase, as a functional update.
+  onChange: (change: (phrase: Phrase) => Phrase) => void;
+  problem?: string;
+  // The drawing's view as a key, or null before it is drawn.
+  drawn: () => PhraseView | null;
+  onShow: (view: PhraseView) => void;
+  describe: (view: PhraseView) => string;
+}) {
+  return (
+    <PhraseTimelineEditor
+      phrase={phrase}
+      targets={targets}
+      label={targetLabel}
+      current={current}
+      onChange={onChange}
+      problem={problem}
+      problemField={phraseProblemField}
+      parameterHelp={(target, track) =>
+        target === "rayLength"
+          ? phraseRayLengthHelp
+          : track === 0
+            ? phraseParameterHelp
+            : undefined
+      }
+      reveal={{
+        ...planarReveal,
+        apply: (phase, choice) =>
+          withPhaseReveal(phase, choice as RevealChoice, layers),
+      }}
+      camera={{ drawn, onShow, describe, help: phraseCameraHelp }}
+    />
   );
 }

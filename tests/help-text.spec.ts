@@ -40,6 +40,13 @@ import {
 import { curveProbeMotionHelp } from "../web/probe";
 import { cutHelp } from "../web/spatial/cut";
 import {
+  spatialPhraseCameraHelp,
+  spatialPhraseHelp,
+  spatialPhraseLayersHelp,
+  spatialPhraseRevealHelp,
+  spatialPhraseTurnsHelp,
+} from "../web/spatial/PhraseControls";
+import {
   harmonicFitEntryHelp,
   harmonicFitParameterHelp,
   harmonicFitTermsHelp,
@@ -245,6 +252,11 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("phrase end value", phraseKeyHelp, true);
   add("phrase reveal", phraseRevealHelp);
   add("phrase camera", phraseCameraHelp);
+  add("3D phrase mode", spatialPhraseHelp);
+  add("3D phrase reveal", spatialPhraseRevealHelp);
+  add("3D phrase camera", spatialPhraseCameraHelp);
+  add("3D phrase turns", spatialPhraseTurnsHelp);
+  add("3D phrase layers", spatialPhraseLayersHelp);
   table("atlas controls", atlasControlHelp, ["size", "framing"]);
   add("once", onceHelp);
   add("back and forth", backAndForthHelp);

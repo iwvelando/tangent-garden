@@ -5026,3 +5026,82 @@ test("continuous generator and separate contour engraving targets round-trip wit
     }
   }
 });
+
+test("spatial phrases conform tracks, reveal, layer events and key views; older links have none", async () => {
+  const { defaultSpatialPhrase } = await import("../web/spatial/phrase");
+  const i = spatialPresets.findIndex(
+    (p) => p.name === "Threads finding their way around a torus",
+  );
+  const study = spatialPreset(i);
+  // Links made before phrases have no phrase and write none.
+  expect(study.animation).not.toHaveProperty("phrase");
+  expect(spatialStudy(structuredClone(study)).animation).not.toHaveProperty(
+    "phrase",
+  );
+  const phrase = defaultSpatialPhrase(study.config);
+  phrase.also = ["geodesicSpread"];
+  phrase.phases[1].keys = { geodesicSpread: "pi" };
+  phrase.phases[1].layers = { surface: false, threads: true };
+  phrase.phases[2].view = {
+    yaw: -2,
+    pitch: 1.2,
+    zoom: 1.5,
+    panX: 0.1,
+    panY: 0,
+    turns: -1,
+  };
+  phrase.phases[3].view = "entry";
+  phrase.phases[3].reveal = 0.25;
+  study.animation = { ...study.animation, mode: "phrase", phrase };
+  const conformed = spatialStudy(structuredClone(study));
+  expect(conformed.animation.phrase).toEqual(phrase);
+  const read = await readStudyLink(await writeStudyLink("3d", study));
+  expect(spatialStudy(read.study)).toEqual(conformed);
+  const bad = (change: (p: any) => void) => {
+    const s = structuredClone(study) as any;
+    change(s.animation.phrase);
+    return () => spatialStudy(s);
+  };
+  expect(bad((p) => (p.target = "geodesicCount"))).toThrow(
+    /animation\.phrase\.target/,
+  );
+  expect(bad((p) => (p.also = [p.target]))).toThrow(/distinct/);
+  expect(bad((p) => (p.also = ["a", "b", "c"]))).toThrow(
+    /animation\.phrase\.also/,
+  );
+  expect(bad((p) => (p.opening = 2))).toThrow(/animation\.phrase\.opening/);
+  expect(bad((p) => (p.phases[0].reveal = -1))).toThrow(
+    /animation\.phrase\.phases\[0\]\.reveal/,
+  );
+  expect(bad((p) => (p.phases[1].layers = { nope: true }))).toThrow(/nope/);
+  expect(bad((p) => (p.phases[1].layers = { surface: 1 }))).toThrow(
+    /animation\.phrase\.phases\[1\]\.layers\.surface/,
+  );
+  expect(bad((p) => (p.phases[2].view.pitch = 2))).toThrow(
+    /animation\.phrase\.phases\[2\]\.view\.pitch/,
+  );
+  expect(bad((p) => (p.phases[2].view.zoom = 2000))).toThrow(
+    /animation\.phrase\.phases\[2\]\.view\.zoom/,
+  );
+  expect(bad((p) => (p.phases[2].view.turns = 0.5))).toThrow(
+    /animation\.phrase\.phases\[2\]\.view\.turns must be a whole number/,
+  );
+  expect(bad((p) => (p.phases[2].view = "opening"))).toThrow(
+    /animation\.phrase\.phases\[2\]\.view/,
+  );
+  expect(bad((p) => (p.phases[2].surprise = true))).toThrow(/known field/);
+  expect(bad((p) => (p.phases[0].keys = { geodesicLength: "3" }))).toThrow(
+    /not one of the phrase's further parameters/,
+  );
+  expect(bad((p) => (p.phases[0].key = ""))).toThrow(/Phase 1 key/);
+  expect(bad((p) => p.phases.push(...Array(12).fill(p.phases[0])))).toThrow(
+    /12/,
+  );
+  const missing = structuredClone(study) as any;
+  delete missing.animation.phrase;
+  expect(() => spatialStudy(missing)).toThrow(/phrase/);
+  // A phrase loops; drawing alone does not.
+  const looped = structuredClone(study) as any;
+  looped.animation.repeat = "loop";
+  expect(spatialStudy(looped).animation.repeat).toBe("loop");
+});

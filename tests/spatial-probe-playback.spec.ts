@@ -57,6 +57,7 @@ test("probe playback is offered only while the probe is on", async ({
     "orbit",
     "probe",
     "path",
+    "phrase",
   ]);
   await expect(mode(page)).toHaveValue("reveal");
   await mode(page).selectOption("probe");
@@ -72,6 +73,7 @@ test("probe playback is offered only while the probe is on", async ({
     "parameters",
     "orbit",
     "path",
+    "phrase",
   ]);
   // And it plays as a reveal, not as the probe it no longer offers.
   await button(page, "Play animation").click();

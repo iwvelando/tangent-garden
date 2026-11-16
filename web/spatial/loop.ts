@@ -34,13 +34,14 @@ export const loops = (mode: AnimationMode) =>
   mode === "orbit" ||
   mode === "parameters" ||
   mode === "probe" ||
-  mode === "path";
+  mode === "path" ||
+  mode === "phrase";
 
 export const repeatHelp: Record<Repeat, Help<string>> = {
   once: onceHelp,
   loop: tiered(
     "Plays again and again; the last frame must match the first.",
-    "Play checks both ends and says what differs. Parameter tracks return when each spans one period, as a from 0 to 2*pi in cos(t + a); a camera path when its last view is its first, with whole turns. Drawing, tracing and peeling offer Back and forth instead. Exports leave out the repeated last frame and loop forever.",
+    "Play compares both ends and says what differs. Tracks return when each spans one period, as a from 0 to 2*pi in cos(t + a); a camera path when its last view is its first; a phrase when it ends as it opens. Drawing, tracing and peeling offer Back and forth. Exports drop the repeated last frame and loop forever.",
   ),
   "back-and-forth": backAndForthHelp,
 };
@@ -64,9 +65,15 @@ export function loopGap(
   const advice =
     start.mode === "parameters"
       ? " End each track one period after it starts, for example a from 0 to 2*pi in cos(t + a), or choose Back and forth."
-      : " Choose Back and forth.";
+      : start.mode === "phrase"
+        ? " End the last phase where the phrase opens: each parameter one period on or back where it began, and the study drawn as it opens; or choose Back and forth."
+        : " Choose Back and forth.";
+  // A phrase draws each frame with its own layers, which must return too.
+  const shown = (v: AnimationView) => v.phrase?.layers ?? layers;
+  if (JSON.stringify(shown(start)) !== JSON.stringify(shown(end)))
+    return `${lead} the layers shown at the end are not those shown at the start. End with a phase that shows and hides them as the phrase opens, or choose Back and forth.`;
   const drawn = (v: AnimationView) =>
-    scenePasses(buildScene(v.frame.result), layers).map((p) => p.batch);
+    scenePasses(buildScene(v.frame.result), shown(v)).map((p) => p.batch);
   const geometry = drawingGap(drawn(start), drawn(end), radius);
   if (geometry === "pieces")
     return `${lead} the drawing at the end has different pieces from the drawing at the start.${advice}${start.mode === "parameters" ? " If each track already runs one period, start it elsewhere in its period: where a surface or curve passes exactly through its samples at the start, rounding at the end can change its pieces." : ""}`;
@@ -81,7 +88,9 @@ export function loopGap(
   if (drawingGap(probe(start), probe(end), radius) !== 0)
     return `${lead} the probe at the end is not where it starts: what it moves along does not close.${advice}`;
   if (!sameCamera(animationCamera(start), animationCamera(end)))
-    return `${lead} the camera at the end is not the camera at the start. Make the last key view the first, with whole turns, or choose Back and forth.`;
+    return start.mode === "phrase"
+      ? `${lead} the camera at the end is not the camera at the start. End with a phase that returns to the opening view, or choose Back and forth.`
+      : `${lead} the camera at the end is not the camera at the start. Make the last key view the first, with whole turns, or choose Back and forth.`;
   return null;
 }
 
