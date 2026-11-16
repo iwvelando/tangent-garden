@@ -283,6 +283,50 @@ async function packCandidate(json: string): Promise<string | undefined> {
   return token.length <= maxLinkLength ? token : undefined;
 }
 
+// A phrase whose phases' views are each a key view or "entry", which the
+// schema cannot state as one field: the rest is conformed by the schema,
+// then each view on its own, under its own path.
+export function withPhaseViews<F>(
+  value: unknown,
+  path: string,
+  rest: (value: unknown) => { phases: object[] },
+  // A key view conformed under its field's path.
+  keyView: (view: unknown, field: string) => object,
+): F {
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const rawPhases = Array.isArray(record?.phases) ? record.phases : undefined;
+  const views = rawPhases?.map((p) =>
+    typeof p === "object" && p !== null && !Array.isArray(p)
+      ? (p as Record<string, unknown>).view
+      : undefined,
+  );
+  const phrase = rest(
+    rawPhases
+      ? {
+          ...record,
+          phases: rawPhases.map((p) => {
+            if (typeof p !== "object" || p === null || Array.isArray(p))
+              return p;
+            const { view: _, ...rest } = p as Record<string, unknown>;
+            return rest;
+          }),
+        }
+      : value,
+  );
+  const phases = phrase.phases as { view?: object | "entry" }[];
+  views?.forEach((view, i) => {
+    if (view === undefined || view === "entry") {
+      if (view) phases[i].view = view;
+      return;
+    }
+    phases[i].view = keyView(view, `${path}.phases[${i}].view`);
+  });
+  return phrase as F;
+}
+
 // Snapshot before the first await: both compressed candidates must carry
 // the same click-time data, even if the caller edits it during compression.
 export async function writeStudyLink(

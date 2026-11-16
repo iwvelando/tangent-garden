@@ -124,6 +124,15 @@ export type AnimationView = {
     inDrawing?: boolean;
   };
   family?: FamilyComposition;
+  // An engraving phrase's stage, layers and span, for the drawing, legend
+  // and readout (planar-engraving.ts).
+  engraving?: {
+    phase: string;
+    layers: Layers;
+    first: number;
+    last: number;
+    count: number;
+  };
   owner?: string;
   frame: Frame;
   final: Frame;

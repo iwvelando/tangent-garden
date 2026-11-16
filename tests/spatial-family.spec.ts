@@ -399,6 +399,7 @@ test("spatial engraving seeks and vector files use the same frozen slots and dis
 
 import { spatialPresets } from "../web/spatial/presets";
 import { restore } from "../web/lifted";
+import { spatialEngravingError } from "../web/spatial/engraving";
 const hero = "A knot remembers";
 test("the signature engraving is a complete preset with its own valid animation", () => {
   const index = spatialPresets.findIndex((p) => p.name === hero);
@@ -413,11 +414,30 @@ test("the signature engraving is a complete preset with its own valid animation"
     family.spatialFamilyBudget(study.config, study.family!).error,
   ).toBeUndefined();
   expect(spatialStudy(study)).toEqual(study);
-  expect(study.animation).toMatchObject({
-    duration: 3,
-    repeat: "back-and-forth",
-    pace: "steady",
+  expect(study.animation).toMatchObject({ repeat: "once", pace: "ease" });
+  // Its Play is an engraving phrase that opens and ends on the whole print
+  // at the opening view.
+  const phrase = study.family!.phrase!;
+  expect(study.family!.motion).toBe("phrase");
+  expect(spatialEngravingError(phrase, study.family!.count)).toBeNull();
+  expect(phrase.opening).toEqual({ first: 1, last: study.family!.count });
+  const last = phrase.phases.at(-1)!;
+  expect(last.members).toEqual({ first: 1, last: study.family!.count });
+  expect(typeof last.view === "object" && last.view).toMatchObject({
+    yaw: study.view.yaw,
+    pitch: study.view.pitch,
+    zoom: study.view.zoom,
+    panX: study.view.panX,
+    panY: study.view.panY,
   });
+  // The perpendiculars and pole, hidden in the still, appear before the
+  // return and stay shown through it, while the camera turns.
+  expect(study.layers).toMatchObject({ connectors: false, pole: false });
+  expect(phrase.phases.at(-2)!.layers).toEqual({
+    connectors: true,
+    pole: true,
+  });
+  expect(last.layers).toBeUndefined();
 });
 import {
   observeSpatial,
@@ -987,6 +1007,11 @@ for (const [width, height] of [
       .getByLabel("Family presentation", { exact: true })
       .selectOption("family");
     await page.getByRole("button", { name: "Animation", exact: true }).click();
+    // The hero plays a phrase; its reveal keeps this walkthrough's own
+    // coverage (the phrase's is in engraving-phrase.spec.ts).
+    await page
+      .getByLabel("Family motion", { exact: true })
+      .selectOption("reveal");
     await page
       .getByRole("spinbutton", { name: "Duration (seconds)", exact: true })
       .fill("0.2");
@@ -1110,7 +1135,7 @@ test("clipped spatial vector output keeps each member ID and duplicate-slot prov
   expect(guides[0].slots).toEqual([0, 1]);
 });
 
-test("the signature's own back-and-forth playback prepares once and seeks the full family", async ({
+test("the signature's own phrase prepares once and seeks the full family", async ({
   page,
 }) => {
   await observeSpatial(page);
@@ -1118,12 +1143,12 @@ test("the signature's own back-and-forth playback prepares once and seeks the fu
   await choosePreset(page, { label: hero });
   await settled(page);
   await open(page, "#spatial-animation-section");
-  await expect(
-    page.getByRole("spinbutton", { name: "Duration (seconds)", exact: true }),
-  ).toHaveValue("3");
+  await expect(page.getByLabel("Family motion", { exact: true })).toHaveValue(
+    "phrase",
+  );
   await expect(
     page.getByRole("combobox", { name: "Repeat", exact: true }),
-  ).toHaveValue("back-and-forth");
+  ).toHaveValue("once");
   const prepared = await page.evaluate(() =>
     (window as any).spatialWorkers.reduce(
       (n: number, l: any) => n + l.requests.length,
@@ -1133,28 +1158,26 @@ test("the signature's own back-and-forth playback prepares once and seeks the fu
   await page
     .getByRole("button", { name: "Play animation", exact: true })
     .click();
-  // Headless playback of this 3 s film takes most of the configured wait
-  // even alone, and ran out at 0.84 in a full run (#469): the wait is for
-  // completion, not a speed requirement.
-  await expect
-    .poll(
-      async () =>
-        Number(
-          await page.locator(".spatial-stage").getAttribute("data-progress"),
-        ),
-      { timeout: 45_000 },
-    )
-    .toBe(1);
+  // Seeks rather than waiting out the ten-second film headless; its frames
+  // come from the same prepared set either way.
+  await expect(
+    page.getByRole("button", { name: "Pause", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Resume", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("slider", { name: "Animation progress", exact: true })
-    .fill("0.5");
-  await expect
-    .poll(async () => (await engravingRecord(page)).visible.length)
-    .toBe(16);
+  for (const [t, shown] of [
+    [1, 16],
+    [0.5, 1],
+  ] as const) {
+    await page
+      .getByRole("slider", { name: "Animation progress", exact: true })
+      .fill(String(t));
+    await expect
+      .poll(async () => (await engravingRecord(page)).visible.length)
+      .toBe(shown);
+  }
   expect(
     await page.evaluate(() =>
       (window as any).spatialWorkers.reduce(

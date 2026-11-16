@@ -1,4 +1,5 @@
 import { SpatialFamilyPanel, useSpatialFamily } from "./SpatialFamilyPanel";
+import { spatialEngravingError } from "./engraving";
 import {
   composeSpatialFamily,
   spatialFamilyBudget,
@@ -662,7 +663,14 @@ export default function SpatialApp({
     projection: lensing,
     lensAngle,
     ...(story && { story }),
-    ...(family && { family }),
+    // As an ordinary phrase, a family's phrase is recorded only while it
+    // is the chosen motion.
+    ...(family && {
+      family:
+        family.phrase && family.motion !== "phrase"
+          ? (({ phrase: _, ...rest }) => rest)(family)
+          : family,
+    }),
   });
   // The cut's buttons compute from its numeric fields, so they wait for
   // evaluations still pending for them; a preset chosen meanwhile wins.
@@ -3419,7 +3427,17 @@ export default function SpatialApp({
       data-theme-preference={theme.preference}
     >
       <AppHeader theme={theme} inert={journey.active}>
-        <ShareLink notebook="3d" study={snapshot} disabled={!ready} />
+        <ShareLink
+          notebook="3d"
+          study={snapshot}
+          disabled={
+            !ready ||
+            // A family's phrase opens from a link only when it is valid.
+            (family?.motion === "phrase" &&
+              !!family.phrase &&
+              !!spatialEngravingError(family.phrase, family.count))
+          }
+        />
         <AnimationButton section="spatial-animation-section" />
         <ExportImageMenu
           revision={journey.requested}

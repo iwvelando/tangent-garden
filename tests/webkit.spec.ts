@@ -2553,6 +2553,66 @@ test("phrase phases are arranged and a second parameter keyed in WebKit at phone
   ]);
 });
 
+// An engraving phrase uses the same editor without parameters: its member
+// fields hold when cleared, a moved phase keeps its span and focus follows
+// it quietly, and the phrase plays from the edited spans.
+test("engraving phrase spans and arranging work in WebKit at phone width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await choosePreset(page, { label: "A lamp's lace" });
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await openAnimation(page);
+  await page.getByLabel("Repeat", { exact: true }).selectOption("once");
+  await page.getByLabel("Animate", { exact: true }).selectOption("phrase");
+  const button = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  const member = (phase: number, end: "first" | "last") =>
+    page.getByRole("spinbutton", {
+      name: `Phase ${phase} ${end} member`,
+      exact: true,
+    });
+  // Typing one end of a held span completes it from the span it held.
+  await member(3, "first").fill("4");
+  await button("About animation modes").click();
+  await expect(member(3, "first")).toHaveValue("4");
+  await expect(member(3, "last")).toHaveValue("5");
+  // Clearing both holds again.
+  await member(3, "first").fill("");
+  await member(3, "last").fill("");
+  await button("About animation modes").click();
+  await expect(member(3, "first")).toHaveValue("");
+  await expect(member(3, "last")).toHaveValue("");
+  await button("Move phase 1 down").click();
+  await expect(button("Move phase 2 down")).toBeFocused();
+  await expect(page.locator(".phrase-phases")).toHaveAttribute(
+    "data-quiet",
+    "",
+  );
+  await expect(member(2, "first")).toHaveValue("5");
+  await expect(member(1, "first")).toHaveValue("");
+  await button("Play animation").click();
+  await button("Pause").click();
+  // The construction now shows first, over the whole family.
+  await page
+    .getByRole("slider", { name: "Animation progress", exact: true })
+    .fill("0.111");
+  await expect
+    .poll(() =>
+      page
+        .locator("#artwork [data-family-member]")
+        .evaluateAll((all) => all.length),
+    )
+    .toBe(16);
+  await expect(page.locator("#artwork [data-family-member] line")).toHaveCount(
+    48,
+  );
+});
+
 // The 3D phrase editor shares the 2D one; its own parts, the layers
 // disclosure, turns and Set to drawing, act on the click alone, and a moved
 // phase keeps its views, turns and layer events.
@@ -3751,7 +3811,12 @@ for (const label of ["A knot remembers", "A surface remembers its bending"])
     await progress.focus();
     await page.keyboard.press("End");
     await expect(stage).toHaveAttribute("data-time", "1");
-    await expect(stage).toHaveAttribute("data-progress", "0");
+    // The knot plays its phrase once, ending at its end; the surface's
+    // reveal goes back and forth, ending where it began.
+    await expect(stage).toHaveAttribute(
+      "data-progress",
+      label === "A knot remembers" ? "1" : "0",
+    );
     await page
       .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
       .click();

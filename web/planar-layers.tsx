@@ -40,15 +40,9 @@ export function completeLayers(layers: Partial<Layers>): Layers {
 
 type Choice = { key: keyof Layers; label: string };
 
-export function PlanarLayers({
-  config,
-  layers,
-  onChange,
-}: {
-  config: Config;
-  layers: Layers;
-  onChange: (key: keyof Layers, visible: boolean) => void;
-}) {
+// The layers a study offers, with their labels, by group: what the
+// drawing's controls show and an engraving phrase's phases can change.
+export function planarLayerChoices(config: Config) {
   const format = config.curve.format;
   const implicit = format === "implicit";
   const attractor = format === "attractor";
@@ -105,6 +99,23 @@ export function PlanarLayers({
       ? [{ key: "virtual" as const, label: "Virtual extensions" }]
       : []),
   ];
+  return {
+    curves,
+    construction,
+    reference: [{ key: "axes", label: "Grid & axes" }] as Choice[],
+  };
+}
+
+export function PlanarLayers({
+  config,
+  layers,
+  onChange,
+}: {
+  config: Config;
+  layers: Layers;
+  onChange: (key: keyof Layers, visible: boolean) => void;
+}) {
+  const { curves, construction, reference } = planarLayerChoices(config);
   const choices = (items: Choice[]) =>
     items.map(({ key, label }) => (
       <label className="check" key={key}>
@@ -130,7 +141,7 @@ export function PlanarLayers({
       </fieldset>
       <fieldset aria-label="Reference layers">
         <legend>Reference</legend>
-        {choices([{ key: "axes", label: "Grid & axes" }])}
+        {choices(reference)}
       </fieldset>
     </div>
   );

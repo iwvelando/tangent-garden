@@ -6,7 +6,11 @@ import {
   loomPaths,
   type LoomStudy,
 } from "./loom/model";
-import { defaultFamilyAnimation } from "./family-motion";
+import { defaultFamilyAnimation, type FamilyAnimation } from "./family-motion";
+import {
+  planarEngravingError,
+  type PlanarEngravingPhrase,
+} from "./planar-engraving";
 import { laceLimits, laceTiling, type LaceStudy } from "./lace/model";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
@@ -28,6 +32,7 @@ import {
   defaultTiming,
   flags,
   LinkError,
+  withPhaseViews,
   type AnimationSettings,
   type SchemaOf,
   type Timing,
@@ -372,21 +377,67 @@ function cameraPath(value: unknown): PlanarPath {
   return out;
 }
 
-function animationPhrase(value: unknown, config: Config): Phrase {
-  const partialLayers: SchemaOf<Partial<Layers>> = {
+const partialLayers: SchemaOf<Partial<Layers>> = {
+  fields: {
+    base: { optional: "boolean" },
+    derived: { optional: "boolean" },
+    lines: { optional: "boolean" },
+    definitionGuides: { optional: "boolean" },
+    rollingGuides: { optional: "boolean" },
+    incident: { optional: "boolean" },
+    virtual: { optional: "boolean" },
+    axes: { optional: "boolean" },
+  },
+};
+// A planar phrase's key view: a center and a zoom about the fitted framing.
+const phraseView = (view: unknown, field: string) =>
+  conform<PhraseView>(
+    view,
+    { fields: { x: "number", y: "number", zoom: { range: zoomRange } } },
+    undefined,
+    field,
+  );
+
+// An engraving phrase over a family of count members: spans, layer events
+// and views, with no parameter tracks (planar-engraving.ts).
+function engravingPhrase(
+  value: unknown,
+  count: number,
+  path: string,
+): PlanarEngravingPhrase {
+  type Phases = Omit<PlanarEngravingPhrase, "phases"> & {
+    phases: Omit<PlanarEngravingPhrase["phases"][number], "view">[];
+  };
+  const span = { fields: { first: "number", last: "number" } } as const;
+  const schema: SchemaOf<Phases> = {
     fields: {
-      base: { optional: "boolean" },
-      derived: { optional: "boolean" },
-      lines: { optional: "boolean" },
-      definitionGuides: { optional: "boolean" },
-      rollingGuides: { optional: "boolean" },
-      incident: { optional: "boolean" },
-      virtual: { optional: "boolean" },
-      axes: { optional: "boolean" },
+      opening: span,
+      phases: {
+        list: {
+          fields: {
+            name: "text",
+            duration: { range: [0.1, 3600] },
+            pace: { options: { steady: true, ease: true } },
+            members: { optional: span },
+            layers: { optional: partialLayers },
+          },
+        },
+        max: maxPhases,
+      },
     },
   };
-  // A phase's view is a key view or "entry", which the schema cannot state
-  // as one field: it is checked on its own below.
+  const phrase = withPhaseViews<PlanarEngravingPhrase>(
+    value,
+    path,
+    (rest) => conform<Phases>(rest, schema, undefined, path),
+    phraseView,
+  );
+  const error = planarEngravingError(phrase, count);
+  if (error) throw new LinkError(path, error);
+  return phrase;
+}
+
+function animationPhrase(value: unknown, config: Config): Phrase {
   const offered = phraseTargets(config);
   const targetOptions = {
     options: Object.fromEntries(offered.map((t) => [t, true])) as Record<
@@ -441,46 +492,18 @@ function animationPhrase(value: unknown, config: Config): Phrase {
       },
     },
   };
-  const record =
-    typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
-  const rawPhases = Array.isArray(record?.phases) ? record.phases : undefined;
-  const views = rawPhases?.map((p) =>
-    typeof p === "object" && p !== null && !Array.isArray(p)
-      ? (p as Record<string, unknown>).view
-      : undefined,
-  );
-  const phrase: Phrase = conform<
-    Omit<Phrase, "phases"> & { phases: Omit<PhrasePhase, "view">[] }
-  >(
-    rawPhases
-      ? {
-          ...record,
-          phases: rawPhases.map((p) => {
-            if (typeof p !== "object" || p === null || Array.isArray(p))
-              return p;
-            const { view: _, ...rest } = p as Record<string, unknown>;
-            return rest;
-          }),
-        }
-      : value,
-    schema,
-    undefined,
+  const phrase = withPhaseViews<Phrase>(
+    value,
     "animation.phrase",
+    (rest) =>
+      conform<Omit<Phrase, "phases"> & { phases: Omit<PhrasePhase, "view">[] }>(
+        rest,
+        schema,
+        undefined,
+        "animation.phrase",
+      ),
+    phraseView,
   );
-  views?.forEach((view, i) => {
-    if (view === undefined || view === "entry") {
-      if (view) phrase.phases[i].view = view;
-      return;
-    }
-    phrase.phases[i].view = conform<PhraseView>(
-      view,
-      { fields: { x: "number", y: "number", zoom: { range: zoomRange } } },
-      undefined,
-      `animation.phrase.phases[${i}].view`,
-    );
-  });
   const error = phraseError(config, phrase);
   if (error) throw new LinkError("animation.phrase", error);
   return phrase;
@@ -677,11 +700,30 @@ export function planarStudy(value: unknown): PlanarStudy {
       "animation.mode",
       "animation.mode traces light only in a catacaustic or diacaustic.",
     );
+  // A family's phrase is conformed against its member count, after the
+  // rest of the family.
+  const rawFamily = raw.family as
+    { animation?: { phrase?: unknown } } | undefined;
+  const rawPhrase =
+    typeof rawFamily?.animation === "object" && rawFamily.animation !== null
+      ? rawFamily.animation.phrase
+      : undefined;
   const family =
     raw.family === undefined
       ? undefined
-      : conform<FamilySettings>(
-          raw.family,
+      : (conform<
+          Omit<FamilySettings, "animation"> & {
+            animation?: Omit<FamilyAnimation, "phrase">;
+          }
+        >(
+          rawPhrase === undefined
+            ? raw.family
+            : {
+                ...rawFamily,
+                animation: (({ phrase: _, ...rest }) => rest)(
+                  rawFamily!.animation!,
+                ),
+              },
           {
             fields: {
               enabled: "boolean",
@@ -713,7 +755,9 @@ export function planarStudy(value: unknown): PlanarStudy {
               animation: {
                 optional: {
                   fields: {
-                    mode: { options: { reveal: true, window: true } },
+                    mode: {
+                      options: { reveal: true, window: true, phrase: true },
+                    },
                     width: { range: [1, 32] },
                     duration: { range: [0.1, 3600] },
                     repeat: { options: { once: true, "back-and-forth": true } },
@@ -738,7 +782,7 @@ export function planarStudy(value: unknown): PlanarStudy {
             animation: defaultFamilyAnimation,
           },
           "family",
-        );
+        ) as FamilySettings);
   if (family) {
     if (
       family.animation &&
@@ -758,6 +802,17 @@ export function planarStudy(value: unknown): PlanarStudy {
       throw new LinkError(
         "family.selected",
         "family.selected must name a member of this family.",
+      );
+    if (family.animation && rawPhrase !== undefined)
+      family.animation.phrase = engravingPhrase(
+        rawPhrase,
+        family.count,
+        "family.animation.phrase",
+      );
+    if (family.animation?.mode === "phrase" && !family.animation.phrase)
+      throw new LinkError(
+        "family.animation.phrase",
+        "family.animation.phrase is needed to play a phrase.",
       );
     if (
       family.enabled &&

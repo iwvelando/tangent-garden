@@ -6,6 +6,7 @@ import {
   conform,
   flags,
   LinkError,
+  withPhaseViews,
   type AnimationSettings,
   type SchemaOf,
 } from "../study-link";
@@ -60,10 +61,10 @@ import type { Pace, Repeat } from "../timing";
 import { loops } from "./loop";
 import {
   spatialPhraseError,
+  spatialPhraseKeyView,
   spatialPhraseTargets,
   type SpatialPhrase,
   type SpatialPhrasePhase,
-  type SpatialPhraseView,
 } from "./phrase";
 import { maxPhases, maxPhraseTracks, phraseDuration } from "../phrase-timeline";
 import { storyIds, type StoryId } from "./story";
@@ -639,62 +640,12 @@ function animationPhrase(value: unknown, config: SpatialConfig): SpatialPhrase {
       },
     },
   };
-  // A phase's view is a key view or "entry", which the schema cannot state
-  // as one field: it is checked on its own below.
-  const record =
-    typeof value === "object" && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined;
-  const rawPhases = Array.isArray(record?.phases) ? record.phases : undefined;
-  const views = rawPhases?.map((p) =>
-    typeof p === "object" && p !== null && !Array.isArray(p)
-      ? (p as Record<string, unknown>).view
-      : undefined,
-  );
-  const phrase: SpatialPhrase = conform<Phases>(
-    rawPhases
-      ? {
-          ...record,
-          phases: rawPhases.map((p) => {
-            if (typeof p !== "object" || p === null || Array.isArray(p))
-              return p;
-            const { view: _, ...rest } = p as Record<string, unknown>;
-            return rest;
-          }),
-        }
-      : value,
-    schema,
-    undefined,
+  const phrase = withPhaseViews<SpatialPhrase>(
+    value,
     "animation.phrase",
+    (rest) => conform<Phases>(rest, schema, undefined, "animation.phrase"),
+    (view, field) => spatialPhraseKeyView(view, field, viewZoom),
   );
-  views?.forEach((view, i) => {
-    if (view === undefined || view === "entry") {
-      if (view) phrase.phases[i].view = view;
-      return;
-    }
-    const field = `animation.phrase.phases[${i}].view`;
-    const key = conform<SpatialPhraseView>(
-      view,
-      {
-        fields: {
-          yaw: "number",
-          pitch: { range: pitchRange },
-          zoom: { range: [zoomRange[0], viewZoom] },
-          panX: "number",
-          panY: "number",
-          turns: { range: [-maxTurns, maxTurns] },
-        },
-      },
-      undefined,
-      field,
-    );
-    if (!Number.isInteger(key.turns))
-      throw new LinkError(
-        `${field}.turns`,
-        `${field}.turns must be a whole number.`,
-      );
-    phrase.phases[i].view = key;
-  });
   const error = spatialPhraseError(config, phrase);
   if (error) throw new LinkError("animation.phrase", error);
   return phrase;

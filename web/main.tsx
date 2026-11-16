@@ -12,6 +12,7 @@ import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
 import { defaultFamilyAnimation } from "./family-motion";
 import type { FamilySettings } from "./planar-family";
+import { planarEngravingError } from "./planar-engraving";
 import { StudyExplanation } from "./StudyExplanation";
 import {
   NotebookContext,
@@ -486,6 +487,8 @@ function App({
   );
   const manualView = useRef<Viewport | undefined>(undefined);
   const familyView = useRef<Viewport | undefined>(undefined);
+  // Counts key views shown on the family drawing, which remounts at each.
+  const [familyShown, setFamilyShown] = useState(0);
   const plotWrap = useRef<HTMLDivElement>(null);
   const revealPlot = () =>
     revealDrawing(plotWrap.current, document.getElementById("playback"));
@@ -1486,7 +1489,17 @@ function App({
     probe,
     animation:
       pendingAnimation ?? animationSettings.current ?? defaultAnimation,
-    ...(family && { family }),
+    // As an ordinary phrase, a family's phrase is recorded only while it
+    // is the chosen motion.
+    ...(family && {
+      family:
+        family.animation?.phrase && family.animation.mode !== "phrase"
+          ? {
+              ...family,
+              animation: (({ phrase: _, ...rest }) => rest)(family.animation),
+            }
+          : family,
+    }),
   });
   // Keep the last settled definition available to excursions from any
   // notebook. Raw drafts stay in this mounted editor, including invalid ones.
@@ -1546,6 +1559,11 @@ function App({
   const drawingBusy = family?.enabled
     ? familyState.pending || scalarStates.some((s) => s.pending)
     : busy || placing;
+  // A family's phrase opens from a link only when every field is valid.
+  const familyPhraseReady =
+    family?.animation?.mode !== "phrase" ||
+    !family.animation.phrase ||
+    !planarEngravingError(family.animation.phrase, family.count);
   const outputReady = family?.enabled
     ? familyReady && !drawingBusy
     : !!result && !busy && !error;
@@ -1559,7 +1577,7 @@ function App({
     ? legendGeometry(
         displayFrame.result,
         displayFrame.config,
-        animation?.phrase?.layers ?? layers,
+        animation?.phrase?.layers ?? animation?.engraving?.layers ?? layers,
       )
     : { base: false, derived: false };
   useEffect(() => {
@@ -1709,7 +1727,9 @@ function App({
         <ShareLink
           notebook="2d"
           study={snapshot}
-          disabled={!outputReady || !animationSettingsReady}
+          disabled={
+            !outputReady || !animationSettingsReady || !familyPhraseReady
+          }
         />
         <AnimationButton section="animation-section" />
         <ExportImageMenu
@@ -2875,18 +2895,24 @@ function App({
                   members: drawnMembers ?? [],
                   onAnimation: (patch) => {
                     setPreset("custom");
-                    setFamily(
-                      (previous) =>
-                        previous && {
-                          ...previous,
-                          animation: {
-                            ...defaultFamilyAnimation,
-                            width: Math.min(3, previous.count),
-                            ...previous.animation,
-                            ...patch,
-                          },
+                    setFamily((previous) => {
+                      if (!previous) return previous;
+                      const animation = {
+                        ...defaultFamilyAnimation,
+                        width: Math.min(3, previous.count),
+                        ...previous.animation,
+                      };
+                      return {
+                        ...previous,
+                        animation: {
+                          ...animation,
+                          // A function patches the latest setup.
+                          ...(typeof patch === "function"
+                            ? patch(animation)
+                            : patch),
                         },
-                    );
+                      };
+                    });
                   },
                 }}
                 frame={familyFrame ?? null}
@@ -2906,7 +2932,16 @@ function App({
                 getCurrentView={() => familyView.current}
                 getFocus={() => viewRef.current}
                 refineView={refineView}
-                onShowCamera={() => {}}
+                // A phrase's key view becomes the family's own camera; the
+                // drawing takes it as it mounts again.
+                onShowCamera={(next) => {
+                  setFamily((previous) =>
+                    previous?.enabled
+                      ? { ...previous, camera: next }
+                      : previous,
+                  );
+                  setFamilyShown((n) => n + 1);
+                }}
                 onView={setAnimation}
                 onRunning={setAnimationRunning}
                 onReveal={revealPlot}
@@ -2962,7 +2997,7 @@ function App({
           >
             {family?.enabled && familyFrame && familyDrawing ? (
               <FamilyDrawing
-                key={`family-${restoredAnimation?.id ?? 0}`}
+                key={`family-${restoredAnimation?.id ?? 0}-${familyShown}`}
                 family={familyDrawing}
                 animation={familyPlayback}
                 refit={refit}

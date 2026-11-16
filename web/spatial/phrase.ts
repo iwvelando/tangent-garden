@@ -14,6 +14,7 @@ import {
   type TimelinePhase,
 } from "../phrase-timeline";
 import type { Pace } from "../timing";
+import { conform, LinkError } from "../study-link";
 import { count as formatCount } from "../number-format";
 import { viewZoom } from "../refinement";
 import { roundedGenerated } from "../atlas-queue";
@@ -323,9 +324,15 @@ export function compileSpatialPhrase(
   };
 }
 
-type CompiledPhase = CompiledSpatialPhrase["phases"][number];
+// What a phase's camera leg needs: its two boundaries' views and keys, and
+// the whole turns added on the way.
+type Leg = {
+  from: Pick<Boundary, "view" | "key">;
+  to: Pick<Boundary, "view" | "key">;
+  turns: number;
+};
 // A phase's camera as a steady two-view path about the study's bounds.
-const legPath = (phase: CompiledPhase): CameraPath => ({
+const legPath = (phase: Leg): CameraPath => ({
   style: "steady",
   keys: [
     { name: "", ...phase.from.key, turns: 0 },
@@ -333,26 +340,48 @@ const legPath = (phase: CompiledPhase): CameraPath => ({
   ],
 });
 // Whether a phase's camera stands still.
-const holds = (phase: CompiledPhase) =>
+const holds = (phase: Leg) =>
   phase.from.view === phase.to.view && phase.turns === 0;
 // The camera within a phase: exactly its stored views at both ends and
 // throughout a hold, and otherwise a steady leg at the phase's eased
 // progress (mathematics.md#spatial-camera-paths).
-function viewAt(
-  phrase: CompiledSpatialPhrase,
-  phase: CompiledPhase,
+export function spatialLegView(
+  camera: SpatialPhraseCamera,
+  phase: Leg,
   p: number,
 ) {
   if (p === 0 || holds(phase)) return phase.from.view;
   if (p === 1) return phase.to.view;
   return pathView(
     legPath(phase),
-    phrase.camera.around,
+    camera.around,
     p,
     false,
     undefined,
-    lensOf(phrase.camera.entry),
+    lensOf(camera.entry),
   );
+}
+const viewAt = (phrase: CompiledSpatialPhrase, phase: Leg, p: number) =>
+  spatialLegView(phrase.camera, phase, p);
+// A phrase camera's boundary states: the opening view with its key, and a
+// key view as drawn about the bounds through the opening lens. The opening
+// key is not clamped to a zoom limit: legs leave from it, and boundaries
+// keep the view itself.
+export function spatialCameraStates(camera: SpatialPhraseCamera) {
+  const lens = lensOf(camera.entry);
+  const { name: _, ...entryKey } = keyFromView(
+    camera.entry,
+    camera.around,
+    "",
+    Infinity,
+  );
+  return {
+    entry: { view: camera.entry, key: entryKey },
+    key: (view: SpatialPhraseView) => ({
+      view: keyedView(view, camera.around, lens),
+      key: { ...view, turns: 0 },
+    }),
+  };
 }
 
 export function spatialPhraseAt(
@@ -414,6 +443,8 @@ export type SpatialPhrasePresentation = {
   layers: Layers;
   reveal: number;
   tracks: { label: string; value: number; range: readonly [number, number] }[];
+  // An engraving phrase's span of members, for its readout (engraving.ts).
+  members?: { first: number; last: number; count: number };
 };
 // One renderer-input sampler for playback, seeks, loop checks and export.
 // The caller maps repeat time into absolute phrase seconds and owns
@@ -573,3 +604,34 @@ export const spatialPhraseProblemField = (problem?: string) =>
   /^Phase \d+ (duration|key \d|key|view|turns|name|reveal|layer)\b/.exec(
     problem ?? "",
   )?.[0];
+
+// A key view in a link, conformed under its field: within the orbit, zoom
+// up to zoomLimit and whole turns. The phrase's own check then applies the
+// drawing's limits.
+export function spatialPhraseKeyView(
+  view: unknown,
+  field: string,
+  zoomLimit: number,
+): SpatialPhraseView {
+  const key = conform<SpatialPhraseView>(
+    view,
+    {
+      fields: {
+        yaw: "number",
+        pitch: { range: pitchRange },
+        zoom: { range: [zoomRange[0], zoomLimit] },
+        panX: "number",
+        panY: "number",
+        turns: { range: [-maxTurns, maxTurns] },
+      },
+    },
+    undefined,
+    field,
+  );
+  if (!Number.isInteger(key.turns))
+    throw new LinkError(
+      `${field}.turns`,
+      `${field}.turns must be a whole number.`,
+    );
+  return key;
+}

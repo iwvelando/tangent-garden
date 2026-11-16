@@ -3289,6 +3289,101 @@ test("finite engraving animation links keep independent saved setup and reject i
     ).toThrow(/family.animation/);
 });
 
+test("finite engraving phrase links conform spans, layer events and views within the family", async () => {
+  const { planarStudy, presetStudy } = await import("../web/planar-link");
+  const { presets } = await import("../web/presets");
+  const s = presetStudy(presets.findIndex((p) => p.title === "A lamp's lace"));
+  const phrase = {
+    opening: { first: 1, last: 16 },
+    phases: [
+      {
+        name: "Single out one",
+        duration: 3,
+        pace: "ease",
+        members: { first: 5, last: 5 },
+        layers: { lines: true, incident: true },
+      },
+      {
+        name: "Closer",
+        duration: 2,
+        pace: "steady",
+        view: { x: 0.25, y: -0.5, zoom: 4 },
+      },
+      {
+        name: "Return",
+        duration: 3,
+        pace: "ease",
+        members: { first: 1, last: 16 },
+        view: "entry",
+      },
+    ],
+  };
+  const animation = {
+    mode: "phrase",
+    phrase,
+    width: 3,
+    duration: 8,
+    repeat: "back-and-forth",
+    pace: "steady",
+    camera: "hold",
+  };
+  const raw = { ...s, family: { ...s.family!, animation } };
+  expect(planarStudy(raw).family!.animation).toEqual(animation);
+  // Through an actual link, as copied and opened.
+  const read = await readStudyLink(
+    await writeStudyLink("2d", planarStudy(raw)),
+  );
+  expect(planarStudy(read.study).family!.animation).toEqual(animation);
+  // A phrase is kept, and checked, while another motion is chosen.
+  expect(
+    planarStudy({
+      ...raw,
+      family: { ...raw.family, animation: { ...animation, mode: "reveal" } },
+    }).family!.animation!.phrase,
+  ).toEqual(phrase);
+  const refused = (change: (a: any) => void, field: RegExp) => {
+    const a = structuredClone(animation) as any;
+    change(a);
+    expect(() =>
+      planarStudy({ ...raw, family: { ...raw.family, animation: a } }),
+    ).toThrow(field);
+  };
+  refused((a) => delete a.phrase, /family\.animation\.phrase/);
+  refused((a) => (a.phrase.opening.last = 17), /Opening last member/);
+  refused(
+    (a) => (a.phrase.phases[0].members.first = 0),
+    /Phase 1 first member/,
+  );
+  refused(
+    (a) => (a.phrase.phases[0].members.first = 1.5),
+    /Phase 1 first member/,
+  );
+  refused(
+    (a) => (a.phrase.phases[0].layers.lines = "yes"),
+    /family\.animation\.phrase/,
+  );
+  refused(
+    (a) => (a.phrase.phases[0].layers.halo = true),
+    /family\.animation\.phrase/,
+  );
+  refused((a) => (a.phrase.phases[1].view.zoom = 21), /Phase 2 view/);
+  refused((a) => (a.phrase.phases[1].view = "nearby"), /phases\[1\]\.view/);
+  refused((a) => (a.phrase.phases[0].key = "1"), /family\.animation\.phrase/);
+  refused(
+    (a) => (a.phrase.target = "sourceTheta"),
+    /family\.animation\.phrase/,
+  );
+  refused((a) => (a.phrase.phases = []), /1–12 phases/);
+  // A smaller family refuses a span it no longer holds, by name.
+  expect(() =>
+    planarStudy({ ...raw, family: { ...raw.family, count: 12, animation } }),
+  ).toThrow(
+    /Opening last member must be a whole number from the first member to 12/,
+  );
+  // A phrase is not offered as an ordinary loop.
+  refused((a) => (a.repeat = "loop"), /family\.animation/);
+});
+
 test("finite engraving all-member construction links are opt-in and typed", async () => {
   const { planarStudy, presetStudy } = await import("../web/planar-link");
   const { presets } = await import("../web/presets");
