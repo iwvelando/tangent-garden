@@ -305,6 +305,10 @@ const tesseract = (i = 0): TesseractStudy => ({
   duration: 12,
   repeat: "back-and-forth",
   pace: "ease",
+  // A phrase preset's link carries its phrase.
+  ...(tesseractPresets[i].phrase && {
+    phrase: structuredClone(tesseractPresets[i].phrase),
+  }),
 });
 
 test("every preset round-trips through a link unchanged", async () => {

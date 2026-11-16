@@ -81,6 +81,8 @@ export const phraseProblemField = (problem?: string) =>
 // described; the timeline, tracks and arrangement are shared.
 type EditorPhase<T extends string, V> = TimelinePhase<T> & {
   view?: V | "entry";
+  // A second camera's key, where a notebook shows two spatial panes.
+  companionView?: V | "entry";
 };
 export type PhraseEditorReveal<P> = {
   value: (phase: P) => string;
@@ -98,6 +100,12 @@ export type PhraseEditorCamera<V> = {
   // What of a phase's own view the drawing's view keeps when it replaces
   // it; absent, the drawing's view replaces it whole.
   keep?: (old: V, view: V) => V;
+  // The field's label where a notebook names its cameras; "Camera" when
+  // absent.
+  label?: string;
+  // A notebook's own controls for this camera's key in a phase, after its
+  // buttons.
+  after?: (index: number) => ReactNode;
 };
 
 export function PhraseTimelineEditor<
@@ -116,6 +124,7 @@ export function PhraseTimelineEditor<
   parameterHelp,
   reveal: revealing,
   camera,
+  companion,
   extra,
 }: {
   phrase: F;
@@ -130,8 +139,12 @@ export function PhraseTimelineEditor<
   problemField: (problem?: string) => string | undefined;
   // The help beside a track's parameter.
   parameterHelp: (target: T, track: number) => Help<string> | undefined;
-  reveal: PhraseEditorReveal<P>;
+  // What a phase reveals; a notebook without reveals leaves it out.
+  reveal?: PhraseEditorReveal<P>;
   camera: PhraseEditorCamera<V>;
+  // A second spatial pane's camera, keyed in companionView; its controls
+  // are named with a 2, as further parameters' keys are.
+  companion?: PhraseEditorCamera<V>;
   // A notebook's own controls for a phase, after its camera.
   extra?: (
     phase: P,
@@ -251,8 +264,8 @@ export function PhraseTimelineEditor<
         {phrase.phases.map((phase, i) => {
           const update = (change: Partial<P>) =>
             patch(i, (p) => ({ ...p, ...change }));
-          const shown = revealing.value(phase);
-          const named = revealing.options.some(([value]) => value === shown);
+          const shown = revealing?.value(phase) ?? "";
+          const named = !!revealing?.options.some(([value]) => value === shown);
           const keyField = (track: number) => (
             <Field
               key={track}
@@ -272,6 +285,87 @@ export function PhraseTimelineEditor<
               />
             </Field>
           );
+          // A camera's key for one pane: hold, a key view or the opening
+          // view, with its description, Show and Set to drawing.
+          const cameraField = (
+            spec: PhraseEditorCamera<V>,
+            field: "view" | "companionView",
+            suffix: string,
+          ) => {
+            const key = phase[field];
+            return (
+              <>
+                <Field
+                  label={spec.label ?? "Camera"}
+                  topic={`Phase ${i + 1} view${suffix}`}
+                  help={i === 0 ? spec.help : undefined}
+                >
+                  <select
+                    aria-label={`Phase ${i + 1} camera${suffix}`}
+                    value={
+                      key === undefined
+                        ? "hold"
+                        : key === "entry"
+                          ? "entry"
+                          : "view"
+                    }
+                    onChange={(e) => {
+                      const choice = e.target.value as PhaseCamera;
+                      if (choice === "hold")
+                        patch(i, (p) => {
+                          const { [field]: _, ...rest } = p;
+                          return rest as P;
+                        });
+                      else if (choice === "entry")
+                        update({ [field]: "entry" } as Partial<P>);
+                      else {
+                        const view = spec.drawn();
+                        if (view) update({ [field]: view } as Partial<P>);
+                      }
+                    }}
+                  >
+                    <option value="hold">Hold the view</option>
+                    <option value="view">Move to a key view</option>
+                    <option value="entry">Return to the opening view</option>
+                  </select>
+                </Field>
+                {typeof key === "object" && (
+                  <>
+                    <p className="hint">{spec.describe(key as V)}</p>
+                    <div className="path-view-buttons">
+                      <button
+                        type="button"
+                        className="text-button"
+                        aria-label={`Show phase ${i + 1} view${suffix}`}
+                        onClick={() => spec.onShow(key as V)}
+                      >
+                        Show
+                      </button>
+                      <button
+                        type="button"
+                        className="text-button"
+                        aria-label={`Set phase ${i + 1} view${suffix} to the drawing's view`}
+                        onClick={() => {
+                          const view = spec.drawn();
+                          if (!view) return;
+                          patch(i, (p) => ({
+                            ...p,
+                            [field]:
+                              spec.keep && typeof p[field] === "object"
+                                ? spec.keep(p[field] as V, view)
+                                : view,
+                          }));
+                        }}
+                      >
+                        Set to drawing
+                      </button>
+                    </div>
+                  </>
+                )}
+                {spec.after?.(i)}
+              </>
+            );
+          };
           return (
             <li className="animation-track" key={i}>
               <Field label="Name" topic={`Phase ${i + 1} name`}>
@@ -304,91 +398,35 @@ export function PhraseTimelineEditor<
                   {keyField(2)}
                 </div>
               )}
-              <Field
-                label="Reveal"
-                topic={`Phase ${i + 1} reveal`}
-                help={i === 0 ? revealing.help : undefined}
-              >
-                <select
-                  aria-label={`Phase ${i + 1} reveal`}
-                  value={named ? shown : "custom"}
-                  onChange={(e) => {
-                    const choice = e.target.value;
-                    patch(i, (p) => revealing.apply(p, choice));
-                  }}
-                >
-                  {!named && <option value="custom">{revealing.custom}</option>}
-                  {revealing.options.map(([value, text]) => (
-                    <option key={value} value={value}>
-                      {text}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field
-                label="Camera"
-                topic={`Phase ${i + 1} view`}
-                help={i === 0 ? camera.help : undefined}
-              >
-                <select
-                  aria-label={`Phase ${i + 1} camera`}
-                  value={
-                    phase.view === undefined
-                      ? "hold"
-                      : phase.view === "entry"
-                        ? "entry"
-                        : "view"
-                  }
-                  onChange={(e) => {
-                    const choice = e.target.value as PhaseCamera;
-                    if (choice === "hold")
-                      patch(i, ({ view: _, ...rest }) => rest as P);
-                    else if (choice === "entry")
-                      update({ view: "entry" } as Partial<P>);
-                    else {
-                      const view = camera.drawn();
-                      if (view) update({ view } as Partial<P>);
-                    }
-                  }}
-                >
-                  <option value="hold">Hold the view</option>
-                  <option value="view">Move to a key view</option>
-                  <option value="entry">Return to the opening view</option>
-                </select>
-              </Field>
-              {typeof phase.view === "object" && (
+              {revealing && (
                 <>
-                  <p className="hint">{camera.describe(phase.view as V)}</p>
-                  <div className="path-view-buttons">
-                    <button
-                      type="button"
-                      className="text-button"
-                      aria-label={`Show phase ${i + 1} view`}
-                      onClick={() => camera.onShow(phase.view as V)}
-                    >
-                      Show
-                    </button>
-                    <button
-                      type="button"
-                      className="text-button"
-                      aria-label={`Set phase ${i + 1} view to the drawing's view`}
-                      onClick={() => {
-                        const view = camera.drawn();
-                        if (!view) return;
-                        patch(i, (p) => ({
-                          ...p,
-                          view:
-                            camera.keep && typeof p.view === "object"
-                              ? camera.keep(p.view as V, view)
-                              : view,
-                        }));
+                  <Field
+                    label="Reveal"
+                    topic={`Phase ${i + 1} reveal`}
+                    help={i === 0 ? revealing.help : undefined}
+                  >
+                    <select
+                      aria-label={`Phase ${i + 1} reveal`}
+                      value={named ? shown : "custom"}
+                      onChange={(e) => {
+                        const choice = e.target.value;
+                        patch(i, (p) => revealing.apply(p, choice));
                       }}
                     >
-                      Set to drawing
-                    </button>
-                  </div>
+                      {!named && (
+                        <option value="custom">{revealing.custom}</option>
+                      )}
+                      {revealing.options.map(([value, text]) => (
+                        <option key={value} value={value}>
+                          {text}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                 </>
               )}
+              {cameraField(camera, "view", "")}
+              {companion && cameraField(companion, "companionView", " 2")}
               {extra?.(phase, i, (change) => patch(i, change))}
               <div className="path-view-buttons phrase-arrange">
                 {(["up", "down"] as const).map((way) => {

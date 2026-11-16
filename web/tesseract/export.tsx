@@ -10,6 +10,7 @@ import {
 } from "../export-quality";
 import type { MotionExport } from "./AnimationPanel";
 import { cycles, progressAt, type Pace, type Repeat } from "../timing";
+import { createTesseractPhraseSampler, type PhraseSession } from "./phrase";
 import {
   sample,
   type Config,
@@ -29,17 +30,28 @@ export async function exportMotion(
     duration: number;
     repeat: Repeat;
     pace: Pace;
+    // A prepared phrase, which supplies each frame's study and both views.
+    phrase?: Pick<PhraseSession, "compiled" | "original">;
     signal: AbortSignal;
     onProgress: (n: number, total: number) => void;
   },
 ) {
   // A repeating animation leaves out its end, which is its start again,
   // and its WebP loops forever (../timing.ts).
-  const timing = exportTiming(o.duration, o.fps, cycles(o.repeat)),
+  const duration = o.phrase?.compiled.duration ?? o.duration,
+    timing = exportTiming(duration, o.fps, cycles(o.repeat)),
     encoding = exportEncoding(o.settings),
     size = exportBaseSize(o.settings.layout);
   const client = new EngineClient(),
     canvas = document.createElement("canvas");
+  // A phrase's frames come from the sampler playback uses, on this
+  // export's own engine.
+  const phrased = o.phrase
+    ? createTesseractPhraseSampler({
+        phrase: o.phrase.compiled,
+        original: o.phrase.original,
+      })
+    : null;
   canvas.width = encoding.width;
   canvas.height = encoding.height;
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -55,12 +67,20 @@ export async function exportMotion(
         : webpSink(encoding, o.loop || cycles(o.repeat));
     for (let i = 0; i < timing.length; i++) {
       o.signal.throwIfAborted();
-      const config = sample(
-          o.config,
-          o.motion,
-          progressAt(timing[i].progress, o.repeat, o.pace),
-        ),
-        result = await client.tesseract(config);
+      const frame = phrased
+        ? await phrased(
+            progressAt(timing[i].progress, o.repeat, "steady") * duration,
+            client,
+          )
+        : null;
+      const config =
+          frame?.config ??
+          sample(
+            o.config,
+            o.motion,
+            progressAt(timing[i].progress, o.repeat, o.pace),
+          ),
+        result = frame?.result ?? (await client.tesseract(config));
       o.signal.throwIfAborted();
       const markup = renderToStaticMarkup(
         <svg
@@ -71,6 +91,7 @@ export async function exportMotion(
         >
           <Composition
             {...o}
+            {...(frame && { view: frame.view, diagramView: frame.diagramView })}
             layout={o.settings.layout}
             config={config}
             result={result}

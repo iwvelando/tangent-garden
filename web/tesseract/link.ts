@@ -10,6 +10,17 @@ import {
 import { objects, defaultConfig } from "./objects";
 import { tesseractPresets } from "./presets";
 import { lineWeightSchema } from "../line-weight";
+import { maxPhases, maxPhraseTracks } from "../phrase-timeline";
+import {
+  maxTurns,
+  pitchLimit,
+  tesseractPhraseError,
+  tesseractPhraseTargets,
+  zoomLimits,
+  type TesseractPhrase,
+  type TesseractPhrasePhase,
+  type TesseractPhraseView,
+} from "./phrase";
 import {
   initialView,
   motions,
@@ -24,6 +35,7 @@ import {
   type View,
   type Weave,
   type Root,
+  type TesseractTarget,
 } from "./types";
 
 export type TesseractStudy = {
@@ -34,6 +46,9 @@ export type TesseractStudy = {
   diagramView: View;
   motion: Motion;
   duration: number;
+  // The phrase Play a phrase plays (./phrase.ts); links and examples made
+  // before phrases have none.
+  phrase?: TesseractPhrase;
 } & Timing;
 
 const vec3 = { tuple: "number", length: 3 } satisfies SchemaOf<Vec3>;
@@ -191,7 +206,121 @@ export function presetStudy(index: number): TesseractStudy {
     duration: defaultDuration,
     repeat: preset.repeat ?? "once",
     pace: preset.pace ?? "steady",
+    ...(preset.phrase && { phrase: structuredClone(preset.phrase) }),
   };
+}
+
+// A phrase over the linked study: its tracks among the values the study
+// offers a phrase, every phase within the shared limits, each camera key
+// within the drawing's orbit and zoom limits, or "entry", and each cut a
+// selection the study shows.
+function linkedPhrase(value: unknown, config: Config): TesseractPhrase {
+  const offered = tesseractPhraseTargets(config);
+  if (!offered.length)
+    throw new LinkError("phrase", "This study does not offer a phrase.");
+  const targetOptions = {
+    options: Object.fromEntries(offered.map((t) => [t, true])) as Record<
+      TesseractTarget,
+      true
+    >,
+  };
+  type Phases = Omit<TesseractPhrase, "phases"> & {
+    phases: Omit<TesseractPhrasePhase, "view" | "companionView">[];
+  };
+  const schema: SchemaOf<Phases> = {
+    fields: {
+      target: targetOptions,
+      // Further parameters; tesseractPhraseError refuses repeats.
+      also: { optional: { list: targetOptions, max: maxPhraseTracks - 1 } },
+      phases: {
+        list: {
+          fields: {
+            name: "text",
+            duration: { range: [0.1, 3600] },
+            pace: { options: { steady: true, ease: true } },
+            key: { optional: "text" },
+            keys: {
+              optional: {
+                fields: Object.fromEntries(
+                  offered.map((t) => [t, { optional: "text" }]),
+                ) as Record<TesseractTarget, { optional: "text" }>,
+              },
+            },
+            selected: { optional: { range: [0, 255] } },
+          },
+        },
+        max: maxPhases,
+      },
+    },
+  };
+  // A camera key is a view or "entry", which the schema cannot state as
+  // one field: each is checked on its own below.
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const rawPhases = Array.isArray(record?.phases) ? record.phases : undefined;
+  const panes = ["view", "companionView"] as const;
+  const keyed = rawPhases?.map((p) =>
+    typeof p === "object" && p !== null && !Array.isArray(p)
+      ? panes.map((pane) => (p as Record<string, unknown>)[pane])
+      : [undefined, undefined],
+  );
+  const phrase: TesseractPhrase = conform<Phases>(
+    rawPhases
+      ? {
+          ...record,
+          phases: rawPhases.map((p) => {
+            if (typeof p !== "object" || p === null || Array.isArray(p))
+              return p;
+            const {
+              view: _,
+              companionView: __,
+              ...rest
+            } = p as Record<string, unknown>;
+            return rest;
+          }),
+        }
+      : value,
+    schema,
+    undefined,
+    "phrase",
+  );
+  keyed?.forEach((views, i) =>
+    views.forEach((key, k) => {
+      const pane = panes[k];
+      if (key === undefined) return;
+      if (key === "entry") {
+        phrase.phases[i][pane] = key;
+        return;
+      }
+      const field = `phrase.phases[${i}].${pane}`;
+      const read = conform<TesseractPhraseView>(
+        key,
+        {
+          fields: {
+            yaw: "number",
+            pitch: { range: [-pitchLimit, pitchLimit] },
+            zoom: { range: [zoomLimits[0], zoomLimits[1]] },
+            panX: "number",
+            panY: "number",
+            turns: { range: [-maxTurns, maxTurns] },
+          },
+        },
+        undefined,
+        field,
+      );
+      if (!Number.isInteger(read.turns))
+        throw new LinkError(
+          `${field}.turns`,
+          `${field}.turns must be a whole number.`,
+        );
+      phrase.phases[i][pane] = read;
+    }),
+  );
+  const error = tesseractPhraseError(config, phrase);
+  if (error) throw new LinkError("phrase", error);
+  return phrase;
 }
 
 export function tesseractStudy(value: unknown): TesseractStudy {
@@ -212,6 +341,7 @@ export function tesseractStudy(value: unknown): TesseractStudy {
         "duration",
         "repeat",
         "pace",
+        "phrase",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -247,13 +377,17 @@ export function tesseractStudy(value: unknown): TesseractStudy {
       `motion must be one of ${offered.join(", ")} for this study.`,
     );
   const timing = animationTiming(raw, "");
+  const phrase =
+    raw.phrase === undefined ? undefined : linkedPhrase(raw.phrase, read);
+  if (motion === "phrase" && !phrase)
+    throw new LinkError("phrase", "A phrase animation needs phase settings.");
   if (
     timing.repeat === "loop" &&
     !choices.find((m) => m.value === motion)!.loops
   )
     throw new LinkError(
       "repeat",
-      "repeat loops only a whole turn or a slice passage, which can return to their start.",
+      "repeat loops only a whole turn, a slice passage or a phrase, which can return to their start.",
     );
   return {
     config: read,
@@ -268,5 +402,6 @@ export function tesseractStudy(value: unknown): TesseractStudy {
       "duration",
     ),
     ...timing,
+    ...(phrase && { phrase }),
   };
 }
