@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
-import { choosePreset, open as openDetails } from "./helpers";
+import { choosePreset, holdFrames, open as openDetails } from "./helpers";
 import { decodeVideo, frameDifference, probe } from "./video";
 import { presetStudy } from "../web/spatial/link";
 import { spatialPresets } from "../web/spatial/presets";
@@ -531,10 +531,17 @@ async function openStudy(page: Page, study: unknown) {
   await settled(page);
   await openPanel(page);
 }
+// Pauses before the phrase draws a frame, so the session the callers seek
+// in is paused however slowly frames draw (see holdFrames).
 async function playAndPause(page: Page) {
-  await button(page, "Play animation").click();
-  await button(page, "Pause").click({ timeout: 60000 });
-  await expect(button(page, "Resume")).toBeVisible();
+  const release = await holdFrames(page);
+  try {
+    await button(page, "Play animation").click();
+    await button(page, "Pause").click({ timeout: 60000 });
+    await expect(button(page, "Resume")).toBeVisible();
+  } finally {
+    await release();
+  }
 }
 // The timeline snaps to steps of 0.001.
 async function seek(page: Page, to: number) {
@@ -647,6 +654,52 @@ test("the authored film thins its fan to one thread and turns it past Clairaut's
   await expect(page.locator("#spatial-playback")).toContainText(
     "Back to the fan",
   );
+});
+
+test("Pause reaches a phrase before it can end, however long its frames take", async ({
+  page,
+}) => {
+  // CI's headless Chromium composites WebGL in software: each frame's commit
+  // waits for SwiftShader, so a frame of the torus and its threads can hold
+  // the page for seconds, and a click is handled only between frames.
+  // Stand in for that with a controlled delay once in every animation
+  // frame, long enough that the 10-second starter phrase would end first.
+  await page.addInitScript(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    let delayed = -1;
+    window.requestAnimationFrame = (callback) =>
+      request((now) => {
+        if (now !== delayed) {
+          delayed = now;
+          const until = performance.now() + 2500;
+          while (performance.now() < until);
+        }
+        callback(now);
+      });
+  });
+  await openStudy(
+    page,
+    presetStudy(index("Threads finding their way around a torus")),
+  );
+  await page.getByLabel("Animate", { exact: true }).selectOption("phrase");
+  await expect(page.locator(".phrase-phases > li")).toHaveCount(4);
+  await playAndPause(page);
+  await expect(page.locator("#spatial-playback .note").first()).toHaveText(
+    "Paused",
+  );
+  expect(
+    Number(
+      await page
+        .getByRole("slider", { name: "Animation progress" })
+        .inputValue(),
+    ),
+  ).toBeLessThan(1);
+  // The page's frames run again once the helper returns.
+  expect(
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => done(true))),
+    ),
+  ).toBe(true);
 });
 
 test("a phrase is composed, arranged and flown through its controls, and the probe or a refused key stops it with a reason", async ({
