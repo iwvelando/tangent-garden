@@ -159,6 +159,44 @@ export async function stalePause(page: Page) {
     );
 }
 
+// Holds the page's animation frames until the returned call releases them.
+// Playback advances only in an animation frame, and only a frame can ask for
+// its last one, so nothing held can end it. Without the hold, a click on
+// Pause races the clock: on CI each frame of a heavy WebGL study can take
+// seconds (headless Chromium composites it in software and waits for each
+// frame), the click's actionability checks wait for several frames, and the
+// animation can end first. React reuses Pause's element for Replay, so the
+// late click then replays it. Frames requested while held run, in order,
+// after release; one cancelled meanwhile never runs. Playwright's own
+// checks use their own frames, which are not held.
+export async function holdFrames(page: Page) {
+  await page.evaluate(() => {
+    const request = window.requestAnimationFrame,
+      cancel = window.cancelAnimationFrame;
+    const held = new Map<number, FrameRequestCallback>(),
+      released = new Map<number, number>();
+    // Below any id the browser gives, so the two never meet.
+    let next = -1;
+    window.requestAnimationFrame = (callback) => {
+      held.set(next, callback);
+      return next--;
+    };
+    window.cancelAnimationFrame = (id) => {
+      if (!held.delete(id)) cancel.call(window, released.get(id) ?? id);
+    };
+    (window as unknown as { releaseFrames: () => void }).releaseFrames = () => {
+      window.requestAnimationFrame = request;
+      for (const [id, callback] of held)
+        released.set(id, request.call(window, callback));
+      held.clear();
+    };
+  });
+  return () =>
+    page.evaluate(() =>
+      (window as unknown as { releaseFrames: () => void }).releaseFrames(),
+    );
+}
+
 // iOS opens its keyboard over the page without shrinking the layout viewport:
 // it shortens the visual viewport and may pan it down inside the layout one,
 // and sometimes leaves it panned after the keyboard closes. Desktop engines
