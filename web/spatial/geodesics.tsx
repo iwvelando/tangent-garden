@@ -100,12 +100,15 @@ export function geodesicDefaults(s: SurfaceConfig): GeodesicConfig {
   };
 }
 
-// A study whose surface keeps its threads in the patch, with the start
-// moved to the patch's middle when it lies outside, so that choosing such a
-// surface leaves a study that draws.
+// Keep a retained fan's start admitted when choosing a surface: within a
+// patch's domain, or within an ellipsoid's latitude range. Move only a
+// coordinate that lies outside its range.
 export function startWithin(s: SurfaceConfig): SurfaceConfig {
   const g = s.geodesics;
-  if (!g || !withinPatch(s.kind)) return s;
+  if (!g) return s;
+  if (s.kind === "ellipsoid" && Math.abs(g.v) > Math.PI / 2)
+    return { ...s, geodesics: { ...g, v: 0 } };
+  if (!withinPatch(s.kind)) return s;
   const inside = (x: number, lo: number, hi: number) => x >= lo && x <= hi;
   if (inside(g.u, s.uMin, s.uMax) && inside(g.v, s.vMin, s.vMax)) return s;
   return {

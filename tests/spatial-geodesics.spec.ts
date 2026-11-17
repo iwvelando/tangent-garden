@@ -259,6 +259,31 @@ test("an ellipsoid carries threads over its whole surface, and a sphere its grea
   await expect(note(page)).toContainText("16 threads over the whole ellipsoid");
 });
 
+test("switching a torus fan to an ellipsoid gives it an admitted latitude", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, torusThreads);
+  await field(page, "Start v₀").fill("pi");
+  await settled(page);
+  const before = (await config(page)).surface.geodesics;
+  expect(before.v).toBe(Math.PI);
+  await page.getByLabel("Surface", { exact: true }).selectOption("ellipsoid");
+  await expect(note(page)).toContainText("over the whole ellipsoid");
+  await settled(page);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect((await config(page)).surface.geodesics).toEqual({ ...before, v: 0 });
+  // A latitude already admitted on the ellipsoid keeps its entered value.
+  await field(page, "Start v₀").fill("0.7");
+  await settled(page);
+  await page.getByLabel("Surface", { exact: true }).selectOption("torus");
+  await settled(page);
+  await page.getByLabel("Surface", { exact: true }).selectOption("ellipsoid");
+  await settled(page);
+  expect((await config(page)).surface.geodesics.v).toBe(0.7);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
 // A paraboloid's threads start within its patch, at its middle by
 // default, and stop at its edge; a kept fan's start moves into the patch,
 // a start outside is refused by field and keeps the drawing, and no arrow
