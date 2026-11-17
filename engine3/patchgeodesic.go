@@ -216,10 +216,24 @@ func (c *chartPath) leave(t, h float64, y, end []float64) (float64, []float64, b
 func (q SurfaceRequest) patchThread(g GeodesicRequest, beta float64, budget int) GeodesicThread {
 	c := q.chartPath()
 	b := beta * math.Pi / 180
+	sn, cs := math.Sin(b), math.Cos(b)
+	// Exact quarter turns have a zero component. A trigonometric residual
+	// must not make a launch along a patch edge point outside it. Nearby
+	// entered directions retain their nonzero component.
+	switch math.Mod(beta, 360) {
+	case 0:
+		sn, cs = 0, 1
+	case 90, -270:
+		sn, cs = 1, 0
+	case 180, -180:
+		sn, cs = 0, -1
+	case 270, -90:
+		sn, cs = -1, 0
+	}
 	_, xu, xv, _, _, _ := q.patch(g.U, g.V)
 	eu := xu.mul(1 / xu.norm())
 	side := xv.sub(eu.mul(xv.dot(eu)))
-	t0 := eu.mul(math.Cos(b)).add(side.mul(math.Sin(b) / side.norm()))
+	t0 := eu.mul(cs).add(side.mul(sn / side.norm()))
 	e, f, gg := xu.dot(xu), xu.dot(xv), xv.dot(xv)
 	p, r := xu.dot(t0)*c.l, xv.dot(t0)*c.l
 	det := e*gg - f*f

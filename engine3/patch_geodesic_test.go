@@ -451,3 +451,39 @@ func TestAssociateGeodesicBudget(t *testing.T) {
 		t.Fatalf("%d steps attempted, reported %d", total, g.Steps)
 	}
 }
+
+// Exact quarter-turn directions run along a cylinder's chart edges. Their
+// trigonometric roundoff must not turn a tangent launch into an outward one.
+func TestCylinderGeodesicTangentLaunches(t *testing.T) {
+	for _, axes := range [][2]float64{{1, 1}, {1.6, 0.6}} {
+		for _, at := range []struct{ u, v, beta float64 }{
+			{2, 0, 90}, {2, 0, -270}, {0, 0, -90}, {0, 0, 270},
+			{1, 1, 180}, {1, 1, -180}, {1, -1, 360}, {1, -1, -360},
+		} {
+			g := threads(t, launch(cylinderStudy(axes[0], axes[1], 0, 2, -1, 1), at.u, at.v, at.beta, 0, 1, 0.2, 40))
+			th := g.Threads[0]
+			if th.Reason != "end" || th.Reached != 0.2 {
+				t.Errorf("axes %v, launch %+v: %s on %s at %g, want whole length", axes, at, th.Reason, th.Edge, th.Reached)
+			}
+			for k := range th.Points {
+				if (at.u == 0 || at.u == 2) && th.U[k] != at.u {
+					t.Errorf("launch %+v: sample %d left u edge: %g", at, k, th.U[k])
+				}
+				if (at.v == -1 || at.v == 1) && th.V[k] != at.v {
+					t.Errorf("launch %+v: sample %d left v edge: %g", at, k, th.V[k])
+				}
+			}
+		}
+		// Nearby outward launches remain exits, rather than being rounded
+		// to a cardinal direction with a tolerance.
+		for _, at := range []struct{ u, v, beta float64 }{
+			{2, 0, 90 - 1e-10}, {0, 0, 270 - 1e-10},
+			{1, 1, 180 - 1e-10}, {1, -1, 360 - 1e-10},
+		} {
+			th := threads(t, launch(cylinderStudy(axes[0], axes[1], 0, 2, -1, 1), at.u, at.v, at.beta, 0, 1, 0.2, 40)).Threads[0]
+			if th.Reason != "edge" || th.Reached != 0 {
+				t.Errorf("outward launch %+v: %s at %g", at, th.Reason, th.Reached)
+			}
+		}
+	}
+}
