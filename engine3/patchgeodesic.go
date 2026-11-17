@@ -28,6 +28,7 @@ type chartPath struct {
 	q     SurfaceRequest
 	l     float64
 	seam  bool
+	graph bool
 	f     ode.Func
 	dense ode.Stages
 	// edge names the edge a thread last left by.
@@ -38,14 +39,10 @@ type chartPath struct {
 // A step is at most maxTorusStep in τ, as on the torus.
 const chartBisect = 64
 
-// chartScale is the length a patch's threads are integrated against: the
-// cylinder's larger semi-axis, or the family's scale.
-func (q SurfaceRequest) chartScale() float64 {
-	if q.Kind == "cylinder" {
-		return math.Max(q.A, q.B)
-	}
-	return q.A
-}
+// chartScale is the length a patch's threads are integrated against, as
+// its kind's descriptor gives it: the cylinder's larger semi-axis, the
+// family's scale, or half a paraboloid patch's largest extent.
+func (q SurfaceRequest) chartScale() float64 { return q.offers().geodesics.scale(q) }
 
 // chartDerivatives supplies the metric and connection in an isometric
 // embedding. The family's metric is independent of u and theta, so use
@@ -61,12 +58,31 @@ func (q SurfaceRequest) chartDerivatives(u, v float64) (xu, xv, xuu, xuv, xvv Ve
 	return
 }
 
+// On a graph X = (u, v, h(u, v)) the metric is I + ∇h∇hᵀ, whose inverse
+// takes ∇h to ∇h/W with W = 1 + h_u² + h_v², and Q is vertical, so with
+// q = h_uu a² + 2h_uv ab + h_vv b² the equations are
+//
+//	ȧ = −h_u q/W,  ḃ = −h_v q/W,
+//
+// written so, without EG − F², which loses its digits to cancellation
+// where the patch is steep. A tangent's chart components are then its x
+// and y components.
 func (q SurfaceRequest) chartPath() *chartPath {
 	c := &chartPath{q: q, l: q.chartScale()}
-	c.seam = q.offers().geodesics.seam && q.UMax-q.UMin >= 2*math.Pi*(1-1e-12)
+	support := q.offers().geodesics
+	c.seam = support.seam && q.UMax-q.UMin >= 2*math.Pi*(1-1e-12)
+	c.graph = support.graph
 	c.f = func(_ float64, y, out []float64) {
 		xu, xv, xuu, xuv, xvv := q.chartDerivatives(y[0], y[1])
 		a, b := y[2], y[3]
+		if c.graph {
+			hu, hv := xu.Z, xv.Z
+			bend := xuu.Z*a*a + 2*xuv.Z*a*b + xvv.Z*b*b
+			w := 1 + hu*hu + hv*hv
+			out[0], out[1] = a, b
+			out[2], out[3] = -hu*bend/w, -hv*bend/w
+			return
+		}
 		acc := xuu.mul(a * a).add(xuv.mul(2 * a * b)).add(xvv.mul(b * b))
 		e, f, g := xu.dot(xu), xu.dot(xv), xv.dot(xv)
 		p, r := xu.dot(acc), xv.dot(acc)
@@ -248,10 +264,15 @@ func (q SurfaceRequest) patchThread(g GeodesicRequest, beta float64, budget int)
 	eu := xu.mul(1 / xu.norm())
 	side := xv.sub(eu.mul(xv.dot(eu)))
 	t0 := eu.mul(cs).add(side.mul(sn / side.norm()))
-	e, f, gg := xu.dot(xu), xu.dot(xv), xv.dot(xv)
-	p, r := xu.dot(t0)*c.l, xv.dot(t0)*c.l
-	det := e*gg - f*f
-	y := []float64{g.U, g.V, (gg*p - f*r) / det, (e*r - f*p) / det}
+	var y []float64
+	if c.graph {
+		y = []float64{g.U, g.V, t0.X * c.l, t0.Y * c.l}
+	} else {
+		e, f, gg := xu.dot(xu), xu.dot(xv), xv.dot(xv)
+		p, r := xu.dot(t0)*c.l, xv.dot(t0)*c.l
+		det := e*gg - f*f
+		y = []float64{g.U, g.V, (gg*p - f*r) / det, (e*r - f*p) / det}
+	}
 	th := GeodesicThread{Direction: beta}
 	state := func(y []float64) (Vec3, Vec3) {
 		x, xu, xv, _, _, _ := q.patch(y[0], y[1])
@@ -277,7 +298,7 @@ func (q SurfaceRequest) patchThread(g GeodesicRequest, beta float64, budget int)
 		for i := range targets {
 			targets[i] = arc(g.Length, i+1, g.Samples) / c.l
 		}
-		th.Reason, t, th.Steps = torusRun(c.f, y, g.Length/c.l, targets, budget, c.size, sample, c.leave)
+		th.Reason, t, th.Steps = torusRun(c.f, y, g.Length/c.l, targets, budget, c.size, sample, c.leave, nil)
 		if th.Reason == "edge" {
 			th.Edge = c.edge
 		}

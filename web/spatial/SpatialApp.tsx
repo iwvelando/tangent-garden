@@ -1654,7 +1654,18 @@ export default function SpatialApp({
           )}
           {threads && !threads.unavailable && (
             <p className="note" data-testid="selected-thread">
-              {selectedNote(threads)}
+              {selectedNote(
+                threads,
+                // The axes the threads were drawn on, for an ellipsoid's
+                // invariant.
+                frame
+                  ? [
+                      frame.config.surface.a,
+                      frame.config.surface.b,
+                      frame.config.surface.c,
+                    ]
+                  : undefined,
+              )}
             </p>
           )}
           {transportControls}

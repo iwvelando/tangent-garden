@@ -6109,6 +6109,234 @@ export const spatialPresets: {
     view: { ...initialView, yaw: 0, pitch: -1.3, zoom: 1, panX: 0, panY: 0 },
     flight: { ...revealInPlace, duration: 12 },
   },
+  // Twenty-four geodesics leave an umbilic of the ellipsoid with semi-axes
+  // 1.7, 1.3 and 0.7 in every direction. Since a² − b² = b² − c², its four
+  // umbilics lie at latitude π/4 on the meridians u = 0 and π, where the
+  // two principal curvatures agree. Every geodesic from an umbilic passes
+  // through the opposite one, after the same length: half the perimeter of
+  // the principal ellipse through them, of semi-axes 1.7 and 0.7, about
+  // 3.935394. The threads spread over the surface and close again at
+  // (−1.7, 0, −0.7)/√2; each keeps Joachimsthal's p·D = ac. It opens on
+  // an oblique view with both umbilics in sight, and Play reveals the
+  // threads along their length together while the camera swings round to
+  // look into the opposite umbilic as they arrive there.
+  {
+    name: "Every thread from an umbilic meets at the opposite one",
+    detail:
+      "Geodesics leaving an umbilic of an ellipsoid in every direction all close at its opposite",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.7,
+        b: 1.3,
+        c: 0.7,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 96,
+        vSamples: 48,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: Math.PI / 4,
+          direction: 0,
+          spread: 360,
+          count: 24,
+          length: 3.9354,
+          samples: 1200,
+          selected: 12,
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    // The focal sheets, hidden, set the bounds; the ellipsoid fills the view.
+    view: {
+      ...initialView,
+      yaw: 0.251,
+      pitch: -0.744,
+      zoom: 2,
+      panX: 0,
+      panY: 0,
+    },
+    flight: {
+      duration: 12,
+      animate: { mode: "reveal" },
+      path: {
+        style: "steady",
+        keys: [
+          {
+            name: "Both umbilics",
+            yaw: 0.251,
+            pitch: -0.744,
+            zoom: 2,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Into the opposite umbilic",
+            yaw: 2.078,
+            pitch: -0.176,
+            zoom: 2,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
+  // One geodesic 96 long on the ellipsoid with semi-axes 1.6, 1.1 and
+  // 0.7, leaving (u, v) = (0, 0.3) at 85°, nearly up its meridian. It never
+  // closes: it winds round the shortest axis, about twelve times, swinging
+  // between two lines of curvature, which bound the band it weaves. Along it Joachimsthal's
+  // product of the distance from the center to the tangent plane and the
+  // semi-diameter along the thread stays constant. Play draws it out along
+  // its length.
+  {
+    name: "One thread weaves a band round an ellipsoid",
+    detail:
+      "A single geodesic never closes, filling a band between two lines of curvature",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1.6,
+        b: 1.1,
+        c: 0.7,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 96,
+        vSamples: 48,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0.3,
+          direction: 85,
+          spread: 0,
+          count: 1,
+          length: 96,
+          samples: 9600,
+          selected: 1,
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0.5, pitch: -1, zoom: 1.8, panX: 0, panY: 0 },
+    flight: { ...revealInPlace, duration: 16 },
+  },
+  // Twenty-five geodesics leave (−1.1, −0.5) on the saddle z = (u² − v²)/2
+  // in every direction, each 5 long. The selected thirteenth leaves at β,
+  // along (1, 1, −0.6): the saddle's straight line u − v = −0.6, which lies
+  // on it and so is a geodesic, and stays straight across the patch. Its
+  // neighbors bend away from it, rising or falling, until they reach the
+  // patch's edge. It opens looking down on the fan, where the straight
+  // thread is a straight diagonal, and Play reveals the threads along their
+  // length while the camera turns to look along the saddle edge-on, where
+  // they rise and fall with its curve.
+  {
+    name: "A straight thread across a saddle",
+    detail:
+      "One geodesic runs along a straight line lying on a saddle; its neighbors bend away",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "paraboloid",
+        a: 1,
+        b: -1,
+        c: 0,
+        uMin: -1.5,
+        uMax: 1.5,
+        vMin: -1.5,
+        vMax: 1.5,
+        uSamples: 48,
+        vSamples: 48,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        geodesics: {
+          u: -1.1,
+          v: -0.5,
+          // From unit X_u = (1, 0, −1.1)/√2.21 toward the perpendicular on
+          // X_v's side, the angle of (1, 1, −0.6).
+          direction: 43.37547810254174,
+          spread: 360,
+          count: 25,
+          length: 5,
+          samples: 1000,
+          selected: 13,
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: {
+      ...initialView,
+      yaw: 0.131,
+      pitch: -0.086,
+      zoom: 2.6,
+      panX: 0,
+      panY: 0,
+    },
+    flight: {
+      duration: 12,
+      animate: { mode: "reveal" },
+      path: {
+        style: "steady",
+        keys: [
+          {
+            name: "From above: the fan",
+            yaw: 0.131,
+            pitch: -0.086,
+            zoom: 2.6,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+          {
+            name: "Edge-on: the saddle's curve",
+            yaw: -1.373,
+            pitch: -0.08,
+            zoom: 2.6,
+            panX: 0,
+            panY: 0,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
   // The topology theater's two curated events (story.ts): each opens at
   // its before state in [−2, 2]³, which holds every level the story covers,
   // with one section plane through the event. Its film moves the level

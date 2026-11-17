@@ -213,9 +213,13 @@ func similar(q Request, m similarity) (Request, Request, bool) {
 		// angles, or chart parameters that do not scale.
 		g := *q.Surface.Geodesics
 		g.Length *= s
-		if q.Surface.Kind == "cylinder" {
+		switch q.Surface.Kind {
+		case "cylinder":
 			// A cylinder's v is a height.
 			g.V *= s
+		case "paraboloid":
+			// A paraboloid's u and v are its x and y.
+			g.U, g.V = s*g.U, s*g.V
 		}
 		if g.Transport != nil {
 			// The arrow's drawn length is a length; its angle is an angle.
@@ -409,9 +413,15 @@ func lookup(path string, q Request) (kind, bool) {
 		}
 		return asUnchanged, true
 	case "surface.geodesics.threads.v", "surface.geodesics.threads.endV":
-		// A cylinder's v is a height, which scales; other charts' are
-		// angles or parameters.
-		if q.Surface.Kind == "cylinder" {
+		// A cylinder's v is a height and a paraboloid's its y, which
+		// scale; other charts' are angles or parameters.
+		if q.Surface.Kind == "cylinder" || q.Surface.Kind == "paraboloid" {
+			return asLength, true
+		}
+		return asUnchanged, true
+	case "surface.geodesics.threads.u", "surface.geodesics.threads.endU":
+		// A paraboloid's u is its x.
+		if q.Surface.Kind == "paraboloid" {
 			return asLength, true
 		}
 		return asUnchanged, true

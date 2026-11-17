@@ -6,15 +6,16 @@ import (
 )
 
 // GeodesicRequest launches a fan of Count geodesic threads from the chart
-// point X(U, V) of a sphere (an ellipsoid with equal axes) or a ring torus
-// (R > r). Each runs Length, in the surface's units of length, sampled at
-// Samples + 1 evenly spaced arc lengths from its start.
+// point X(U, V) of a surface whose kind carries them (see geodesicSupport).
+// Each runs Length, in the surface's units of length, sampled at Samples +
+// 1 evenly spaced arc lengths from its start.
 //
 // Direction β, in degrees, is measured from the unit vector along X_u
-// toward the unit vector along X_v, whatever the normal's orientation. On a
-// sphere V is a latitude within ±π/2, and at a pole those vectors are their
-// limits along meridian U: (−sin U, cos U, 0) and the direction back down
-// that meridian. The fan shares Spread degrees evenly among its threads,
+// toward the unit tangent perpendicular to it on X_v's side, the unit
+// vector along X_v where F = 0, whatever the normal's orientation. On an
+// ellipsoid V is a latitude within ±π/2, and at a pole those vectors are
+// their limits along meridian U: along (−a sin U, b cos U, 0) and the
+// direction back down that meridian. The fan shares Spread degrees evenly among its threads,
 // each at the middle of its share: thread k of n leaves at
 // β + Spread((2k + 1)/2n − 1/2), so one thread leaves at β and a spread of
 // 360 rings the point. Selected, from 1 to Count, is the thread drawn and
@@ -33,8 +34,9 @@ type GeodesicRequest struct {
 }
 
 // GeodesicReturn is how far a thread's end lies from its start: in
-// position, as a fraction of the sphere's or the tube's radius r, and in
-// direction, between the unit tangents.
+// position, as a fraction of the sphere's or the tube's radius r, or of an
+// ellipsoid's or a patch's length scale ℓ, and in direction, between the
+// unit tangents.
 type GeodesicReturn struct {
 	Position  float64 `json:"position"`
 	Direction float64 `json:"direction"`
@@ -42,8 +44,9 @@ type GeodesicReturn struct {
 
 // GeodesicThread is one thread, launched Direction degrees from unit X_u.
 // Points and Tangents, the unit tangent, are at arc lengths s_k = kL/N from
-// its start, through the last it reached; a torus thread's U and V are its
-// chart coordinates there, unwrapped across the seams. Nothing follows a
+// its start, through the last it reached; a torus or patch thread's U and
+// V are its chart coordinates there, unwrapped across the seams (a sphere
+// or ellipsoid thread, traced without its chart, has none). Nothing follows a
 // stop. Reason is "end" when it ran its whole length, "exhausted" when its
 // share of the step budget ran out, and "unresolved" when the integration
 // failed: a value not finite, or a step too small to advance. Reached is
@@ -70,7 +73,8 @@ type GeodesicThread struct {
 	Closes     bool           `json:"closes"`
 }
 
-// GeodesicResult holds the fan on Surface, "sphere" or "torus", with
+// GeodesicResult holds the fan on Surface ("sphere", "ellipsoid", "torus",
+// or a patch kind's own name), with
 // Length each thread's arc length as requested, Step the arc length between
 // samples and Steps the steps attempted in all.
 // Unavailable, when set, says why this surface has no threads, and
@@ -148,10 +152,14 @@ func (q SurfaceRequest) geodesicSurface() (string, string) {
 	}
 	switch q.Kind {
 	case "ellipsoid":
-		if math.Max(math.Abs(q.A-q.B), math.Abs(q.B-q.C)) <= 1e-12*math.Max(q.A, math.Max(q.B, q.C)) {
+		longest := largestAxis(q)
+		if math.Max(math.Abs(q.A-q.B), math.Abs(q.B-q.C)) <= 1e-12*longest {
 			return "sphere", ""
 		}
-		return "", "Geodesic threads need a sphere: give the ellipsoid equal axes a = b = c."
+		if math.Min(q.A, math.Min(q.B, q.C)) < minEllipsoidAspect*longest {
+			return "", "Geodesic threads need an ellipsoid whose shortest semi-axis is at least 1% of its longest: a flatter or thinner one bends too sharply at its rim to trace."
+		}
+		return "ellipsoid", ""
 	case "torus":
 		if !(q.A > q.B) {
 			return "", "Geodesic threads need a ring torus, with R above r: a horn or spindle torus meets its axis."
@@ -161,7 +169,7 @@ func (q SurfaceRequest) geodesicSurface() (string, string) {
 		}
 		return "torus", ""
 	}
-	return "", "Geodesic threads are traced on a sphere, a ring torus, a cylinder or the helicoid–catenoid family."
+	return "", "Geodesic threads are traced on an ellipsoid, a ring torus, a cylinder, a paraboloid or the helicoid–catenoid family."
 }
 
 // geodesics launches the request's fan, or says why the surface has none.
@@ -175,6 +183,9 @@ func (q SurfaceRequest) geodesics() (*GeodesicResult, error) {
 	}
 	if surface == "sphere" && !(math.Abs(g.V) <= math.Pi/2) {
 		return nil, fieldErr("surface.geodesics.v", "on a sphere v₀ is a latitude, within ±π/2")
+	}
+	if surface == "ellipsoid" && !(math.Abs(g.V) <= math.Pi/2) {
+		return nil, fieldErr("surface.geodesics.v", "on an ellipsoid v₀ is a latitude, within ±π/2")
 	}
 	patch := q.offers().geodesics.patch
 	if patch && !(g.U >= q.UMin && g.U <= q.UMax) {
@@ -199,6 +210,8 @@ func (q SurfaceRequest) geodesics() (*GeodesicResult, error) {
 			th = q.patchThread(g, beta, budget)
 		case surface == "sphere":
 			th = sphereThread(q.A, g, beta)
+		case surface == "ellipsoid":
+			th = q.ellipsoidThread(g, beta, budget)
 		default:
 			th = torusThread(q.A, q.B, g, beta, budget)
 		}
@@ -287,7 +300,7 @@ func torusThread(R, r float64, g GeodesicRequest, beta float64, budget int) Geod
 		targets[i] = arc(g.Length, i+1, g.Samples) / r
 	}
 	var t float64
-	th.Reason, t, th.Steps = torusRun(torusGeodesic(k), y, g.Length/r, targets, budget, torusError(k), sample, nil)
+	th.Reason, t, th.Steps = torusRun(torusGeodesic(k), y, g.Length/r, targets, budget, torusError(k), sample, nil, nil)
 	x, eu, ev := chartFrame(R, r, y[0], y[1])
 	th.End, th.EndTangent = x, eu.mul((k+math.Cos(y[1]))*y[2]).add(ev.mul(y[3]))
 	th.EndU, th.EndV, th.Reached = y[0], y[1], t*r
@@ -335,8 +348,11 @@ func torusError(k float64) func(y, end, e []float64) float64 {
 // it stopped ("end", "exhausted" or "unresolved"), the τ it reached and
 // the steps it attempted. With leave, each accepted step is first checked
 // for leaving the patch: where it does, the run samples the targets up to
-// there and stops with "edge", its state where it left.
-func torusRun(f ode.Func, y []float64, total float64, targets []float64, budget int, size func(y, end, e []float64) float64, sample func(i int, state []float64), leave leave) (reason string, t float64, steps int) {
+// there and stops with "edge", its state where it left. With settle, each
+// accepted step's end state is first returned to the constraints the
+// system keeps, in place (see ellipsoidThread); the step's samples before
+// its end are taken from its start as always.
+func torusRun(f ode.Func, y []float64, total float64, targets []float64, budget int, size func(y, end, e []float64) float64, sample func(i int, state []float64), leave leave, settle func(end []float64)) (reason string, t float64, steps int) {
 	var step, dense ode.Stages
 	e := make([]float64, len(y))
 	h, next := math.Min(0.1, total), 0
@@ -380,6 +396,9 @@ func torusRun(f ode.Func, y []float64, total float64, targets []float64, budget 
 				copy(y, state)
 				return "edge", at, steps
 			}
+		}
+		if settle != nil {
+			settle(end)
 		}
 		reached := t + h
 		if last {

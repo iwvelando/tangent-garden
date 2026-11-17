@@ -12,10 +12,10 @@ import { revealGeodesics } from "../web/spatial/geodesic-path";
 import { spatialPresets } from "../web/spatial/presets";
 import type { GeodesicResult, Vec3 } from "../web/spatial/types";
 
-// Geodesic threads on a sphere or ring torus, through the real controls,
-// worker and engine: their presets, launching them on an edited surface,
-// refusals and unavailable surfaces, the arc-length reveal and the
-// linework export.
+// Geodesic threads on every kind that carries them, through the real
+// controls, worker and engine: their presets, launching them on an edited
+// surface, refusals and unavailable surfaces, the arc-length reveal, links
+// and the linework and movie exports.
 const stage = (page: Page) => page.locator(".spatial-stage");
 const field = (page: Page, name: string) =>
   page.getByRole("textbox", { name, exact: true });
@@ -203,7 +203,11 @@ test("threads launched on an edited torus take defaults, refuse bad fields by na
   expect(await pixels(page)).toBe(plain);
 });
 
-test("an ellipsoid with unequal axes has no threads until it is a sphere", async ({
+// An ellipsoid carries threads over its whole surface; with equal axes
+// they are the sphere's exact great circles. Its latitude is refused by
+// field beyond a pole, a shape thinner than 1% is unavailable with its
+// reason, and an arrow is carried only on a sphere.
+test("an ellipsoid carries threads over its whole surface, and a sphere its great circles", async ({
   page,
 }) => {
   await ready(page);
@@ -211,28 +215,109 @@ test("an ellipsoid with unequal axes has no threads until it is a sphere", async
   await settled(page);
   await page.getByLabel("Surface", { exact: true }).selectOption("ellipsoid");
   await settled(page);
-  await expect(unavailable(page)).toHaveText(
-    "Geodesic threads need a sphere: give the ellipsoid equal axes a = b = c.",
+  await expect(unavailable(page)).toHaveCount(0);
+  await expect(note(page)).toContainText(
+    "16 threads over the whole ellipsoid, poles included, each 60 long, integrated in",
   );
-  // The start was a torus's; on a sphere v₀ is a latitude.
-  for (const axis of ["Axis a", "Axis b", "Axis c"])
-    await field(page, axis).fill("1");
-  await settled(page);
-  await expect(note(page)).toContainText("16 threads on the sphere");
+  // Joachimsthal's p·D at the start, (1.4, 0, 0) heading 64.0625° from
+  // +y toward +z: p = 1.4, D = 1/√(cos²β + sin²β/0.49).
+  const beta = (64.0625 * Math.PI) / 180;
+  const pD = 1.4 / Math.sqrt(Math.cos(beta) ** 2 + Math.sin(beta) ** 2 / 0.49);
+  await expect(selected(page)).toContainText(
+    `Thread 8 leaves at 64.0625° and runs its whole length; Joachimsthal's p·D is ${formatNumber(pD)}, and ends `,
+  );
   await field(page, "Start v₀").fill("2");
   await expect(page.getByRole("alert")).toContainText(
-    "on a sphere v₀ is a latitude",
+    "on an ellipsoid v₀ is a latitude",
   );
   await field(page, "Start v₀").fill("pi/2");
   await settled(page);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await field(page, "Axis c").fill("0.9");
+  await expect(note(page)).toContainText("over the whole ellipsoid");
+  // An arrow is offered, for a sphere, but not carried here.
+  await layer(page, "Carry a tangent arrow").check();
   await settled(page);
-  await expect(unavailable(page)).toContainText("equal axes");
-  await field(page, "Axis c").fill("1");
+  await expect(page.getByTestId("transport-unavailable")).toHaveText(
+    "An arrow is carried on a sphere or a ring torus; on this surface the threads are drawn without one.",
+  );
+  await layer(page, "Carry a tangent arrow").uncheck();
+  await settled(page);
+  for (const axis of ["Axis a", "Axis b", "Axis c"])
+    await field(page, axis).fill("1");
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "16 threads on the sphere, each a great circle traced exactly, 60 long.",
+  );
+  await field(page, "Axis c").fill("0.009");
+  await settled(page);
+  await expect(unavailable(page)).toHaveText(
+    "Geodesic threads need an ellipsoid whose shortest semi-axis is at least 1% of its longest: a flatter or thinner one bends too sharply at its rim to trace.",
+  );
+  await field(page, "Axis c").fill("0.01");
   await settled(page);
   await expect(unavailable(page)).toHaveCount(0);
-  await expect(selected(page)).toContainText("Thread 8 leaves at 64.0625°");
+  await expect(note(page)).toContainText("16 threads over the whole ellipsoid");
+});
+
+// A paraboloid's threads start within its patch, at its middle by
+// default, and stop at its edge; a kept fan's start moves into the patch,
+// a start outside is refused by field and keeps the drawing, and no arrow
+// is offered.
+test("threads on a paraboloid start within its patch and stop at its edge", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "Helices rising round a cylinder" });
+  await settled(page);
+  await page.getByLabel("Surface", { exact: true }).selectOption("paraboloid");
+  await settled(page);
+  // u₀ = 4.7 lies beyond the saddle's [−1, 1]; v₀ = 0 stays.
+  expect((await config(page)).surface.geodesics).toMatchObject({
+    u: 0,
+    v: 0,
+    count: 24,
+  });
+  await expect(note(page)).toContainText("24 threads on the paraboloid");
+  await launch(page).uncheck();
+  await settled(page);
+  await launch(page).check();
+  await settled(page);
+  const surface = (await config(page)).surface;
+  expect(surface.geodesics).toEqual(geodesicDefaults(surface));
+  // The saddle over [−1, 1]²: twice hypot(2, 2, 1), its heights running
+  // from −1/2 to 1/2.
+  expect(surface.geodesics).toMatchObject({ u: 0, v: 0, length: 6 });
+  await expect(note(page)).toContainText(
+    "12 threads on the paraboloid, each 6 long, integrated in",
+  );
+  await expect(note(page)).toContainText(
+    "12 threads stop where they reach the patch's edge",
+  );
+  await expect(selected(page)).toContainText(
+    "Thread 1 leaves at 17.5° and reaches the patch's edge u = 1 at",
+  );
+  await expect(layer(page, "Carry a tangent arrow")).toHaveCount(0);
+  const drawn = await pixels(page);
+  await field(page, "Start u₀").fill("1.2");
+  await expect(page.getByRole("alert")).toContainText(
+    "start u₀ must lie in the patch's u domain",
+  );
+  expect(await pixels(page)).toBe(drawn);
+  await field(page, "Start u₀").fill("0");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  // A plane's threads are straight: the first, at 17.5°, leaves through
+  // u = 1 after 1/cos 17.5°.
+  await field(page, "Curvature k₁").fill("0");
+  await field(page, "Curvature k₂").fill("0");
+  await settled(page);
+  await expect(selected(page)).toHaveText(
+    `Thread 1 leaves at 17.5° and reaches the patch's edge u = 1 at ${formatNumber(1 / Math.cos((17.5 * Math.PI) / 180))}.`,
+  );
+  await page.getByLabel("Surface", { exact: true }).selectOption("monkey");
+  await settled(page);
+  await expect(unavailable(page)).toHaveText(
+    "Geodesic threads are traced on an ellipsoid, a ring torus, a cylinder, a paraboloid or the helicoid–catenoid family.",
+  );
 });
 
 test("the reveal draws every thread along its arc length; seeking and stopping agree", async ({
@@ -478,11 +563,11 @@ test("threads on a cylinder and the family's patch start within it and stop at i
     "Every angle θ bends the patch without stretching it, so they keep their route in (u, v).",
   );
   await expect(layer(page, "Carry a tangent arrow")).toHaveCount(0);
-  // To a paraboloid, the fan is kept and unavailable, with the reason.
-  await kind.selectOption("paraboloid");
+  // To a monkey saddle, the fan is kept and unavailable, with the reason.
+  await kind.selectOption("monkey");
   await settled(page);
   await expect(unavailable(page)).toHaveText(
-    "Geodesic threads are traced on a sphere, a ring torus, a cylinder or the helicoid–catenoid family.",
+    "Geodesic threads are traced on an ellipsoid, a ring torus, a cylinder, a paraboloid or the helicoid–catenoid family.",
   );
 });
 
@@ -654,3 +739,180 @@ test("large patches launch threads with a valid default length", async ({
     await settled(page);
   }
 });
+
+const umbilic = {
+  label: "Every thread from an umbilic meets at the opposite one",
+};
+
+// The signature: a fan from an umbilic of the ellipsoid (1.7, 1.3, 0.7)
+// over its whole surface, each thread keeping Joachimsthal's p·D = ac;
+// the reveal grows every thread together along its length.
+test("every thread from an umbilic keeps p·D = ac, and the reveal grows them together", async ({
+  page,
+}) => {
+  test.slow();
+  await ready(page);
+  await choosePreset(page, umbilic);
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "24 threads over the whole ellipsoid, poles included, each 3.9354 long, integrated in",
+  );
+  await expect(selected(page)).toContainText(
+    `Thread 12 leaves at −7.5° and runs its whole length; Joachimsthal's p·D is ${formatNumber(1.7 * 0.7)}, and ends `,
+  );
+  const drawn = await pixels(page);
+  const whole = await lines(page);
+  expect(whole.threads).toBeGreaterThan(1000);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  await slider.fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+  const half = await lines(page);
+  expect(half.threads).toBeGreaterThan(0.3 * whole.threads);
+  expect(half.threads).toBeLessThan(0.7 * whole.threads);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect(await pixels(page)).toBe(drawn);
+});
+
+// An edited saddle fan travels in a link and reopens as the same study,
+// notes and drawing.
+test("an edited saddle fan reopens from its link", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await ready(page);
+  await choosePreset(page, { label: "A straight thread across a saddle" });
+  await settled(page);
+  await expect(selected(page)).toContainText(
+    "Thread 13 leaves at 43.3755° and reaches the patch's edge v = 1.5 at",
+  );
+  await field(page, "Start v₀").fill("-0.4");
+  await field(page, "Curvature k₂").fill("-0.8");
+  await settled(page);
+  const study = (await config(page)).surface;
+  expect(study).toMatchObject({ b: -0.8, geodesics: { v: -0.4 } });
+  const described = await selected(page).textContent();
+  const drawn = await pixels(page);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const reopened = await context.newPage();
+  await reopened.goto(link);
+  await expect(reopened.locator("#spatial-artwork")).toBeVisible();
+  await settled(reopened);
+  expect((await config(reopened)).surface).toEqual(study);
+  await expect(selected(reopened)).toHaveText(described!);
+  expect(await pixels(reopened)).toBe(drawn);
+  await reopened.close();
+});
+
+// A film of the umbilic fan while its middle axis b shrinks from 1.3 to
+// 1.0, the threads launched afresh on every frame's ellipsoid, decodes at
+// its duration, and its ends are the stills a seek draws there.
+test("a film of the umbilic fan as its ellipsoid changes agrees with seeked stills", async ({
+  page,
+}) => {
+  test.slow();
+  const { presetStudy } = await import("../web/spatial/link");
+  const { writeStudyLink } = await import("../web/study-link");
+  const at = (name: string) => spatialPresets.findIndex((p) => p.name === name);
+  const study = presetStudy(at(umbilic.label));
+  study.animation = {
+    ...presetStudy(at(stair.label)).animation,
+    tracks: [{ target: "surfaceB", from: "1.3", to: "1" }],
+  };
+  await page.goto(`/?study=3d#s=${await writeStudyLink("3d", study)}`);
+  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  await settled(page);
+  await layer(page, "Surface patch").uncheck();
+  await settled(page);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const stills: Record<string, Buffer> = {};
+  for (const [t, p] of [
+    ["0.5", "1"],
+    ["0", "0"],
+  ]) {
+    await slider.fill(t);
+    await expect(stage(page)).toHaveAttribute("data-progress", p);
+    await settled(page);
+    stills[p] = await still(page);
+  }
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await openDetails(page, "#spatial-export-settings");
+  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("2");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export MP4/ }).click();
+  const path = (await (await download).path())!;
+  const data = probe(path);
+  if (data) {
+    expect(data.frames).toBe(6);
+    expect([data.width, data.height]).toEqual([2000, 1520]);
+  }
+  const video = await decodeVideo(page, await readFile(path));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.hash).not.toBe(video.last.hash);
+  const match = (index: number, reference: Buffer) =>
+    frameDifference(path, 2000, 1520, index, reference);
+  // Back and forth over 0.4 s: frame 0 is b = 1.3 and frame 3, half way
+  // through the time, is the far end b = 1.
+  const same = [match(0, stills["0"]), match(3, stills["1"])];
+  const swapped = [match(0, stills["1"]), match(3, stills["0"])];
+  if (same.every(Boolean) && swapped.every(Boolean)) {
+    console.log("Umbilic fan film frames", { same, swapped });
+    for (const d of same) {
+      expect(d!.meanDifference).toBeLessThan(4);
+      expect(d!.unmatchedInk).toBeLessThan(0.02);
+    }
+    for (const d of swapped) expect(d!.unmatchedInk).toBeGreaterThan(0.5);
+  }
+});
+
+// The other new presets play their own reveals: halfway, the band's one
+// thread is drawn to about half its length, and the saddle's fan, most of
+// whose threads reach the edge before half their length, is cut short only
+// where a thread runs on; Stop restores the opening drawing.
+for (const [label, threads, least, most] of [
+  ["One thread weaves a band round an ellipsoid", "selected", 0.3, 0.75],
+  ["A straight thread across a saddle", "threads", 0.5, 0.97],
+] as const)
+  test(`${label} plays its reveal`, async ({ page }) => {
+    test.slow();
+    await ready(page);
+    await choosePreset(page, { label });
+    await settled(page);
+    await expect(unavailable(page)).toHaveCount(0);
+    const drawn = await pixels(page);
+    const whole = (await lines(page))[threads];
+    expect(whole).toBeGreaterThan(500);
+    await openAnimation(page);
+    await page
+      .getByRole("button", { name: "Play animation", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
+    await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+    const half = (await lines(page))[threads];
+    expect(half).toBeGreaterThan(least * whole);
+    expect(half).toBeLessThan(most * whole);
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await settled(page);
+    expect(await pixels(page)).toBe(drawn);
+  });

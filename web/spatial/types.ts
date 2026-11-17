@@ -994,8 +994,9 @@ export type SurfaceResult = {
 // length), "edge" (it left its patch, through the edge named by `edge`),
 // "exhausted" (its share of the step budget) or "unresolved" (the
 // integration failed); `end` is its state at arc length `reached`, which can
-// lie between samples. An integrated thread's `u` and `v` are its chart
-// coordinates, unwrapped across any seam. `return` is how far a thread that ran its length ends from
+// lie between samples. A thread integrated in a chart (a torus's or a
+// patch's) carries `u` and `v`, its chart coordinates, unwrapped across any
+// seam; a sphere's or an ellipsoid's, integrated without one, does not. `return` is how far a thread that ran its length ends from
 // its start (in radii r, and between unit tangents), and `closes` whether
 // both are within 10⁻⁶.
 export type GeodesicThread = {
@@ -1053,7 +1054,14 @@ export type TransportResult = {
 // Mirrors engine3.GeodesicResult. With `unavailable` set the surface has
 // no threads, and says why.
 export type GeodesicResult = {
-  surface: "sphere" | "torus" | "cylinder" | "helicoid-catenoid" | "";
+  surface:
+    | "sphere"
+    | "ellipsoid"
+    | "torus"
+    | "cylinder"
+    | "paraboloid"
+    | "helicoid-catenoid"
+    | "";
   unavailable?: string;
   length: number;
   step: number;

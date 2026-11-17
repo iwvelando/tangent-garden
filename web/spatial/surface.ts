@@ -159,10 +159,10 @@ export function surfaceFamilyRange(
 // cuspidal edges, probe and track; focal the focal sheets, ridges and
 // their probes; optics the kind as a mirror or interface; correspondence
 // the parameter curves the probe draws through its point; geodesics where
-// its threads run: over the "whole" surface (a sphere or a ring torus,
+// its threads run: over the "whole" surface (an ellipsoid or a ring torus,
 // whose shapes engine3 still checks), within the "patch", stopped at its
 // edges, or not at all; transport whether an arrow can be carried with
-// them. domain is the help beside the u interval, note follows the chart,
+// them (on an ellipsoid, only a sphere's). domain is the help beside the u interval, note follows the chart,
 // and title heads the drawing.
 export type SurfaceCapabilities = {
   offset: boolean;
@@ -196,7 +196,7 @@ export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
   ellipsoid: wholeThreads,
   torus: wholeThreads,
   cylinder: { ...analyticPatch, geodesics: "patch" },
-  paraboloid: analyticPatch,
+  paraboloid: { ...analyticPatch, geodesics: "patch" },
   monkey: analyticPatch,
   // Its curvature and geodesics are validated; its offsets, focal sheets
   // and optics are not offered.

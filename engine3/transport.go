@@ -323,7 +323,7 @@ func torusTransport(out *TransportResult, R, r float64, g GeodesicRequest, beta,
 		} else {
 			state(&out.References, tg.arc, y)
 		}
-	}, nil)
+	}, nil, nil)
 	out.Length, out.Reason, out.Steps, out.Reached = g.Length, reason, steps, t*r
 	if reason == "end" {
 		out.Reached = g.Length
