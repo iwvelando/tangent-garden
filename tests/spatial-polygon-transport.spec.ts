@@ -16,6 +16,8 @@ import type {
 } from "../web/spatial/types";
 import { spatialPresets } from "../web/spatial/presets";
 import { defaultLayers } from "../web/spatial/scene";
+import { observeSpatial } from "./spatial-family-helpers";
+import { restore } from "../web/lifted";
 
 // A tangent arrow carried around an editable geodesic polygon on a sphere,
 // and along threads on the routes admitted after the sphere and torus,
@@ -872,5 +874,91 @@ test("a polygon's mark stands at its side's middle between samples", () => {
       0.2,
       12,
     );
+  }
+});
+
+test("a short polygon side's mark follows its own direction after a sharp corner", async ({
+  page,
+}) => {
+  await observeSpatial(page);
+  const p = preset(star.label);
+  for (const samples of [8, 1200]) {
+    await openStudy(page, {
+      config: {
+        ...p.config,
+        surface: {
+          ...p.config.surface,
+          geodesics: {
+            ...p.config.surface.geodesics!,
+            samples,
+            transport: {
+              ...p.config.surface.geodesics!.transport!,
+              vertices: [
+                { u: 0, v: 0 },
+                { u: 1, v: 0 },
+                { u: 0.9999, v: 0.00001 },
+                { u: -0.6, v: 0.5 },
+              ],
+            },
+          },
+        },
+      },
+      layers: { ...defaultLayers, ...p.layers },
+      view: p.view,
+    });
+    const reply = await page.evaluate(() => {
+      const r = (window as any).spatialWorkers
+        .flatMap((w: any) => w.replies)
+        .at(-1);
+      return {
+        result: r.result,
+        lifted: {
+          places: r.lifted.places,
+          floats: Array.from(r.lifted.floats),
+        },
+      };
+    });
+    const result = restore(reply.result, {
+      ...reply.lifted,
+      floats: new Float64Array(reply.lifted.floats),
+    }) as any;
+    const tr = result.surface.geodesics.transport as TransportResult;
+    const [start, end] = tr.corners;
+    // No uniform sample lies on this side: both midpoint neighbors are
+    // corners, and the first corner's stored tangent belongs to side 1.
+    expect(end).toBe(start + 1);
+    const a = tr.samples.points[start],
+      b = tr.samples.points[end];
+    const size = Math.hypot(a.x + b.x, a.y + b.y, a.z + b.z);
+    const n = {
+      x: (a.x + b.x) / size,
+      y: (a.y + b.y) / size,
+      z: (a.z + b.z) / size,
+    };
+    const w = {
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x,
+    };
+    const axisSize = Math.hypot(w.x, w.y, w.z);
+    const tangent = {
+      x: (w.y * n.z - w.z * n.y) / axisSize,
+      y: (w.z * n.x - w.x * n.z) / axisSize,
+      z: (w.x * n.y - w.y * n.x) / axisSize,
+    };
+    const [back1, tip, , back2] = chevronLines(tr).slice(4, 8);
+    const heading = {
+      x: tip.x - (back1.x + back2.x) / 2,
+      y: tip.y - (back1.y + back2.y) / 2,
+      z: tip.z - (back1.z + back2.z) / 2,
+    };
+    const length = Math.hypot(heading.x, heading.y, heading.z);
+    expect(
+      (heading.x * tangent.x + heading.y * tangent.y + heading.z * tangent.z) /
+        length,
+    ).toBeCloseTo(1, 10);
+    expect(
+      (heading.x * n.x + heading.y * n.y + heading.z * n.z) / length,
+    ).toBeCloseTo(0, 10);
   }
 });

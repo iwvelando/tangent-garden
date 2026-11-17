@@ -157,8 +157,10 @@ export function arrowLines(
 // passed, a chevron pointing along the path, in the tangent plane, half
 // the arrow's length long, as point pairs. The sides run between the
 // start, the corners and the end. Each mark stands at its side's middle
-// itself, on the chord between the samples around it, with their
-// tangents and normals blended there, so that a mark glides as a changing
+// itself, on the chord between the samples around it, with their normals
+// blended there. Its direction follows its own side's great circle,
+// using the arriving tangent at that side's end: the start corner's
+// tangent belongs to the previous side. A mark glides as a changing
 // polygon's sides lengthen rather than jumping from sample to sample.
 export function chevronLines(
   tr: TransportResult,
@@ -166,7 +168,8 @@ export function chevronLines(
 ): Vec3[] {
   if (tr.path !== "polygon") return [];
   const { arcs, points, tangents, normals } = tr.samples;
-  const ends = [0, ...tr.corners.map((k) => arcs[k]), tr.length];
+  const endIndices = [...tr.corners, arcs.length - 1];
+  const ends = [0, ...endIndices.map((k) => arcs[k])];
   const out: Vec3[] = [];
   const half = 0.25 * tr.size,
     wide = 0.22 * tr.size;
@@ -174,6 +177,11 @@ export function chevronLines(
     const n = Math.hypot(v.x, v.y, v.z);
     return { x: v.x / n, y: v.y / n, z: v.z / n };
   };
+  const cross = (a: Vec3, b: Vec3): Vec3 => ({
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  });
   for (let i = 0; i + 1 < ends.length; i++) {
     const middle = (ends[i] + ends[i + 1]) / 2;
     if (middle > s || middle > tr.reached) continue;
@@ -183,9 +191,11 @@ export function chevronLines(
         ? Math.min(1, Math.max(0, (middle - arcs[k]) / (arcs[k + 1] - arcs[k])))
         : 0;
     const next = Math.min(k + 1, arcs.length - 1);
+    const end = endIndices[i];
     const p = lerp(points[k], points[next], f),
-      t = unit(lerp(tangents[k], tangents[next], f)),
-      n = unit(lerp(normals[k], normals[next], f));
+      n = unit(lerp(normals[k], normals[next], f)),
+      axis = cross(normals[end], tangents[end]),
+      t = unit(cross(axis, n));
     const side = {
       x: n.y * t.z - n.z * t.y,
       y: n.z * t.x - n.x * t.z,
