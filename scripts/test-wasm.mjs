@@ -3859,10 +3859,40 @@ console.log("WASM surface: sphere, torus and validation passed");
     });
   }
   assert.match(fan(torus, { ...g, count: 40 }).error, /1–32 threads/);
-  assert.equal(
-    fan({ c: 1 }, g).surface.geodesics.unavailable,
-    "Geodesic threads need a sphere: give the ellipsoid equal axes a = b = c.",
+  // A spheroid's threads are integrated over its whole surface, keeping
+  // Clairaut's (X × T)·ẑ, with no chart; one 1% as tall is unavailable.
+  const spheroid = fan({ c: 1 }, { ...g, direction: 40, length: 20 }).surface
+    .geodesics;
+  assert.equal(spheroid.surface, "ellipsoid");
+  const oval = spheroid.threads[0];
+  assert.equal(oval.reason, "end");
+  assert.equal(oval.u, undefined);
+  const k0 =
+    oval.points[0].x * oval.tangents[0].y -
+    oval.points[0].y * oval.tangents[0].x;
+  oval.points.forEach((p, k) => {
+    const t = oval.tangents[k];
+    assert.ok(Math.abs((p.x ** 2 + p.y ** 2) / 2.25 + p.z ** 2 - 1) < 1e-12);
+    assert.ok(Math.abs(p.x * t.y - p.y * t.x - k0) < 1e-9);
+  });
+  assert.match(
+    fan({ c: 0.01 }, g).surface.geodesics.unavailable,
+    /at least 1% of its longest/,
   );
+  // A saddle's thread along its ruling u = v is a straight line, leaving
+  // through a corner's edge.
+  const saddle = fan(
+    { kind: "paraboloid", a: 1, b: -1, uMin: -1, uMax: 1, vMin: -1, vMax: 1 },
+    { ...g, direction: 45, length: 5 },
+  ).surface.geodesics;
+  assert.equal(saddle.surface, "paraboloid");
+  const ruling = saddle.threads[0];
+  assert.equal(ruling.reason, "edge");
+  assert.ok(Math.abs(ruling.reached - Math.SQRT2) < 1e-12);
+  ruling.points.forEach((p) =>
+    assert.ok(Math.abs(p.x - p.y) < 1e-15 && Math.abs(p.z) < 1e-15),
+  );
+  assert.equal(ruling.u.length, ruling.points.length);
   // Without threads the surface is unchanged, and the key is absent.
   assert.ok(!("geodesics" in fan({}, undefined).surface));
   // An arrow carried around the octant triangle comes home along +z,

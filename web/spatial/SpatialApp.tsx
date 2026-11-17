@@ -1269,8 +1269,8 @@ export default function SpatialApp({
     update((c) => ({ ...c, surface: change(c.surface) }));
   // Each kind's shape fields mean something different, so choosing a kind
   // starts from its own shape and whole chart, without what it does not
-  // offer (see surfaceCapabilities), and a fan of threads kept within its
-  // patch starts inside it; evaluations still pending land first, and a
+  // offer (see surfaceCapabilities), and a retained fan's start lies within
+  // its patch or latitude range; evaluations still pending land first, and a
   // preset chosen meanwhile wins.
   async function chooseSurface(kind: SurfaceKind) {
     const token = generation.current;
@@ -1654,7 +1654,18 @@ export default function SpatialApp({
           )}
           {threads && !threads.unavailable && (
             <p className="note" data-testid="selected-thread">
-              {selectedNote(threads)}
+              {selectedNote(
+                threads,
+                // The axes the threads were drawn on, for an ellipsoid's
+                // invariant.
+                frame
+                  ? [
+                      frame.config.surface.a,
+                      frame.config.surface.b,
+                      frame.config.surface.c,
+                    ]
+                  : undefined,
+              )}
             </p>
           )}
           {transportControls}

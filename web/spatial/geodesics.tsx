@@ -13,6 +13,7 @@ import {
   type SurfaceKind,
   type TransportConfig,
   type TransportPath,
+  type Vec3,
 } from "./types";
 import { count, plural } from "../number-format";
 import { roundedGenerated } from "../atlas";
@@ -20,8 +21,8 @@ import { surfaceCapabilities } from "./surface";
 export { revealGeodesics, threadPath } from "./geodesic-path";
 
 // Whether a kind's geodesic threads can be launched: the controls appear
-// with these (engine3's geodesicSurface says when a sphere's or torus's
-// shape cannot carry them).
+// with these (engine3's geodesicSurface says when an ellipsoid's or a
+// torus's shape cannot carry them).
 export const carriesThreads = (kind: SurfaceKind) =>
   !!surfaceCapabilities[kind].geodesics;
 // Whether its threads run within its patch, stopped at its edges.
@@ -38,13 +39,22 @@ const middle = (lo: number, hi: number) =>
     ),
   );
 
+// The range of k·x²/2 over [lo, hi].
+const heightRange = (k: number, lo: number, hi: number) =>
+  (Math.abs(k) *
+    (Math.max(lo * lo, hi * hi) -
+      (lo <= 0 && hi >= 0 ? 0 : Math.min(lo * lo, hi * hi)))) /
+  2;
+
 // Turning the threads on starts a small fan. On a whole surface it leaves
-// the chart's origin, as long as a few turns around it: for a sphere of
-// radius r, one great circle, 2πr, and for a torus four turns of its outer
-// equator, 8π(R + r). On a patch it leaves the middle of the domain, twice
-// as long as the patch's diagonal in its own metric, so most threads reach
-// an edge: hypot(a·Δu, Δv) with a the larger semi-axis on a cylinder, and
-// s·hypot(cosh v̄·Δu, sinh v₁ − sinh v₀) on the helicoid–catenoid family.
+// the chart's origin, as long as a few turns around it: on an ellipsoid,
+// one great circle of its largest semi-axis a, 2πa, and on a torus four
+// turns of its outer equator, 8π(R + r). On a patch it leaves the middle
+// of the domain, twice as long as the patch's diagonal in its own metric,
+// so most threads reach an edge: hypot(a·Δu, Δv) with a the larger
+// semi-axis on a cylinder, hypot(Δu, Δv, Δz) with Δz the range of heights
+// on a paraboloid, and s·hypot(cosh v̄·Δu, sinh v₁ − sinh v₀) on the
+// helicoid–catenoid family.
 // A patch's default length is capped at the admitted thread length. The
 // length is generated, so it is kept to three significant figures rather
 // than show its arithmetic.
@@ -56,14 +66,24 @@ export function geodesicDefaults(s: SurfaceConfig): GeodesicConfig {
       ? 4 * 2 * Math.PI * (Math.abs(s.a) + Math.abs(s.b))
       : s.kind === "cylinder"
         ? 2 * Math.hypot(Math.max(s.a, s.b) * du, s.vMax - s.vMin)
-        : s.kind === "helicoid-catenoid"
+        : s.kind === "paraboloid"
           ? 2 *
-            s.a *
             Math.hypot(
-              Math.cosh(vMid) * du,
-              Math.sinh(s.vMax) - Math.sinh(s.vMin),
+              du,
+              s.vMax - s.vMin,
+              heightRange(s.a, s.uMin, s.uMax) +
+                heightRange(s.b, s.vMin, s.vMax),
             )
-          : 2 * Math.PI * Math.max(Math.abs(s.a), Math.abs(s.b), Math.abs(s.c));
+          : s.kind === "helicoid-catenoid"
+            ? 2 *
+              s.a *
+              Math.hypot(
+                Math.cosh(vMid) * du,
+                Math.sinh(s.vMax) - Math.sinh(s.vMin),
+              )
+            : 2 *
+              Math.PI *
+              Math.max(Math.abs(s.a), Math.abs(s.b), Math.abs(s.c));
   const length = Number(
     (Number.isFinite(turn) && turn > 0 ? turn : 1).toPrecision(3),
   );
@@ -80,12 +100,15 @@ export function geodesicDefaults(s: SurfaceConfig): GeodesicConfig {
   };
 }
 
-// A study whose surface keeps its threads in the patch, with the start
-// moved to the patch's middle when it lies outside, so that choosing such a
-// surface leaves a study that draws.
+// Keep a retained fan's start admitted when choosing a surface: within a
+// patch's domain, or within an ellipsoid's latitude range. Move only a
+// coordinate that lies outside its range.
 export function startWithin(s: SurfaceConfig): SurfaceConfig {
   const g = s.geodesics;
-  if (!g || !withinPatch(s.kind)) return s;
+  if (!g) return s;
+  if (s.kind === "ellipsoid" && Math.abs(g.v) > Math.PI / 2)
+    return { ...s, geodesics: { ...g, v: 0 } };
+  if (!withinPatch(s.kind)) return s;
   const inside = (x: number, lo: number, hi: number) => x >= lo && x <= hi;
   if (inside(g.u, s.uMin, s.uMax) && inside(g.v, s.vMin, s.vMax)) return s;
   return {
@@ -102,16 +125,16 @@ export function startWithin(s: SurfaceConfig): SurfaceConfig {
 // made before it.
 export const geodesicsHelp = tiered(
   "Traces threads that go straight on the surface, from one point in a fan of directions.",
-  "On a sphere (equal axes) or a ring torus whose R exceeds r by at least 0.1% of r they run over the whole surface. On a cylinder or the helicoid–catenoid family they stop at the patch's edge; a cylinder spanning a whole turn of u lets them cross its seam. Elsewhere they are unavailable.",
+  "On an ellipsoid whose shortest semi-axis is at least 1% of its longest, or a ring torus with R above r by 0.1% of r or more, they cover the whole surface. On a cylinder, paraboloid or the helicoid–catenoid family they stop at the patch's edge, except across a whole-turn cylinder's seam. Elsewhere they are unavailable.",
 );
 export const geodesicHelp = {
   start: tiered(
     "Where the threads start, in the chart's u and v.",
-    "Each within ±100000. On a sphere v₀ is a latitude, within ±π/2; at a pole, u₀ names the meridian whose direction is v. On a cylinder or the helicoid–catenoid family the start lies within the patch's domain.",
+    "Each within ±100000. On an ellipsoid v₀ is a latitude, within ±π/2; at a pole, u₀ names the meridian whose direction is v. On a cylinder, a paraboloid or the helicoid–catenoid family the start lies within the patch's domain.",
   ),
   direction: tiered(
     "The fan's middle direction, in degrees from u toward v.",
-    "Measured from unit X_u toward unit X_v, whichever side the normal is on; within ±100000.",
+    "Measured from unit X_u toward the perpendicular on X_v's side, whichever side the normal is on; within ±100000.",
   ),
   spread: tiered(
     "0–360°, shared evenly; 360° rings the point.",
@@ -121,7 +144,7 @@ export const geodesicHelp = {
   selected: "The thread drawn broad and described, counted from 1.",
   length: tiered(
     "Each thread's arc length, above 0 and at most 100000.",
-    "Except on a sphere, the fan, with any arrow carried along a thread, shares 200,000 integration steps; a thread that runs out stops there, marked by a cross. On a cylinder or the helicoid–catenoid family a thread also stops where it reaches the patch's edge.",
+    "Except on a sphere, the fan, with any arrow carried along a thread, shares 200,000 integration steps; a thread that runs out stops there, marked by a cross. On a cylinder, a paraboloid or the helicoid–catenoid family a thread also stops where it reaches the patch's edge.",
   ),
   samples: tiered(
     `8–${maxGeodesicSamples} per thread, 200,000 points in all.`,
@@ -146,7 +169,9 @@ export function geodesicsNote(
         ? `${threads} on the cylinder, ${long}; unrolled flat, ${g.threads.length === 1 ? "it is a straight line" : "each is a straight line"}.`
         : g.surface === "helicoid-catenoid"
           ? `${threads} on the patch, ${long}. Every angle θ bends the patch without stretching it, so ${g.threads.length === 1 ? "it keeps its" : "they keep their"} route in (u, v).`
-          : `${threads} on the torus, ${long}.`,
+          : g.surface === "ellipsoid"
+            ? `${threads} over the whole ellipsoid, poles included, ${long}.`
+            : `${threads} on the ${g.surface === "paraboloid" ? "paraboloid" : "torus"}, ${long}.`,
   ];
   const edged = g.threads.filter((t) => t.reason === "edge").length;
   if (edged)
@@ -175,8 +200,10 @@ export function geodesicsNote(
 // The length a return is measured in, per surface.
 const returnUnits: Record<GeodesicResult["surface"], string> = {
   sphere: "r",
+  ellipsoid: "of the largest semi-axis",
   torus: "r",
   cylinder: "of the larger semi-axis",
+  paraboloid: "of the patch's half-extent",
   "helicoid-catenoid": "s",
   "": "",
 };
@@ -185,9 +212,27 @@ const returnUnits: Record<GeodesicResult["surface"], string> = {
 const turned = (d: number) =>
   (2 * Math.asin(Math.min(1, d / 2)) * 180) / Math.PI;
 
+// Joachimsthal's p·D on an ellipsoid of semi-axes (a, b, c), at point p
+// heading t: the distance from the center to the tangent plane times the
+// semi-diameter along t, constant along a geodesic.
+export function joachimsthal(
+  [a, b, c]: readonly [number, number, number],
+  p: Vec3,
+  t: Vec3,
+) {
+  const normal =
+      (p.x / a ** 2) ** 2 + (p.y / b ** 2) ** 2 + (p.z / c ** 2) ** 2,
+    along = (t.x / a) ** 2 + (t.y / b) ** 2 + (t.z / c) ** 2;
+  return 1 / Math.sqrt(normal * along);
+}
+
 // The selected thread, described: where it leaves, how far it ran, its
-// invariant, and how near it returns to its start.
-export function selectedNote(g: GeodesicResult): string {
+// invariant (given an ellipsoid's semi-axes), and how near it returns to
+// its start.
+export function selectedNote(
+  g: GeodesicResult,
+  axes?: readonly [number, number, number],
+): string {
   const th = g.threads[g.selected - 1];
   if (!th) return "";
   const k = g.selected;
@@ -203,10 +248,14 @@ export function selectedNote(g: GeodesicResult): string {
         : th.reason === "exhausted"
           ? `ran out of steps at ${formatNumber(th.reached)}`
           : `could not be integrated past ${formatNumber(th.reached)}`;
+  const p = th.points[0],
+    t = th.tangents[0];
   const invariant =
     g.surface === "torus"
-      ? `; Clairaut's ρ cos ψ is ${formatNumber(th.points[0].x * th.tangents[0].y - th.points[0].y * th.tangents[0].x)}`
-      : "";
+      ? `; Clairaut's ρ cos ψ is ${formatNumber(p.x * t.y - p.y * t.x)}`
+      : g.surface === "ellipsoid" && axes
+        ? `; Joachimsthal's p·D is ${formatNumber(joachimsthal(axes, p, t))}`
+        : "";
   const back =
     th.reason !== "end"
       ? ""

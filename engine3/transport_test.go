@@ -480,7 +480,7 @@ func TestTransportValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A surface without threads has no arrow either.
-	if with := surfaced(t, carry(launch(surfaceStudy("paraboloid", 1, 1, 0, -1, 1, -1, 1, 24, 24), 0, 0, 0, 0, 1, 1, 10), "thread", 0, 0)); with.Geodesics.Transport != nil {
+	if with := surfaced(t, carry(launch(surfaceStudy("monkey", 1, 0, 0, -1, 1, -1, 1, 24, 24), 0, 0, 0, 0, 1, 1, 10), "thread", 0, 0)); with.Geodesics.Transport != nil {
 		t.Fatal("unavailable threads carry no arrow")
 	}
 }

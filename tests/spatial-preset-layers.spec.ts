@@ -174,6 +174,8 @@ test("refined presets open with smooth skins, tapered tube lines and a continuou
     });
 });
 
+// A reveal keeps the composed view, or flies a camera path that starts on
+// it, so Play never cuts away from the opening.
 test("a preset's composed opening view survives its default reveal", () => {
   for (const [i, preset] of spatialPresets.entries()) {
     if (
@@ -181,8 +183,16 @@ test("a preset's composed opening view survives its default reveal", () => {
       (preset.flight && preset.flight.animate?.mode !== "reveal")
     )
       continue;
+    const study = presetStudy(i),
+      keys = study.animation.path.keys;
+    if (study.animation.camera === "path" && keys.length) {
+      const { name: _, turns, ...first } = keys[0];
+      expect.soft(turns, preset.name).toBe(0);
+      expect.soft(first, preset.name).toEqual(study.view);
+      continue;
+    }
     expect
-      .soft(presetStudy(i).animation.camera, preset.name)
+      .soft(study.animation.camera, preset.name)
       .toBe(preset.name === "A knot remembers" ? "hold" : "current");
   }
 });

@@ -41,8 +41,8 @@ type SurfaceRequest struct {
 	Reach    float64 `json:"reach"`
 	Edges    bool    `json:"edges,omitempty"`
 	Ridges   bool    `json:"ridges,omitempty"`
-	// Geodesics launches a fan of geodesic threads on a sphere or a ring
-	// torus (see GeodesicRequest); absent, there are none.
+	// Geodesics launches a fan of geodesic threads on a kind that carries
+	// them (see GeodesicRequest and geodesicSupport); absent, there are none.
 	Geodesics *GeodesicRequest `json:"geodesics,omitempty"`
 }
 
@@ -123,13 +123,17 @@ type surfaceCapabilities struct {
 }
 
 // geodesicSupport is where a kind's geodesic threads run: nowhere
-// (unavailable), over the whole surface (a sphere or a ring torus, by
-// their own evaluators), or within the patch, integrated in its chart and
-// stopped at its edges (see patchThread). seam says the chart is periodic
-// in u with period 2π, so a patch spanning a whole turn joins its u edges
-// for its threads.
+// (unavailable), over the whole surface (a sphere, a ring torus or an
+// ellipsoid, by their own evaluators; see geodesicSurface), or within the
+// patch, integrated in its chart and stopped at its edges (see
+// patchThread). seam says the chart is periodic in u with period 2π, so a
+// patch spanning a whole turn joins its u edges for its threads. scale is
+// the length a patch's or an ellipsoid's threads are integrated against.
+// graph says the chart is a graph z = h(u, v) over its own coordinates, so
+// its connection is written in closed form (see chartPath).
 type geodesicSupport struct {
-	whole, patch, seam bool
+	whole, patch, seam, graph bool
+	scale                     func(q SurfaceRequest) float64
 }
 
 func analytic(geodesics geodesicSupport) surfaceCapabilities {
@@ -141,12 +145,30 @@ func analytic(geodesics geodesicSupport) surfaceCapabilities {
 // not its focal sheets, offsets or optics. Its chart is periodic only at
 // θ = π/2, so its patch stays one rectangle for its threads at every angle.
 var surfaceKinds = map[string]surfaceCapabilities{
-	"ellipsoid":         analytic(geodesicSupport{whole: true}),
+	"ellipsoid":         analytic(geodesicSupport{whole: true, scale: largestAxis}),
 	"torus":             analytic(geodesicSupport{whole: true}),
-	"cylinder":          analytic(geodesicSupport{patch: true, seam: true}),
-	"paraboloid":        analytic(geodesicSupport{}),
+	"cylinder":          analytic(geodesicSupport{patch: true, seam: true, scale: func(q SurfaceRequest) float64 { return math.Max(q.A, q.B) }}),
+	"paraboloid":        analytic(geodesicSupport{patch: true, graph: true, scale: paraboloidScale}),
 	"monkey":            analytic(geodesicSupport{}),
-	"helicoid-catenoid": {correspondence: true, geodesics: geodesicSupport{patch: true}},
+	"helicoid-catenoid": {correspondence: true, geodesics: geodesicSupport{patch: true, scale: func(q SurfaceRequest) float64 { return q.A }}},
+}
+
+// largestAxis is an ellipsoid's largest semi-axis.
+func largestAxis(q SurfaceRequest) float64 { return math.Max(q.A, math.Max(q.B, q.C)) }
+
+// paraboloidScale is half the patch's largest extent along x, y or z. The
+// height's range over the rectangle is the sum of the ranges of k₁u²/2
+// and k₂v²/2 over their intervals.
+func paraboloidScale(q SurfaceRequest) float64 {
+	square := func(k, lo, hi float64) float64 {
+		top, bottom := math.Max(lo*lo, hi*hi), math.Min(lo*lo, hi*hi)
+		if lo <= 0 && hi >= 0 {
+			bottom = 0
+		}
+		return math.Abs(k) * (top - bottom) / 2
+	}
+	height := square(q.A, q.UMin, q.UMax) + square(q.B, q.VMin, q.VMax)
+	return math.Max(q.UMax-q.UMin, math.Max(q.VMax-q.VMin, height)) / 2
 }
 
 // offers is what the request's kind offers; an unknown kind offers
