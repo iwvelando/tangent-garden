@@ -45,8 +45,9 @@ const middle = (lo: number, hi: number) =>
 // as long as the patch's diagonal in its own metric, so most threads reach
 // an edge: hypot(a·Δu, Δv) with a the larger semi-axis on a cylinder, and
 // s·hypot(cosh v̄·Δu, sinh v₁ − sinh v₀) on the helicoid–catenoid family.
-// The length is generated, so it is kept to three significant figures
-// rather than show its arithmetic.
+// A patch's default length is capped at the admitted thread length. The
+// length is generated, so it is kept to three significant figures rather
+// than show its arithmetic.
 export function geodesicDefaults(s: SurfaceConfig): GeodesicConfig {
   const du = s.uMax - s.uMin,
     vMid = middle(s.vMin, s.vMax);
@@ -73,7 +74,7 @@ export function geodesicDefaults(s: SurfaceConfig): GeodesicConfig {
     direction: 45,
     spread: 60,
     count: 12,
-    length,
+    length: patch ? Math.min(length, 100000) : length,
     samples: 1200,
     selected: 1,
   };

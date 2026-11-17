@@ -627,3 +627,30 @@ test("an edited cylinder fan reopens from its link and reveals along its length"
   await settled(page);
   expect(await pixels(page)).toBe(drawn);
 });
+
+// Launch defaults must remain valid at the largest admitted patch scale,
+// even when twice the metric diagonal exceeds the thread length limit.
+test("large patches launch threads with a valid default length", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A torus revealing its centers" });
+  for (const [kind, label] of [
+    ["cylinder", "Semi-axis a"],
+    ["helicoid-catenoid", "Scale s"],
+  ]) {
+    await page.getByLabel("Surface", { exact: true }).selectOption(kind);
+    await settled(page);
+    await field(page, label).fill("100000");
+    await expect.poll(async () => (await config(page)).surface.a).toBe(100000);
+    await launch(page).check();
+    await settled(page);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect((await config(page)).surface.geodesics.length).toBeLessThanOrEqual(
+      100000,
+    );
+    await expect(note(page)).toContainText("12 threads");
+    await launch(page).uncheck();
+    await settled(page);
+  }
+});
