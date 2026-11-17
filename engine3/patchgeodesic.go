@@ -47,11 +47,25 @@ func (q SurfaceRequest) chartScale() float64 {
 	return q.A
 }
 
+// chartDerivatives supplies the metric and connection in an isometric
+// embedding. The family's metric is independent of u and theta, so use
+// u = theta = 0: its orthogonal derivative components then contain exact
+// zeros. Rotating them first would introduce cancellation residuals that
+// can turn a meridian along a patch edge into a spurious edge exit.
+// Drawing points and tangents still use the requested embedding.
+func (q SurfaceRequest) chartDerivatives(u, v float64) (xu, xv, xuu, xuv, xvv Vec3) {
+	if q.Kind == "helicoid-catenoid" {
+		q.B, u = 0, 0
+	}
+	_, xu, xv, xuu, xuv, xvv = q.patch(u, v)
+	return
+}
+
 func (q SurfaceRequest) chartPath() *chartPath {
 	c := &chartPath{q: q, l: q.chartScale()}
 	c.seam = q.offers().geodesics.seam && q.UMax-q.UMin >= 2*math.Pi*(1-1e-12)
 	c.f = func(_ float64, y, out []float64) {
-		_, xu, xv, xuu, xuv, xvv := q.patch(y[0], y[1])
+		xu, xv, xuu, xuv, xvv := q.chartDerivatives(y[0], y[1])
 		a, b := y[2], y[3]
 		acc := xuu.mul(a * a).add(xuv.mul(2 * a * b)).add(xvv.mul(b * b))
 		e, f, g := xu.dot(xu), xu.dot(xv), xv.dot(xv)
@@ -68,8 +82,8 @@ func (q SurfaceRequest) chartPath() *chartPath {
 // (|X_u||δu| + |X_v||δv|)/l, and likewise in the tangent's (δa, δb), with
 // the larger |X_u| and |X_v| at the step's ends.
 func (c *chartPath) size(y, end, e []float64) float64 {
-	_, xu0, xv0, _, _, _ := c.q.patch(y[0], y[1])
-	_, xu1, xv1, _, _, _ := c.q.patch(end[0], end[1])
+	xu0, xv0, _, _, _ := c.q.chartDerivatives(y[0], y[1])
+	xu1, xv1, _, _, _ := c.q.chartDerivatives(end[0], end[1])
 	nu, nv := math.Max(xu0.norm(), xu1.norm())/c.l, math.Max(xv0.norm(), xv1.norm())/c.l
 	return math.Max(nu*math.Abs(e[0])+nv*math.Abs(e[1]), nu*math.Abs(e[2])+nv*math.Abs(e[3])) / geodesicTolerance
 }
@@ -230,7 +244,7 @@ func (q SurfaceRequest) patchThread(g GeodesicRequest, beta float64, budget int)
 	case 270, -90:
 		sn, cs = -1, 0
 	}
-	_, xu, xv, _, _, _ := q.patch(g.U, g.V)
+	xu, xv, _, _, _ := q.chartDerivatives(g.U, g.V)
 	eu := xu.mul(1 / xu.norm())
 	side := xv.sub(eu.mul(xv.dot(eu)))
 	t0 := eu.mul(cs).add(side.mul(sn / side.norm()))

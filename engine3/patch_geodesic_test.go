@@ -487,3 +487,34 @@ func TestCylinderGeodesicTangentLaunches(t *testing.T) {
 		}
 	}
 }
+
+// The family's meridians and neck parallel are exact chart routes. Moving
+// the embedding by u or theta must not supply a roundoff velocity or
+// acceleration across an edge that contains the route.
+func TestAssociateGeodesicTangentLaunches(t *testing.T) {
+	for _, theta := range []float64{0, 0.3, 0.6, 1.1, math.Pi / 2} {
+		for _, u := range []float64{-2, 0, 2} {
+			q := associateStudy(1, theta, u, u+2, -1, 1, 24, 24)
+			for _, edge := range []float64{u, u + 2} {
+				for _, beta := range []float64{90, -90} {
+					g := threads(t, launch(q, edge, 0, beta, 0, 1, 0.5, 100))
+					th := g.Threads[0]
+					if th.Reason != "end" || th.Reached != 0.5 {
+						t.Errorf("theta=%g u=%g beta=%g: %s on %s at %g", theta, edge, beta, th.Reason, th.Edge, th.Reached)
+					}
+					for k := range th.U {
+						wantV := math.Asinh(math.Copysign(float64(k)*g.Step, beta))
+						if th.U[k] != edge || math.Abs(th.V[k]-wantV) > 1e-9 {
+							t.Fatalf("theta=%g beta=%g sample %d: (%g,%g), want (%g,%g)", theta, beta, k, th.U[k], th.V[k], edge, wantV)
+						}
+					}
+				}
+			}
+			q.Surface.VMin = 0
+			th := threads(t, launch(q, u+1, 0, 180, 0, 1, 0.5, 100)).Threads[0]
+			if th.Reason != "end" || th.EndV != 0 || math.Abs(th.EndU-(u+0.5)) > 1e-12 {
+				t.Errorf("theta=%g neck: %s at (%g,%g)", theta, th.Reason, th.EndU, th.EndV)
+			}
+		}
+	}
+}
