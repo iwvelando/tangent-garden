@@ -829,7 +829,12 @@ test("a film of the umbilic fan as its ellipsoid changes agrees with seeked stil
     tracks: [{ target: "surfaceB", from: "1.3", to: "1" }],
   };
   await page.goto(`/?study=3d#s=${await writeStudyLink("3d", study)}`);
-  await expect(page.locator("#spatial-artwork")).toBeVisible();
+  // Headless Chromium draws a fan's first frame slowly: about 7 s alone
+  // for this study, as for the torus fan preset (7.7 s), against 0.9 s
+  // without its threads; under a full parallel run it has passed 15 s.
+  await expect(page.locator("#spatial-artwork")).toBeVisible({
+    timeout: 60000,
+  });
   await settled(page);
   await layer(page, "Surface patch").uncheck();
   await settled(page);
