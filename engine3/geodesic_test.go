@@ -369,7 +369,6 @@ func TestGeodesicValidation(t *testing.T) {
 	}
 	for _, c := range []Request{
 		surfaceStudy("ellipsoid", 1, 1, 1.0001, 0, 2*math.Pi, -math.Pi/2, math.Pi/2, 24, 24),
-		surfaceStudy("cylinder", 1, 1, 0, 0, 2*math.Pi, -1, 1, 24, 24),
 		surfaceStudy("paraboloid", 1, 1, 0, -1, 1, -1, 1, 24, 24),
 		surfaceStudy("monkey", 1, 0, 0, -1, 1, -1, 1, 24, 24),
 	} {
@@ -385,7 +384,7 @@ func TestGeodesicValidation(t *testing.T) {
 	}
 	// The threads change nothing else about a supported surface, and an
 	// opened patch frames the threads that run beyond it.
-	for _, c := range []Request{sphere(1, 24, 24), torusPatch(2, 0.8, 24, 24)} {
+	for _, c := range []Request{sphere(1, 24, 24), torusPatch(2, 0.8, 24, 24), surfaceStudy("cylinder", 1.2, 0.7, 0, 0, 2*math.Pi, -1, 1, 24, 24), associateStudy(1, 0.6, -2, 2, -1, 1, 24, 24)} {
 		c.Surface.UMax = 1
 		plain := surfaced(t, c)
 		withOut, err := Compute(launch(c, 0, 0, 0, 0, 1, 20, 400))

@@ -34,12 +34,13 @@ import {
 } from "./cuspidal";
 import {
   GeodesicFields,
+  carriesThreads,
   geodesicDefaults,
-  geodesicKinds,
   geodesicsHelp,
   geodesicsNote,
   selectedNote,
   TransportFields,
+  startWithin,
   transportDefaults,
   transportHelp,
   transportNote,
@@ -1268,13 +1269,16 @@ export default function SpatialApp({
     update((c) => ({ ...c, surface: change(c.surface) }));
   // Each kind's shape fields mean something different, so choosing a kind
   // starts from its own shape and whole chart, without what it does not
-  // offer (see surfaceCapabilities); evaluations still pending land first,
-  // and a preset chosen meanwhile wins.
+  // offer (see surfaceCapabilities), and a fan of threads kept within its
+  // patch starts inside it; evaluations still pending land first, and a
+  // preset chosen meanwhile wins.
   async function chooseSurface(kind: SurfaceKind) {
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;
-    setSurface((s) => offered({ ...s, kind, ...surfaceDefaults[kind] }));
+    setSurface((s) =>
+      startWithin(offered({ ...s, kind, ...surfaceDefaults[kind] })),
+    );
   }
   const patch =
     frame?.config.format === "surface" ? frame.result.surface : undefined;
@@ -1562,7 +1566,11 @@ export default function SpatialApp({
       const next = change(transport ?? transportDefaults(s));
       return { ...s, geodesics: next ? { ...g, transport: next } : g };
     });
-  const transportControls = (
+  // Offered with the surfaces that can carry it, and with any other whose
+  // study already has it, so it can be turned off.
+  const transportControls = (surfaceCapabilities[config.surface.kind]
+    .transport ||
+    carried) && (
     <>
       <LocateCheck
         label="Carry a tangent arrow"
@@ -1599,7 +1607,7 @@ export default function SpatialApp({
       )}
     </>
   );
-  const geodesicControls = (geodesicKinds.includes(config.surface.kind) ||
+  const geodesicControls = (carriesThreads(config.surface.kind) ||
     config.surface.geodesics) && (
     <>
       <LocateCheck

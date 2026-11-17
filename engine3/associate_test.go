@@ -391,8 +391,10 @@ func TestAssociateUnsupportedCapabilities(t *testing.T) {
 	}
 	threads := c
 	threads.Surface.Geodesics = &GeodesicRequest{U: 0, V: 0, Direction: 0, Spread: 90, Count: 3, Length: 1, Samples: 20, Selected: 1}
+	// Geodesic threads are offered (see patch_geodesic_test.go); with them
+	// the family still computes nothing it does not offer.
 	out := surfaced(t, threads)
-	if out.Geodesics == nil || out.Geodesics.Unavailable == "" || len(out.Geodesics.Threads) != 0 {
+	if out.Geodesics == nil || out.Geodesics.Unavailable != "" || len(out.Geodesics.Threads) != 3 {
 		t.Fatalf("threads on the family: %+v", out.Geodesics)
 	}
 	if out.Offset != nil || out.Edges != nil || out.Ridges != nil || len(out.Focal) != 0 {

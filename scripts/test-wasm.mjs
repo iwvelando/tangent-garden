@@ -3908,8 +3908,51 @@ console.log("WASM surface: sphere, torus and validation passed");
     ).error,
     /arrow's length must be above 0/,
   );
+  // On the helicoid–catenoid patch a meridian, u fixed, leaves through the
+  // top edge at arc length sinh 1 − sinh(−0.5), with its chart and edge
+  // through the typed transport, and the same route at every angle.
+  const family = (b) => ({
+    kind: "helicoid-catenoid",
+    a: 1,
+    b,
+    c: 0,
+    uMin: -1,
+    uMax: 1,
+    vMin: -1,
+    vMax: 1,
+  });
+  const meridian = { ...g, u: 0.3, v: -0.5, direction: 90, length: 5 };
+  const routes = [0, 1, Math.PI / 2].map(
+    (b) => fan(family(b), meridian).surface.geodesics,
+  );
+  for (const r of routes) {
+    assert.equal(r.surface, "helicoid-catenoid");
+    const th = r.threads[0];
+    assert.equal(th.reason, "edge");
+    assert.equal(th.edge, "vMax");
+    assert.ok(Math.abs(th.reached - (Math.sinh(1) - Math.sinh(-0.5))) < 1e-9);
+    assert.equal(th.endV, 1);
+    th.u.forEach((u, k) => {
+      assert.ok(Math.abs(u - 0.3) < 1e-12);
+      assert.ok(Math.abs(th.v[k] - routes[0].threads[0].v[k]) < 1e-12);
+    });
+  }
+  // An arrow is not carried there; a start outside the patch is refused.
+  assert.match(
+    fan(family(0), {
+      ...meridian,
+      transport: { path: "thread", angle: 90, size: 0.3, arrows: 0 },
+    }).surface.geodesics.transport.unavailable,
+    /sphere or a ring torus/,
+  );
+  assert.match(
+    fan(family(0), { ...meridian, v: 1.5 }).error,
+    /start v₀ must lie in the patch/,
+  );
 }
-console.log("WASM geodesics: sphere, torus, transport and refusals passed");
+console.log(
+  "WASM geodesics: sphere, torus, family patch, transport and refusals passed",
+);
 const spatialRays = (surface, rays, flags = {}) =>
   spatialResult(
     tangentGardenSpatial(

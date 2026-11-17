@@ -155,8 +155,8 @@ export const maxSpatialPursuers = 16;
 // cuspidal edges are located and drawn, and with `ridges` the patch's
 // ridges and the focal sheets' cuspidal edges over them; absent means off,
 // as in links made before them. With `geodesics` a fan of geodesic threads
-// is launched on a sphere or a ring torus (see GeodesicConfig); absent, as
-// in links made before it, there is none. Mirrors engine3.SurfaceRequest.
+// is launched on a kind whose descriptor carries them (see GeodesicConfig);
+// absent, as in links made before it, there is none. Mirrors engine3.SurfaceRequest.
 export type SurfaceKind =
   | "ellipsoid"
   | "torus"
@@ -187,7 +187,9 @@ export type SurfaceConfig = {
 // `length` long in the surface's units, sampled at `samples` + 1 evenly
 // spaced arc lengths. `direction` β, in degrees, is measured from unit X_u
 // toward unit X_v; on a sphere v is a latitude within ±π/2, and at a pole
-// those vectors are their limits along meridian u. The fan shares `spread`
+// those vectors are their limits along meridian u. On a kind whose threads
+// run within its patch (a cylinder or the helicoid–catenoid family) (u, v)
+// lies in the patch's domain, and each thread stops at its edge. The fan shares `spread`
 // degrees evenly, each thread at the middle of its share, so thread k of n
 // leaves at β + spread((2k + 1)/2n − 1/2). `selected`, from 1, is the
 // thread drawn and described on its own. With `transport` a tangent arrow
@@ -989,10 +991,11 @@ export type SurfaceResult = {
 };
 // Mirrors engine3.GeodesicThread: the samples at arc lengths k·step through
 // the last reached, nothing after a stop. `reason` is "end" (its whole
-// length), "exhausted" (its share of the step budget) or "unresolved" (the
+// length), "edge" (it left its patch, through the edge named by `edge`),
+// "exhausted" (its share of the step budget) or "unresolved" (the
 // integration failed); `end` is its state at arc length `reached`, which can
-// lie between samples. A torus thread's `u` and `v` are its unwrapped chart
-// coordinates. `return` is how far a thread that ran its length ends from
+// lie between samples. An integrated thread's `u` and `v` are its chart
+// coordinates, unwrapped across any seam. `return` is how far a thread that ran its length ends from
 // its start (in radii r, and between unit tangents), and `closes` whether
 // both are within 10⁻⁶.
 export type GeodesicThread = {
@@ -1001,7 +1004,8 @@ export type GeodesicThread = {
   tangents: Vec3[];
   u?: number[];
   v?: number[];
-  reason: "end" | "exhausted" | "unresolved";
+  reason: "end" | "edge" | "exhausted" | "unresolved";
+  edge?: "uMin" | "uMax" | "vMin" | "vMax";
   reached: number;
   end: Vec3;
   endTangent: Vec3;
@@ -1049,7 +1053,7 @@ export type TransportResult = {
 // Mirrors engine3.GeodesicResult. With `unavailable` set the surface has
 // no threads, and says why.
 export type GeodesicResult = {
-  surface: "sphere" | "torus" | "";
+  surface: "sphere" | "torus" | "cylinder" | "helicoid-catenoid" | "";
   unavailable?: string;
   length: number;
   step: number;

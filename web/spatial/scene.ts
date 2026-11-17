@@ -992,7 +992,7 @@ function buildSingleScene(result: SpatialResult, gridOnly = false) {
   // Geodesic threads shade from teal to gold by fan order (decorative),
   // each joined along its samples and on to where it stopped; the start
   // and any early stop are marked, the latter only once a reveal reaches
-  // it. The selected thread is drawn again, broad, in the curves' ink.
+  // it. A stop at the patch's edge is where the patch ends, and unmarked. The selected thread is drawn again, broad, in the curves' ink.
   const fan = surface?.geodesics;
   const fanPaths = (fan?.threads ?? []).map((th) =>
     joined(threadPath(th, fan!.step).points),
@@ -1007,7 +1007,9 @@ function buildSingleScene(result: SpatialResult, gridOnly = false) {
           ? cross(fan.threads[0].points[0], result.bounds.radius * 0.02)
           : []),
         ...(fan?.threads ?? [])
-          .filter((th) => th.reason !== "end" && !th.partial)
+          .filter(
+            (th) => th.reason !== "end" && th.reason !== "edge" && !th.partial,
+          )
           .flatMap((th) => cross(th.end, result.bounds.radius * 0.012)),
       ]),
     ],

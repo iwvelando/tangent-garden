@@ -59,6 +59,7 @@ type GeodesicThread struct {
 	U          []float64      `json:"u,omitempty"`
 	V          []float64      `json:"v,omitempty"`
 	Reason     string         `json:"reason"`
+	Edge       string         `json:"edge,omitempty"`
 	Reached    float64        `json:"reached"`
 	End        Vec3           `json:"end"`
 	EndTangent Vec3           `json:"endTangent"`
@@ -139,8 +140,12 @@ func (g GeodesicRequest) validate() error {
 }
 
 // geodesicSurface names the surface whose threads q can trace, or says why
-// it has none. A sphere's axes agree to rounding, 10⁻¹² of the largest.
+// it has none. A sphere's axes agree to rounding, 10⁻¹² of the largest. A
+// kind whose threads run within its patch names itself.
 func (q SurfaceRequest) geodesicSurface() (string, string) {
+	if q.offers().geodesics.patch {
+		return q.Kind, ""
+	}
 	switch q.Kind {
 	case "ellipsoid":
 		if math.Max(math.Abs(q.A-q.B), math.Abs(q.B-q.C)) <= 1e-12*math.Max(q.A, math.Max(q.B, q.C)) {
@@ -156,7 +161,7 @@ func (q SurfaceRequest) geodesicSurface() (string, string) {
 		}
 		return "torus", ""
 	}
-	return "", "Geodesic threads are traced on a sphere or a ring torus."
+	return "", "Geodesic threads are traced on a sphere, a ring torus, a cylinder or the helicoid–catenoid family."
 }
 
 // geodesics launches the request's fan, or says why the surface has none.
@@ -171,6 +176,13 @@ func (q SurfaceRequest) geodesics() (*GeodesicResult, error) {
 	if surface == "sphere" && !(math.Abs(g.V) <= math.Pi/2) {
 		return nil, fieldErr("surface.geodesics.v", "on a sphere v₀ is a latitude, within ±π/2")
 	}
+	patch := q.offers().geodesics.patch
+	if patch && !(g.U >= q.UMin && g.U <= q.UMax) {
+		return nil, fieldErr("surface.geodesics.u", "the start u₀ must lie in the patch's u domain")
+	}
+	if patch && !(g.V >= q.VMin && g.V <= q.VMax) {
+		return nil, fieldErr("surface.geodesics.v", "the start v₀ must lie in the patch's v domain")
+	}
 	out.Surface = surface
 	// An arrow integrated along a torus thread takes one more share of
 	// the steps.
@@ -182,9 +194,12 @@ func (q SurfaceRequest) geodesics() (*GeodesicResult, error) {
 	for k := 0; k < g.Count; k++ {
 		beta := g.Direction + g.Spread*((2*float64(k)+1)/(2*float64(g.Count))-0.5)
 		var th GeodesicThread
-		if surface == "sphere" {
+		switch {
+		case patch:
+			th = q.patchThread(g, beta, budget)
+		case surface == "sphere":
 			th = sphereThread(q.A, g, beta)
-		} else {
+		default:
 			th = torusThread(q.A, q.B, g, beta, budget)
 		}
 		out.Steps += th.Steps
@@ -272,7 +287,7 @@ func torusThread(R, r float64, g GeodesicRequest, beta float64, budget int) Geod
 		targets[i] = arc(g.Length, i+1, g.Samples) / r
 	}
 	var t float64
-	th.Reason, t, th.Steps = torusRun(torusGeodesic(k), y, g.Length/r, targets, budget, torusError(k), sample)
+	th.Reason, t, th.Steps = torusRun(torusGeodesic(k), y, g.Length/r, targets, budget, torusError(k), sample, nil)
 	x, eu, ev := chartFrame(R, r, y[0], y[1])
 	th.End, th.EndTangent = x, eu.mul((k+math.Cos(y[1]))*y[2]).add(ev.mul(y[3]))
 	th.EndU, th.EndV, th.Reached = y[0], y[1], t*r
@@ -318,8 +333,10 @@ func torusError(k float64) func(y, end, e []float64) float64 {
 // still the end. Samples between steps are one step of the same method
 // from the step's start, as ode.Solution evaluates them. It returns why
 // it stopped ("end", "exhausted" or "unresolved"), the τ it reached and
-// the steps it attempted.
-func torusRun(f ode.Func, y []float64, total float64, targets []float64, budget int, size func(y, end, e []float64) float64, sample func(i int, state []float64)) (reason string, t float64, steps int) {
+// the steps it attempted. With leave, each accepted step is first checked
+// for leaving the patch: where it does, the run samples the targets up to
+// there and stops with "edge", its state where it left.
+func torusRun(f ode.Func, y []float64, total float64, targets []float64, budget int, size func(y, end, e []float64) float64, sample func(i int, state []float64), leave leave) (reason string, t float64, steps int) {
 	var step, dense ode.Stages
 	e := make([]float64, len(y))
 	h, next := math.Min(0.1, total), 0
@@ -354,6 +371,15 @@ func torusRun(f ode.Func, y []float64, total float64, targets []float64, budget 
 			}
 			h *= math.Max(.2, .9*math.Pow(math.Max(sz, 1), -.2))
 			continue
+		}
+		if leave != nil {
+			if at, state, ok := leave(t, h, y, end); ok {
+				for ; next < len(targets) && targets[next] <= at; next++ {
+					sample(next, dense.Step(f, t, y, targets[next]-t, false))
+				}
+				copy(y, state)
+				return "edge", at, steps
+			}
 		}
 		reached := t + h
 		if last {

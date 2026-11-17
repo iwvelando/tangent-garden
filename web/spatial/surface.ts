@@ -158,14 +158,19 @@ export function surfaceFamilyRange(
 // legend, probe and animation read it. offset is the offset surface, its
 // cuspidal edges, probe and track; focal the focal sheets, ridges and
 // their probes; optics the kind as a mirror or interface; correspondence
-// the parameter curves the probe draws through its point. domain is the
-// help beside the u interval, note follows the chart, and title heads the
-// drawing.
+// the parameter curves the probe draws through its point; geodesics where
+// its threads run: over the "whole" surface (a sphere or a ring torus,
+// whose shapes engine3 still checks), within the "patch", stopped at its
+// edges, or not at all; transport whether an arrow can be carried with
+// them. domain is the help beside the u interval, note follows the chart,
+// and title heads the drawing.
 export type SurfaceCapabilities = {
   offset: boolean;
   focal: boolean;
   optics: boolean;
   correspondence: boolean;
+  geodesics: "whole" | "patch" | false;
+  transport: boolean;
   domain: Help<string>;
   note: string;
   title: string;
@@ -175,24 +180,33 @@ const analyticPatch: SurfaceCapabilities = {
   focal: true,
   optics: true,
   correspondence: false,
+  geodesics: false,
+  transport: false,
   domain:
     "The parameter intervals the patch covers, each within ±1000000 and 0.000001–100000 wide.",
   note: "A domain shorter than the whole chart opens the surface, so what lies inside it shows.",
   title: "A surface and its centers of curvature",
 };
+const wholeThreads = {
+  ...analyticPatch,
+  geodesics: "whole",
+  transport: true,
+} as const;
 export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
-  ellipsoid: analyticPatch,
-  torus: analyticPatch,
-  cylinder: analyticPatch,
+  ellipsoid: wholeThreads,
+  torus: wholeThreads,
+  cylinder: { ...analyticPatch, geodesics: "patch" },
   paraboloid: analyticPatch,
   monkey: analyticPatch,
-  // Its curvature is validated; its offsets, focal sheets and optics are
-  // not offered.
+  // Its curvature and geodesics are validated; its offsets, focal sheets
+  // and optics are not offered.
   "helicoid-catenoid": {
     offset: false,
     focal: false,
     optics: false,
     correspondence: true,
+    geodesics: "patch",
+    transport: false,
     domain: tiered(
       "u within ±4π and v within ±4, each at least 0.000001 wide.",
       "The patch stays one open rectangle at every angle: its edges are never joined, even where the catenoid's ends meet.",

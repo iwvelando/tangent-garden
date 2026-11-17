@@ -112,26 +112,41 @@ type SurfaceResult struct {
 // surfaceCapabilities says what a kind of patch offers beyond its sheet,
 // parameter curves, normal lines and curvatures: an offset (with its
 // cuspidal edges and diagnostics), focal sheets (with ridges and their
-// diagnostics), light (a ray study's mirror or interface), and the
+// diagnostics), light (a ray study's mirror or interface), the
 // correspondence its probe draws: the u- and v-curves through the point
-// probed between samples (see SurfaceDiagnostics.Crossing). A kind never
-// computes what it does not offer, and a request for it is refused.
+// probed between samples (see SurfaceDiagnostics.Crossing), and geodesic
+// threads (see geodesicSupport). A kind never computes what it does not
+// offer, and a request for it is refused.
 type surfaceCapabilities struct {
 	offset, focal, optics, correspondence bool
+	geodesics                             geodesicSupport
 }
 
-var analyticPatch = surfaceCapabilities{offset: true, focal: true, optics: true}
+// geodesicSupport is where a kind's geodesic threads run: nowhere
+// (unavailable), over the whole surface (a sphere or a ring torus, by
+// their own evaluators), or within the patch, integrated in its chart and
+// stopped at its edges (see patchThread). seam says the chart is periodic
+// in u with period 2π, so a patch spanning a whole turn joins its u edges
+// for its threads.
+type geodesicSupport struct {
+	whole, patch, seam bool
+}
+
+func analytic(geodesics geodesicSupport) surfaceCapabilities {
+	return surfaceCapabilities{offset: true, focal: true, optics: true, geodesics: geodesics}
+}
 
 // surfaceKinds lists every kind of patch with what it offers. The
-// helicoid–catenoid family's curvature has been validated, not its focal
-// sheets, offsets or optics.
+// helicoid–catenoid family's curvature and geodesics have been validated,
+// not its focal sheets, offsets or optics. Its chart is periodic only at
+// θ = π/2, so its patch stays one rectangle for its threads at every angle.
 var surfaceKinds = map[string]surfaceCapabilities{
-	"ellipsoid":         analyticPatch,
-	"torus":             analyticPatch,
-	"cylinder":          analyticPatch,
-	"paraboloid":        analyticPatch,
-	"monkey":            analyticPatch,
-	"helicoid-catenoid": {correspondence: true},
+	"ellipsoid":         analytic(geodesicSupport{whole: true}),
+	"torus":             analytic(geodesicSupport{whole: true}),
+	"cylinder":          analytic(geodesicSupport{patch: true, seam: true}),
+	"paraboloid":        analytic(geodesicSupport{}),
+	"monkey":            analytic(geodesicSupport{}),
+	"helicoid-catenoid": {correspondence: true, geodesics: geodesicSupport{patch: true}},
 }
 
 // offers is what the request's kind offers; an unknown kind offers
