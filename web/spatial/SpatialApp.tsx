@@ -45,6 +45,7 @@ import {
   transportHelp,
   transportNote,
 } from "./geodesics";
+import { routeLabels } from "./geodesic-path";
 import {
   useCallback,
   useContext,
@@ -136,6 +137,7 @@ import {
   type FieldConfig,
   type SpatialPursuitConfig,
   type SurfaceConfig,
+  type PolygonVertex,
   type TransportConfig,
   type SurfaceKind,
   type RaysConfig,
@@ -1566,6 +1568,17 @@ export default function SpatialApp({
       const next = change(transport ?? transportDefaults(s));
       return { ...s, geodesics: next ? { ...g, transport: next } : g };
     });
+  // Adding or removing a polygon's vertex renumbers the fields after it,
+  // so evaluations still pending for them land first; a preset chosen
+  // meanwhile wins.
+  async function editVertices(
+    change: (vs: PolygonVertex[]) => PolygonVertex[],
+  ) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current) return;
+    setTransport((t) => ({ ...t, vertices: change(t.vertices ?? []) }));
+  }
   // Offered with the surfaces that can carry it, and with any other whose
   // study already has it, so it can be turned off.
   const transportControls = (surfaceCapabilities[config.surface.kind]
@@ -1590,7 +1603,12 @@ export default function SpatialApp({
       )}
       {carried && (
         <>
-          <TransportFields t={carried} vector={vector} set={setTransport} />
+          <TransportFields
+            t={carried}
+            vector={vector}
+            set={setTransport}
+            editVertices={(change) => void editVertices(change)}
+          />
           {!carriedUnavailable &&
             threads &&
             !threads.unavailable &&
@@ -3347,8 +3365,15 @@ export default function SpatialApp({
                   : []),
                 ...(config.surface.geodesics?.transport
                   ? ([
-                      ...(config.surface.geodesics.transport.path === "triangle"
-                        ? ([["route", "Octant triangle"]] as const)
+                      ...(config.surface.geodesics.transport.path !== "thread"
+                        ? ([
+                            [
+                              "route",
+                              routeLabels[
+                                config.surface.geodesics.transport.path
+                              ],
+                            ],
+                          ] as const)
                         : []),
                       ["carried", "Carried arrow"],
                       ["references", "Reference arrows"],

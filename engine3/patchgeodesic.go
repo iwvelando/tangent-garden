@@ -75,12 +75,20 @@ func (q SurfaceRequest) chartPath() *chartPath {
 	c.f = func(_ float64, y, out []float64) {
 		xu, xv, xuu, xuv, xvv := q.chartDerivatives(y[0], y[1])
 		a, b := y[2], y[3]
+		// A carried vector (c, d), when the state has one (see
+		// patchTransport).
+		carried := len(y) > 4
 		if c.graph {
 			hu, hv := xu.Z, xv.Z
 			bend := xuu.Z*a*a + 2*xuv.Z*a*b + xvv.Z*b*b
 			w := 1 + hu*hu + hv*hv
 			out[0], out[1] = a, b
 			out[2], out[3] = -hu*bend/w, -hv*bend/w
+			if carried {
+				vc, vd := y[4], y[5]
+				bend = xuu.Z*a*vc + xuv.Z*(a*vd+b*vc) + xvv.Z*b*vd
+				out[4], out[5] = -hu*bend/w, -hv*bend/w
+			}
 			return
 		}
 		acc := xuu.mul(a * a).add(xuv.mul(2 * a * b)).add(xvv.mul(b * b))
@@ -90,18 +98,44 @@ func (q SurfaceRequest) chartPath() *chartPath {
 		out[0], out[1] = a, b
 		out[2] = -(g*p - f*r) / det
 		out[3] = -(e*r - f*p) / det
+		if carried {
+			vc, vd := y[4], y[5]
+			acc = xuu.mul(a * vc).add(xuv.mul(a*vd + b*vc)).add(xvv.mul(b * vd))
+			p, r = xu.dot(acc), xv.dot(acc)
+			out[4] = -(g*p - f*r) / det
+			out[5] = -(e*r - f*p) / det
+		}
 	}
 	return c
 }
 
+// components are a tangent vector w's chart components, ℓ times its
+// coefficients along X_u and X_v: on a graph its x and y components, and
+// otherwise by the inverse metric.
+func (c *chartPath) components(xu, xv, w Vec3) (float64, float64) {
+	if c.graph {
+		return w.X * c.l, w.Y * c.l
+	}
+	e, f, gg := xu.dot(xu), xu.dot(xv), xv.dot(xv)
+	p, r := xu.dot(w)*c.l, xv.dot(w)*c.l
+	det := e*gg - f*f
+	return (gg*p - f*r) / det, (e*r - f*p) / det
+}
+
 // size is a step's local error relative to geodesicTolerance: in position,
-// (|X_u||δu| + |X_v||δv|)/l, and likewise in the tangent's (δa, δb), with
-// the larger |X_u| and |X_v| at the step's ends.
+// (|X_u||δu| + |X_v||δv|)/l, and likewise in the tangent's (δa, δb) and
+// any carried vector's (δc, δd), with the larger |X_u| and |X_v| at the
+// step's ends.
 func (c *chartPath) size(y, end, e []float64) float64 {
 	xu0, xv0, _, _, _ := c.q.chartDerivatives(y[0], y[1])
 	xu1, xv1, _, _, _ := c.q.chartDerivatives(end[0], end[1])
 	nu, nv := math.Max(xu0.norm(), xu1.norm())/c.l, math.Max(xv0.norm(), xv1.norm())/c.l
-	return math.Max(nu*math.Abs(e[0])+nv*math.Abs(e[1]), nu*math.Abs(e[2])+nv*math.Abs(e[3])) / geodesicTolerance
+	size := math.Max(nu*math.Abs(e[0])+nv*math.Abs(e[1]), nu*math.Abs(e[2])+nv*math.Abs(e[3]))
+	// And in a carried vector's (δc, δd).
+	if len(e) > 4 {
+		size = math.Max(size, nu*math.Abs(e[4])+nv*math.Abs(e[5]))
+	}
+	return size / geodesicTolerance
 }
 
 // edges are the patch's edges, each with its coordinate (0 for u, 1 for
@@ -245,6 +279,57 @@ func (c *chartPath) leave(t, h float64, y, end []float64) (float64, []float64, b
 // its chart coordinates, unwrapped across a seam.
 func (q SurfaceRequest) patchThread(g GeodesicRequest, beta float64, budget int) GeodesicThread {
 	c := q.chartPath()
+	y, _, _ := q.patchLaunch(c, g, beta)
+	th := GeodesicThread{Direction: beta}
+	state := func(y []float64) (Vec3, Vec3) {
+		x, xu, xv, _, _, _ := q.patch(y[0], y[1])
+		return x, xu.mul(y[2] / c.l).add(xv.mul(y[3] / c.l))
+	}
+	sample := func(_ int, y []float64) {
+		x, tg := state(y)
+		th.Points = append(th.Points, x)
+		th.Tangents = append(th.Tangents, tg)
+		th.U, th.V = append(th.U, y[0]), append(th.V, y[1])
+	}
+	sample(0, y)
+	var t float64
+	th.Edge = c.headingOut(y)
+	if th.Edge != "" {
+		th.Reason = "edge"
+	} else {
+		targets := make([]float64, g.Samples)
+		for i := range targets {
+			targets[i] = arc(g.Length, i+1, g.Samples) / c.l
+		}
+		th.Reason, t, th.Steps = torusRun(c.f, y, g.Length/c.l, targets, budget, c.size, sample, c.leave, nil)
+		if th.Reason == "edge" {
+			th.Edge = c.edge
+		}
+	}
+	th.End, th.EndTangent = state(y)
+	th.EndU, th.EndV, th.Reached = y[0], y[1], t*c.l
+	if th.Reason == "end" {
+		th.Reached = g.Length
+	}
+	th.closing(c.l)
+	return th
+}
+
+// headingOut names the edge a state on it heads out of the patch across,
+// or is empty.
+func (c *chartPath) headingOut(y []float64) string {
+	for k, edge := range chartEdges {
+		if c.beyond(y, k) == 0 && (y[2+edge.coord] < 0) == edge.lower && y[2+edge.coord] != 0 {
+			return edge.name
+		}
+	}
+	return ""
+}
+
+// patchLaunch is a patch thread's first state (u₀, v₀, a, b) in direction
+// beta, with its unit tangent T₀ and unit normal N₀ along X_u × X_v, in the
+// chart the metric is read from (see chartDerivatives).
+func (q SurfaceRequest) patchLaunch(c *chartPath, g GeodesicRequest, beta float64) ([]float64, Vec3, Vec3) {
 	b := beta * math.Pi / 180
 	sn, cs := math.Sin(b), math.Cos(b)
 	// Exact quarter turns have a zero component. A trigonometric residual
@@ -264,50 +349,7 @@ func (q SurfaceRequest) patchThread(g GeodesicRequest, beta float64, budget int)
 	eu := xu.mul(1 / xu.norm())
 	side := xv.sub(eu.mul(xv.dot(eu)))
 	t0 := eu.mul(cs).add(side.mul(sn / side.norm()))
-	var y []float64
-	if c.graph {
-		y = []float64{g.U, g.V, t0.X * c.l, t0.Y * c.l}
-	} else {
-		e, f, gg := xu.dot(xu), xu.dot(xv), xv.dot(xv)
-		p, r := xu.dot(t0)*c.l, xv.dot(t0)*c.l
-		det := e*gg - f*f
-		y = []float64{g.U, g.V, (gg*p - f*r) / det, (e*r - f*p) / det}
-	}
-	th := GeodesicThread{Direction: beta}
-	state := func(y []float64) (Vec3, Vec3) {
-		x, xu, xv, _, _, _ := q.patch(y[0], y[1])
-		return x, xu.mul(y[2] / c.l).add(xv.mul(y[3] / c.l))
-	}
-	sample := func(_ int, y []float64) {
-		x, tg := state(y)
-		th.Points = append(th.Points, x)
-		th.Tangents = append(th.Tangents, tg)
-		th.U, th.V = append(th.U, y[0]), append(th.V, y[1])
-	}
-	sample(0, y)
-	var t float64
-	// On an edge, heading out of the patch.
-	for k, edge := range chartEdges {
-		if c.beyond(y, k) == 0 && (y[2+edge.coord] < 0) == edge.lower && y[2+edge.coord] != 0 {
-			th.Reason, th.Edge = "edge", edge.name
-			break
-		}
-	}
-	if th.Reason == "" {
-		targets := make([]float64, g.Samples)
-		for i := range targets {
-			targets[i] = arc(g.Length, i+1, g.Samples) / c.l
-		}
-		th.Reason, t, th.Steps = torusRun(c.f, y, g.Length/c.l, targets, budget, c.size, sample, c.leave, nil)
-		if th.Reason == "edge" {
-			th.Edge = c.edge
-		}
-	}
-	th.End, th.EndTangent = state(y)
-	th.EndU, th.EndV, th.Reached = y[0], y[1], t*c.l
-	if th.Reason == "end" {
-		th.Reached = g.Length
-	}
-	th.closing(c.l)
-	return th
+	a, bb := c.components(xu, xv, t0)
+	n := xu.cross(xv)
+	return []float64{g.U, g.V, a, bb}, t0, n.mul(1 / n.norm())
 }

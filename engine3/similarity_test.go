@@ -342,6 +342,7 @@ var kinds = map[string]kind{
 	"surface.geodesics.threads.return.position": asUnchanged, "surface.geodesics.threads.return.direction": asUnchanged,
 	"surface.geodesics.transport.length": asLength, "surface.geodesics.transport.size": asLength,
 	"surface.geodesics.transport.reached": asLength, "surface.geodesics.transport.holonomy": asUnchanged,
+	"surface.geodesics.transport.area":       asArea,
 	"surface.geodesics.transport.drift.norm": asUnchanged, "surface.geodesics.transport.drift.tangency": asUnchanged,
 	"surface.geodesics.transport.samples.arcs": asLength, "surface.geodesics.transport.samples.points": asPosition,
 	"surface.geodesics.transport.samples.vectors": asUnchanged, "surface.geodesics.transport.samples.normals": asUnchanged,

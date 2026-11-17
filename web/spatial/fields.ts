@@ -109,6 +109,8 @@ const labeled: Record<string, string> = {
   "surface.geodesics.samples": "Samples per thread",
   "surface.geodesics.selected": "Selected thread",
   "surface.geodesics.transport.path": "Arrow's path",
+  // A polygon with too few or too many vertices.
+  "surface.geodesics.transport.vertices": "Arrow's path",
   "surface.geodesics.transport.size": "Arrow length",
   "surface.geodesics.transport.arrows": "Reference arrows",
   "rays.interaction": "Interaction",
@@ -142,6 +144,9 @@ export function fieldLabel(c: SpatialConfig, path: string): string | undefined {
         : `${m[2] === "cosine" ? "A" : "B"}${m[3]}`;
     return targetLabel(c, `harmonic${+m[1] + 1}${field}` as Target);
   }
+  m = /^surface\.geodesics\.transport\.vertices\.(\d+)\.([uv])$/.exec(path);
+  if (m)
+    return targetLabel(c, `vertex${+m[1] + 1}${m[2].toUpperCase()}` as Target);
   m = /^field\.seeds\.(\d+)\.([xyz])$/.exec(path);
   if (m)
     return targetLabel(c, `seed${+m[1] + 1}${m[2].toUpperCase()}` as Target);

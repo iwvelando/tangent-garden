@@ -234,11 +234,12 @@ test("an ellipsoid carries threads over its whole surface, and a sphere its grea
   await settled(page);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(note(page)).toContainText("over the whole ellipsoid");
-  // An arrow is offered, for a sphere, but not carried here.
+  // An arrow is carried along the selected thread here too.
   await layer(page, "Carry a tangent arrow").check();
   await settled(page);
-  await expect(page.getByTestId("transport-unavailable")).toHaveText(
-    "An arrow is carried on a sphere or a ring torus; on this surface the threads are drawn without one.",
+  await expect(page.getByTestId("transport-unavailable")).toHaveCount(0);
+  await expect(page.getByTestId("transport-note")).toContainText(
+    "Along thread 8 the arrow keeps its 90° angle to the thread, as along any geodesic.",
   );
   await layer(page, "Carry a tangent arrow").uncheck();
   await settled(page);
@@ -321,7 +322,8 @@ test("threads on a paraboloid start within its patch and stop at its edge", asyn
   await expect(selected(page)).toContainText(
     "Thread 1 leaves at 17.5° and reaches the patch's edge u = 1 at",
   );
-  await expect(layer(page, "Carry a tangent arrow")).toHaveCount(0);
+  // An arrow is offered, off until checked.
+  await expect(layer(page, "Carry a tangent arrow")).not.toBeChecked();
   const drawn = await pixels(page);
   await field(page, "Start u₀").fill("1.2");
   await expect(page.getByRole("alert")).toContainText(
@@ -558,7 +560,8 @@ test("threads on a cylinder and the family's patch start within it and stop at i
   await expect(selected(page)).toContainText(
     "Thread 1 leaves at 17.5° and reaches the patch's edge v = 1 at",
   );
-  await expect(layer(page, "Carry a tangent arrow")).toHaveCount(0);
+  // An arrow is offered, off until checked.
+  await expect(layer(page, "Carry a tangent arrow")).not.toBeChecked();
   const drawn = await pixels(page);
   for (const [name, text, message] of [
     ["Start v₀", "1.5", "start v₀ must lie in the patch's v domain"],
@@ -587,7 +590,8 @@ test("threads on a cylinder and the family's patch start within it and stop at i
   await expect(note(page)).toContainText(
     "Every angle θ bends the patch without stretching it, so they keep their route in (u, v).",
   );
-  await expect(layer(page, "Carry a tangent arrow")).toHaveCount(0);
+  // An arrow is offered, off until checked.
+  await expect(layer(page, "Carry a tangent arrow")).not.toBeChecked();
   // To a monkey saddle, the fan is kept and unavailable, with the reason.
   await kind.selectOption("monkey");
   await settled(page);

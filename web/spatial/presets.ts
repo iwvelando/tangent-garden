@@ -213,6 +213,11 @@ export type Flight = {
 };
 // A composed opening is also the reveal camera: keep its pan and zoom
 // while the fixed geometry is drawn, including detail and perspective views.
+// The five vertices of a star {5/2} on the unit sphere at latitude lat,
+// every 144° of longitude from u = 0, so each side skips a point.
+const starVertices = (lat: number) =>
+  [0, 1, 2, 3, 4].map((k) => ({ u: (4 * Math.PI * k) / 5, v: lat }));
+
 const revealInPlace: Flight = {
   duration: 10,
   camera: "current",
@@ -5796,6 +5801,147 @@ export const spatialPresets: {
     view: { ...initialView, zoom: 2.3, panX: 0, panY: 0 },
     flight: { ...revealInPlace, duration: 14 },
   },
+  // An arrow carried round a five-pointed star of great-circle arcs on the
+  // unit sphere: its vertices at latitude π/4, every 144° of longitude, so
+  // each side skips a point. The star winds twice round its middle
+  // pentagon and once round each point, so the signed area it encloses,
+  // counted with those turns, is 1.166 (Gauss–Bonnet: 4π less the turns
+  // at its five corners), and the arrow, leaving along the first side,
+  // comes home turned by that many radians, +66.8°. Fifteen reference
+  // arrows, three to a side, show it carried parallel; each side's
+  // chevron shows the way round, counterclockwise seen from above. The
+  // fan's one thread, which the study needs, is hidden. The view looks
+  // down on the pole from 0.3 rad toward +y, the star nearly face on, and
+  // the reveal holds the returned arrow beside the first.
+  {
+    name: "An arrow carried round a spherical star",
+    detail:
+      "A star of great-circle arcs winds twice round its middle, and turns the arrow by the area it winds",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1,
+        b: 1,
+        c: 1,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 72,
+        vSamples: 36,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 0,
+          spread: 0,
+          count: 1,
+          length: 2 * Math.PI,
+          samples: 1500,
+          selected: 1,
+          transport: {
+            path: "polygon",
+            angle: 0,
+            size: 0.3,
+            arrows: 15,
+            vertices: starVertices(Math.PI / 4),
+          },
+        },
+      },
+    },
+    layers: {
+      curves: false,
+      focal1: false,
+      focal2: false,
+      threads: false,
+      selected: false,
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0, pitch: 0.3, zoom: 1 },
+    flight: { ...revealInPlace, duration: 15 },
+  },
+  // The same star while its points spread from latitude π/3 toward π/9.
+  // The area it winds grows from 0.448 to 4.456, and the arrow's turn with
+  // it, from +25.7° past a half turn, near latitude 27°, to −104.7°: the
+  // area less a whole turn. The arrow stands where it came home, beside
+  // the first reference arrow.
+  {
+    name: "A star's turn growing with its area",
+    detail:
+      "As a spherical star spreads toward the equator, the arrow carried round it comes home turned further",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "ellipsoid",
+        a: 1,
+        b: 1,
+        c: 1,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -Math.PI / 2,
+        vMax: Math.PI / 2,
+        uSamples: 72,
+        vSamples: 36,
+        reach: 0,
+        geodesics: {
+          u: 0,
+          v: 0,
+          direction: 0,
+          spread: 0,
+          count: 1,
+          length: 2 * Math.PI,
+          samples: 1500,
+          selected: 1,
+          transport: {
+            path: "polygon",
+            angle: 0,
+            size: 0.3,
+            arrows: 5,
+            vertices: starVertices(Math.PI / 3),
+          },
+        },
+      },
+    },
+    layers: {
+      curves: false,
+      focal1: false,
+      focal2: false,
+      threads: false,
+      selected: false,
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0, pitch: 0.3, zoom: 1 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [1, 2, 3, 4, 5].map((k) => ({
+          target: `vertex${k}V` as const,
+          from: "pi/3",
+          to: "pi/9",
+        })),
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
   // A short film over one torus study. Nine geodesics 40 long leave one
   // point of the outer equator of the ring torus R = 2, r = 0.8, at
   // 44°–56° from the parallel, an arrow carried at a right angle along the
@@ -6039,6 +6185,70 @@ export const spatialPresets: {
       },
     },
     layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0.6, pitch: -1.15, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // One geodesic of the stair above, over u in [−2.67, 2.67], just inside
+  // its ±0.85π: the fan's eighth, at −50°, the longest from that start. It
+  // crosses the neck and would reach the edge u = 2.67 after about 5.9, so
+  // it ends at 5.8, in sight. It carries an arrow
+  // at a right angle to it, with twelve reference arrows behind it. Play
+  // bends the stair into a catenoid and back: the members are isometric,
+  // so the thread keeps its route in (u, v) and the arrow its components
+  // along X_u and X_v, at a right angle to the thread, while both turn in
+  // space.
+  {
+    name: "An arrow that keeps its way as a stair opens",
+    detail:
+      "An arrow carried along a geodesic keeps its place on the surface while a helicoid bends into a catenoid",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -2.67,
+        uMax: 2.67,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 96,
+        vSamples: 48,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        geodesics: {
+          u: -2.4,
+          v: 1,
+          direction: -50,
+          spread: 0,
+          count: 1,
+          length: 5.8,
+          samples: 1160,
+          selected: 1,
+          transport: { path: "thread", angle: 90, size: 0.45, arrows: 12 },
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false, threads: false },
     sight: {
       sheets: "through",
       opacity: 0.35,

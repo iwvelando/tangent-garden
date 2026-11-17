@@ -700,11 +700,17 @@ test("links are compact, url-safe, and readable by an independent decoder", asyn
     // The bound applies to the full v1 encoding, which any study can still
     // fall back to, not only to the shorter selected link.
     // The tiny sink carries scale-matched inactive construction settings;
-    // their scientific-notation values add a little to its shared link.
+    // their scientific-notation values add a little to its shared link. A
+    // polygon's vertices, exact multiples of π that compress poorly, add
+    // about 120 characters to a sphere study already near the bound.
     const full = await nativeToken({ v: 1, notebook: "3d", study: spatial(i) });
     assert.ok(t.length <= full.length);
     const limit =
-      spatialPresets[i].name === "Spirals into a tiny sink" ? 2150 : 2100;
+      spatialPresets[i].name === "Spirals into a tiny sink"
+        ? 2150
+        : spatialPresets[i].config.surface.geodesics?.transport?.vertices
+          ? 2250
+          : 2100;
     assert.ok(
       full.length < limit,
       `${spatialPresets[i].name} v1 link is ${full.length} characters (limit ${limit})`,

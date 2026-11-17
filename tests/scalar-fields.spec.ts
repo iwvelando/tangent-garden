@@ -1100,6 +1100,38 @@ test("spatial vector-field seeds, escape and time share the bounded scalar parse
   }
 });
 
+test("spatial polygon vertices and the arrow's angle share the bounded scalar parser", async ({
+  page,
+}) => {
+  await page.goto("/?study=3d");
+  await choosePreset(page, {
+    label: "An arrow carried round a spherical star",
+  });
+  const stage = page.locator(".spatial-stage");
+  // Optional chaining throughout: see spatialConfig.
+  const at = async (path: readonly string[]) => {
+    let o: unknown = await spatialConfig(stage);
+    for (const k of path) o = (o as Record<string, unknown> | undefined)?.[k];
+    return o;
+  };
+  const transport = ["surface", "geodesics", "transport"] as const;
+  for (const [name, text, value, path] of [
+    ["Vertex 2 u", "phi/2", phi / 2, [...transport, "vertices", "1", "u"]],
+    ["Vertex 4 v", "-1/e", -1 / Math.E, [...transport, "vertices", "3", "v"]],
+    ["Arrow angle α (°)", "45*phi", 45 * phi, [...transport, "angle"]],
+  ] as const) {
+    await field(page, name).fill(text);
+    await expect.poll(() => at(path)).toBe(value);
+    await expect(field(page, name)).toHaveValue(text);
+    for (const variable of ["t", "x", "a"]) {
+      await field(page, name).fill(variable);
+      await expect(page.getByRole("alert")).toBeVisible();
+    }
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+});
+
 test("spatial pursuer starts, speeds, capture and time share the bounded scalar parser", async ({
   page,
 }) => {

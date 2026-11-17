@@ -161,9 +161,10 @@ export function surfaceFamilyRange(
 // the parameter curves the probe draws through its point; geodesics where
 // its threads run: over the "whole" surface (an ellipsoid or a ring torus,
 // whose shapes engine3 still checks), within the "patch", stopped at its
-// edges, or not at all; transport whether an arrow can be carried with
-// them (on an ellipsoid, only a sphere's). domain is the help beside the u interval, note follows the chart,
-// and title heads the drawing.
+// edges, or not at all; transport whether an arrow can be carried along
+// them, as on every kind that has them (the triangle and polygons only on
+// a sphere, which engine3 checks). domain is the help beside the u
+// interval, note follows the chart, and title heads the drawing.
 export type SurfaceCapabilities = {
   offset: boolean;
   focal: boolean;
@@ -195,8 +196,8 @@ const wholeThreads = {
 export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
   ellipsoid: wholeThreads,
   torus: wholeThreads,
-  cylinder: { ...analyticPatch, geodesics: "patch" },
-  paraboloid: { ...analyticPatch, geodesics: "patch" },
+  cylinder: { ...analyticPatch, geodesics: "patch", transport: true },
+  paraboloid: { ...analyticPatch, geodesics: "patch", transport: true },
   monkey: analyticPatch,
   // Its curvature and geodesics are validated; its offsets, focal sheets
   // and optics are not offered.
@@ -206,7 +207,7 @@ export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
     optics: false,
     correspondence: true,
     geodesics: "patch",
-    transport: false,
+    transport: true,
     domain: tiered(
       "u within ±4π and v within ±4, each at least 0.000001 wide.",
       "The patch stays one open rectangle at every angle: its edges are never joined, even where the catenoid's ends meet.",

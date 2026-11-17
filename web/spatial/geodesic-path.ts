@@ -1,10 +1,18 @@
 import type {
   GeodesicResult,
   GeodesicThread,
+  TransportPath,
   TransportResult,
   TransportSamples,
   Vec3,
 } from "./types";
+
+// The name of a closed path the arrow travels, in the legend and its
+// layer toggle; a thread's path is the thread itself.
+export const routeLabels: Record<Exclude<TransportPath, "thread">, string> = {
+  triangle: "Octant triangle",
+  polygon: "Geodesic polygon",
+};
 
 // A thread's drawn path: its samples, then where it stopped when that lies
 // beyond its last sample. Each point carries its arc length.
@@ -143,4 +151,53 @@ export function arrowLines(
     back = size - head * Math.cos(Math.PI / 7),
     wide = head * Math.sin(Math.PI / 7);
   return [p, tip, tip, at(back, wide, 0), tip, at(back, -wide, 0)];
+}
+
+// A polygon's direction marks: at the middle of each side the reveal has
+// passed, a chevron pointing along the path, in the tangent plane, half
+// the arrow's length long, as point pairs. The sides run between the
+// start, the corners and the end. Each mark stands at its side's middle
+// itself, on the chord between the samples around it, with their
+// tangents and normals blended there, so that a mark glides as a changing
+// polygon's sides lengthen rather than jumping from sample to sample.
+export function chevronLines(
+  tr: TransportResult,
+  s = tr.shown ?? Infinity,
+): Vec3[] {
+  if (tr.path !== "polygon") return [];
+  const { arcs, points, tangents, normals } = tr.samples;
+  const ends = [0, ...tr.corners.map((k) => arcs[k]), tr.length];
+  const out: Vec3[] = [];
+  const half = 0.25 * tr.size,
+    wide = 0.22 * tr.size;
+  const unit = (v: Vec3): Vec3 => {
+    const n = Math.hypot(v.x, v.y, v.z);
+    return { x: v.x / n, y: v.y / n, z: v.z / n };
+  };
+  for (let i = 0; i + 1 < ends.length; i++) {
+    const middle = (ends[i] + ends[i + 1]) / 2;
+    if (middle > s || middle > tr.reached) continue;
+    const k = transportIndex(tr, middle);
+    const f =
+      k + 1 < arcs.length && arcs[k + 1] > arcs[k]
+        ? Math.min(1, Math.max(0, (middle - arcs[k]) / (arcs[k + 1] - arcs[k])))
+        : 0;
+    const next = Math.min(k + 1, arcs.length - 1);
+    const p = lerp(points[k], points[next], f),
+      t = unit(lerp(tangents[k], tangents[next], f)),
+      n = unit(lerp(normals[k], normals[next], f));
+    const side = {
+      x: n.y * t.z - n.z * t.y,
+      y: n.z * t.x - n.x * t.z,
+      z: n.x * t.y - n.y * t.x,
+    };
+    const at = (a: number, b: number): Vec3 => ({
+      x: p.x + a * t.x + b * side.x,
+      y: p.y + a * t.y + b * side.y,
+      z: p.z + a * t.z + b * side.z,
+    });
+    const tip = at(half, 0);
+    out.push(at(-half, wide), tip, tip, at(-half, -wide));
+  }
+  return out;
 }

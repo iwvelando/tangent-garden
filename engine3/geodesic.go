@@ -20,7 +20,8 @@ import (
 // β + Spread((2k + 1)/2n − 1/2), so one thread leaves at β and a spread of
 // 360 rings the point. Selected, from 1 to Count, is the thread drawn and
 // described on its own. Transport, when set, carries a tangent arrow along
-// it or around a sphere's octant triangle (see TransportRequest).
+// it, or around the octant triangle or a geodesic polygon of a sphere (see
+// TransportRequest).
 type GeodesicRequest struct {
 	U         float64           `json:"u"`
 	V         float64           `json:"v"`
@@ -116,7 +117,7 @@ func (g GeodesicRequest) validate() error {
 	// The arrow's path counts toward the fan's points.
 	points, with := g.Count*(g.Samples+1), ""
 	if g.Transport != nil {
-		points += g.Samples + 1 + transportExtra
+		points += g.Samples + 1 + g.Transport.extra()
 		with = " and the arrow's path"
 	}
 	switch {
@@ -195,10 +196,10 @@ func (q SurfaceRequest) geodesics() (*GeodesicResult, error) {
 		return nil, fieldErr("surface.geodesics.v", "the start v₀ must lie in the patch's v domain")
 	}
 	out.Surface = surface
-	// An arrow integrated along a torus thread takes one more share of
-	// the steps.
+	// An arrow integrated along a thread, anywhere but on a sphere, takes
+	// one more share of the steps.
 	shares := g.Count
-	if surface == "torus" && g.Transport != nil && g.Transport.Path == "thread" {
+	if surface != "sphere" && g.Transport != nil && g.Transport.Path == "thread" {
 		shares++
 	}
 	budget := maxGeodesicSteps / shares
