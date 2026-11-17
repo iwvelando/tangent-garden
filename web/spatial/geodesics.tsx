@@ -413,13 +413,17 @@ function arrowScale(s: SurfaceConfig) {
 
 // Carrying an arrow starts it along the selected thread at a right angle to
 // it, to its left, drawn about a third of the surface's scale or half the
-// tube's radius, to two figures, with eight reference arrows.
+// tube's radius, capped at the admitted length 100000, to two figures,
+// with eight reference arrows. A tall paraboloid's scale can exceed that
+// limit even though its shape parameters and domain are admitted.
 export function transportDefaults(s: SurfaceConfig): TransportConfig {
   const r = (s.kind === "torus" ? 0.5 : 0.3) * arrowScale(s);
   return {
     path: "thread",
     angle: 90,
-    size: Number((Number.isFinite(r) && r > 0 ? r : 0.3).toPrecision(2)),
+    size: Number(
+      Math.min(100000, Number.isFinite(r) && r > 0 ? r : 0.3).toPrecision(2),
+    ),
     arrows: 8,
   };
 }

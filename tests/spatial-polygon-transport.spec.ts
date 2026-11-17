@@ -962,3 +962,37 @@ test("a short polygon side's mark follows its own direction after a sharp corner
     ).toBeCloseTo(0, 10);
   }
 });
+
+test("a tall edited paraboloid starts with an admitted arrow length", async ({
+  page,
+}) => {
+  const p = preset("A straight thread across a saddle");
+  await openStudy(page, {
+    config: {
+      ...p.config,
+      surface: {
+        ...p.config.surface,
+        a: 100000,
+        b: -100000,
+        uMin: -5,
+        uMax: 5,
+        vMin: -5,
+        vMax: 5,
+        uSamples: 12,
+        vSamples: 12,
+        geodesics: { ...p.config.surface.geodesics!, length: 1, samples: 8 },
+      },
+    },
+    layers: { ...defaultLayers, ...p.layers },
+    view: p.view,
+  });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await carry(page).check();
+  await settled(page);
+  await expect(field(page, "Arrow length")).toBeVisible();
+  const size = Number(await field(page, "Arrow length").inputValue());
+  expect(size).toBeGreaterThan(0);
+  expect(size).toBeLessThanOrEqual(100000);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(note(page)).toContainText("the arrow keeps its 90° angle");
+});
