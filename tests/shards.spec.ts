@@ -16,7 +16,7 @@ test("every Chromium spec file runs in exactly one shard", () => {
     .filter((f) => f.endsWith(".spec.ts") && !webkitOnly.test(f))
     .sort();
   expect(specFiles(webkitOnly)).toEqual(all);
-  for (const total of [1, 2, 6, 8, 9]) {
+  for (const total of [1, 2, 6, 8, 9, 10]) {
     const shards = Array.from({ length: total }, (_, i) =>
       shardFiles(`${i + 1}/${total}`, webkitOnly),
     );
@@ -52,12 +52,38 @@ test("packing is the same every time, whatever order files are listed in", () =>
 test("the recorded durations pack into shards of about equal length", () => {
   const files = specFiles(webkitOnly).filter((f) => f in durations);
   const total = files.reduce((s, f) => s + durations[f], 0);
-  for (const n of [6, 8, 9]) {
+  for (const n of [6, 8, 9, 10]) {
     const loads = packShards(files, durations, n).map((shard) =>
       shard.reduce((s, f) => s + durations[f], 0),
     );
     expect(Math.max(...loads)).toBeLessThanOrEqual((1.05 * total) / n);
   }
+});
+
+test("CI's Chromium shards retain five minutes of slow-runner margin", () => {
+  const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
+  const browser = workflow.match(/^  browser:[\s\S]*?(?=^  \w)/m)![0];
+  const shards = browser.match(/shard: \[([^\]]+)\]/)![1].split(",");
+  const total = Number(browser.match(/total: \[(\d+)\]/)![1]);
+  expect(shards.map(Number)).toEqual(
+    Array.from({ length: total }, (_, i) => i + 1),
+  );
+  const limit = Number(browser.match(/timeout-minutes: (\d+)/)![1]);
+  // Two workers, a minute of setup, and the documented one-third
+  // slow-runner allowance. New files use the packer's mean estimate until
+  // CI records them; a single serial file is also a lower bound.
+  const files = specFiles(webkitOnly);
+  const known = files.filter((file) => file in durations);
+  const average =
+    known.reduce((sum, file) => sum + durations[file], 0) / known.length;
+  const seconds = (file: string) => durations[file] ?? average;
+  const loads = packShards(files, durations, shards.length).map((files) =>
+    files.reduce((sum, file) => sum + seconds(file), 0),
+  );
+  const predicted =
+    1 +
+    (Math.max(Math.max(...loads) / 2, ...files.map(seconds)) / 60) * (4 / 3);
+  expect(predicted).toBeLessThanOrEqual(limit - 5);
 });
 
 test("a malformed shard is refused", () => {
