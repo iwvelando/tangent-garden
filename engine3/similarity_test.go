@@ -210,9 +210,13 @@ func similar(q Request, m similarity) (Request, Request, bool) {
 	c.Surface.Reach *= s
 	if q.Surface.Geodesics != nil {
 		// A thread's length is a length; its start and directions are
-		// angles.
+		// angles, or chart parameters that do not scale.
 		g := *q.Surface.Geodesics
 		g.Length *= s
+		if q.Surface.Kind == "cylinder" {
+			// A cylinder's v is a height.
+			g.V *= s
+		}
 		if g.Transport != nil {
 			// The arrow's drawn length is a length; its angle is an angle.
 			tq := *g.Transport
@@ -402,6 +406,13 @@ func lookup(path string, q Request) (kind, bool) {
 	case "rays.receiver.irradiance", "rays.receiver.peak":
 		if q.Rays.Light == "point" {
 			return asDensity, true
+		}
+		return asUnchanged, true
+	case "surface.geodesics.threads.v", "surface.geodesics.threads.endV":
+		// A cylinder's v is a height, which scales; other charts' are
+		// angles or parameters.
+		if q.Surface.Kind == "cylinder" {
+			return asLength, true
 		}
 		return asUnchanged, true
 	case "composition.pole":

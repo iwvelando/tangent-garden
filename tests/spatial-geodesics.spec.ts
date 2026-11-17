@@ -414,3 +414,216 @@ test("the reveal's movie agrees with stills at direct seeks", async ({
     for (const d of swapped) expect(d!.meanDifference).toBeGreaterThan(6);
   }
 });
+
+// A cylinder and the helicoid–catenoid family carry threads within their
+// patch: the controls appear with them, a fan starts in the patch's middle,
+// a start outside it is refused under its own field, choosing such a
+// surface moves a start that lies outside into it, a thread stops at the
+// patch's edge unmarked, and no arrow is offered.
+test("threads on a cylinder and the family's patch start within it and stop at its edge", async ({
+  page,
+}) => {
+  await ready(page);
+  await choosePreset(page, { label: "A torus revealing its centers" });
+  await settled(page);
+  const kind = page.getByLabel("Surface", { exact: true });
+  await kind.selectOption("cylinder");
+  await settled(page);
+  await launch(page).check();
+  await settled(page);
+  let surface = (await config(page)).surface;
+  expect(surface.geodesics).toEqual(geodesicDefaults(surface));
+  // The middle of [0, 2π] × [−1, 1], and twice the diagonal
+  // hypot(1.4·2π, 2) of the patch, to three figures.
+  expect(surface.geodesics).toMatchObject({ u: Math.PI, v: 0, length: 18 });
+  await expect(note(page)).toContainText(
+    "12 threads on the cylinder, each 18 long, integrated in",
+  );
+  await expect(note(page)).toContainText(
+    "unrolled flat, each is a straight line",
+  );
+  await expect(note(page)).toContainText(
+    "threads stop where they reach the patch's edge",
+  );
+  await expect(selected(page)).toContainText(
+    "Thread 1 leaves at 17.5° and reaches the patch's edge v = 1 at",
+  );
+  await expect(layer(page, "Carry a tangent arrow")).toHaveCount(0);
+  const drawn = await pixels(page);
+  for (const [name, text, message] of [
+    ["Start v₀", "1.5", "start v₀ must lie in the patch's v domain"],
+    ["Start u₀", "-0.1", "start u₀ must lie in the patch's u domain"],
+  ] as const) {
+    const before = await field(page, name).inputValue();
+    await field(page, name).fill(text);
+    await expect(page.getByRole("alert")).toContainText(message);
+    expect(await pixels(page)).toBe(drawn);
+    await field(page, name).fill(before);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  }
+  // The family's patch is [−π, π] × [−1.5, 1.5].
+  await field(page, "Start v₀").fill("0.9");
+  await field(page, "Start u₀").fill("4");
+  await settled(page);
+  await kind.selectOption("helicoid-catenoid");
+  await settled(page);
+  surface = (await config(page)).surface;
+  // u₀ = 4 lies beyond π, so it moves to the middle; v₀ = 0.9 stays.
+  expect(surface.geodesics).toMatchObject({ u: 0, v: 0.9 });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(note(page)).toContainText(
+    "12 threads on the patch, each 18 long",
+  );
+  await expect(note(page)).toContainText(
+    "Every angle θ bends the patch without stretching it, so they keep their route in (u, v).",
+  );
+  await expect(layer(page, "Carry a tangent arrow")).toHaveCount(0);
+  // To a paraboloid, the fan is kept and unavailable, with the reason.
+  await kind.selectOption("paraboloid");
+  await settled(page);
+  await expect(unavailable(page)).toHaveText(
+    "Geodesic threads are traced on a sphere, a ring torus, a cylinder or the helicoid–catenoid family.",
+  );
+});
+
+const stair = { label: "A thread that keeps its way as a stair opens" };
+
+// The signature: the family's members share their metric, so as the
+// associate angle bends the stair into a throat, the selected thread is
+// described identically, stopping at the same edge after the same length,
+// while the drawing moves; the linework carries the threads.
+test("bending the stair keeps each thread's route while the drawing moves", async ({
+  page,
+}) => {
+  test.slow();
+  await ready(page);
+  await choosePreset(page, stair);
+  await settled(page);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Threads that go straight on a surface",
+  );
+  const described = await selected(page).textContent();
+  expect(described).toMatch(/^Thread 8 leaves at −50° and /);
+  const route = await note(page).textContent();
+  const helicoid = await pixels(page);
+  const angle = field(page, "Associate angle θ");
+  for (const theta of ["0.8", "pi/2"]) {
+    await angle.fill(theta);
+    await settled(page);
+    await expect(selected(page)).toHaveText(described!);
+    await expect(note(page)).toHaveText(route!);
+    expect(await pixels(page)).not.toBe(helicoid);
+  }
+  const groups = await lines(page);
+  expect(groups.threads).toBeGreaterThan(1000);
+  expect(groups.selected).toBeGreaterThan(100);
+});
+
+// The film of the bending decodes at its duration, and its ends are the
+// stills a seek draws at θ = 0 and π/2, threads included.
+test("the bending stair's film agrees with seeked stills", async ({ page }) => {
+  test.slow();
+  await ready(page);
+  await choosePreset(page, stair);
+  await settled(page);
+  await layer(page, "Surface patch").uncheck();
+  await settled(page);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  const stills: Record<string, Buffer> = {};
+  for (const [t, p] of [
+    ["0.5", "1"],
+    ["0", "0"],
+  ]) {
+    await slider.fill(t);
+    await expect(stage(page)).toHaveAttribute("data-progress", p);
+    await settled(page);
+    stills[p] = await still(page);
+  }
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  await page.getByLabel("Duration (seconds)").fill("0.4");
+  await openDetails(page, "#spatial-export-settings");
+  await page.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await page.getByLabel("Export frame rate").selectOption("15");
+  await page
+    .getByRole("slider", { name: "Export resolution", exact: true })
+    .fill("2");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Export MP4/ }).click();
+  const path = (await (await download).path())!;
+  const data = probe(path);
+  if (data) {
+    expect(data.frames).toBe(6);
+    expect([data.width, data.height]).toEqual([2000, 1520]);
+  }
+  const video = await decodeVideo(page, await readFile(path));
+  expect(video.duration).toBeCloseTo(0.4, 3);
+  expect(video.first.hash).not.toBe(video.last.hash);
+  const match = (index: number, reference: Buffer) =>
+    frameDifference(path, 2000, 1520, index, reference);
+  // Back and forth over 0.4 s: frame 0 is θ = 0 and frame 3, half way
+  // through the time, is the far end θ = π/2.
+  const same = [match(0, stills["0"]), match(3, stills["1"])];
+  const swapped = [match(0, stills["1"]), match(3, stills["0"])];
+  if (same.every(Boolean) && swapped.every(Boolean)) {
+    console.log("Bending stair film frames", { same, swapped });
+    for (const d of same) {
+      expect(d!.meanDifference).toBeLessThan(4);
+      expect(d!.unmatchedInk).toBeLessThan(0.02);
+    }
+    for (const d of swapped) expect(d!.unmatchedInk).toBeGreaterThan(0.5);
+  }
+});
+
+// An edited cylinder fan travels in a link and reopens as the same study
+// and drawing; its reveal draws the threads along their length up to each
+// edge stop.
+test("an edited cylinder fan reopens from its link and reveals along its length", async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await ready(page);
+  await choosePreset(page, { label: "Helices rising round a cylinder" });
+  await settled(page);
+  await field(page, "Start v₀").fill("0.5");
+  await field(page, "Direction β (°)").fill("10");
+  await settled(page);
+  const study = (await config(page)).surface;
+  const described = await selected(page).textContent();
+  const drawn = await pixels(page);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const reopened = await context.newPage();
+  await reopened.goto(link);
+  await expect(reopened.locator("#spatial-artwork")).toBeVisible();
+  await settled(reopened);
+  expect((await config(reopened)).surface).toEqual(study);
+  await expect(selected(reopened)).toHaveText(described!);
+  expect(await pixels(reopened)).toBe(drawn);
+  await reopened.close();
+  // Halfway through the reveal, the threads are drawn to half their
+  // length or to their edge stop, whichever comes first.
+  const whole = await lines(page);
+  await openAnimation(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  await slider.fill("0.5");
+  await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
+  const half = await lines(page);
+  expect(half.threads).toBeGreaterThan(0.2 * whole.threads);
+  expect(half.threads).toBeLessThan(0.9 * whole.threads);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect(await pixels(page)).toBe(drawn);
+});

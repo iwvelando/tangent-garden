@@ -5994,6 +5994,121 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // Fifteen geodesics leave the helicoid's stair (u in [−0.85π, 0.85π], v
+  // in [−1.2, 1.2], a patch that never crosses itself) at (−2.4, 1), aimed
+  // 26.7°–73.3° below the parallel, toward the axis. Each keeps Clairaut's
+  // cosh v cos ψ = cosh 1 cos β: those within about 49.6° of the parallel
+  // keep a constant above 1, turn back before v = 0 (the catenoid's neck)
+  // and the steeper ones cross it, so the fan parts in two; every thread
+  // stops where it reaches the patch's edge. The eighth, at −50°, is
+  // selected. Play bends the stair into a catenoid and back, θ from 0 to
+  // π/2: every member shares the metric, so each thread keeps its route in
+  // (u, v) and its length while the surface moves.
+  {
+    name: "A thread that keeps its way as a stair opens",
+    detail:
+      "Geodesics keep their route on a helicoid as it bends into a catenoid",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -0.85 * Math.PI,
+        uMax: 0.85 * Math.PI,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 96,
+        vSamples: 48,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        geodesics: {
+          u: -2.4,
+          v: 1,
+          direction: -50,
+          spread: 50,
+          count: 15,
+          length: 12,
+          samples: 1200,
+          selected: 8,
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0.6, pitch: -1.15, zoom: 1, panX: 0, panY: 0 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // Twenty-four geodesics leave one point of the waist of the elliptic
+  // cylinder a = 1.4, b = 0.8, at u = 4.7, facing the view, in every
+  // direction, each 30 long. Unrolled flat, the cylinder is a strip and
+  // each thread a straight line, so each winds as a helix of its own pitch,
+  // across the seam of the whole turn of u, until it reaches the rim
+  // v = ±2. The shallowest, 7.5° from the waist, wind about twice round;
+  // the first of them is selected. Play reveals them along their length.
+  {
+    name: "Helices rising round a cylinder",
+    detail:
+      "Geodesics from one point wind round a cylinder until they leave its rim",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "cylinder",
+        a: 1.4,
+        b: 0.8,
+        c: 0,
+        uMin: 0,
+        uMax: 2 * Math.PI,
+        vMin: -2,
+        vMax: 2,
+        uSamples: 96,
+        vSamples: 24,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        geodesics: {
+          u: 4.7,
+          v: 0,
+          direction: 0,
+          spread: 360,
+          count: 24,
+          length: 30,
+          samples: 2000,
+          selected: 1,
+        },
+      },
+    },
+    layers: { curves: false, focal1: false, focal2: false },
+    sight: {
+      sheets: "through",
+      opacity: 0.35,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0, pitch: -1.3, zoom: 1, panX: 0, panY: 0 },
+    flight: { ...revealInPlace, duration: 12 },
+  },
   // The topology theater's two curated events (story.ts): each opens at
   // its before state in [−2, 2]³, which holds every level the story covers,
   // with one section plane through the event. Its film moves the level
