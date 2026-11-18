@@ -38,6 +38,13 @@ export const ridgesHelp = tiered(
   "Each point is found between samples on the patch itself, where a grid edge crosses a ridge; a loop within one cell is missed. A ridge stops beside a chart singularity, near an umbilic, and where its center lies beyond 100 surface radii. A sheet that collapses to a curve or a point has none.",
 );
 
+// Drawing the focal sheets on a kind that offers them on request
+// (`surface.focal`). Absent means off, as in links made before it.
+export const focalSheetsHelp = tiered(
+  "Draws the two sheets of centers of curvature, X + n/κ₁ and X + n/κ₂.",
+  "Off, they are not computed, so they neither cost time nor set the drawing's bounds; ridges and the focal sheets' probes need them.",
+);
+
 // Locating the caustics' cuspidal edges (`rays.edges`). Absent means off,
 // as in links made before it.
 export const causticEdgesHelp = tiered(
@@ -95,6 +102,15 @@ export const CausticEdgesCheck = (props: CheckProps) => (
     label="Locate cuspidal edges"
     topic="locating the caustics' cuspidal edges"
     text={causticEdgesHelp}
+    {...props}
+  />
+);
+
+export const FocalSheetsCheck = (props: CheckProps) => (
+  <LocateCheck
+    label="Focal sheets"
+    topic="the focal sheets"
+    text={focalSheetsHelp}
     {...props}
   />
 );

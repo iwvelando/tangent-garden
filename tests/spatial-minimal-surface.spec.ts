@@ -84,16 +84,18 @@ test("the staircase opens a helicoid whose angle bends it into a catenoid with u
   const preset = spatialPresets.find((p) => p.name === staircase.label)!;
   expect((await config(page)).surface).toEqual(preset.config.surface);
   await expect(surface(page)).toHaveValue("helicoid-catenoid");
-  // What the family does not offer has no control, layer, legend entry or
-  // probe target.
+  // Its offset is offered, at 0, and its focal sheets on request, off: no
+  // ridges, focal layer, legend entry or probe target.
   await expect(field(page, "Normal reach ℓ")).toBeVisible();
-  await expect(field(page, "Offset d")).toHaveCount(0);
+  await expect(field(page, "Offset d")).toHaveValue("0");
+  await expect(checkbox(page, "Focal sheets")).not.toBeChecked();
   await expect(checkbox(page, "Locate ridges")).toHaveCount(0);
   await expect(page.getByLabel("Describe", { exact: true })).toHaveCount(0);
   expect(await layers(page)).toEqual([
     "Surface patch",
     "Parameter curves",
     "Normal lines",
+    "Offset surface",
   ]);
   await expect(page.locator(".legend")).toHaveText(/^Surface/);
   await expect(page.locator(".legend")).not.toContainText("Focal");
@@ -206,7 +208,7 @@ function keyOf(name: string): keyof SpatialConfig["surface"] {
   )[name as "Scale s"];
 }
 
-test("choosing the family from an edited torus drops what it does not offer, and lighting it starts from a mirror", async ({
+test("choosing the family from an edited torus keeps its offset, starts without focal sheets, and lighting it starts from a mirror", async ({
   page,
 }) => {
   await ready(page);
@@ -240,26 +242,33 @@ test("choosing the family from an edited torus drops what it does not offer, and
     uMax: Math.PI,
     vMin: -1.5,
     vMax: 1.5,
-    offset: 0,
+    offset: 0.3,
+    edges: true,
   });
-  expect(s.edges).toBeUndefined();
+  // Its focal sheets start off, so the ridges go.
+  expect(s.focal).toBeUndefined();
   expect(s.ridges).toBeUndefined();
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(
     "A minimal surface bent, not stretched",
   );
-  // The probe describes the surface, honestly labeled, and no animation
-  // target names the offset.
-  await expect(page.getByLabel("Describe", { exact: true })).toHaveCount(0);
+  // The focal probe gives way to the surface, honestly labeled; the offset
+  // can be described and animated, as on the torus.
+  await expect(page.getByLabel("Describe", { exact: true })).toHaveValue(
+    "surface",
+  );
+  await expect(
+    page.getByLabel("Describe", { exact: true }).locator("option"),
+  ).toHaveText(["The surface", "The offset"]);
   await expect(page.locator(".spatial-probe legend")).toHaveText(
-    "Probe the surface",
+    "Probe the surface or its offset",
   );
   await expect(readout(page).nth(3)).toHaveText(/, 0$/);
   const targets = await page
     .getByLabel("Parameter 1", { exact: true })
     .locator("option")
     .evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-  expect(targets).not.toContain("surfaceOffset");
+  expect(targets).toContain("surfaceOffset");
   expect(targets).toContain("surfaceB");
   // A mirror or interface starts from the first surface that can be lit.
   await page
@@ -272,14 +281,15 @@ test("choosing the family from an edited torus drops what it does not offer, and
     .locator("option")
     .evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
   expect(offeredLit).not.toContain("helicoid-catenoid");
-  // Back on a surface patch, the family is offered again, with its
-  // controls and none of the others'.
+  // Back on a surface patch, the family is offered again, with its own
+  // controls.
   await page
     .getByLabel("Spatial definition", { exact: true })
     .selectOption("surface");
   await surface(page).selectOption("helicoid-catenoid");
   await settled(page);
-  await expect(field(page, "Offset d")).toHaveCount(0);
+  await expect(field(page, "Offset d")).toBeVisible();
+  await expect(checkbox(page, "Focal sheets")).not.toBeChecked();
   await surface(page).selectOption("torus");
   await settled(page);
   await expect(field(page, "Offset d")).toBeVisible();

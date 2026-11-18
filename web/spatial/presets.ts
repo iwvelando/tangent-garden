@@ -6268,6 +6268,114 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // The helicoid's stair, u in [−0.85π, 0.85π] and v in [−0.9, 0.9], with
+  // its two focal sheets X ± cosh²v n drawn see-through and sparse, and its
+  // ridge located: κ = ±1/cosh²v is stationary along its lines of
+  // curvature only on the waist v = 0, here the stair's axis. Over it both
+  // sheets fold back in cuspidal edges, the helices (±cos u, ±sin u, u) of
+  // radius 1: a double helix of centers around the stair. Seen from the
+  // side, the axis upright. Play bends the stair into a catenoid and back,
+  // θ from 0 to π/2: the edges' radii become 1 ± sin θ and their pitch
+  // 2π cos θ, so one unwinds into the cusp circle of radius 2 round the
+  // neck and the other, with its whole sheet, falls into the axis, where
+  // the note reports it collapsed to a curve. The patch spans under the
+  // 1.78π of u at which a member would cross itself.
+  {
+    name: "A double helix of centers unwinding",
+    detail:
+      "A helicoid's sheets of centers fold along two helices; bent into a catenoid, one opens round the neck and one falls into the axis",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -0.85 * Math.PI,
+        uMax: 0.85 * Math.PI,
+        vMin: -0.9,
+        vMax: 0.9,
+        uSamples: 96,
+        vSamples: 36,
+        curves: 9,
+        offset: 0,
+        reach: 0,
+        focal: true,
+        ridges: true,
+      },
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.15,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0, pitch: -1.3, zoom: 1.1, panX: 0, panY: 0 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
+  // The same stair, v in [−1.2, 1.2], offset by d = 2.5 along its normal.
+  // Its curvatures are ±1/cosh²v, so the offset has passed its focal sheet
+  // wherever cosh²v < d, about the waist, and turned inside out there; it
+  // folds back along the two u-lines v = ±acosh √d, which on the stair are
+  // helices about its axis, drawn in gold. Play draws d in to 0.6 and back:
+  // the edges close in on the waist, meet there as d reaches 1, the waist's
+  // own radius of curvature, and vanish, the offset no longer folded.
+  {
+    name: "A stair's offset folding along two helices",
+    detail:
+      "Offset past its waist's radius of curvature, a helicoid folds back along two edges that close in and vanish",
+    config: {
+      ...base,
+      format: "surface",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -0.85 * Math.PI,
+        uMax: 0.85 * Math.PI,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 96,
+        vSamples: 48,
+        curves: 13,
+        offset: 2.5,
+        reach: 0,
+        edges: true,
+      },
+    },
+    sight: {
+      sheets: "through",
+      opacity: 0.25,
+      hidden: "faint",
+      weight: "regular",
+    },
+    view: { ...initialView, yaw: 0, pitch: -1.3, zoom: 1.1, panX: 0, panY: 0 },
+    flight: {
+      duration: 10,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceOffset", from: "2.5", to: "0.6" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
   // Twenty-four geodesics leave one point of the waist of the elliptic
   // cylinder a = 1.4, b = 0.8, at u = 4.7, facing the view, in every
   // direction, each 30 long. Unrolled flat, the cylinder is a strip and

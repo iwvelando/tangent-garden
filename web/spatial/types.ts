@@ -154,7 +154,10 @@ export const maxSpatialPursuers = 16;
 // each normal line runs from X to X + reach·n. With `edges` the offset's
 // cuspidal edges are located and drawn, and with `ridges` the patch's
 // ridges and the focal sheets' cuspidal edges over them; absent means off,
-// as in links made before them. With `geodesics` a fan of geodesic threads
+// as in links made before them. `focal` asks for the focal sheets on a
+// kind that offers them only on request (the helicoid–catenoid family);
+// absent, as in links made before it, it has none, and every other kind
+// always has them. With `geodesics` a fan of geodesic threads
 // is launched on a kind whose descriptor carries them (see GeodesicConfig);
 // absent, as in links made before it, there is none. Mirrors engine3.SurfaceRequest.
 export type SurfaceKind =
@@ -181,6 +184,7 @@ export type SurfaceConfig = {
   reach: number;
   edges?: boolean;
   ridges?: boolean;
+  focal?: boolean;
   geodesics?: GeodesicConfig;
 };
 // A fan of `count` geodesic threads from the chart point X(u, v), each

@@ -342,8 +342,8 @@ func TestAssociateValidation(t *testing.T) {
 		{"surface.vMax", func(q *SurfaceRequest) { q.VMin, q.VMax = 1, 0.5 }},
 		{"surface.uSamples", func(q *SurfaceRequest) { q.USamples = 241 }},
 		{"surface.vSamples", func(q *SurfaceRequest) { q.USamples, q.VSamples = 240, 61 }},
-		{"surface.offset", func(q *SurfaceRequest) { q.Offset = 0.1 }},
-		{"surface.edges", func(q *SurfaceRequest) { q.Edges = true }},
+		{"surface.offset", func(q *SurfaceRequest) { q.Offset = math.Inf(1) }},
+		// Ridges need the focal sheets, which are on request.
 		{"surface.ridges", func(q *SurfaceRequest) { q.Ridges = true }},
 	} {
 		bad := ok
@@ -373,15 +373,19 @@ func TestAssociateValidation(t *testing.T) {
 	}
 }
 
-// What the family does not offer is refused, not inherited: offset and
-// focal diagnostics, and lighting it as a mirror or interface. Geodesic
-// threads say they are unavailable, as on any other surface without them.
-func TestAssociateUnsupportedCapabilities(t *testing.T) {
+// What the family does not offer is refused, not inherited: lighting it as
+// a mirror or interface, and focal diagnostics while its focal sheets, on
+// request, are off. Without an offset there are no offset diagnostics, as
+// on every kind. Geodesic threads are offered.
+func TestAssociateCapabilityBoundaries(t *testing.T) {
 	c := associateStudy(1, 0.5, -math.Pi, math.Pi, -1.5, 1.5, 24, 12)
-	for _, target := range []string{"offset", "focal1", "focal2"} {
+	for _, target := range []string{"focal1", "focal2"} {
 		if _, err := Compute(probedAs(c, target)); err == nil {
-			t.Fatalf("%s diagnostics were computed", target)
+			t.Fatalf("%s diagnostics were computed without focal sheets", target)
 		}
+	}
+	if r, err := Compute(probedAs(c, "offset")); err != nil || r.Probe != nil {
+		t.Fatalf("offset diagnostics without an offset: %v, %v", r.Probe, err)
 	}
 	lit := c
 	lit.Format = "rays"
@@ -392,7 +396,7 @@ func TestAssociateUnsupportedCapabilities(t *testing.T) {
 	threads := c
 	threads.Surface.Geodesics = &GeodesicRequest{U: 0, V: 0, Direction: 0, Spread: 90, Count: 3, Length: 1, Samples: 20, Selected: 1}
 	// Geodesic threads are offered (see patch_geodesic_test.go); with them
-	// the family still computes nothing it does not offer.
+	// the family still computes nothing it was not asked for.
 	out := surfaced(t, threads)
 	if out.Geodesics == nil || out.Geodesics.Unavailable != "" || len(out.Geodesics.Threads) != 3 {
 		t.Fatalf("threads on the family: %+v", out.Geodesics)
