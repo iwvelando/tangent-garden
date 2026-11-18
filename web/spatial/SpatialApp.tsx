@@ -23,6 +23,7 @@ import {
 import { RefineBetweenSamples } from "../RefineBetweenSamples";
 import { frameHelp, spatialViewHelp } from "../refinement";
 import { StopAtCaustic } from "../StopAtCaustic";
+import { minimalOptics } from "./research";
 import {
   CausticEdgesCheck,
   CuspidalEdgesCheck,
@@ -1463,7 +1464,9 @@ export default function SpatialApp({
         label="Light"
         help={tiered(
           "Parallel light, as from a distant source, or a point source.",
-          `Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`,
+          config.rays.occlusion
+            ? `Either ${refracting ? "refracts" : "reflects"} once, where it first meets the ${face}; what it meets after is not followed.`
+            : `Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`,
         )}
       >
         <select
@@ -1529,6 +1532,22 @@ export default function SpatialApp({
           `Its virtual extension stops at the first virtual caustic point behind the ${face}; a ray with no real caustic point runs as far ahead, and one with no virtual point has no extension. A totally reflected ray, or one whose caustics lie at infinity, runs ℓ.`,
         )}
       />
+      {minimalOptics && config.surface.kind === "helicoid-catenoid" && (
+        <LocateCheck
+          label="Shadows and blocking (research)"
+          topic="first-hit semantics"
+          text={tiered(
+            `Light reaches a point only if nothing is in its way, and stops where it meets the ${face} again.`,
+            "Real caustic points beyond that stop are not drawn. A point whose light grazes the sheet or skims its edge is left out, undecided. Research preview only; it cannot be combined with cuspidal edges or a receiver.",
+          )}
+          checked={!!config.rays.occlusion}
+          onChange={(on) =>
+            setRays(({ occlusion: _, ...r }) =>
+              on ? { ...r, occlusion: true } : r,
+            )
+          }
+        />
+      )}
       <CausticEdgesCheck
         checked={!!config.rays.edges}
         onChange={(on) =>

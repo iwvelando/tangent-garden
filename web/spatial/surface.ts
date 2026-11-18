@@ -1,3 +1,4 @@
+import { minimalOptics } from "./research";
 import { roundedGenerated } from "../atlas";
 import { tiered, type Help } from "../help";
 import { edgesNote, ridgesNote } from "./cuspidal";
@@ -206,7 +207,8 @@ export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
   "helicoid-catenoid": {
     offset: true,
     focal: "requested",
-    optics: false,
+    // Lit only in issue #397's research preview.
+    optics: minimalOptics,
     correspondence: true,
     geodesics: "patch",
     transport: true,

@@ -81,6 +81,21 @@ export function raysNote(
           `${plural(r.atSource, "sample lies", "samples lie")} at the source, with no incident direction.`,
         ]
       : []),
+    ...(r.shadowed
+      ? [
+          `${plural(r.shadowed, "sample is", "samples are")} in shadow: the light meets another part of ${surface} first.`,
+        ]
+      : []),
+    ...(r.undecided
+      ? [
+          `${plural(r.undecided, "sample is", "samples are")} left out: whether ${r.undecided === 1 ? "its" : "their"} light meets ${surface} again cannot be decided, as where it grazes the sheet or skims its edge.`,
+        ]
+      : []),
+    ...(r.blocked && r.blocked[0] + r.blocked[1]
+      ? [
+          `At ${plural(r.blocked[0] + r.blocked[1], "caustic point", "caustic points")} the outgoing light meets ${surface} again first, so ${r.blocked[0] + r.blocked[1] === 1 ? "it is" : "they are"} not drawn; ${plural(r.blockedLines?.length ?? 0, "representative ray ends", "representative rays end")} there.`,
+        ]
+      : []),
     ...(r.stigmatic
       ? [
           `${plural(r.stigmatic, "sample is", "samples are")} stigmatic (μ₁ = μ₂): the outgoing wavefront bends equally every way there, and the two caustics meet.`,

@@ -398,6 +398,7 @@ const config: SchemaOf<SpatialConfig> = {
         length: "number",
         stop: { optional: "boolean" },
         edges: { optional: "boolean" },
+        occlusion: { optional: "boolean" },
         receiver: {
           fields: {
             plane: { options: { none: true, x: true, y: true, z: true } },
