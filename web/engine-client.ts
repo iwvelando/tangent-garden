@@ -1,5 +1,4 @@
 import { restore } from "./lifted";
-import { researchRequest } from "./spatial/research";
 import { expandPolytope } from "./tesseract/polytope";
 import type {
   RefinementView,
@@ -228,7 +227,7 @@ export class EngineClient {
     return (
       await this.request({
         action: "spatial",
-        spatial: researchRequest(config),
+        spatial: config,
         ...(options.diagnostics ? { diagnostics: true } : {}),
         ...(options.surfaceDiagnostics ? { surfaceDiagnostics: true } : {}),
         ...(options.lightDiagnostics ? { lightDiagnostics: true } : {}),
@@ -252,7 +251,7 @@ export class EngineClient {
     return (
       await this.request({
         action: "spatial",
-        spatial: researchRequest(config),
+        spatial: config,
         probe: query,
         probeOnly: true,
       })
@@ -272,7 +271,7 @@ export class EngineClient {
     return (
       await this.request({
         action: "spatial",
-        spatial: researchRequest(config),
+        spatial: config,
         ...options,
         surfaceProbe: query,
         probeOnly: true,

@@ -148,12 +148,6 @@ func TestValidationNamesItsField(t *testing.T) {
 			return c
 		}},
 		{"family ridges without focal sheets", "surface.ridges", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Ridges = true; return c }},
-		{"family lit", "surface.kind", func() Request {
-			c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24)
-			c.Format = "rays"
-			c.Rays = RaysRequest{Interaction: "reflect", N1: 1, N2: 1.5, Light: "parallel", Elevation: 90, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
-			return c
-		}},
 		{"surface reach", "surface.reach", func() Request { c := ellipsoid(); c.Surface.Reach = 2e5; return c }},
 		{"polygon vertices", "surface.geodesics.transport.vertices", func() Request {
 			return polygonAt(launch(ellipsoid(), 0, 0, 0, 0, 1, 1, 60), 0, 0, [2]float64{0, 0}, [2]float64{1, 0})

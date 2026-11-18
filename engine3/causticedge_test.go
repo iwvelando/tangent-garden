@@ -26,14 +26,16 @@ func along(q SurfaceRequest, u, v float64, R, e Vec3) [2]float64 {
 }
 
 // differencedFold is μ² R·C_w, with branch k's caustic point C differenced
-// along w on the mirror, independently of fold's exact derivatives.
+// along w on the mirror, independently of fold's exact derivatives. The
+// stencil is of fourth order: beside a terminator, where μ grows without
+// bound, a central difference's h² error outweighs the fold.
 func differencedFold(q SurfaceRequest, r RaysRequest, u, v float64, k int) float64 {
 	p := q.ray(r, u, v, 1)
 	w := along(q, u, v, p.R, p.Dir[k])
 	const h = 1e-5
-	plus := q.ray(r, u+h*w[0], v+h*w[1], 1).caustic(k)
-	minus := q.ray(r, u-h*w[0], v-h*w[1], 1).caustic(k)
-	return p.Mu[k] * p.Mu[k] * p.R.dot(plus.sub(minus).mul(1/(2*h)))
+	at := func(s float64) Vec3 { return q.ray(r, u+s*w[0], v+s*w[1], 1).caustic(k) }
+	d := at(h).sub(at(-h)).mul(8).sub(at(2 * h).sub(at(-2 * h))).mul(1 / (12 * h))
+	return p.Mu[k] * p.Mu[k] * p.R.dot(d)
 }
 
 // A circular cylinder of radius R lit on its inside by parallel light
@@ -142,36 +144,44 @@ func TestCausticEdgePointsAreFolds(t *testing.T) {
 		inside(mirror("torus", 2, .8, 0, 0, 2*math.Pi, 0, 2*math.Pi, 72, 48, parallel(25, -60))),
 		glass(mirror("ellipsoid", 1.5, 1.2, 1, 0, 2*math.Pi, .05, math.Pi/2, 72, 48, parallel(20, -60)), 1, 1.5),
 	} {
-		q, light := c.Surface, c.Rays
-		r := rayed(t, withCausticEdges(c))
-		if r.Edges == nil || len(*r.Edges) == 0 {
-			t.Fatalf("%s %s: no edges", q.Kind, light.Interaction)
-		}
-		size := 0.0
-		for i := 0; i <= q.USamples; i += 3 {
-			for j := 0; j <= q.VSamples; j += 3 {
-				u, v := q.at(i, j)
-				if p := q.ray(light, u, v, 1); p.traced() && !p.Stigmatic {
-					for k := range 2 {
-						size = math.Max(size, math.Abs(differencedFold(q, light, u, v, k))/(p.Mu[0]*p.Mu[0]+p.Mu[1]*p.Mu[1]))
-					}
+		checkEdgeFolds(t, c)
+	}
+}
+
+// checkEdgeFolds checks that the study has cuspidal edges and that every
+// point of each is a root of the fold on its own caustic, by independent
+// differences.
+func checkEdgeFolds(t *testing.T, c Request) {
+	t.Helper()
+	q, light := c.Surface, c.Rays
+	r := rayed(t, withCausticEdges(c))
+	if r.Edges == nil || len(*r.Edges) == 0 {
+		t.Fatalf("%s %s: no edges", q.Kind, light.Interaction)
+	}
+	size := 0.0
+	for i := 0; i <= q.USamples; i += 3 {
+		for j := 0; j <= q.VSamples; j += 3 {
+			u, v := q.at(i, j)
+			if p := q.ray(light, u, v, 1); p.traced() && !p.Stigmatic {
+				for k := range 2 {
+					size = math.Max(size, math.Abs(differencedFold(q, light, u, v, k))/(p.Mu[0]*p.Mu[0]+p.Mu[1]*p.Mu[1]))
 				}
 			}
 		}
-		for n, e := range *r.Edges {
-			us, vs := params(q, e)
-			for m, x := range e.Points {
-				k := e.Branch - 1
-				p := q.ray(light, us[m], vs[m], 1)
-				if (p.Mu[k] < 0) != e.Virtual {
-					t.Fatalf("%s: edge %d point %d has μ %v, virtual %v", q.Kind, n, m, p.Mu[k], e.Virtual)
-				}
-				if x.sub(p.caustic(k)).norm() > 1e-9*(1+x.norm()) {
-					t.Fatalf("%s: edge %d point %d at %v, off its caustic %v", q.Kind, n, m, x, p.caustic(k))
-				}
-				if d := differencedFold(q, light, us[m], vs[m], k) / (p.Mu[0]*p.Mu[0] + p.Mu[1]*p.Mu[1]); math.Abs(d) > 1e-6*size {
-					t.Fatalf("%s %s: edge %d point %d at (%v, %v): fold differenced %v, against %v elsewhere", q.Kind, light.Interaction, n, m, us[m], vs[m], d, size)
-				}
+	}
+	for n, e := range *r.Edges {
+		us, vs := params(q, e)
+		for m, x := range e.Points {
+			k := e.Branch - 1
+			p := q.ray(light, us[m], vs[m], 1)
+			if (p.Mu[k] < 0) != e.Virtual {
+				t.Fatalf("%s: edge %d point %d has μ %v, virtual %v", q.Kind, n, m, p.Mu[k], e.Virtual)
+			}
+			if x.sub(p.caustic(k)).norm() > 1e-9*(1+x.norm()) {
+				t.Fatalf("%s: edge %d point %d at %v, off its caustic %v", q.Kind, n, m, x, p.caustic(k))
+			}
+			if d := differencedFold(q, light, us[m], vs[m], k) / (p.Mu[0]*p.Mu[0] + p.Mu[1]*p.Mu[1]); math.Abs(d) > 1e-6*size {
+				t.Fatalf("%s %s: edge %d point %d at (%v, %v): fold differenced %v, against %v elsewhere", q.Kind, light.Interaction, n, m, us[m], vs[m], d, size)
 			}
 		}
 	}

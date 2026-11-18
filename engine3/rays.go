@@ -35,15 +35,6 @@ type RaysRequest struct {
 	Stop        bool            `json:"stop"`
 	Receiver    ReceiverRequest `json:"receiver"`
 	Edges       bool            `json:"edges,omitempty"`
-	// Research admits the helicoid–catenoid family as a mirror or
-	// interface for issue #397's prototype. Only the research preview
-	// sets it, and no link carries it; without it the family is refused.
-	Research bool `json:"research,omitempty"`
-	// Occlusion applies first-hit semantics (see occluder), on the family
-	// under Research only: a sample whose incident path meets the patch
-	// first is shadowed, an outgoing ray ends where it meets the patch
-	// again, and a real caustic point beyond that is blocked.
-	Occlusion bool `json:"occlusion,omitempty"`
 }
 
 // Ray is a representative ray at sample (I, J): incident from Start to
@@ -101,16 +92,6 @@ type RaysResult struct {
 	Clipped   []int           `json:"clipped"`
 	Receiver  *Receiver       `json:"receiver"`
 	Edges     *[]CuspidalEdge `json:"edges,omitempty"`
-	// Under first-hit semantics only: Shadowed counts lit samples whose
-	// incident path meets the patch first, Undecided samples whose first
-	// hit could not be decided (grazing, at the domain's edge, or beyond
-	// the work limit), Blocked[k] traced samples whose real branch k+1
-	// caustic point lies beyond where the outgoing ray meets the patch
-	// again, and BlockedLines the representative rays drawn shorter for it.
-	Shadowed     int   `json:"shadowed,omitempty"`
-	Undecided    int   `json:"undecided,omitempty"`
-	Blocked      []int `json:"blocked,omitempty"`
-	BlockedLines []int `json:"blockedLines,omitempty"`
 }
 
 func (r RaysRequest) validate() error {
@@ -185,11 +166,6 @@ type mirrorPoint struct {
 	// Twist is the antisymmetric part of the wavefront's shape operator,
 	// zero for the normal congruence a reflection makes.
 	Twist float64
-	// Under first-hit semantics (see occluder): the incident path meets
-	// the patch first, the first hit is undecided, or the outgoing ray
-	// meets the patch again at distance Block.
-	Shadowed, Undecided, Blocked bool
-	Block                        float64
 }
 
 // ray reflects the light at (u, v); scale is the surface's size, against
@@ -349,11 +325,7 @@ func (p mirrorPoint) finite(k int, reach float64) bool {
 
 // traced says whether the light leaves the sample along R: it is lit and,
 // refracting, not totally reflected.
-func (p mirrorPoint) traced() bool { return p.lit() && !p.Total }
-
-// lit says whether the light reaches the sample: it arrives against the
-// normal and, under first-hit semantics, nothing stands in its way.
-func (p mirrorPoint) lit() bool { return p.Lit && !p.Shadowed && !p.Undecided }
+func (p mirrorPoint) traced() bool { return p.Lit && !p.Total }
 
 // rays samples the mirror, its caustic parts, and representative rays.
 // With surfaceProbe it also returns the mirror's own surface probe, as a
@@ -363,21 +335,11 @@ func rays(q SurfaceRequest, r RaysRequest, surfaceProbe, light bool, cache *rayC
 	if err := q.validatePatch(); err != nil {
 		return Result{}, err
 	}
-	if !q.offers().optics && !(r.Research && q.Kind == "helicoid-catenoid") {
+	if !q.offers().optics {
 		return Result{}, fieldErr("surface.kind", "%s is not offered as a mirror or interface", surfaceTitle(q.Kind))
 	}
 	if err := r.validate(); err != nil {
 		return Result{}, err
-	}
-	if r.Occlusion {
-		switch {
-		case !r.Research || q.Kind != "helicoid-catenoid":
-			return Result{}, fieldErr("rays.occlusion", "first-hit semantics are a research prototype on the helicoid–catenoid family only")
-		case r.Receiver.Plane != "none":
-			return Result{}, fieldErr("rays.occlusion", "the prototype does not combine first-hit semantics with a receiver plane")
-		case r.Edges:
-			return Result{}, fieldErr("rays.occlusion", "the prototype does not locate cuspidal edges under first-hit semantics")
-		}
 	}
 	if surfaceProbe && light {
 		return Result{}, fmt.Errorf("probe the mirror (surfaceDiagnostics) or the light (lightDiagnostics), not both")
@@ -421,39 +383,6 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 		out.Source = &s
 	}
 	samples := cache.samplesFor(nu, nv)
-	var occlude *occluder
-	if r.Occlusion {
-		occlude, _ = newOccluder(q, r, scale)
-		out.Blocked = []int{0, 0}
-	}
-	// at is the light at (u, v), with first-hit semantics when asked for.
-	at := func(u, v float64) mirrorPoint {
-		s := q.ray(r, u, v, scale)
-		if occlude != nil {
-			occlude.apply(&s, u, v)
-		}
-		return s
-	}
-	// middle is the light at the midpoint of the edge from (i, j) along
-	// (di, dj). Under first-hit semantics it is kept for every caustic
-	// part that joins the same edge.
-	var middles [2][][]*mirrorPoint
-	if occlude != nil {
-		middles = [2][][]*mirrorPoint{grid2[*mirrorPoint](nu+1, nv+1), grid2[*mirrorPoint](nu+1, nv+1)}
-	}
-	middle := func(i, j, di, dj int) mirrorPoint {
-		u0, v0 := q.at(i, j)
-		u1, v1 := q.at(i+di, j+dj)
-		if occlude == nil {
-			return at((u0+u1)/2, (v0+v1)/2)
-		}
-		memo := &middles[dj][i][j]
-		if *memo == nil {
-			m := at((u0+u1)/2, (v0+v1)/2)
-			*memo = &m
-		}
-		return **memo
-	}
 	points, normals := grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)
 	// parts[k][virtual] holds branch k's points and normals.
 	parts := [2][2][2][][]*Vec3{}
@@ -476,7 +405,7 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 	for i := 0; i <= nu; i++ {
 		for j := 0; j <= nv; j++ {
 			u, v := q.at(i, j)
-			s := at(u, v)
+			s := q.ray(r, u, v, scale)
 			samples[i][j] = s
 			points[i][j] = vertex(s.X)
 			switch {
@@ -487,10 +416,6 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 				out.AtSource++
 			case !s.Lit:
 				out.Unlit++
-			case s.Shadowed:
-				out.Shadowed++
-			case s.Undecided:
-				out.Undecided++
 			}
 			normals[i][j] = vertex(s.N)
 			if s.Total {
@@ -505,10 +430,6 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 			for k := range parts {
 				if !s.finite(k, reach) {
 					out.Clipped[k]++
-					continue
-				}
-				if !s.reached(k) {
-					out.Blocked[k]++
 					continue
 				}
 				part := 0
@@ -530,12 +451,14 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 		for part := range parts[k] {
 			pts := parts[k][part][0]
 			join := func(i, j, di, dj int) bool {
-				var mid *Vec3
-				if m := middle(i, j, di, dj); m.finite(k, reach) && m.reached(k) {
+				u0, v0 := q.at(i, j)
+				u1, v1 := q.at(i+di, j+dj)
+				var middle *Vec3
+				if m := q.ray(r, (u0+u1)/2, (v0+v1)/2, scale); m.finite(k, reach) {
 					c := m.caustic(k)
-					mid = &c
+					middle = &c
 				}
-				return continues(samples[i][j].Mu[k], samples[i+di][j+dj].Mu[k], *pts[i][j], *pts[i+di][j+dj], mid, scale)
+				return continues(samples[i][j].Mu[k], samples[i+di][j+dj].Mu[k], *pts[i][j], *pts[i+di][j+dj], middle, scale)
 			}
 			s := sheet(pts, parts[k][part][1], join, scale)
 			out.Caustics = append(out.Caustics, CausticSheet{SurfaceSheet: s, Branch: k + 1, Virtual: part == 1, Shape: spans(s, scale)})
@@ -550,7 +473,7 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 		for _, i := range out.VCurves {
 			for _, j := range out.UCurves {
 				s := samples[i][j]
-				if !s.lit() {
+				if !s.Lit {
 					continue
 				}
 				start := s.X.sub(s.I.mul(r.Length))
@@ -558,12 +481,8 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 					start = *out.Source
 				}
 				if s.Total {
-					reflected, length := s.I.sub(s.N.mul(2*s.I.dot(s.N))), r.Length
-					if s.Blocked && s.Block < length {
-						length = s.Block
-						out.BlockedLines = append(out.BlockedLines, len(out.Lines))
-					}
-					out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(reflected.mul(length)), s.X, false, true})
+					reflected := s.I.sub(s.N.mul(2 * s.I.dot(s.N)))
+					out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(reflected.mul(r.Length)), s.X, false, true})
 					continue
 				}
 				// The first caustic points ahead of the surface and behind it.
@@ -587,10 +506,6 @@ func buildRayGeometry(q SurfaceRequest, r RaysRequest, cache *rayCache) (*rayGeo
 					behind = 0
 				case !converging:
 					ahead = behind
-				}
-				if s.Blocked && s.Block < ahead {
-					ahead = s.Block
-					out.BlockedLines = append(out.BlockedLines, len(out.Lines))
 				}
 				out.Lines = append(out.Lines, Ray{i, j, start, s.X, s.X.add(s.R.mul(ahead)), s.X.sub(s.R.mul(behind)), virtual, false})
 			}

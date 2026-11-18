@@ -300,9 +300,6 @@ export type RaysConfig = {
   // Locate the caustics' cuspidal edges. Absent means off, as in links
   // made before it.
   edges?: boolean;
-  // Issue #397's research preview only (see research.ts): first-hit
-  // semantics.
-  occlusion?: boolean;
 };
 // The level set F(x, y, z) = level of an expression in x, y, z and a (not
 // t), within the box, on a grid of `cells` cells along the box's longest
@@ -1184,11 +1181,6 @@ export type RaysResult = {
   clipped: number[];
   receiver: ReceiverResult | null;
   edges?: CuspidalEdge[];
-  // Under first-hit semantics only (issue #397's research preview).
-  shadowed?: number;
-  undecided?: number;
-  blocked?: number[];
-  blockedLines?: number[];
 };
 // Mirrors engine3.ImplicitResult: an indexed mesh with three coordinates per
 // vertex in positions and normals (a normal is ∇F/|∇F|, toward larger F, its

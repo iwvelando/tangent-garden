@@ -147,18 +147,17 @@ func analytic(geodesics geodesicSupport) surfaceCapabilities {
 }
 
 // surfaceKinds lists every kind of patch with what it offers. The
-// helicoid–catenoid family's curvature, geodesics, offsets and focal
-// sheets have been validated, not its optics; its focal sheets are on
-// request, so that its studies made before them keep their bounds and
-// cost. Its chart is periodic only at θ = π/2, so its patch stays one
-// rectangle for its threads at every angle.
+// helicoid–catenoid family's focal sheets are on request, so that its
+// studies made before them keep their bounds and cost. Its chart is
+// periodic only at θ = π/2, so its patch stays one rectangle for its
+// threads at every angle.
 var surfaceKinds = map[string]surfaceCapabilities{
 	"ellipsoid":         analytic(geodesicSupport{whole: true, scale: largestAxis}),
 	"torus":             analytic(geodesicSupport{whole: true}),
 	"cylinder":          analytic(geodesicSupport{patch: true, seam: true, scale: func(q SurfaceRequest) float64 { return math.Max(q.A, q.B) }}),
 	"paraboloid":        analytic(geodesicSupport{patch: true, graph: true, scale: paraboloidScale}),
 	"monkey":            analytic(geodesicSupport{}),
-	"helicoid-catenoid": {offset: true, focal: true, focalOnRequest: true, correspondence: true, geodesics: geodesicSupport{patch: true, scale: func(q SurfaceRequest) float64 { return q.A }}},
+	"helicoid-catenoid": {offset: true, focal: true, focalOnRequest: true, optics: true, correspondence: true, geodesics: geodesicSupport{patch: true, scale: func(q SurfaceRequest) float64 { return q.A }}},
 }
 
 // largestAxis is an ellipsoid's largest semi-axis.

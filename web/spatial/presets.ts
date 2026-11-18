@@ -1,4 +1,3 @@
-import { minimalOptics } from "./research";
 import type { SpatialFamilySettings } from "./family";
 import type { Pace, Repeat } from "../timing";
 import type { Cut } from "./cut";
@@ -6141,6 +6140,60 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // Half a turn of the stair, u in [−0.45π, 0.45π] and v in [−1.2, 1.2],
+  // as a mirror lit straight down on the side its reversed normal faces
+  // (v > 0), each ray stopped at its first caustic point. A vertical line
+  // meets the full helicoid every half turn, so a span below π leaves no
+  // step above another: at every angle nothing drawn is in shadow or
+  // blocked (engine3 TestMinimalOpticsPresetsShadowFree). Play bends it
+  // through the family, θ from 0 to π/2 and back: the real caustic, a
+  // ribbon wrapping the half turn, gathers onto the axis below the
+  // opening throat, as the catenoid's inside focuses axial light.
+  {
+    name: "A half-turn mirror opening into a throat",
+    detail:
+      "Light from above falls on half a turn of the stair and gathers on the axis as it bends into a neck",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -0.45 * Math.PI,
+        uMax: 0.45 * Math.PI,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 120,
+        vSamples: 60,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        reverse: true,
+      },
+      rays: {
+        ...base.rays,
+        azimuth: 0,
+        elevation: -90,
+        length: 3,
+        stop: true,
+      },
+    },
+    view: { ...initialView, yaw: 0.6, pitch: -1.15 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
   // Fifteen geodesics leave the helicoid's stair (u in [−0.85π, 0.85π], v
   // in [−1.2, 1.2], a patch that never crosses itself) at (−2.4, 1), aimed
   // 26.7°–73.3° below the parallel, toward the axis. Each keeps Clairaut's
@@ -6869,192 +6922,4 @@ export const spatialPresets: {
     view: { ...initialView, yaw: 0.6, pitch: -1.15 },
     layers: { surface: false, normals: false },
   },
-  // Issue #397's research studies, listed only in its preview.
-  ...(minimalOptics ? minimalOpticsStudies() : []),
 ];
-
-// Research studies for issue #397, never in the gallery: the
-// helicoid–catenoid family lit as a mirror or interface, sample by sample
-// (as every other mirror is) and with first-hit semantics, its angle θ
-// running from the helicoid to the catenoid and back. The first is a half
-// turn lit from straight above on its reversed side, rays stopped at the
-// caustic: nothing in it is ever shadowed or blocked, so both semantics
-// draw it alike (engine3 TestMinimalOpticsHonestStair). The next two are
-// "A staircase becoming a throat"'s longer patch, where they differ.
-function minimalOpticsStudies(): (typeof spatialPresets)[number][] {
-  const stair = {
-    ...base.surface,
-    kind: "helicoid-catenoid" as const,
-    a: 1,
-    b: 0,
-    c: 0,
-    uMin: -0.85 * Math.PI,
-    uMax: 0.85 * Math.PI,
-    vMin: -1.2,
-    vMax: 1.2,
-    uSamples: 120,
-    vSamples: 60,
-    curves: 13,
-    offset: 0,
-    reach: 0,
-  };
-  const unfold: Flight = {
-    duration: 12,
-    repeat: "back-and-forth",
-    pace: "ease",
-    camera: "current",
-    animate: {
-      mode: "parameters",
-      tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
-    },
-    path: { style: "steady", keys: [] },
-  };
-  const above = {
-    ...base.rays,
-    azimuth: 0,
-    elevation: -90,
-    length: 3,
-    stop: true,
-  };
-  const view = { ...initialView, yaw: 0.6, pitch: -1.15 };
-  return [
-    {
-      name: "Research: a half-turn mirror opening into a throat",
-      detail:
-        "Light from above falls on half a turn of the stair, nothing in its way, and gathers as it bends into a neck",
-      config: {
-        ...base,
-        format: "rays",
-        surface: {
-          ...stair,
-          uMin: -0.45 * Math.PI,
-          uMax: 0.45 * Math.PI,
-          reverse: true,
-        },
-        rays: above,
-      },
-      view,
-      flight: unfold,
-    },
-    {
-      name: "Research: a spiral ramp pouring light into a funnel",
-      detail:
-        "Light from above falls on one side of the stair, nothing in its way, and gathers down the axis as the ramp opens into a funnel",
-      config: {
-        ...base,
-        format: "rays",
-        surface: {
-          ...stair,
-          uMin: -0.95 * Math.PI,
-          uMax: 0.95 * Math.PI,
-          vMin: 0,
-          vMax: 1.2,
-          uSamples: 160,
-          vSamples: 40,
-          reverse: true,
-        },
-        rays: above,
-      },
-      view: { ...initialView, yaw: 0.4, pitch: -0.9 },
-      flight: unfold,
-    },
-    {
-      name: "Research: a staircase mirror opening into a throat",
-      detail:
-        "Light from above reflects off every lit step, shadows ignored, while the stair bends into a neck",
-      config: { ...base, format: "rays", surface: stair, rays: above },
-      view,
-      flight: unfold,
-    },
-    {
-      name: "Research: the staircase mirror in its own shadow",
-      detail:
-        "The same light where it first meets the stair: the steps above shade those below",
-      config: {
-        ...base,
-        format: "rays",
-        surface: stair,
-        rays: { ...above, occlusion: true },
-      },
-      view,
-      flight: unfold,
-    },
-    {
-      name: "Research: light across the throat",
-      detail:
-        "Slanting light inside a catenoid stops at the far wall, and the caustic beyond it is not drawn",
-      config: {
-        ...base,
-        format: "rays",
-        surface: {
-          ...stair,
-          b: Math.PI / 2,
-          uMin: -Math.PI,
-          uMax: 0.9 * Math.PI,
-          vMin: -1.3,
-          vMax: 1.6,
-          uSamples: 120,
-          vSamples: 80,
-          reverse: true,
-        },
-        rays: {
-          ...base.rays,
-          azimuth: 0,
-          elevation: -60,
-          length: 4,
-          occlusion: true,
-        },
-      },
-      view: { ...initialView, yaw: 0.4, pitch: -0.9 },
-    },
-    {
-      name: "Research: a lamp above a spiral ramp",
-      detail:
-        "A lamp over one side of the stair lights the top turn; the ramp bends into a funnel",
-      config: {
-        ...base,
-        format: "rays",
-        surface: {
-          ...stair,
-          uMin: -Math.PI,
-          uMax: Math.PI,
-          vMin: 0,
-          vMax: 1.6,
-          uSamples: 160,
-          vSamples: 40,
-          reverse: true,
-        },
-        rays: {
-          ...base.rays,
-          light: "point",
-          source: { x: 0.8, y: 0, z: 5 },
-          length: 2,
-          occlusion: true,
-        },
-      },
-      view: { ...initialView, yaw: 0.4, pitch: -0.9 },
-      flight: unfold,
-    },
-    {
-      name: "Research: a glass stair",
-      detail:
-        "Slanting light enters the stair's glass once, from air into n = 1.5, while it bends into a neck",
-      config: {
-        ...base,
-        format: "rays",
-        surface: stair,
-        rays: {
-          ...base.rays,
-          interaction: "refract",
-          n1: 1,
-          n2: 1.5,
-          azimuth: 30,
-          elevation: -60,
-          length: 1.5,
-        },
-      },
-      view,
-      flight: unfold,
-    },
-  ];
-}

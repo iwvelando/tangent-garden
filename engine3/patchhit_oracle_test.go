@@ -2,9 +2,13 @@ package engine3
 
 import "math"
 
-// First-hit semantics for a ray study (issue #397's prototype): where a
-// line first meets the analytic patch, decided with certificates rather
-// than from the sampled mesh alone.
+// The first-hit oracle for the helicoid–catenoid family's ray presets: where
+// a line first meets the analytic patch, decided with certificates rather
+// than from the sampled mesh alone. The engine draws every lit sample's
+// single reflection or refraction, with nothing occluded (see ray); a
+// preset is honest when this oracle finds nothing in its drawing shadowed,
+// undecided or blocked (TestMinimalOpticsPresetsShadowFree). It is test
+// code only: production has no intersection code.
 //
 // The patch over a parameter rectangle R lies within the bounding box of
 // X at R's corners, inflated by M(Δu² + Δv²)/8: the bilinear interpolant
@@ -329,6 +333,15 @@ func (p *patchTree) newton(o, d Vec3, u, v float64) (float64, float64, float64, 
 	return 0, 0, 0, 0, false
 }
 
+// occlusion is a lit sample's state under first-hit semantics: its
+// incident path meets the patch first (shadowed), the first hit along
+// either path cannot be decided (undecided), or its outgoing ray meets
+// the patch again at distance block (blocked).
+type occlusion struct {
+	shadowed, undecided, blocked bool
+	block                        float64
+}
+
 // occluder applies first-hit semantics to a ray study's samples: a lit
 // sample is shadowed when its incident path meets the patch before it, and
 // its outgoing ray is blocked at the first point where it meets the patch
@@ -346,12 +359,12 @@ func newOccluder(q SurfaceRequest, r RaysRequest, scale float64) (*occluder, boo
 	return &occluder{t, r}, true
 }
 
-// apply sets p's shadow, block and undecided state; p is the sample at (u,
-// v), as ray returns it. Parallel light arrives from beyond the patch's
-// bounding sphere, and an outgoing ray is followed to it.
-func (o *occluder) apply(p *mirrorPoint, u, v float64) {
+// apply is the state of p, the sample at (u, v) as ray returns it.
+// Parallel light arrives from beyond the patch's bounding sphere, and an
+// outgoing ray is followed to it. An unlit sample has none.
+func (o *occluder) apply(p mirrorPoint, u, v float64) occlusion {
 	if !p.Lit {
-		return
+		return occlusion{}
 	}
 	own := &[2]float64{u, v}
 	beyond := p.X.sub(o.tree.center).norm() + o.tree.radius + o.tree.scale
@@ -361,11 +374,9 @@ func (o *occluder) apply(p *mirrorPoint, u, v float64) {
 	}
 	switch h := o.tree.any(start, p.I, 0, length*(1+1e-12), own); h.state {
 	case hitFound:
-		p.Shadowed = true
-		return
+		return occlusion{shadowed: true}
 	case hitUndecided:
-		p.Undecided = true
-		return
+		return occlusion{undecided: true}
 	}
 	out := p.R
 	if p.Total {
@@ -373,14 +384,15 @@ func (o *occluder) apply(p *mirrorPoint, u, v float64) {
 	}
 	switch h := o.tree.first(p.X, out, 0, beyond, own); h.state {
 	case hitFound:
-		p.Blocked, p.Block = true, h.t
+		return occlusion{blocked: true, block: h.t}
 	case hitUndecided:
-		p.Undecided = true
+		return occlusion{undecided: true}
 	}
+	return occlusion{}
 }
 
-// reached says whether branch k's caustic point is reached before the
+// reached says whether p's branch k caustic point is reached before the
 // outgoing ray is blocked: a real point at or beyond the block is not.
-func (p mirrorPoint) reached(k int) bool {
-	return !p.Blocked || p.Mu[k] <= 0 || 1/p.Mu[k] < p.Block
+func (o occlusion) reached(p mirrorPoint, k int) bool {
+	return !o.blocked || p.Mu[k] <= 0 || 1/p.Mu[k] < o.block
 }

@@ -104,7 +104,7 @@ func memberHits(q SurfaceRequest, o, d Vec3, lo, hi float64, steps int) [][3]flo
 }
 
 // occludedState is the sample's state under first-hit semantics, by the
-// engine's own occluder: traced, shadowed, undecided or unlit.
+// oracle's occluder: traced, shadowed, undecided or unlit.
 func occludedState(t *testing.T, c Request, u, v float64) string {
 	t.Helper()
 	_, scale, err := c.Surface.positions()
@@ -116,11 +116,11 @@ func occludedState(t *testing.T, c Request, u, v float64) string {
 		t.Fatal("no occluder")
 	}
 	p := c.Surface.ray(c.Rays, u, v, scale)
-	o.apply(&p, u, v)
+	s := o.apply(p, u, v)
 	switch {
-	case p.Undecided:
+	case s.undecided:
 		return "undecided"
-	case p.Shadowed:
+	case s.shadowed:
 		return "shadowed"
 	case p.traced():
 		return "traced"
@@ -266,47 +266,17 @@ func TestPatchTreeGrazing(t *testing.T) {
 	}
 }
 
-// Validation of the first-hit option: only under the research flag on the
-// family, and not combined with what the prototype does not define.
-func TestOcclusionValidation(t *testing.T) {
-	c := minimal(1, 0, -2, 2, -1, 1, 24, 12, parallel(0, -90))
-	c.Rays.Occlusion = true
-	if _, err := Compute(c); err != nil {
-		t.Fatal(err)
-	}
-	for _, tc := range []struct {
-		edit  func(*Request)
-		field string
-	}{
-		{func(c *Request) { c.Rays.Research = false }, "surface.kind"},
-		{func(c *Request) { c.Rays.Receiver = ReceiverRequest{Plane: "z", At: -3, Size: 4, Bins: 32} }, "rays.occlusion"},
-		{func(c *Request) { c.Rays.Edges = true }, "rays.occlusion"},
-	} {
-		d := c
-		tc.edit(&d)
-		if _, err := Compute(d); err == nil || fieldOf(err) != tc.field {
-			t.Fatalf("%s: %v", tc.field, err)
-		}
-	}
-	torus := mirror("torus", 2, .8, 0, 0, 2*math.Pi, 0, 2*math.Pi, 24, 12, parallel(0, -60))
-	torus.Rays.Occlusion, torus.Rays.Research = true, true
-	if _, err := Compute(torus); err == nil || fieldOf(err) != "rays.occlusion" {
-		t.Fatalf("torus: %v", err)
-	}
-}
-
 // Under light straight down the helicoid's vertical line through X(u, v)
 // meets it again every half turn, at (u + π, −v): with v symmetric, a lit
 // sample is in shadow exactly when u + π is inside the domain. A sample
 // whose blocker would be at the domain's edge is undecided, not guessed.
-// Without the option every lit sample reflects, as on main.
-func TestOcclusionHelicoidShadow(t *testing.T) {
+// The engine draws every lit sample all the same (nothing is occluded):
+// this is the case the family's help warns of.
+func TestOccluderHelicoidShadow(t *testing.T) {
 	c := minimal(1, 0, -2*math.Pi, 2*math.Pi, -1.2, 1.2, 64, 24, parallel(0, -90))
-	plain := rayed(t, c)
-	c.Rays.Occlusion = true
 	r := rayed(t, c)
 	q := c.Surface
-	lit, shadowed, undecided := 0, 0, 0
+	shadowed, undecided, lit := 0, 0, 0
 	for i := 0; i <= q.USamples; i++ {
 		for j := 0; j <= q.VSamples; j++ {
 			u, v := grid(q, i, j)
@@ -339,43 +309,33 @@ func TestOcclusionHelicoidShadow(t *testing.T) {
 			}
 		}
 	}
-	// Nothing leaves a shadowed or undecided sample: no caustic point and
-	// no representative ray.
-	for _, part := range r.Caustics {
-		each(part.SurfaceSheet, func(i, j int, _ Vec3) {
+	// Single event: every lit sample reflects, shadowed or not.
+	traced := 0
+	for i := 0; i <= q.USamples; i++ {
+		for j := 0; j <= q.VSamples; j++ {
 			u, v := grid(q, i, j)
-			if st := occludedState(t, c, u, v); st != "traced" {
-				t.Fatalf("(%d, %d): a caustic point at a %s sample", i, j, st)
+			if q.ray(c.Rays, u, v, 1).traced() {
+				traced++
 			}
-		})
-	}
-	for _, l := range r.Lines {
-		u, v := grid(q, l.I, l.J)
-		if st := occludedState(t, c, u, v); st != "traced" {
-			t.Fatalf("(%d, %d): a ray from a %s sample", l.I, l.J, st)
 		}
 	}
-	if r.Shadowed != shadowed || r.Undecided != undecided || shadowed < 300 || r.Unlit != plain.Unlit {
-		t.Fatalf("shadowed %d (%d), undecided %d (%d), unlit %d (%d)", r.Shadowed, shadowed, r.Undecided, undecided, r.Unlit, plain.Unlit)
+	if shadowed < 300 || undecided == 0 || traced != lit || r.Unlit+lit != (q.USamples+1)*(q.VSamples+1) {
+		t.Fatalf("shadowed %d, undecided %d, traced %d of %d lit, unlit %d", shadowed, undecided, traced, lit, r.Unlit)
 	}
-	if plain.Shadowed != 0 || plain.Undecided != 0 || len(plain.BlockedLines) != 0 {
-		t.Fatal("without the option nothing is occluded")
-	}
-	_ = lit
 }
 
 // Slanting light on the catenoid's inside, and refracted into the stair:
-// each outgoing ray that meets the patch again is blocked there, at the
-// oracle's distance b. A real
-// caustic point at or beyond b is blocked and not drawn, one before it is
-// drawn, and virtual points stay. Representative rays end at b, and are
-// listed as blocked.
-func TestOcclusionBlockedCaustics(t *testing.T) {
+// the oracle blocks each outgoing ray that meets the patch again at the
+// closed-form oracle's distance b, and a real caustic point at or beyond b
+// is not reached, one before it is, and virtual points always are. Both
+// studies have many of each, so a preset whose drawing reaches beyond a
+// block fails TestMinimalOpticsPresetsShadowFree.
+func TestOccluderBlockedCaustics(t *testing.T) {
 	throat := minimal(1, math.Pi/2, -math.Pi, .9*math.Pi, -1.3, 1.6, 60, 40, parallel(0, -60))
 	throat.Surface.Reverse = true
 	stair := glass(minimal(1, 0, -.85*math.Pi, .85*math.Pi, -1.2, 1.2, 60, 30, parallel(30, -60)), 1, 1.5)
 	for _, c := range []Request{throat, stair} {
-		c.Rays.Research, c.Rays.Occlusion, c.Rays.Length = true, true, 50
+		c.Rays.Length = 50
 		blockedCaustics(t, c)
 	}
 }
@@ -383,7 +343,6 @@ func TestOcclusionBlockedCaustics(t *testing.T) {
 func blockedCaustics(t *testing.T, c Request) {
 	t.Helper()
 	q := c.Surface
-	r := rayed(t, c)
 	_, scale, _ := q.positions()
 	o, _ := newOccluder(q, c.Rays, scale)
 	wall := func(x, d Vec3) float64 {
@@ -392,92 +351,44 @@ func blockedCaustics(t *testing.T, c Request) {
 		}
 		return math.Inf(1)
 	}
-	blocked, reached, virtual := [2]int{}, 0, 0
+	blocked, reached, virtual := 0, 0, 0
 	for i := 0; i <= q.USamples; i++ {
 		for j := 0; j <= q.VSamples; j++ {
 			u, v := grid(q, i, j)
 			p := q.ray(c.Rays, u, v, scale)
-			o.apply(&p, u, v)
-			if !p.traced() {
+			s := o.apply(p, u, v)
+			if !p.traced() || s.shadowed || s.undecided {
 				continue
 			}
 			b := wall(p.X, p.R)
-			if p.Blocked != !math.IsInf(b, 1) || p.Blocked && math.Abs(p.Block-b) > 1e-8 {
-				t.Fatalf("(%d, %d): block %v at %v, oracle %v", i, j, p.Blocked, p.Block, b)
+			if s.blocked != !math.IsInf(b, 1) || s.blocked && math.Abs(s.block-b) > 1e-8 {
+				t.Fatalf("(%d, %d): block %v at %v, oracle %v", i, j, s.blocked, s.block, b)
 			}
 			for k := range p.Mu {
 				if !p.finite(k, focalReach*scale) {
 					continue
 				}
-				if p.Mu[k] < 0 {
-					// Behind the mirror, a virtual point is never blocked.
-					if caustic(t, r, k+1, true).Points[i][j] == nil {
-						t.Fatalf("(%d, %d): virtual caustic %d not drawn", i, j, k+1)
+				switch {
+				case p.Mu[k] < 0:
+					if !s.reached(p, k) {
+						t.Fatalf("(%d, %d): virtual caustic %d not reached", i, j, k+1)
 					}
 					virtual++
-					continue
-				}
-				if 1/p.Mu[k] >= b {
-					blocked[k]++
-					if part := caustic(t, r, k+1, false); part.Points[i][j] != nil {
-						t.Fatalf("(%d, %d): caustic %d drawn beyond the wall", i, j, k+1)
+				case 1/p.Mu[k] >= b:
+					if s.reached(p, k) {
+						t.Fatalf("(%d, %d): caustic %d reached beyond the wall", i, j, k+1)
 					}
-				} else {
+					blocked++
+				default:
+					if !s.reached(p, k) {
+						t.Fatalf("(%d, %d): caustic %d before the wall not reached", i, j, k+1)
+					}
 					reached++
 				}
 			}
 		}
 	}
-	// Every joined edge of a real caustic part has its midpoint reached.
-	for _, part := range r.Caustics {
-		if part.Virtual {
-			continue
-		}
-		k := part.Branch - 1
-		check := func(i, j, di, dj int) {
-			u0, v0 := grid(q, i, j)
-			u1, v1 := grid(q, i+di, j+dj)
-			m := q.ray(c.Rays, (u0+u1)/2, (v0+v1)/2, scale)
-			o.apply(&m, (u0+u1)/2, (v0+v1)/2)
-			if !m.finite(k, focalReach*scale) || !m.reached(k) {
-				t.Fatalf("caustic %d joined across (%d, %d)–(%d, %d), whose midpoint is not reached", k+1, i, j, i+di, j+dj)
-			}
-		}
-		for i := range part.AlongU {
-			for j := range part.AlongU[i] {
-				if part.AlongU[i][j] {
-					check(i, j, 1, 0)
-				}
-			}
-		}
-		for i := range part.AlongV {
-			for j := range part.AlongV[i] {
-				if part.AlongV[i][j] {
-					check(i, j, 0, 1)
-				}
-			}
-		}
-	}
-	if blocked != [2]int(r.Blocked) || blocked[0]+blocked[1] < 20 || reached < 100 || virtual < 100 {
-		t.Fatalf("blocked %v (%v), reached %d, virtual %d", r.Blocked, blocked, reached, virtual)
-	}
-	listed := map[int]bool{}
-	for _, k := range r.BlockedLines {
-		listed[k] = true
-	}
-	for k, l := range r.Lines {
-		b := wall(l.Point, l.End.sub(l.Point).unit())
-		if math.IsInf(b, 1) {
-			if listed[k] || math.Abs(l.End.sub(l.Point).norm()-50) > 1e-9 {
-				t.Fatalf("ray %d: no wall ahead, listed %v", k, listed[k])
-			}
-			continue
-		}
-		if !listed[k] || math.Abs(l.End.sub(l.Point).norm()-b) > 1e-8 {
-			t.Fatalf("ray %d ends at %v, the wall is at %v (listed %v)", k, l.End.sub(l.Point).norm(), b, listed[k])
-		}
-	}
-	if len(r.BlockedLines) == 0 {
-		t.Fatal("no representative ray meets the wall")
+	if blocked < 20 || reached < 100 || virtual < 100 {
+		t.Fatalf("blocked %d, reached %d, virtual %d", blocked, reached, virtual)
 	}
 }

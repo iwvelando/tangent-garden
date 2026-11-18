@@ -70,8 +70,9 @@ func alone(t *testing.T, c Request, u, v float64) *SurfaceDiagnostics {
 
 // Ray studies that between them reflect and refract, from parallel light
 // and a lamp, with chart singularities, unlit samples, total internal
-// reflection, a lamp standing on the surface, and a dish so shallow that
-// its foci lie about 140 surface radii away, beyond the reach of 100.
+// reflection, a lamp standing on the surface, a dish so shallow that its
+// foci lie about 140 surface radii away, beyond the reach of 100, and the
+// helicoid–catenoid family.
 func rayPointStudies() map[string]Request {
 	return map[string]Request{
 		"bowl":     bowl(1.3, 18, 12, parallel(20, -70)),
@@ -81,6 +82,8 @@ func rayPointStudies() map[string]Request {
 		"total":    glass(bowl(1, 16, 12, parallel(0, -90)), 1.5, 1),
 		"onSource": flat(1, lamp(Vec3{0, 0, 0})),
 		"shallow":  mirror("paraboloid", 1./600, 1./600, 0, -1.5, 1.5, -1.5, 1.5, 12, 12, parallel(0, -90)),
+		"stair":    minimal(1, .7, -1.4, 1.4, -1.2, 1.2, 16, 12, lamp(Vec3{.3, -.2, 3})),
+		"neck":     glass(minimal(1, 1.3, -1.4, 1.4, -1.2, 0, 16, 12, parallel(180, -60)), 1, 1.5),
 	}
 }
 

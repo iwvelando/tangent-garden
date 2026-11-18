@@ -1,4 +1,3 @@
-import { minimalOptics } from "./research";
 import { roundedGenerated } from "../atlas";
 import { tiered, type Help } from "../help";
 import { edgesNote, ridgesNote } from "./cuspidal";
@@ -166,7 +165,9 @@ export function surfaceFamilyRange(
 // edges, or not at all; transport whether an arrow can be carried along
 // them, as on every kind that has them (the triangle and polygons only on
 // a sphere, which engine3 checks). domain is the help beside the u
-// interval, note follows the chart, and title heads the drawing.
+// interval, note follows the chart, and title heads the drawing. shading,
+// on a kind lit as a mirror or interface, adds to the Light help what the
+// single event leaves out on that surface in particular.
 export type SurfaceCapabilities = {
   offset: boolean;
   focal: "always" | "requested" | false;
@@ -177,6 +178,7 @@ export type SurfaceCapabilities = {
   domain: Help<string>;
   note: string;
   title: string;
+  shading?: string;
 };
 const analyticPatch: SurfaceCapabilities = {
   offset: true,
@@ -201,14 +203,12 @@ export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
   cylinder: { ...analyticPatch, geodesics: "patch", transport: true },
   paraboloid: { ...analyticPatch, geodesics: "patch", transport: true },
   monkey: analyticPatch,
-  // Its curvature, geodesics, offsets and focal sheets are validated, not
-  // its optics. Its focal sheets are on request: hidden sheets still set a
-  // study's bounds, so its studies made before them keep their framing.
+  // Its focal sheets are on request: hidden sheets still set a study's
+  // bounds, so its studies made before them keep their framing.
   "helicoid-catenoid": {
     offset: true,
     focal: "requested",
-    // Lit only in issue #397's research preview.
-    optics: minimalOptics,
+    optics: true,
     correspondence: true,
     geodesics: "patch",
     transport: true,
@@ -218,6 +218,8 @@ export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
     ),
     note: "Every angle bends one patch without stretching it, so each grid curve keeps its length; the probe follows one (u, v).",
     title: "A minimal surface bent, not stretched",
+    shading:
+      "Here much of what is drawn may lie in shadow: a vertical line meets the helicoid every half turn, so a stair longer than that, or a catenoid lit from outside, shades itself.",
   },
 };
 // The kinds a study can choose: a ray study only those offered as a

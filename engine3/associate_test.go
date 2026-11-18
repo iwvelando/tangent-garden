@@ -373,10 +373,10 @@ func TestAssociateValidation(t *testing.T) {
 	}
 }
 
-// What the family does not offer is refused, not inherited: lighting it as
-// a mirror or interface, and focal diagnostics while its focal sheets, on
-// request, are off. Without an offset there are no offset diagnostics, as
-// on every kind. Geodesic threads are offered.
+// What the family does not offer is refused, not inherited: focal
+// diagnostics while its focal sheets, on request, are off. Without an
+// offset there are no offset diagnostics, as on every kind. Geodesic
+// threads and optics are offered.
 func TestAssociateCapabilityBoundaries(t *testing.T) {
 	c := associateStudy(1, 0.5, -math.Pi, math.Pi, -1.5, 1.5, 24, 12)
 	for _, target := range []string{"focal1", "focal2"} {
@@ -390,8 +390,8 @@ func TestAssociateCapabilityBoundaries(t *testing.T) {
 	lit := c
 	lit.Format = "rays"
 	lit.Rays = RaysRequest{Interaction: "reflect", N1: 1, N2: 1.5, Light: "parallel", Elevation: 90, Length: 1, Receiver: ReceiverRequest{Plane: "none"}}
-	if _, err := Compute(lit); fieldOf(err) != "surface.kind" {
-		t.Fatalf("a ray study on the family: %v, want a refusal of surface.kind", err)
+	if r, err := Compute(lit); err != nil || r.Rays == nil {
+		t.Fatalf("a ray study on the family: %v", err)
 	}
 	threads := c
 	threads.Surface.Geodesics = &GeodesicRequest{U: 0, V: 0, Direction: 0, Spread: 90, Count: 3, Length: 1, Samples: 20, Selected: 1}

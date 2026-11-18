@@ -13,6 +13,21 @@ import {
   type ReceiverResult,
 } from "./types";
 import { count, plural, readout } from "../number-format";
+import { tiered, withMore, type Tiered } from "../help";
+
+// The Light help: one reflection or refraction per sample, with nothing
+// occluded, and what that leaves out on a surface whose descriptor says so
+// (surfaceCapabilities' shading).
+export function lightHelp(
+  refracting: boolean,
+  shading: string | undefined,
+): Tiered<string> {
+  const help = tiered(
+    "Parallel light, as from a distant source, or a point source.",
+    `Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`,
+  );
+  return shading ? withMore(help, shading) : help;
+}
 
 const shapes: Record<Exclude<FocalShape, "none">, string> = {
   surface: "a surface",
@@ -79,21 +94,6 @@ export function raysNote(
     ...(r.atSource
       ? [
           `${plural(r.atSource, "sample lies", "samples lie")} at the source, with no incident direction.`,
-        ]
-      : []),
-    ...(r.shadowed
-      ? [
-          `${plural(r.shadowed, "sample is", "samples are")} in shadow: the light meets another part of ${surface} first.`,
-        ]
-      : []),
-    ...(r.undecided
-      ? [
-          `${plural(r.undecided, "sample is", "samples are")} left out: whether ${r.undecided === 1 ? "its" : "their"} light meets ${surface} again cannot be decided, as where it grazes the sheet or skims its edge.`,
-        ]
-      : []),
-    ...(r.blocked && r.blocked[0] + r.blocked[1]
-      ? [
-          `At ${plural(r.blocked[0] + r.blocked[1], "caustic point", "caustic points")} the outgoing light meets ${surface} again first, so ${r.blocked[0] + r.blocked[1] === 1 ? "it is" : "they are"} not drawn; ${plural(r.blockedLines?.length ?? 0, "representative ray ends", "representative rays end")} there.`,
         ]
       : []),
     ...(r.stigmatic
