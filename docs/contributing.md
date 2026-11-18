@@ -206,6 +206,8 @@ One failure has one issue, and that issue is its count. A pull request links to 
 
 This applies to every failure the change under test did not cause, in CI or in a local `make pre-pr`, including one that passes when rerun. A failure the change caused is fixed in that PR and needs no issue.
 
+The one exception is a CI job that never acquired a GitHub Actions runner ("The job was not acquired by Runner … even after multiple attempts"). It ran nothing and nothing in the repository can act on it, so it gets no issue: rerun the failed jobs (`gh run rerun --failed`). Every other CI failure follows the steps below, including one on a slow or lost runner.
+
 1. **Search before rerunning.** `make ci-failure RUN=<run id>` (needs `gh`) lists the run's failed tests, each as an occurrence line, with the open and closed issues that mention the test by name. For a local failure, search by the test's name and the error's first line (`gh issue list --state all --search '"<test name>"'`).
 2. **Record the occurrence.** If an issue covers the failure, add the occurrence line as a comment, reopening the issue if it was closed: a recurrence after a fix belongs with the fix's history. If none does, open one from the **Intermittent failure** template. One occurrence is one line: the date, the run and attempt, the job and its runner image, the test, and the error's first line. Add what this occurrence showed that the earlier ones did not, and nothing else.
 3. **Then rerun**, and write only `Reran for #<issue>` in the PR. Do not describe the failure there.
