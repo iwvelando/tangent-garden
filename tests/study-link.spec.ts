@@ -606,7 +606,7 @@ test("a link carries the probe on a patch's offset", async () => {
   await refused(() => Promise.resolve(spatialStudy(unknown)), "probe.target");
 });
 
-test("a link carries the helicoid–catenoid family, and what it does not offer opens off", async () => {
+test("a link carries the helicoid–catenoid family, its offset and its focal sheets on request", async () => {
   const staircase = spatialPresets.findIndex(
     (p) => p.name === "A staircase becoming a throat",
   );
@@ -624,41 +624,58 @@ test("a link carries the helicoid–catenoid family, and what it does not offer 
   study.config.surface.b = 0.7;
   const back = await readStudyLink(await writeStudyLink("3d", study));
   assert.deepEqual(spatialStudy(back.study), study);
-  // A link that asks the family for an offset, its cuspidal edges or
-  // ridges opens without them, as the family draws; its focal probe target
-  // is kept as written and describes the surface.
-  const asked = structuredClone(study) as any;
-  Object.assign(asked.config.surface, {
-    offset: 0.3,
+  // A link made before the family's focal sheets has none, and draws as
+  // it did.
+  assert.equal("focal" in spatialStudy(back.study).config.surface, false);
+  // The offset, its edges, the focal sheets, their ridges and a focal
+  // probe target travel and come back.
+  const built = structuredClone(study) as any;
+  Object.assign(built.config.surface, {
+    offset: 2,
     edges: true,
+    focal: true,
     ridges: true,
   });
-  asked.probe.target = "focal1";
-  const opened = spatialStudy(asked);
-  assert.equal(opened.config.surface.offset, 0);
-  assert.equal("edges" in opened.config.surface, false);
-  assert.equal("ridges" in opened.config.surface, false);
-  assert.equal(opened.probe.target, "focal1");
-  assert.equal(probeTarget(opened.config, opened.probe), "surface");
-  // Another surface keeps all three, as before the family existed.
-  const torus = structuredClone(asked) as any;
-  torus.config.surface.kind = "torus";
-  assert.deepEqual(
-    (({ offset, edges, ridges }) => ({ offset, edges, ridges }))(
-      spatialStudy(torus).config.surface,
-    ),
-    { offset: 0.3, edges: true, ridges: true },
+  built.probe.target = "focal2";
+  const returned = spatialStudy(
+    (await readStudyLink(await writeStudyLink("3d", built))).study,
   );
-  // An animation of the offset is refused by name on the family.
+  assert.deepEqual(returned, built);
+  assert.equal(probeTarget(returned.config, returned.probe), "focal2");
+  // Ridges without the focal sheets open without them, and a focal probe
+  // target is kept as written but describes the surface.
+  const asked = structuredClone(built) as any;
+  delete asked.config.surface.focal;
+  const opened = spatialStudy(asked);
+  assert.equal("ridges" in opened.config.surface, false);
+  assert.equal(opened.config.surface.offset, 2);
+  assert.equal(opened.config.surface.edges, true);
+  assert.equal(opened.probe.target, "focal2");
+  assert.equal(probeTarget(opened.config, opened.probe), "surface");
+  // Another surface always has its focal sheets, so it keeps the ridges
+  // and drops the request.
+  const torus = structuredClone(built) as any;
+  torus.config.surface.kind = "torus";
+  const ring = spatialStudy(torus).config.surface;
+  assert.deepEqual(
+    (({ offset, edges, ridges }) => ({ offset, edges, ridges }))(ring),
+    { offset: 2, edges: true, ridges: true },
+  );
+  assert.equal("focal" in ring, false);
+  // The offset is animated on the family as on other surfaces.
   const offsetTrack = structuredClone(study) as any;
   offsetTrack.animation = {
     ...defaultAnimation,
     mode: "parameters",
     tracks: [{ target: "surfaceOffset", from: "0", to: "1" }],
   };
+  assert.deepEqual(spatialStudy(offsetTrack).animation, offsetTrack.animation);
+  // The request is a flag.
+  const wrong = structuredClone(built) as any;
+  wrong.config.surface.focal = 1;
   await refused(
-    () => Promise.resolve(spatialStudy(offsetTrack)),
-    "animation.tracks[0].target",
+    () => Promise.resolve(spatialStudy(wrong)),
+    "config.surface.focal",
   );
 });
 

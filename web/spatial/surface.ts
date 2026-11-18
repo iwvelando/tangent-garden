@@ -157,7 +157,8 @@ export function surfaceFamilyRange(
 // and curvatures, mirroring engine3's surfaceKinds; the controls, layers,
 // legend, probe and animation read it. offset is the offset surface, its
 // cuspidal edges, probe and track; focal the focal sheets, ridges and
-// their probes; optics the kind as a mirror or interface; correspondence
+// their probes, "always" or only when the study asks for them ("requested",
+// see focalSheets); optics the kind as a mirror or interface; correspondence
 // the parameter curves the probe draws through its point; geodesics where
 // its threads run: over the "whole" surface (an ellipsoid or a ring torus,
 // whose shapes engine3 still checks), within the "patch", stopped at its
@@ -167,7 +168,7 @@ export function surfaceFamilyRange(
 // interval, note follows the chart, and title heads the drawing.
 export type SurfaceCapabilities = {
   offset: boolean;
-  focal: boolean;
+  focal: "always" | "requested" | false;
   optics: boolean;
   correspondence: boolean;
   geodesics: "whole" | "patch" | false;
@@ -178,7 +179,7 @@ export type SurfaceCapabilities = {
 };
 const analyticPatch: SurfaceCapabilities = {
   offset: true,
-  focal: true,
+  focal: "always",
   optics: true,
   correspondence: false,
   geodesics: false,
@@ -199,11 +200,12 @@ export const surfaceCapabilities: Record<SurfaceKind, SurfaceCapabilities> = {
   cylinder: { ...analyticPatch, geodesics: "patch", transport: true },
   paraboloid: { ...analyticPatch, geodesics: "patch", transport: true },
   monkey: analyticPatch,
-  // Its curvature and geodesics are validated; its offsets, focal sheets
-  // and optics are not offered.
+  // Its curvature, geodesics, offsets and focal sheets are validated, not
+  // its optics. Its focal sheets are on request: hidden sheets still set a
+  // study's bounds, so its studies made before them keep their framing.
   "helicoid-catenoid": {
-    offset: false,
-    focal: false,
+    offset: true,
+    focal: "requested",
     optics: false,
     correspondence: true,
     geodesics: "patch",
@@ -223,22 +225,31 @@ export const surfaceChoices = (rays: boolean, current: SurfaceKind) =>
   (Object.keys(surfaceNames) as SurfaceKind[]).filter(
     (kind) => !rays || surfaceCapabilities[kind].optics || kind === current,
   );
+// Whether a study draws its focal sheets: always on a kind that has them,
+// and on a kind that offers them on request only when it asks.
+export const focalSheets = (s: SurfaceConfig) => {
+  const focal = surfaceCapabilities[s.kind].focal;
+  return focal === "always" || (focal === "requested" && !!s.focal);
+};
 // A study's surface with what its kind does not offer turned off: no
-// offset or cuspidal edges without an offset, and no ridges without focal
-// sheets.
+// offset or cuspidal edges without an offset, no ridges without focal
+// sheets, and no request for focal sheets that its kind does not take.
 export function offered(s: SurfaceConfig): SurfaceConfig {
   const can = surfaceCapabilities[s.kind];
-  const { edges, ridges, ...rest } = s;
+  const { edges, ridges, focal, ...rest } = s;
+  const requested = can.focal === "requested" && !!focal;
   if (
     (can.offset || (s.offset === 0 && edges === undefined)) &&
-    (can.focal || ridges === undefined)
+    (focalSheets(s) || ridges === undefined) &&
+    (focal === undefined || requested)
   )
     return s;
   return {
     ...rest,
     offset: can.offset ? s.offset : 0,
     ...(edges !== undefined && can.offset && { edges }),
-    ...(ridges !== undefined && can.focal && { ridges }),
+    ...(ridges !== undefined && focalSheets(s) && { ridges }),
+    ...(requested && { focal }),
   };
 }
 const shapes: Record<FocalShape, string> = {

@@ -5,7 +5,7 @@ title: "Intermittent: <test name>: <error in a few words>"
 labels: "ci-flake"
 ---
 
-<!-- Search open and closed issues for the test's name first. If one covers this failure, add the occurrence there instead. See docs/contributing.md, Recording failures and bugs. -->
+<!-- Search open and closed issues for the test's name first. If one covers this failure, add the occurrence there instead. A job that never acquired a GitHub Actions runner needs no issue: rerun it. See docs/contributing.md, Recording failures and bugs. -->
 
 ## Failure
 

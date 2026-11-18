@@ -7,7 +7,7 @@ import { readout as formatNumber } from "../number-format";
 // engine3.SurfaceDiagnostics for a surface) or the study's own per-sample
 // arrays; this module only selects and draws them.
 import { tiered } from "../help";
-import { surfaceCapabilities } from "./surface";
+import { focalSheets, surfaceCapabilities } from "./surface";
 import {
   drawingOrigin,
   harmonicChain,
@@ -402,8 +402,7 @@ export function probeSupport(c: SpatialConfig): {
           c.surface.offset !== 0
             ? (["offset"] as const)
             : []),
-          ...(c.format === "surface" &&
-          surfaceCapabilities[c.surface.kind].focal
+          ...(c.format === "surface" && focalSheets(c.surface)
             ? (["focal1", "focal2"] as const)
             : []),
         ];
@@ -491,14 +490,20 @@ export function betweenGridHelp(c: SpatialConfig, target: ProbeTarget) {
           `Lets the probe stand at any u and v, not only at a grid sample, describing the ${t.surface} exactly there.`,
           "The plots still read the grid's samples.",
         );
+  const can = surfaceCapabilities[c.surface.kind];
   return c.format === "surface"
     ? tiered(
         "Lets the probe stand at any u and v, not only at a grid sample, describing the surface exactly there.",
-        `${
-          surfaceCapabilities[c.surface.kind].focal
+        [
+          can.correspondence &&
+            "The u- and v-curves through it are evaluated there too.",
+          focalSheets(c.surface)
             ? "The offset and focal sheets are described there too; a focal sheet's normal keeps the nearest sample's side."
-            : "The u- and v-curves through it are evaluated there too."
-        } The plots still read the grid's samples.`,
+            : can.offset && "The offset is described there too.",
+          "The plots still read the grid's samples.",
+        ]
+          .filter(Boolean)
+          .join(" "),
       )
     : tiered(
         `Lets the probe stand at any ${t.along} and ${t.around}, not only at a sample, describing the surface there.`,
@@ -790,15 +795,28 @@ export function targetName(c: SpatialConfig, t: ProbeTarget) {
             : "The surface";
 }
 export function describeHelp(c: SpatialConfig) {
-  if (c.format === "surface")
+  if (c.format === "surface") {
+    // The targets probeSupport offers: the offset when there is one, and
+    // the focal sheets when the study draws them.
+    const offset = c.surface.offset !== 0,
+      sheets = focalSheets(c.surface);
     return tiered(
-      `What the probe describes: the surface, ${c.surface.offset !== 0 ? "its offset, " : ""}or a focal sheet, all at the same sample.`,
+      `What the probe describes: the surface${
+        sheets
+          ? `, ${offset ? "its offset, " : ""}or a focal sheet`
+          : " or its offset"
+      }, all at the same sample.`,
       `The surface: the patch's principal directions, curvatures and centers.${
-        c.surface.offset !== 0
+        offset
           ? " The offset: the same at the offset's point on the same normal, whose centers are the patch's own."
           : ""
-      } Focal sheet 1 or 2: the same at the patch's center of κ₁ or κ₂, on the sheet of those centers, whose normal is the patch's principal direction.`,
+      }${
+        sheets
+          ? " Focal sheet 1 or 2: the same at the patch's center of κ₁ or κ₂, on the sheet of those centers, whose normal is the patch's principal direction."
+          : ""
+      }`,
     );
+  }
   return c.format === "rays"
     ? tiered(
         `What the probe describes: the light leaving the ${medium(c)}, or the ${medium(c)} itself, at the same sample.`,
@@ -815,7 +833,9 @@ export function probeLegend(c: SpatialConfig, target: ProbeTarget) {
   const { targets } = probeSupport(c);
   if (c.format === "rays") return `Probe the light or ${medium(c)}`;
   if (targets.includes("offset"))
-    return "Probe the surface, its offset or its focal sheets";
+    return targets.includes("focal1")
+      ? "Probe the surface, its offset or its focal sheets"
+      : "Probe the surface or its offset";
   if (targets.includes("focal1"))
     return "Probe the surface or its focal sheets";
   if (targets.length > 1) return "Probe the curve or surface";

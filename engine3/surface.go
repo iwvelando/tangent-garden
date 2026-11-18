@@ -41,6 +41,10 @@ type SurfaceRequest struct {
 	Reach    float64 `json:"reach"`
 	Edges    bool    `json:"edges,omitempty"`
 	Ridges   bool    `json:"ridges,omitempty"`
+	// Focal asks for the focal sheets on a kind that offers them only on
+	// request (see surfaceCapabilities.focalOnRequest); every other kind
+	// ignores it.
+	Focal bool `json:"focal,omitempty"`
 	// Geodesics launches a fan of geodesic threads on a kind that carries
 	// them (see GeodesicRequest and geodesicSupport); absent, there are none.
 	Geodesics *GeodesicRequest `json:"geodesics,omitempty"`
@@ -115,11 +119,13 @@ type SurfaceResult struct {
 // diagnostics), light (a ray study's mirror or interface), the
 // correspondence its probe draws: the u- and v-curves through the point
 // probed between samples (see SurfaceDiagnostics.Crossing), and geodesic
-// threads (see geodesicSupport). A kind never computes what it does not
-// offer, and a request for it is refused.
+// threads (see geodesicSupport). focalOnRequest says the focal sheets are
+// computed only when the study asks for them (SurfaceRequest.Focal), as
+// hidden sheets would still set the bounds. A kind never computes what it
+// does not offer, and a request for it is refused.
 type surfaceCapabilities struct {
-	offset, focal, optics, correspondence bool
-	geodesics                             geodesicSupport
+	offset, focal, focalOnRequest, optics, correspondence bool
+	geodesics                                             geodesicSupport
 }
 
 // geodesicSupport is where a kind's geodesic threads run: nowhere
@@ -141,16 +147,18 @@ func analytic(geodesics geodesicSupport) surfaceCapabilities {
 }
 
 // surfaceKinds lists every kind of patch with what it offers. The
-// helicoid–catenoid family's curvature and geodesics have been validated,
-// not its focal sheets, offsets or optics. Its chart is periodic only at
-// θ = π/2, so its patch stays one rectangle for its threads at every angle.
+// helicoid–catenoid family's curvature, geodesics, offsets and focal
+// sheets have been validated, not its optics; its focal sheets are on
+// request, so that its studies made before them keep their bounds and
+// cost. Its chart is periodic only at θ = π/2, so its patch stays one
+// rectangle for its threads at every angle.
 var surfaceKinds = map[string]surfaceCapabilities{
 	"ellipsoid":         analytic(geodesicSupport{whole: true, scale: largestAxis}),
 	"torus":             analytic(geodesicSupport{whole: true}),
 	"cylinder":          analytic(geodesicSupport{patch: true, seam: true, scale: func(q SurfaceRequest) float64 { return math.Max(q.A, q.B) }}),
 	"paraboloid":        analytic(geodesicSupport{patch: true, graph: true, scale: paraboloidScale}),
 	"monkey":            analytic(geodesicSupport{}),
-	"helicoid-catenoid": {correspondence: true, geodesics: geodesicSupport{patch: true, scale: func(q SurfaceRequest) float64 { return q.A }}},
+	"helicoid-catenoid": {offset: true, focal: true, focalOnRequest: true, correspondence: true, geodesics: geodesicSupport{patch: true, scale: func(q SurfaceRequest) float64 { return q.A }}},
 }
 
 // largestAxis is an ellipsoid's largest semi-axis.
@@ -174,6 +182,13 @@ func paraboloidScale(q SurfaceRequest) float64 {
 // offers is what the request's kind offers; an unknown kind offers
 // nothing, and validation refuses it.
 func (q SurfaceRequest) offers() surfaceCapabilities { return surfaceKinds[q.Kind] }
+
+// focalSheets reports whether the study computes its focal sheets: its
+// kind offers them, and asks for them when it offers them only on request.
+func (q SurfaceRequest) focalSheets() bool {
+	o := q.offers()
+	return o.focal && (!o.focalOnRequest || q.Focal)
+}
 
 // The helicoid–catenoid family's parameter domain: u within ±4π and v
 // within ±4, where cosh v is below 28, so no hyperbolic function comes
@@ -208,6 +223,8 @@ func (q SurfaceRequest) validate() error {
 		return fieldErr("surface.edges", "%s has no offset, so no cuspidal edges to locate", surfaceTitle(q.Kind))
 	} else if !offers.focal && q.Ridges {
 		return fieldErr("surface.ridges", "%s has no focal sheets, so no ridges to locate", surfaceTitle(q.Kind))
+	} else if !q.focalSheets() && q.Ridges {
+		return fieldErr("surface.ridges", "the focal sheets are off, so there are no ridges to locate: turn them on first")
 	}
 	if !bounded(q.Reach) {
 		return fieldErr("surface.reach", "the normal reach ℓ must be finite and within ±100000")
@@ -569,9 +586,10 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 	if offset && !offers.offset {
 		return Result{}, fmt.Errorf("%s has no offset to probe", surfaceTitle(q.Kind))
 	}
-	if focused != 0 && !offers.focal {
-		return Result{}, fmt.Errorf("%s has no focal sheets to probe", surfaceTitle(q.Kind))
+	if focused != 0 && !q.focalSheets() {
+		return Result{}, fmt.Errorf("%s has no focal sheets to probe", map[bool]string{true: "a study with its focal sheets off", false: surfaceTitle(q.Kind)}[offers.focal])
 	}
+	sheets := q.focalSheets()
 	nu, nv := q.USamples, q.VSamples
 	at := q.at
 	positions, scale, err := q.positions()
@@ -586,9 +604,9 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 	if q.Offset != 0 {
 		offsets, offsetNormals = grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)
 	}
-	// A kind without focal sheets neither samples nor joins them.
+	// A study without focal sheets neither samples nor joins them.
 	focal := [2][2][][]*Vec3{}
-	if offers.focal {
+	if sheets {
 		for k := range focal {
 			focal[k] = [2][][]*Vec3{grid2[*Vec3](nu+1, nv+1), grid2[*Vec3](nu+1, nv+1)}
 		}
@@ -614,12 +632,12 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 			if offsets != nil {
 				o := x.add(n.mul(q.Offset))
 				offsets[i][j], offsetNormals[i][j] = &o, &n
-				if (1-q.Offset*s.Kappa[0])*(1-q.Offset*s.Kappa[1]) < 0 {
+				if folds(q.Offset, s.Kappa) {
 					out.Folded++
 				}
 			}
 			for k := range focal {
-				if !offers.focal {
+				if !sheets {
 					break
 				}
 				f, ok := s.focal(k, reach)
@@ -646,7 +664,7 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 		}
 	}
 	for k := range focal {
-		if !offers.focal {
+		if !sheets {
 			break
 		}
 		join := func(i, j, di, dj int) bool {
@@ -709,6 +727,20 @@ func surfaces(q SurfaceRequest, probe, offset bool, focused int) (Result, error)
 		result.Probe = focalProbe(q, focused, samples, scale)
 	}
 	return result, nil
+}
+
+// onFocal reports whether the offset at distance d meets the focal sheet
+// of a principal curvature κ, within rounding: 1 − dκ, its stretch along
+// that direction, is within 10⁻⁹(1 + |dκ|) of zero. The offset is singular
+// there, neither folded nor unfolded.
+func onFocal(d, kappa float64) bool {
+	return !(math.Abs(1-d*kappa) > 1e-9*(1+math.Abs(d*kappa)))
+}
+
+// folds reports whether the offset at distance d lies beyond one focal
+// sheet, where (1 − dκ₁)(1 − dκ₂) < 0, and meets neither (see onFocal).
+func folds(d float64, kappa [2]float64) bool {
+	return !onFocal(d, kappa[0]) && !onFocal(d, kappa[1]) && (1-d*kappa[0])*(1-d*kappa[1]) < 0
 }
 
 // continues reports whether a focal branch runs from p0 to p1 without

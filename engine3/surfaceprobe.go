@@ -211,8 +211,8 @@ func (d *SurfaceDiagnostics) offsetAt(i, j int, s surfacePoint) {
 	x, n := s.X.add(s.N.mul(dist)), s.N
 	d.Points[i][j] = &x
 	stretch := [2]float64{1 - dist*s.Kappa[0], 1 - dist*s.Kappa[1]}
-	d.Folds[i][j] = stretch[0]*stretch[1] < 0
-	if !(math.Abs(stretch[0]) > 1e-9*(1+math.Abs(dist*s.Kappa[0]))) || !(math.Abs(stretch[1]) > 1e-9*(1+math.Abs(dist*s.Kappa[1]))) {
+	d.Folds[i][j] = folds(dist, s.Kappa)
+	if onFocal(dist, s.Kappa[0]) || onFocal(dist, s.Kappa[1]) {
 		d.Singular++
 		return
 	}

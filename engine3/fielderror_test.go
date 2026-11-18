@@ -142,9 +142,12 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"family angle", "surface.b", func() Request { return associateStudy(1, 2, -1, 1, -1, 1, 24, 24) }},
 		{"family u end", "surface.uMax", func() Request { return associateStudy(1, 0, -1, 13, -1, 1, 24, 24) }},
 		{"family v start", "surface.vMin", func() Request { return associateStudy(1, 0, -1, 1, -5, 1, 24, 24) }},
-		{"family offset", "surface.offset", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Offset = 1; return c }},
-		{"family edges", "surface.edges", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Edges = true; return c }},
-		{"family ridges", "surface.ridges", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Ridges = true; return c }},
+		{"family offset", "surface.offset", func() Request {
+			c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24)
+			c.Surface.Offset = math.NaN()
+			return c
+		}},
+		{"family ridges without focal sheets", "surface.ridges", func() Request { c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24); c.Surface.Ridges = true; return c }},
 		{"family lit", "surface.kind", func() Request {
 			c := associateStudy(1, 0, -1, 1, -1, 1, 24, 24)
 			c.Format = "rays"

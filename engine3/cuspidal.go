@@ -25,7 +25,8 @@ type CuspidalEdge struct {
 
 // cuspidalEdges traces each branch's level set 1 − dκᵢ = 0 over the
 // parameter grid, whose samples it is given (see contours); each point is
-// the offset's, X + dn.
+// the offset's, X + dn. A sample where the offset meets the focal sheet
+// within rounding (see onFocal) is on the level set.
 func (q SurfaceRequest) cuspidalEdges(samples [][]surfacePoint, scale float64) []CuspidalEdge {
 	d := q.Offset
 	out := []CuspidalEdge{}
@@ -37,6 +38,7 @@ func (q SurfaceRequest) cuspidalEdges(samples [][]surfacePoint, scale float64) [
 				}
 				return 1 - d*s.Kappa[branch], Vec3{}
 			},
+			zero: func(s surfacePoint, _ float64) bool { return onFocal(d, s.Kappa[branch]) },
 			place: func(s surfacePoint) (Vec3, bool) {
 				return s.X.add(s.N.mul(d)), s.Normal
 			},
@@ -54,7 +56,8 @@ func (q SurfaceRequest) cuspidalEdges(samples [][]surfacePoint, scale float64) [
 // directions alike, and leaves out a cell around which they turn by half
 // a turn, as about an umbilic, or with an umbilic corner. A point whose
 // center is at infinity, beyond focalReach radii, has no place, so the
-// ridge stops there.
+// ridge stops there. A sample whose traced extremality is within
+// ridgeRounding of zero is on the ridge.
 func (q SurfaceRequest) ridges(samples [][]surfacePoint, focal []FocalSheet, scale float64) []CuspidalEdge {
 	out := []CuspidalEdge{}
 	for branch := range 2 {
@@ -72,6 +75,7 @@ func (q SurfaceRequest) ridges(samples [][]surfacePoint, focal []FocalSheet, sca
 				// holds at any size.
 				return q.extremality(u, v, s, branch) / (s.Kappa[0]*s.Kappa[0] + s.Kappa[1]*s.Kappa[1]), s.Dir[branch]
 			},
+			zero: func(_ surfacePoint, value float64) bool { return math.Abs(value) <= ridgeRounding },
 			place: func(s surfacePoint) (Vec3, bool) {
 				return s.focal(branch, focalReach*scale)
 			},
@@ -81,15 +85,23 @@ func (q SurfaceRequest) ridges(samples [][]surfacePoint, focal []FocalSheet, sca
 	return out
 }
 
+// ridgeRounding bounds the rounding of a ridge's traced extremality, which
+// is dimensionless: measured at most 7·10⁻¹⁶ where it vanishes exactly, as
+// along an elliptic cylinder's vertex lines and the helicoid–catenoid
+// family's waist.
+const ridgeRounding = 1e-12
+
 // level is a level set contours traces: value is its function at the
 // point s at (u, v), or NaN where it has none, and, when oriented, the
 // direction of the line field it depends on there, in which it is odd;
-// place is where a crossing at s lands, and feet asks for s's own point
-// too. When virtual is given, crossings on its two sides are never joined,
-// and each curve is marked with its side.
+// zero, when given, says that a sample's value is zero within rounding,
+// so that it counts as exactly zero; place is where a crossing at s lands,
+// and feet asks for s's own point too. When virtual is given, crossings on
+// its two sides are never joined, and each curve is marked with its side.
 type level[P any] struct {
 	oriented bool
 	value    func(s P, u, v float64) (float64, Vec3)
+	zero     func(s P, value float64) bool
 	place    func(s P) (Vec3, bool)
 	feet     bool
 	virtual  func(s P) bool
@@ -116,7 +128,12 @@ func (q SurfaceRequest) patchContours(samples [][]surfacePoint, scale float64, b
 // between, as its near end, and each cell's corners in turn from its
 // first, leaving the cell out when its last corner turns against its
 // first; a grid edge whose sides differ only because its direction turns
-// along it has no crossing, so the curve stops there.
+// along it has no crossing, so the curve stops there. A sample whose value
+// is zero within rounding (level.zero) counts as +0, above, before it is
+// oriented, as an exact zero does: so a curve lying along a grid row is
+// traced once, beside the row from its side below, instead of wherever its
+// rounding happens to fall, and a level set that only touches zero along a
+// row from above has no crossing there.
 func contours[P any](q SurfaceRequest, samples [][]P, point func(u, v float64) P, foot func(P) Vec3, scale float64, branch int, f level[P]) []CuspidalEdge {
 	nu, nv := q.USamples, q.VSamples
 	seam := func(n, m int, at func(k, l int) Vec3) bool {
@@ -160,6 +177,9 @@ func contours[P any](q SurfaceRequest, samples [][]P, point func(u, v float64) P
 		if !c.known {
 			u, v := q.at(i, j)
 			c.value, c.e = f.value(samples[i][j], u, v)
+			if f.zero != nil && !math.IsNaN(c.value) && f.zero(samples[i][j], c.value) {
+				c.value = 0
+			}
 			c.known = true
 		}
 		return orient(c.value, c.e, toward)

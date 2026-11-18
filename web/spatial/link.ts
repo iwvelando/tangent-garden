@@ -347,6 +347,9 @@ const config: SchemaOf<SpatialConfig> = {
         reach: "number",
         edges: { optional: "boolean" },
         ridges: { optional: "boolean" },
+        // The focal sheets on a kind that offers them on request; links
+        // made before them have none.
+        focal: { optional: "boolean" },
         geodesics: {
           optional: {
             fields: {

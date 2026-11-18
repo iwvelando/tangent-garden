@@ -3986,9 +3986,44 @@ console.log("WASM surface: sphere, torus and validation passed");
     fan(family(0), { ...meridian, v: 1.5 }).error,
     /start v₀ must lie in the patch/,
   );
+  // The family's focal sheets come only on request, through the bridge's
+  // request field; its offset folds along v = ±acosh √2 at d = 2, and
+  // its ridges need the sheets.
+  const plain = spatialSurface({
+    ...family(0.4),
+    offset: 2,
+    reach: 0,
+    edges: true,
+  });
+  assert.equal(plain.surface.focal.length, 0);
+  assert.equal(plain.surface.edges.length, 2);
+  for (const e of plain.surface.edges)
+    for (const j of e.j)
+      assert.ok(
+        Math.abs(Math.abs(-1 + (j * 2) / 18) - Math.acosh(Math.SQRT2)) < 1e-9,
+      );
+  assert.match(
+    spatialSurface({ ...family(0.4), offset: 0, reach: 0, ridges: true }).error,
+    /focal sheets are off/,
+  );
+  const sheets = spatialSurface({
+    ...family(0.4),
+    offset: 0,
+    reach: 0,
+    focal: true,
+    ridges: true,
+  }).surface;
+  assert.deepEqual(
+    sheets.focal.map((f) => f.shape),
+    ["surface", "surface"],
+  );
+  assert.deepEqual(
+    sheets.ridges.map((r) => r.branch),
+    [1, 2],
+  );
 }
 console.log(
-  "WASM geodesics: sphere, torus, family patch, transport and refusals passed",
+  "WASM geodesics: sphere, torus, family patch, transport and refusals passed; family offsets and focal sheets on request",
 );
 const spatialRays = (surface, rays, flags = {}) =>
   spatialResult(

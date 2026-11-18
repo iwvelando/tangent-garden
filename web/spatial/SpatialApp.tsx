@@ -30,6 +30,7 @@ import {
   goldEdges,
   LocateCheck,
   locatesEdges,
+  FocalSheetsCheck,
   RidgesCheck,
 } from "./cuspidal";
 import {
@@ -192,6 +193,7 @@ import { canalNote } from "./canal";
 import { fieldNote, nextSpatialSeed } from "./field";
 import { nextSpatialPursuer, pursuitNote } from "./pursuit";
 import {
+  focalSheets,
   offered,
   surfaceCapabilities,
   surfaceCharts,
@@ -1800,7 +1802,20 @@ export default function SpatialApp({
           ) : (
             reachField
           )}
-          {offers.focal && (
+          {offers.focal === "requested" && (
+            <FocalSheetsCheck
+              checked={!!config.surface.focal}
+              onChange={(on) =>
+                // Turning them off drops the ridges, which need them.
+                setSurface(({ focal: _, ...s }) => {
+                  if (on) return { ...s, focal: true };
+                  const { ridges: __, ...rest } = s;
+                  return rest;
+                })
+              }
+            />
+          )}
+          {focalSheets(config.surface) && (
             <RidgesCheck
               checked={!!config.surface.ridges}
               onChange={(on) =>
@@ -3351,7 +3366,7 @@ export default function SpatialApp({
                 ...(locatesEdges(config.surface)
                   ? ([["cusps", "Cuspidal edges"]] as const)
                   : []),
-                ...(surfaceCapabilities[config.surface.kind].focal
+                ...(focalSheets(config.surface)
                   ? ([
                       ["focal1", "Focal sheet 1 · κ₁"],
                       ["focal2", "Focal sheet 2 · κ₂"],
