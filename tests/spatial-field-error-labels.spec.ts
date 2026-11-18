@@ -215,6 +215,28 @@ const cases: Case[] = [
     "Profile ρ(t)",
   ],
   [
+    "surface.geodesics.transport.vertices",
+    "An arrow carried round a spherical star",
+    (c) => c.surface.geodesics!.transport!.vertices!.splice(2),
+    "Arrow's path",
+  ],
+  [
+    "surface.geodesics.transport.vertices.2.v",
+    "An arrow carried round a spherical star",
+    (c) => (c.surface.geodesics!.transport!.vertices![2].v = 2),
+    "Vertex 3 v",
+  ],
+  [
+    "surface.geodesics.transport.vertices.1.u",
+    "An arrow carried round a spherical star",
+    (c) =>
+      (c.surface.geodesics!.transport!.vertices![1] = {
+        u: Math.PI,
+        v: -Math.PI / 4,
+      }),
+    "Vertex 2 u",
+  ],
+  [
     "field.seeds.0.y",
     "A rising vortex",
     (c) => (c.field.seeds[0].y = 2e5),

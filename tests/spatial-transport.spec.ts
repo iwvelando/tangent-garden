@@ -393,7 +393,7 @@ test("an arrow carried on an edited torus takes defaults, follows edits and refu
     .selectOption("triangle");
   await settled(page);
   await expect(unavailable(page)).toHaveText(
-    "The octant triangle lies on a sphere; on a torus the arrow can follow the selected thread.",
+    "The octant triangle lies on a sphere; on this surface the arrow can follow the selected thread.",
   );
   await expect(note(page)).toHaveCount(0);
   await expect(page.getByTestId("geodesics-note")).toContainText(

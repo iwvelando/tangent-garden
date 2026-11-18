@@ -9,6 +9,7 @@ import { shadowLegend } from "./shadow";
 import type { Pass } from "./scene";
 import { locatesEdges } from "./cuspidal";
 import { surfaceCapabilities } from "./surface";
+import { routeLabels } from "./geodesic-path";
 
 export type SpatialLegendEntry = {
   layer: Pass["layer"];
@@ -90,16 +91,16 @@ export function spatialLegend(c: SpatialConfig): SpatialLegendEntry[] {
             },
           ] as const)
         : []),
-      // A carried arrow: the triangle in the curves' ink, the arrow in
+      // A carried arrow: a closed path in the curves' ink, the arrow in
       // rust and its references in slate.
       ...(c.surface.geodesics?.transport
         ? ([
-            ...(c.surface.geodesics.transport.path === "triangle"
+            ...(c.surface.geodesics.transport.path !== "thread"
               ? ([
                   {
                     layer: "route",
                     swatch: "thread-dot",
-                    label: "Octant triangle",
+                    label: routeLabels[c.surface.geodesics.transport.path],
                   },
                 ] as const)
               : []),

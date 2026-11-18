@@ -3929,7 +3929,7 @@ console.log("WASM surface: sphere, torus and validation passed");
       ...g,
       transport: { path: "triangle", angle: 90, size: 0.3, arrows: 0 },
     }).surface.geodesics.transport.unavailable,
-    "The octant triangle lies on a sphere; on a torus the arrow can follow the selected thread.",
+    "The octant triangle lies on a sphere; on this surface the arrow can follow the selected thread.",
   );
   assert.match(
     fan(
@@ -3967,14 +3967,21 @@ console.log("WASM surface: sphere, torus and validation passed");
       assert.ok(Math.abs(th.v[k] - routes[0].threads[0].v[k]) < 1e-12);
     });
   }
-  // An arrow is not carried there; a start outside the patch is refused.
-  assert.match(
-    fan(family(0), {
-      ...meridian,
-      transport: { path: "thread", angle: 90, size: 0.3, arrows: 0 },
-    }).surface.geodesics.transport.unavailable,
-    /sphere or a ring torus/,
+  // An arrow is meridianArrow along the meridian to the same edge, through the
+  // typed transport; a start outside the patch is refused.
+  const meridianArrow = fan(family(0), {
+    ...meridian,
+    transport: { path: "thread", angle: 90, size: 0.3, arrows: 3 },
+  }).surface.geodesics.transport;
+  assert.equal(meridianArrow.unavailable, undefined);
+  assert.equal(meridianArrow.reason, "edge");
+  assert.equal(meridianArrow.edge, "vMax");
+  assert.ok(
+    Math.abs(meridianArrow.reached - (Math.sinh(1) - Math.sinh(-0.5))) < 1e-9,
   );
+  assert.ok(meridianArrow.samples.vectors.length > 2);
+  for (const v of meridianArrow.samples.vectors)
+    assert.ok(Math.abs(Math.hypot(v.x, v.y, v.z) - 1) < 1e-9);
   assert.match(
     fan(family(0), { ...meridian, v: 1.5 }).error,
     /start v₀ must lie in the patch/,

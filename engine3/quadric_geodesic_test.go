@@ -236,8 +236,8 @@ func TestEllipsoidGeodesicConvergence(t *testing.T) {
 // thinner ellipsoid reports its threads unavailable. At the bound the
 // threads stay on the surface, and keep Joachimsthal's integral to 10⁻⁶
 // (measured about 10⁻⁷ over 6 units, where the rim bends 10⁴ times more
-// sharply than the ellipsoid's size). An arrow is unavailable on any ellipsoid
-// but a sphere, while the threads are drawn.
+// sharply than the ellipsoid's size). An arrow is carried along a thread
+// on any ellipsoid.
 func TestEllipsoidGeodesicLimits(t *testing.T) {
 	for _, s := range [][3]float64{{1, 1, 0.0099}, {100, 0.99, 50}, {0.0099, 1, 1}} {
 		g := threads(t, launch(ellipsoid(s[0], s[1], s[2]), 0, 0, 30, 0, 1, 5, 100))
@@ -258,9 +258,10 @@ func TestEllipsoidGeodesicLimits(t *testing.T) {
 			onEllipsoid(t, "at the bound", s[0], s[1], s[2], th, 1e-6)
 		}
 	}
+	// An arrow is carried along the thread (see route_transport_test.go).
 	g := threads(t, carry(launch(ellipsoid(1.4, 1, 0.7), 0, 0, 30, 0, 1, 5, 100), "thread", 90, 4))
-	if g.Transport == nil || g.Transport.Unavailable == "" || len(g.Threads) != 1 || len(g.Threads[0].Points) != 101 {
-		t.Fatal("the arrow should be unavailable with the thread drawn")
+	if g.Transport == nil || g.Transport.Unavailable != "" || len(g.Threads) != 1 || len(g.Threads[0].Points) != 101 || len(g.Transport.Samples.Points) != 101 {
+		t.Fatal("the arrow should be carried along the thread")
 	}
 }
 
@@ -413,15 +414,17 @@ func TestParaboloidGeodesicInvariants(t *testing.T) {
 	}
 }
 
-// A paraboloid thread starts within the patch; an arrow is unavailable
-// while the threads draw.
+// A paraboloid thread starts within the patch; an arrow is carried along
+// it to the edge.
 func TestParaboloidGeodesicLimits(t *testing.T) {
 	var fe *FieldError
 	if _, err := Compute(launch(paraboloid(1, -1, -1, 1, -1, 1), 1.2, 0, 0, 0, 1, 1, 10)); !errors.As(err, &fe) || fe.Field != "surface.geodesics.u" {
 		t.Fatalf("a start beyond the patch: %v", err)
 	}
+	// An arrow is carried along the thread to the edge (see
+	// route_transport_test.go).
 	g := threads(t, carry(launch(paraboloid(1, -1, -1, 1, -1, 1), 0, 0, 30, 0, 1, 5, 100), "thread", 90, 4))
-	if g.Transport == nil || g.Transport.Unavailable == "" || len(g.Threads) != 1 || len(g.Threads[0].Points) < 2 {
-		t.Fatal("the arrow should be unavailable with the thread drawn")
+	if tr := g.Transport; tr == nil || tr.Unavailable != "" || len(g.Threads) != 1 || tr.Reason != "edge" || tr.Edge != g.Threads[0].Edge {
+		t.Fatalf("the arrow should be carried along the thread to its edge: %+v", tr)
 	}
 }

@@ -6,8 +6,11 @@ import { tiered, type Help } from "../help";
 import {
   maxGeodesicSamples,
   maxGeodesicThreads,
+  maxPolygonVertices,
   maxTransportArrows,
+  minPolygonVertices,
   type GeodesicConfig,
+  type PolygonVertex,
   type GeodesicResult,
   type SurfaceConfig,
   type SurfaceKind,
@@ -18,6 +21,7 @@ import {
 import { count, plural } from "../number-format";
 import { roundedGenerated } from "../atlas";
 import { surfaceCapabilities } from "./surface";
+import { vertexLabel } from "./animation";
 export { revealGeodesics, threadPath } from "./geodesic-path";
 
 // Whether a kind's geodesic threads can be launched: the controls appear
@@ -148,7 +152,7 @@ export const geodesicHelp = {
   ),
   samples: tiered(
     `8–${maxGeodesicSamples} per thread, 200,000 points in all.`,
-    "Samples are evenly spaced in arc length. The integration takes its own steps between them. A carried arrow's path counts as one more thread, plus two points.",
+    "Samples are evenly spaced in arc length. The integration takes its own steps between them. A carried arrow's path counts as one more thread, plus two points or, around a polygon of more than three vertices, one per vertex after the first.",
   ),
 } satisfies Record<string, Help<string>>;
 
@@ -382,32 +386,109 @@ export function GeodesicFields({
   );
 }
 
+// The length a kind's arrow is drawn against, as engine3's geodesic scale:
+// an ellipsoid's largest semi-axis, a cylinder's larger one, the family's
+// scale s, half a paraboloid patch's largest extent along x, y or z; on a
+// torus, its tube radius.
+function arrowScale(s: SurfaceConfig) {
+  switch (s.kind) {
+    case "torus":
+      return Math.abs(s.b);
+    case "cylinder":
+      return Math.max(Math.abs(s.a), Math.abs(s.b));
+    case "helicoid-catenoid":
+      return Math.abs(s.a);
+    case "paraboloid":
+      return (
+        Math.max(
+          s.uMax - s.uMin,
+          s.vMax - s.vMin,
+          heightRange(s.a, s.uMin, s.uMax) + heightRange(s.b, s.vMin, s.vMax),
+        ) / 2
+      );
+    default:
+      return Math.max(Math.abs(s.a), Math.abs(s.b), Math.abs(s.c));
+  }
+}
+
 // Carrying an arrow starts it along the selected thread at a right angle to
-// it, to its left, drawn about a third of the sphere's radius or half the
-// tube's, to two figures, with eight reference arrows.
+// it, to its left, drawn about a third of the surface's scale or half the
+// tube's radius, capped at the admitted length 100000, to two figures,
+// with eight reference arrows. A tall paraboloid's scale can exceed that
+// limit even though its shape parameters and domain are admitted.
 export function transportDefaults(s: SurfaceConfig): TransportConfig {
-  const r =
-    s.kind === "torus"
-      ? 0.5 * Math.abs(s.b)
-      : 0.3 * Math.max(Math.abs(s.a), Math.abs(s.b), Math.abs(s.c));
+  const r = (s.kind === "torus" ? 0.5 : 0.3) * arrowScale(s);
   return {
     path: "thread",
     angle: 90,
-    size: Number((Number.isFinite(r) && r > 0 ? r : 0.3).toPrecision(2)),
+    size: Number(
+      Math.min(100000, Number.isFinite(r) && r > 0 ? r : 0.3).toPrecision(2),
+    ),
     arrows: 8,
   };
+}
+
+// A polygon starts as the octant triangle's corners, (r, 0, 0), (0, r, 0)
+// and (0, 0, r), so choosing it keeps the path the triangle drew.
+export const polygonDefaults = (): PolygonVertex[] => [
+  { u: 0, v: 0 },
+  { u: Math.PI / 2, v: 0 },
+  { u: 0, v: Math.PI / 2 },
+];
+
+// The vertex an added one follows: the middle of the closing side, from
+// the last vertex back to the first, so the path keeps its shape. Its
+// coordinates are generated angles (see generatedAngle); a pole keeps the
+// longitude it was entered with.
+export function nextVertex(vs: PolygonVertex[]): PolygonVertex {
+  // A link may leave a polygon short of three: fill in the octant's next
+  // corner.
+  if (vs.length < 3) return polygonDefaults()[vs.length];
+  const point = ({ u, v }: PolygonVertex) => [
+    Math.cos(v) * Math.cos(u),
+    Math.cos(v) * Math.sin(u),
+    Math.sin(v),
+  ];
+  const a = point(vs[vs.length - 1]),
+    b = point(vs[0]);
+  const m = a.map((x, k) => x + b[k]);
+  const size = Math.hypot(...m);
+  if (!(size > 1e-9)) return { ...vs[vs.length - 1] };
+  const v = Math.asin(Math.max(-1, Math.min(1, m[2] / size)));
+  const u =
+    Math.hypot(m[0], m[1]) > 1e-12 * size
+      ? Math.atan2(m[1], m[0])
+      : vs[vs.length - 1].u;
+  return { u: generatedAngle(u), v: generatedAngle(v) };
+}
+
+// A generated angle in radians: a simple fraction of π (denominators up to
+// 12, as the fields show them) when it lies within its rounding budget of
+// one, and otherwise the value with any rounding tail removed. Both are
+// meaningful doubles, so candidates keep at most 15 digits.
+function generatedAngle(x: number) {
+  const budget = Number.EPSILON * Math.max(Math.abs(x), Math.PI);
+  for (let q = 1; q <= 12; q++) {
+    const exact = (Math.round((x * q) / Math.PI) * Math.PI) / q;
+    if (Math.abs(exact - x) <= budget) return exact;
+  }
+  return roundedGenerated(x, Math.PI, 15);
 }
 
 // Carrying a tangent arrow (`surface.geodesics.transport`). Absent means
 // off, as in links made before it.
 export const transportHelp = tiered(
   "Carries a tangent arrow along a path without turning it within the surface: parallel transport.",
-  "It stays a unit tangent vector and is never reset at a corner, so a closed path can bring it home turned. Play moves it along its path and holds where it arrives.",
+  "It stays a unit tangent vector and is never reset at a corner, so a closed path can bring it home turned. Along a thread on a patch it stops where the thread reaches the edge. Play moves it along its path and holds where it arrives.",
 );
 export const transportFieldHelp = {
   path: tiered(
-    "The selected thread, or on a sphere the octant triangle.",
-    "The triangle runs from (r, 0, 0) to (0, r, 0), (0, 0, r) and back along quarter great circles. A torus has no triangle.",
+    "The selected thread, or a sphere's octant triangle or polygon.",
+    "The triangle runs from (r, 0, 0) to (0, r, 0), (0, 0, r) and back along quarter great circles. A polygon joins its 3–12 vertices by shorter great-circle arcs, closing back to the first. Off a sphere both are unavailable.",
+  ),
+  vertices: tiered(
+    "Each corner's longitude u and latitude v.",
+    "u within ±100000 and v within ±π/2. Neighbors, and the last and first, may neither coincide nor lie opposite, within 10⁻⁶ radians. The signed area is positive counterclockwise seen from outside, counting each region once for every turn around it.",
   ),
   angle: tiered(
     "Degrees from the path's direction toward its left, N × T.",
@@ -426,18 +507,26 @@ export const transportFieldHelp = {
 const pathLabels: Record<TransportPath, string> = {
   thread: "Selected thread",
   triangle: "Octant triangle",
+  // Short enough for a phone's paired column; the layer names it in full.
+  polygon: "Polygon",
 };
 
-// The arrow's own fields, shown while it is carried.
+// The arrow's own fields, shown while it is carried. Choosing the polygon
+// fills in its default vertices when there are none; any vertices are
+// kept whatever the path. editVertices adds or removes one once pending
+// evaluations have landed, since it renumbers the fields after it.
 export function TransportFields({
   t,
   vector,
   set,
+  editVertices,
 }: {
   t: TransportConfig;
   vector: Vector;
   set: (change: (t: TransportConfig) => TransportConfig) => void;
+  editVertices: (change: (vs: PolygonVertex[]) => PolygonVertex[]) => void;
 }) {
+  const vertices = t.vertices ?? [];
   return (
     <>
       <div className="pair">
@@ -446,7 +535,12 @@ export function TransportFields({
             value={t.path}
             onChange={(e) => {
               const path = e.target.value as TransportPath;
-              set((t) => ({ ...t, path }));
+              set((t) => ({
+                ...t,
+                path,
+                ...(path === "polygon" &&
+                  !t.vertices?.length && { vertices: polygonDefaults() }),
+              }));
             }}
           >
             {(Object.keys(pathLabels) as TransportPath[]).map((p) => (
@@ -479,14 +573,70 @@ export function TransportFields({
           onChange={(arrows) => set((t) => ({ ...t, arrows }))}
         />
       </div>
+      {t.path === "polygon" && (
+        <>
+          {vertices.map((vertex, i) => (
+            <div
+              className="term"
+              role="group"
+              aria-labelledby={`spatial-vertex-${i}`}
+              key={i}
+            >
+              <div className="term-heading">
+                <span id={`spatial-vertex-${i}`}>Vertex {i + 1}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove vertex ${i + 1}`}
+                  disabled={vertices.length <= minPolygonVertices}
+                  onClick={() =>
+                    editVertices((vs) => vs.filter((_, j) => j !== i))
+                  }
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="pair">
+                {(["u", "v"] as const).map((c) =>
+                  vector(
+                    vertexLabel(i + 1, c),
+                    vertex[c],
+                    (value) =>
+                      set((t) => ({
+                        ...t,
+                        vertices: (t.vertices ?? []).map((p, j) =>
+                          j === i ? { ...p, [c]: value } : p,
+                        ),
+                      })),
+                    i === 0 && c === "u"
+                      ? transportFieldHelp.vertices
+                      : undefined,
+                  ),
+                )}
+              </div>
+            </div>
+          ))}
+          <button
+            className="closure"
+            type="button"
+            disabled={vertices.length >= maxPolygonVertices}
+            onClick={() => editVertices((vs) => [...vs, nextVertex(vs)])}
+          >
+            {vertices.length >= maxPolygonVertices
+              ? `At most ${maxPolygonVertices} vertices`
+              : "Add a vertex"}
+          </button>
+        </>
+      )}
     </>
   );
 }
 
-const signed = (radians: number) => {
-  const d = (radians * 180) / Math.PI;
-  return `${d > 0 ? "+" : d < 0 ? "−" : ""}${formatNumber(Math.abs(d))}°`;
-};
+// A number with its sign, + or −, none for 0, and an angle in degrees
+// likewise.
+const signedNumber = (x: number) =>
+  `${x > 0 ? "+" : x < 0 ? "−" : ""}${formatNumber(Math.abs(x))}`;
+const signed = (radians: number) =>
+  `${signedNumber((radians * 180) / Math.PI)}°`;
 
 // Where the arrow went and how it came back, how well it kept its length
 // and tangency, and the colors.
@@ -502,15 +652,36 @@ export function transportNote(
     out.push(
       `Around the octant triangle the arrow comes home turned ${signed(tr.holonomy)} about the outward normal: the area enclosed, πr²/2, times the curvature 1/r².`,
     );
-  else if (tr.returns)
+  else if (tr.path === "polygon") {
+    // The radius, from where the path starts; the area over r² is the
+    // turn, less a whole turn when it exceeds a half turn either way.
+    const p = tr.samples.points[0];
+    const turns = Math.round(
+      (tr.area / (p.x ** 2 + p.y ** 2 + p.z ** 2) - tr.holonomy) /
+        (2 * Math.PI),
+    );
+    const whole =
+      turns > 0
+        ? ", less a whole turn"
+        : turns < 0
+          ? ", plus a whole turn"
+          : "";
     out.push(
-      `Thread ${g.selected} returns to its start, and the arrow comes home turned ${signed(tr.holonomy)}, keeping its angle to the thread as along any geodesic.`,
+      `Around the polygon the arrow comes home turned ${signed(tr.holonomy)} about the outward normal: the signed area it encloses, ${signedNumber(tr.area)}, times the curvature 1/r²${whole}.`,
+    );
+  } else if (tr.returns)
+    out.push(
+      `Thread ${g.selected} ends within 10⁻⁶ of its start, heading the same way, with the arrow turned ${signed(tr.holonomy)} there; along a geodesic it keeps its angle to the thread.`,
     );
   else
     out.push(
       `Along thread ${g.selected} the arrow keeps its ${formatNumber(config.angle)}° angle to the thread, as along any geodesic.`,
     );
-  if (tr.reason === "exhausted")
+  if (tr.reason === "edge")
+    out.push(
+      "It stops with its thread where the path reaches the patch's edge.",
+    );
+  else if (tr.reason === "exhausted")
     out.push(
       `It ran out of its share of the 200,000 steps at ${formatNumber(tr.reached)}.`,
     );

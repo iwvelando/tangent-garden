@@ -152,6 +152,15 @@ func TestValidationNamesItsField(t *testing.T) {
 			return c
 		}},
 		{"surface reach", "surface.reach", func() Request { c := ellipsoid(); c.Surface.Reach = 2e5; return c }},
+		{"polygon vertices", "surface.geodesics.transport.vertices", func() Request {
+			return polygonAt(launch(ellipsoid(), 0, 0, 0, 0, 1, 1, 60), 0, 0, [2]float64{0, 0}, [2]float64{1, 0})
+		}},
+		{"polygon latitude", "surface.geodesics.transport.vertices.1.v", func() Request {
+			return polygonAt(launch(ellipsoid(), 0, 0, 0, 0, 1, 1, 60), 0, 0, [2]float64{0, 0}, [2]float64{1, 2}, [2]float64{1, 1})
+		}},
+		{"polygon opposite side", "surface.geodesics.transport.vertices.2.u", func() Request {
+			return polygonAt(launch(ellipsoid(), 0, 0, 0, 0, 1, 1, 60), 0, 0, [2]float64{0, 0}, [2]float64{1, 0}, [2]float64{1 + math.Pi, 0})
+		}},
 		{"n2", "rays.n2", func() Request {
 			c := rays(parallel(0, 90))
 			c.Rays.Interaction, c.Rays.N1, c.Rays.N2 = "refract", 1, 0

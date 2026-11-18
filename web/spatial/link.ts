@@ -12,6 +12,7 @@ import {
 } from "../study-link";
 import {
   maxHarmonicTerms,
+  maxPolygonVertices,
   maxSpatialPursuers,
   maxSpatialSeeds,
   type SpatialConfig,
@@ -357,14 +358,23 @@ const config: SchemaOf<SpatialConfig> = {
               length: "number",
               samples: "number",
               selected: "number",
-              // A carried arrow; links made before it have none.
+              // A carried arrow; links made before it have none, and
+              // links made before polygons have no vertices.
               transport: {
                 optional: {
                   fields: {
-                    path: { options: { thread: true, triangle: true } },
+                    path: {
+                      options: { thread: true, triangle: true, polygon: true },
+                    },
                     angle: "number",
                     size: "number",
                     arrows: "number",
+                    vertices: {
+                      optional: {
+                        list: { fields: { u: "number", v: "number" } },
+                        max: maxPolygonVertices,
+                      },
+                    },
                   },
                 },
               },

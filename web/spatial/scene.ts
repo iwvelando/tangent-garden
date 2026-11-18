@@ -4,6 +4,7 @@ import {
   routeThrough,
   threadPath,
   transportIndex,
+  chevronLines,
 } from "./geodesic-path";
 import type {
   CuspidalEdge,
@@ -1022,15 +1023,22 @@ function buildSingleScene(result: SpatialResult, gridOnly = false) {
     2,
     2.2,
   );
-  // A carried arrow: the octant triangle it travels, broad in the curves'
-  // ink as the selected thread is; the arrow itself, broad in rust, where a
-  // reveal has brought it (or where its path ended); and the reference
-  // arrows the reveal has passed, the first where it started, in slate.
+  // A carried arrow: the closed path it travels, the octant triangle or a
+  // polygon, broad in the curves' ink as the selected thread is, with a
+  // polygon's direction marked on each side the reveal has passed; the
+  // arrow itself, broad in rust, where a reveal has brought it (or where
+  // its path ended); and the reference arrows the reveal has passed, the
+  // first where it started, in slate.
   const carried = carries(fan) ? fan!.transport! : undefined;
   const shown = carried?.shown ?? Infinity;
   const transportRoute = batch(
     vertices(
-      carried?.path === "triangle" ? joined(routeThrough(carried, shown)) : [],
+      carried && carried.path !== "thread"
+        ? [
+            ...joined(routeThrough(carried, shown)),
+            ...chevronLines(carried, shown),
+          ]
+        : [],
     ),
     "lines",
     2,

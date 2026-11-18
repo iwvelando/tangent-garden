@@ -193,8 +193,9 @@ export type SurfaceConfig = {
 // degrees evenly, each thread at the middle of its share, so thread k of n
 // leaves at β + spread((2k + 1)/2n − 1/2). `selected`, from 1, is the
 // thread drawn and described on its own. With `transport` a tangent arrow
-// is carried along it, or around a sphere's octant triangle (see
-// TransportConfig); absent, as in links made before it, there is none.
+// is carried along it, or around a sphere's octant triangle or a geodesic
+// polygon (see TransportConfig); absent, as in links made before it, there
+// is none.
 // Mirrors engine3.GeodesicRequest.
 export type GeodesicConfig = {
   u: number;
@@ -208,22 +209,31 @@ export type GeodesicConfig = {
   transport?: TransportConfig;
 };
 // A unit tangent vector carried by the surface's Levi-Civita connection
-// along the selected thread ("thread") or around the octant triangle of a
-// sphere ("triangle"): (r, 0, 0) to (0, r, 0) to (0, 0, r) and back.
+// along the selected thread ("thread"), around the octant triangle of a
+// sphere ("triangle"): (r, 0, 0) to (0, r, 0) to (0, 0, r) and back, or
+// around a geodesic polygon of a sphere ("polygon") through `vertices`, in
+// the sphere's longitude u and latitude v, joined by their shorter
+// great-circle arcs and closed from the last back to the first.
 // `angle` α, in degrees, is measured from the path's first unit tangent T
-// toward N × T, N the unit vector along X_u × X_v (outward on the sphere
-// and the torus, whichever way the study's normal points). `size` is the
-// drawn length, in the surface's units, and `arrows` the number of
-// reference arrows, at s = jL/M for j = 0…M − 1, the first where it
-// starts. Mirrors engine3.TransportRequest.
-export type TransportPath = "thread" | "triangle";
+// toward N × T, N the unit vector along X_u × X_v (outward on the sphere,
+// the ellipsoid and the torus, whichever way the study's normal points).
+// `size` is the drawn length, in the surface's units, and `arrows` the
+// number of reference arrows, at s = jL/M for j = 0…M − 1, the first where
+// it starts. `vertices` are kept whatever the path, and read only by a
+// polygon; links made before polygons have none. Mirrors
+// engine3.TransportRequest.
+export type TransportPath = "thread" | "triangle" | "polygon";
+export type PolygonVertex = { u: number; v: number };
 export type TransportConfig = {
   path: TransportPath;
   angle: number;
   size: number;
   arrows: number;
+  vertices?: PolygonVertex[];
 };
 export const maxTransportArrows = 36;
+export const minPolygonVertices = 3;
+export const maxPolygonVertices = 12;
 export const maxGeodesicThreads = 32;
 export const maxGeodesicSamples = 20000;
 export const maxGeodesicPoints = 200000;
@@ -1028,12 +1038,16 @@ export type TransportSamples = {
   normals: Vec3[];
   tangents: Vec3[];
 };
-// Mirrors engine3.TransportResult: the samples at kL/N, with a triangle's
-// corners (their indices) among them and a stop between samples last; the
-// reference arrows; how the path ended; whether it returns to its start
-// heading the same way, and then the turn `holonomy`, in radians within
-// (−π, π] about the start's normal; the largest departures from unit
-// length and from the tangent plane; and the drawn length `size`.
+// Mirrors engine3.TransportResult: the samples at kL/N, with a closed
+// path's corners (their indices) among them and a stop between samples
+// last; the reference arrows; how the path ended, and on a patch the edge
+// it reached; whether it returns to its start heading the same way (a
+// triangle or polygon always, closed by construction; a thread only
+// nearly, within 10⁻⁶), and then the turn `holonomy`, in radians within
+// (−π, π] about the start's normal; a closed path's signed `area`, positive
+// counterclockwise seen from outside, within (−2πr², 2πr²]; the largest
+// departures from unit length and from the tangent plane; and the drawn
+// length `size`.
 export type TransportResult = {
   path: TransportPath;
   unavailable?: string;
@@ -1042,11 +1056,13 @@ export type TransportResult = {
   samples: TransportSamples;
   references: TransportSamples;
   corners: number[];
-  reason: "end" | "exhausted" | "unresolved";
+  reason: "end" | "edge" | "exhausted" | "unresolved";
+  edge?: "uMin" | "uMax" | "vMin" | "vMax";
   reached: number;
   steps: number;
   returns: boolean;
   holonomy: number;
+  area: number;
   drift: { norm: number; tangency: number };
   // Set by a reveal: the arc length the arrow has reached.
   shown?: number;

@@ -139,7 +139,10 @@ type NamedTarget =
 export type SeedTarget = `seed${number}${"X" | "Y" | "Z"}`;
 // A pursuer's starting coordinate or speed, numbered from 1.
 export type PursuerTarget = `pursuer${number}${"X" | "Y" | "Z" | "Speed"}`;
-export type Target = NamedTarget | HarmonicTarget | SeedTarget | PursuerTarget;
+// A coordinate of a geodesic polygon's vertex, numbered from 1.
+export type VertexTarget = `vertex${number}${"U" | "V"}`;
+export type Target =
+  NamedTarget | HarmonicTarget | SeedTarget | PursuerTarget | VertexTarget;
 export type Track = { target: Target; from: string; to: string };
 export type NumericTrack = { target: Target; from: number; to: number };
 export type AnimationView = {
@@ -279,6 +282,15 @@ const seedTarget = (t: Target) => {
       }
     : null;
 };
+// The labels of a geodesic polygon's vertex fields, numbered from 1.
+export const vertexLabel = (n: number, c: "u" | "v") => `Vertex ${n} ${c}`;
+const isVertex = (t: Target): t is VertexTarget => t.startsWith("vertex");
+const vertexTarget = (t: Target) => {
+  const match = /^vertex(\d+)([UV])$/.exec(t);
+  return match
+    ? { index: +match[1] - 1, key: match[2].toLowerCase() as "u" | "v" }
+    : null;
+};
 export const spatialPursuerLabels = {
   X: (n: number) => `Start x${subscript(n)}`,
   Y: (n: number) => `Start y${subscript(n)}`,
@@ -400,6 +412,8 @@ export const targetLabel = (c: SpatialConfig, t: Target): string => {
   if (seed) return seedLabel(seed.index + 1, seed.axis);
   const pursuer = pursuerTarget(t);
   if (pursuer) return spatialPursuerLabels[pursuer.field](pursuer.index + 1);
+  const vertex = vertexTarget(t);
+  if (vertex) return vertexLabel(vertex.index + 1, vertex.key);
   const shape = surfaceShape[c.surface.kind].find(
     (f) => `surface${f.key.toUpperCase()}` === t,
   );
@@ -481,6 +495,15 @@ export const availableTargets = (c: SpatialConfig): Target[] => {
                   "geodesicCount",
                   ...(c.surface.geodesics.transport
                     ? (["transportAngle"] as const)
+                    : []),
+                  // A polygon's vertices, while it is the arrow's path.
+                  ...(c.surface.geodesics.transport?.path === "polygon"
+                    ? (c.surface.geodesics.transport.vertices ?? []).flatMap(
+                        (_, k) =>
+                          (["U", "V"] as const).map(
+                            (axis) => `vertex${k + 1}${axis}` as const,
+                          ),
+                      )
                     : []),
                 ] as const)
               : []),
@@ -605,6 +628,13 @@ export function targetValue(c: SpatialConfig, t: Target, _length = 0): number {
   if (isSurface(t)) return c.surface[surfaceFields[t]];
   if (isGeodesic(t)) return c.surface.geodesics?.[geodesicFields[t]] ?? 0;
   if (t === "transportAngle") return c.surface.geodesics?.transport?.angle ?? 0;
+  if (isVertex(t)) {
+    const vertex = vertexTarget(t)!;
+    return (
+      c.surface.geodesics?.transport?.vertices?.[vertex.index]?.[vertex.key] ??
+      NaN
+    );
+  }
   if (isRays(t)) return c.rays[raysFields[t]];
   if (isReceiver(t)) return c.rays.receiver[receiverFields[t]] ?? 0;
   if (isSource(t)) return c.rays.source[sourceAxis(t)];
@@ -687,6 +717,13 @@ export function applyTracks(
     if (t.target === "transportAngle") {
       const carried = config.surface.geodesics?.transport;
       if (carried) carried.angle = v;
+      continue;
+    }
+    if (isVertex(t.target)) {
+      const vertex = vertexTarget(t.target)!;
+      const corner =
+        config.surface.geodesics?.transport?.vertices?.[vertex.index];
+      if (corner) corner[vertex.key] = v;
       continue;
     }
     if (isRays(t.target)) {

@@ -403,8 +403,7 @@ func TestPatchGeodesicEdges(t *testing.T) {
 }
 
 // A patch thread starts within the patch; anywhere else is refused by its
-// field. An arrow cannot yet be carried on these surfaces: it is
-// unavailable while the threads are drawn.
+// field. An arrow is carried along the thread on these surfaces too.
 func TestPatchGeodesicLimits(t *testing.T) {
 	for _, c := range []struct {
 		field string
@@ -426,8 +425,9 @@ func TestPatchGeodesicLimits(t *testing.T) {
 	} {
 		q = carry(launch(q, 0, 0, 30, 0, 1, 5, 100), "thread", 90, 4)
 		g := threads(t, q)
-		if g.Transport == nil || g.Transport.Unavailable == "" || len(g.Threads) != 1 || len(g.Threads[0].Points) < 2 {
-			t.Fatalf("%s: the arrow should be unavailable with the thread drawn", q.Surface.Kind)
+		// An arrow is carried along the thread (see route_transport_test.go).
+		if g.Transport == nil || g.Transport.Unavailable != "" || len(g.Threads) != 1 || len(g.Transport.Samples.Points) != len(g.Threads[0].Points)+1 && len(g.Transport.Samples.Points) != len(g.Threads[0].Points) {
+			t.Fatalf("%s: the arrow should be carried along the thread: %+v", q.Surface.Kind, g.Transport)
 		}
 	}
 }

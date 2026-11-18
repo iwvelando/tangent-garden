@@ -208,7 +208,7 @@ test("display sites delegate formatting; exclusions are exact machine-output or 
     "spatial/shadow.ts": ["return Number(at.toPrecision(2));"],
     "spatial/geodesics.tsx": [
       "(Number.isFinite(turn) && turn > 0 ? turn : 1).toPrecision(3),",
-      "size: Number((Number.isFinite(r) && r > 0 ? r : 0.3).toPrecision(2)),",
+      "Math.min(100000, Number.isFinite(r) && r > 0 ? r : 0.3).toPrecision(2),",
     ],
     "spatial/presets.ts": [
       "x: Number((1 / Math.sqrt(0.55 - 0.04 * k)).toFixed(4)),",

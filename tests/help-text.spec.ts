@@ -48,6 +48,7 @@ import {
 } from "../web/planar-probe";
 import { curveProbeMotionHelp } from "../web/probe";
 import { cutHelp } from "../web/spatial/cut";
+import { transportFieldHelp } from "../web/spatial/geodesics";
 import {
   spatialPhraseCameraHelp,
   spatialPhraseHelp,
@@ -297,6 +298,14 @@ test("every help a setting reveals keeps to the same limits", () => {
   add("3D refinement to the view", spatialViewHelp);
   add("involute restart", restartHelp);
   add("3D full refinement while playing", fullRefinementHelp);
+  // The arrow's fields, in pairs; a polygon's vertices show only with it.
+  table("transport", transportFieldHelp, [
+    "path",
+    "angle",
+    "size",
+    "arrows",
+    "vertices",
+  ]);
   const { add: _title, ...cutHelps } = cutHelp;
   table("cut", cutHelps, ["offset", "cuts", "beyond"]);
   const { framing: _framing, ...pathHelps } = pathHelp;
