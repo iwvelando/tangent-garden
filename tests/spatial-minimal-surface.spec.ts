@@ -208,7 +208,7 @@ function keyOf(name: string): keyof SpatialConfig["surface"] {
   )[name as "Scale s"];
 }
 
-test("choosing the family from an edited torus keeps its offset, starts without focal sheets, and lighting it starts from a mirror", async ({
+test("choosing the family from an edited torus keeps its offset, starts without focal sheets, and lighting it keeps the family", async ({
   page,
 }) => {
   await ready(page);
@@ -270,22 +270,25 @@ test("choosing the family from an edited torus keeps its offset, starts without 
     .evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
   expect(targets).toContain("surfaceOffset");
   expect(targets).toContain("surfaceB");
-  // A mirror or interface starts from the first surface that can be lit.
+  // A mirror or interface keeps the family, with its shape, domain,
+  // normal and grid, since it can be lit.
+  const before = (await config(page)).surface;
   await page
     .getByLabel("Spatial definition", { exact: true })
     .selectOption("rays");
   await settled(page);
-  expect((await config(page)).surface.kind).toBe("ellipsoid");
+  expect((await config(page)).surface).toEqual(before);
   await expect(page.getByRole("alert")).toHaveCount(0);
   const offeredLit = await surface(page)
     .locator("option")
     .evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-  expect(offeredLit).not.toContain("helicoid-catenoid");
-  // Back on a surface patch, the family is offered again, with its own
-  // controls.
+  expect(offeredLit).toContain("helicoid-catenoid");
+  // Back on a surface patch, the family keeps its own controls.
   await page
     .getByLabel("Spatial definition", { exact: true })
     .selectOption("surface");
+  await settled(page);
+  expect((await config(page)).surface).toEqual(before);
   await surface(page).selectOption("helicoid-catenoid");
   await settled(page);
   await expect(field(page, "Offset d")).toBeVisible();

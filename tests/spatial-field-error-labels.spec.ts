@@ -298,24 +298,6 @@ const cases: Case[] = [
     (c) => (c.surface.vMin = -5),
     "v from",
   ],
-  // The family lit as a mirror is refused under the Surface choice.
-  [
-    "surface.kind",
-    "A paraboloid gathering light",
-    (c) => {
-      c.surface = {
-        ...c.surface,
-        kind: "helicoid-catenoid",
-        a: 1,
-        b: 0,
-        uMin: -Math.PI,
-        uMax: Math.PI,
-        vMin: -1.5,
-        vMax: 1.5,
-      };
-    },
-    "Surface",
-  ],
   [
     "surface.c",
     "The focal sheets of an ellipsoid",

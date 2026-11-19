@@ -13,6 +13,21 @@ import {
   type ReceiverResult,
 } from "./types";
 import { count, plural, readout } from "../number-format";
+import { tiered, withMore, type Tiered } from "../help";
+
+// The Light help: one reflection or refraction per sample, with nothing
+// occluded, and what that leaves out on a surface whose descriptor says so
+// (surfaceCapabilities' shading).
+export function lightHelp(
+  refracting: boolean,
+  shading: string | undefined,
+): Tiered<string> {
+  const help = tiered(
+    "Parallel light, as from a distant source, or a point source.",
+    `Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`,
+  );
+  return shading ? withMore(help, shading) : help;
+}
 
 const shapes: Record<Exclude<FocalShape, "none">, string> = {
   surface: "a surface",

@@ -6140,6 +6140,60 @@ export const spatialPresets: {
       path: { style: "steady", keys: [] },
     },
   },
+  // Half a turn of the stair, u in [−0.45π, 0.45π] and v in [−1.2, 1.2],
+  // as a mirror lit straight down on the side its reversed normal faces
+  // (v > 0), each ray stopped at its first caustic point. A vertical line
+  // meets the full helicoid every half turn, so a span below π leaves no
+  // step above another: at every angle nothing drawn is in shadow or
+  // blocked (engine3 TestMinimalOpticsPresetsShadowFree). Play bends it
+  // through the family, θ from 0 to π/2 and back: the real caustic, a
+  // ribbon wrapping the half turn, gathers onto the axis below the
+  // opening throat, as the catenoid's inside focuses axial light.
+  {
+    name: "A half-turn mirror opening into a throat",
+    detail:
+      "Light from above falls on half a turn of the stair and gathers on the axis as it bends into a neck",
+    config: {
+      ...base,
+      format: "rays",
+      surface: {
+        ...base.surface,
+        kind: "helicoid-catenoid",
+        a: 1,
+        b: 0,
+        c: 0,
+        uMin: -0.45 * Math.PI,
+        uMax: 0.45 * Math.PI,
+        vMin: -1.2,
+        vMax: 1.2,
+        uSamples: 120,
+        vSamples: 60,
+        curves: 13,
+        offset: 0,
+        reach: 0,
+        reverse: true,
+      },
+      rays: {
+        ...base.rays,
+        azimuth: 0,
+        elevation: -90,
+        length: 3,
+        stop: true,
+      },
+    },
+    view: { ...initialView, yaw: 0.6, pitch: -1.15 },
+    flight: {
+      duration: 12,
+      repeat: "back-and-forth",
+      pace: "ease",
+      camera: "current",
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "surfaceB", from: "0", to: "pi/2" }],
+      },
+      path: { style: "steady", keys: [] },
+    },
+  },
   // Fifteen geodesics leave the helicoid's stair (u in [−0.85π, 0.85π], v
   // in [−1.2, 1.2], a patch that never crosses itself) at (−2.4, 1), aimed
   // 26.7°–73.3° below the parallel, toward the axis. Each keeps Clairaut's

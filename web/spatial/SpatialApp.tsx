@@ -203,7 +203,7 @@ import {
   surfaceNote,
   surfaceShape,
 } from "./surface";
-import { raysNote, receiverAxes } from "./rays";
+import { lightHelp, raysNote, receiverAxes } from "./rays";
 import { ShadowPanel } from "./ShadowPanel";
 import { casts, shadowNote, withShadowPlane } from "./shadow";
 import { defaultLayers, initialView, type Layers, type View } from "./renderer";
@@ -1461,9 +1461,9 @@ export default function SpatialApp({
     <>
       <Field
         label="Light"
-        help={tiered(
-          "Parallel light, as from a distant source, or a point source.",
-          `Either ${refracting ? "refracts" : "reflects"} once; nothing blocks it on the way in or out.`,
+        help={lightHelp(
+          refracting,
+          surfaceCapabilities[config.surface.kind].shading,
         )}
       >
         <select

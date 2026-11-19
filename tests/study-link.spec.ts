@@ -606,6 +606,37 @@ test("a link carries the probe on a patch's offset", async () => {
   await refused(() => Promise.resolve(spatialStudy(unknown)), "probe.target");
 });
 
+test("a link carries the helicoid–catenoid family as a mirror or interface, with no new fields", async () => {
+  const half = spatialPresets.findIndex(
+    (p) => p.name === "A half-turn mirror opening into a throat",
+  );
+  assert.ok(half >= 0);
+  const study: SpatialStudy = {
+    ...spatial(half),
+    probe: { enabled: true, position: 0.3, target: "light", across: 0.6 },
+  };
+  study.config.surface.b = 1.1;
+  study.config.rays = {
+    ...study.config.rays,
+    interaction: "refract",
+    n1: 1.5,
+    n2: 1,
+    edges: true,
+    receiver: { plane: "z", at: -3, c1: 0, c2: 0, size: 6, bins: 64 },
+  };
+  const back = await readStudyLink(await writeStudyLink("3d", study));
+  assert.deepEqual(spatialStudy(back.study), study);
+  assert.equal(probeTarget(study.config, study.probe), "light");
+  // The research prototype's first-hit option is no field: a link that
+  // carries it is refused by name.
+  const shaded = structuredClone(study) as any;
+  shaded.config.rays.occlusion = true;
+  await refused(
+    () => Promise.resolve(spatialStudy(shaded)),
+    "config.rays.occlusion",
+  );
+});
+
 test("a link carries the helicoid–catenoid family, its offset and its focal sheets on request", async () => {
   const staircase = spatialPresets.findIndex(
     (p) => p.name === "A staircase becoming a throat",

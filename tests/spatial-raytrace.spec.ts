@@ -469,6 +469,7 @@ for (const [label, camera] of [
   ["A paraboloid gathering light", "hold"],
   ["A glass ellipsoid focusing a beam", "current"],
   ["A lamp in water over air", "hold"],
+  ["A half-turn mirror opening into a throat", "current"],
 ] as const)
   test(`${label} traces from its light to the caustics (${camera} view)`, async ({
     page,
@@ -481,6 +482,10 @@ for (const [label, camera] of [
       .getByRole("combobox", { name: "Animation camera" })
       .selectOption(camera);
     await page.getByLabel("Duration (seconds)").fill("3");
+    // Once and steady, so that the slider is the light's progress; the
+    // half turn's own motion plays θ back and forth, eased.
+    await page.getByLabel("Repeat", { exact: true }).selectOption("once");
+    await page.getByLabel("Pace", { exact: true }).selectOption("steady");
     await page
       .getByRole("button", { name: "Play animation", exact: true })
       .click();
