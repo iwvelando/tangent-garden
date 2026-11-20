@@ -349,6 +349,27 @@ func TestSphericalLissajousPolesAndCrossings(t *testing.T) {
 	if len(crossing) != 2 || dist3(crossing[0], Vec3{0, 1, 0}) > 1e-15 || dist3(crossing[1], Vec3{0, 1, 0}) > 1e-15 {
 		t.Fatalf("Viviani crossing samples: %v", crossing)
 	}
+	// The preset's m = (2, 1) with 32 fibers crosses itself at
+	// (0, ±√2/2, ±√2/2): samples 4 and 28, and 12 and 20, coincide there and
+	// both stay drawn.
+	r = weaveCompute(t, lissajousRequest(2, 1, 32, 0))
+	if r.Weave.Sources != 32 || r.Weave.Correspondence.Aliases != nil {
+		t.Fatalf("m = (2, 1) merged its self-crossings: %+v %+v", r.Weave, r.Weave.Correspondence)
+	}
+	at := map[string]Vec3{}
+	for _, m := range r.Companion.Markers {
+		at[m.ID] = m.Point
+	}
+	h := math.Sqrt2 / 2
+	for _, pair := range []struct {
+		i, j int
+		want Vec3
+	}{{4, 28, Vec3{0, h, h}}, {12, 20, Vec3{0, -h, -h}}} {
+		a, b := at[fmt.Sprintf("weave/latitude/0/base/%d", pair.i)], at[fmt.Sprintf("weave/latitude/0/base/%d", pair.j)]
+		if dist3(a, pair.want) > 1e-15 || dist3(b, pair.want) > 1e-15 {
+			t.Fatalf("samples %d and %d: %v %v, want %v", pair.i, pair.j, a, b, pair.want)
+		}
+	}
 }
 
 // The path descriptors' derivatives, against central differences of the

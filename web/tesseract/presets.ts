@@ -371,7 +371,7 @@ export const tesseractPresets: {
   {
     name: "A Lissajous path, a woven bouquet",
     detail:
-      "A point circles the pole twice while it swings once from pole to pole. Each of its points lifts to a whole circle, and every two of those circles link.",
+      "A point circles the pole twice while it swings once from pole to pole. Each of its points lifts to a whole circle, and the circles of any two different points link.",
     config: {
       ...objects.weave.defaults(base),
       mode: "paired",
