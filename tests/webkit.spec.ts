@@ -147,6 +147,21 @@ for (const title of ["A square grid, curved", "Circles through infinity"])
     await checkLoomPortraitPlayer(page, title);
   });
 
+// Opens a guided journey from the open gallery by pointer. On CI's macOS
+// runner a click on a journey from the 4D notebook three times never
+// reached the button (#468): the gallery stayed open, and its entries close
+// it as they open a journey, so the click is made again only while the
+// gallery is open. The journey must still open.
+async function openGalleryJourney(page: Page, gallery: Locator, name: string) {
+  const entry = gallery.getByRole("button", { name, exact: true });
+  const journey = page.getByRole("dialog", { name, exact: true });
+  await expect(async () => {
+    if (await gallery.isVisible()) await entry.click({ timeout: 5_000 });
+    await expect(journey).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+  return journey;
+}
+
 // A journey step changes asynchronously, and presenting a step's drawing can
 // move the step buttons: at 390 × 844 "Next step" drops about 160 px when the
 // opening drawing replaces its placeholder. A click dispatched in between
@@ -1774,17 +1789,12 @@ for (const source of ["3d", "4d"] as const)
     });
     await browse.click();
     const gallery = page.getByRole("dialog", { name: "Notebook examples" });
-    await gallery
-      .getByRole("button", { name: "Order inside apparent chaos", exact: true })
-      .click();
-    const mixed = page.getByRole("dialog", {
-      name: "Order inside apparent chaos",
-      exact: true,
-    });
-    for (let n = 0; n < 2; n++)
-      await mixed
-        .getByRole("button", { name: "Next step", exact: true })
-        .click();
+    const mixed = await openGalleryJourney(
+      page,
+      gallery,
+      "Order inside apparent chaos",
+    );
+    await nextSteps(mixed, 2);
     await expect(mixed.locator(".journey-art")).toHaveAttribute(
       "aria-busy",
       "false",

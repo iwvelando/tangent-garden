@@ -6,8 +6,10 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// What a failed job's log says: the runner image, and each failed test with
-// the first line of its first attempt's error.
+// What a failed job's log says: the runner image, each failed test with the
+// first line of its first attempt's error, and the outage an install step
+// named when it stalled through its own retries (.github/scripts/
+// apt-cutoff.sh), which needs a rerun and no issue.
 export function parseJobLog(log) {
   const lines = log
     .replace(/\x1b\[[0-9;]*m/g, "")
@@ -40,7 +42,15 @@ export function parseJobLog(log) {
       if (/has been closed|crashed/i.test(line)) current.pageLost = true;
     }
   }
-  return { image: name ? `${name} ${version ?? ""}`.trim() : "", failures };
+  const upstream =
+    lines
+      .map((l) => /^##\[error\]Upstream: (.*)$/.exec(l)?.[1])
+      .find(Boolean) ?? "";
+  return {
+    image: name ? `${name} ${version ?? ""}`.trim() : "",
+    failures,
+    upstream,
+  };
 }
 
 // One failure of one test, as a line for an issue comment.
@@ -50,6 +60,26 @@ export function occurrence({ date, url, run, attempt, job, image, failure }) {
     `${image ? ` on ${image}` : ""}: \`${failure.file}\` › ${failure.title}. ` +
     failure.error +
     (failure.pageLost ? " (the page closed or crashed under the test)" : "")
+  );
+}
+
+// A job that failed before or after its tests, as a line: an upstream outage
+// to rerun, or a log still to read.
+export function outsideTests({
+  date,
+  url,
+  run,
+  attempt,
+  job,
+  image,
+  upstream,
+}) {
+  return (
+    `- ${date}, [run ${run}, attempt ${attempt}](${url}), job \`${job}\`` +
+    `${image ? ` on ${image}` : ""}: ` +
+    (upstream
+      ? `upstream, ${upstream}`
+      : "failed outside the tests; read its log.")
   );
 }
 
@@ -104,11 +134,19 @@ function main() {
       // An attempt that reran only the failed jobs lists the others again.
       if (seen.has(job.id)) continue;
       seen.add(job.id);
-      const { image, failures } = parseJobLog(jobLog(repo, job.id));
+      const { image, failures, upstream } = parseJobLog(jobLog(repo, job.id));
       const url = `https://github.com/${repo}/actions/runs/${run}/attempts/${attempt}`;
       if (failures.length === 0)
         console.log(
-          `- ${job.completed_at.slice(0, 10)}, [run ${run}, attempt ${attempt}](${url}), job \`${job.name}\`${image ? ` on ${image}` : ""}: failed outside the tests; read its log.`,
+          outsideTests({
+            date: job.completed_at.slice(0, 10),
+            url,
+            run,
+            attempt,
+            job: job.name,
+            image,
+            upstream,
+          }),
         );
       for (const failure of failures) {
         console.log(

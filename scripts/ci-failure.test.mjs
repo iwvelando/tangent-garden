@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { occurrence, parseJobLog } from "./ci-failure.mjs";
+import { occurrence, outsideTests, parseJobLog } from "./ci-failure.mjs";
 
 // A failed job's log as GitHub serves it: a timestamp before every line.
 const stamp = (text) =>
@@ -61,6 +61,7 @@ test("a job log gives the runner image and each failed test once", () => {
         pageLost: true,
       },
     ],
+    upstream: "",
   });
 });
 
@@ -83,7 +84,40 @@ test("a log with no test failure has none, and no image is not an error", () => 
   assert.deepEqual(parseJobLog(stamp("npm error code E503")), {
     image: "",
     failures: [],
+    upstream: "",
   });
+});
+
+// The install scripts (.github/scripts/apt-cutoff.sh) end a step that
+// stalled through its own retries with an `Upstream:` error.
+test("a job that stopped at an upstream outage says to rerun it without an issue", () => {
+  const stalled =
+    stamp(`##[group]Run APT_ARCHIVES="$HOME/apt-archives" .github/scripts/install-ffmpeg.sh
+::warning::Installing ffmpeg (attempt 1) failed or took over three minutes.
+##[error]Upstream: installing ffmpeg stalled twice on the Ubuntu mirror; rerun the job (no issue needed).
+##[error]Process completed with exit code 1.`);
+  const parsed = parseJobLog(stalled);
+  assert.equal(
+    parsed.upstream,
+    "installing ffmpeg stalled twice on the Ubuntu mirror; rerun the job (no issue needed).",
+  );
+  const where = {
+    date: "2026-11-20",
+    url: "https://github.com/o/r/actions/runs/7/attempts/1",
+    run: 7,
+    attempt: 1,
+    job: "chromium (7/10)",
+    image: "ubuntu-26.04 20261111.82.6",
+  };
+  assert.equal(
+    outsideTests({ ...where, upstream: parsed.upstream }),
+    "- 2026-11-20, [run 7, attempt 1](https://github.com/o/r/actions/runs/7/attempts/1), job `chromium (7/10)` on ubuntu-26.04 20261111.82.6: upstream, installing ffmpeg stalled twice on the Ubuntu mirror; rerun the job (no issue needed).",
+  );
+  // Any other failure outside the tests is still read and recorded.
+  assert.equal(
+    outsideTests({ ...where, upstream: "" }),
+    "- 2026-11-20, [run 7, attempt 1](https://github.com/o/r/actions/runs/7/attempts/1), job `chromium (7/10)` on ubuntu-26.04 20261111.82.6: failed outside the tests; read its log.",
+  );
 });
 
 test("an occurrence is one line an issue comment can hold", () => {

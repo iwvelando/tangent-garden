@@ -20,7 +20,7 @@ test-wasm: wasm
 	node scripts/test-dev-worker.mjs
 # Tests of the project scripts that need no engine.
 test-scripts:
-	node --test scripts/test-durations.test.mjs scripts/go-race.test.mjs scripts/ci-failure.test.mjs
+	node --test scripts/test-durations.test.mjs scripts/go-race.test.mjs scripts/ci-failure.test.mjs scripts/apt-cutoff.test.mjs
 # Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
 bench: wasm
 	node scripts/bench-spatial.mjs $(ARGS)

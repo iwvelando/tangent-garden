@@ -157,21 +157,14 @@ jobs:
           path: ~/apt-archives
           key: ${{ steps.apt.outputs.key }}
           restore-keys: ${{ steps.apt.outputs.prefix }}
-      # The script cuts off and retries a stalled install; this is the backstop.
+      # The scripts cut off and retry a stalled install (two attempts of at
+      # most 3.5 minutes each); this is the backstop.
       - name: Install Chromium
-        timeout-minutes: 8
+        timeout-minutes: 9
         run: APT_ARCHIVES="$HOME/apt-archives" .github/scripts/install-chromium.sh
       - name: Install ffmpeg
-        timeout-minutes: 5
-        run: |
-          # Installing Chromium refreshed the package lists and pointed apt at
-          # the cached archive.
-          sudo apt-get install -y --no-install-recommends ffmpeg
-          # Drop packages from an older image or Playwright that apt no
-          # longer lists, so the archive does not grow with every image.
-          sudo apt-get autoclean
-          # apt leaves the archive root-owned; the cache is saved as the runner.
-          sudo chown -R "$(id -u):$(id -g)" ~/apt-archives
+        timeout-minutes: 9
+        run: APT_ARCHIVES="$HOME/apt-archives" .github/scripts/install-ffmpeg.sh
       # Runs against the production build in dist/, under the production CSP.
       # TEST_SHARD packs the shards by each spec file's recorded duration
       # (tests/shards.ts, tests/test-durations.json), not by test count as
@@ -226,9 +219,10 @@ jobs:
       - run: make test-webkit
       # A "Page crashed" failure leaves no trace in the log. macOS writes the
       # WebContent crash or jetsam (memory) report here, which tells an engine
-      # crash from memory pressure on the runner. A test that lost its page is
-      # retried once (tests/crash-retry.ts) and may then pass, so the reports
-      # are kept whenever a loss was recorded, not only when the job fails.
+      # crash from memory pressure on the runner. A test that lost its page or
+      # its engine is retried once (tests/crash-retry.ts) and may then pass,
+      # so the reports are kept whenever a loss was recorded, not only when
+      # the job fails.
       - id: crashes
         if: ${{ !cancelled() }}
         run: |
@@ -374,7 +368,7 @@ jobs:
           key: ${{ steps.apt.outputs.key }}
           restore-keys: ${{ steps.apt.outputs.prefix }}
       - name: Install Chromium
-        timeout-minutes: 8
+        timeout-minutes: 9
         run: APT_ARCHIVES="$HOME/apt-archives" .github/scripts/install-chromium.sh
       # The @smoke tests export no video, so this job needs no ffmpeg.
       - run: npx playwright test --grep @smoke
