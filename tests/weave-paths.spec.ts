@@ -19,7 +19,9 @@ import {
   settle,
 } from "./hopf-helpers";
 import { decodeVideo, frameDifference, probe } from "./video";
+import { objects } from "../web/tesseract/objects";
 import { tesseractPresets } from "../web/tesseract/presets";
+import { spherePaths } from "../web/tesseract/sphere-paths";
 import { initialView } from "../web/tesseract/types";
 
 // The great circle and spherical Lissajous base paths of Base sphere and
@@ -53,6 +55,19 @@ const motionLabels = (p: Page) =>
     .getByRole("combobox", { name: "Animate", exact: true })
     .locator("option")
     .allTextContents();
+
+// The count note states the engine's base-curve minimum, B = max(N,
+// 16(m₁ + m₂)/g): a pair with a common factor draws the reduced curve, so
+// m = (2, 4) has at least 48 segments, not 96.
+test("the Lissajous count note states the reduced pair's base segments", () => {
+  const c = objects.weave.defaults({} as any);
+  c.mode = "paired";
+  c.weave = { ...c.weave!, path: "lissajous", azimuthal: 2, polar: 4 };
+  const note = objects.weave.countNote!;
+  const text = typeof note === "function" ? note(c) : note;
+  expect(text).toContain("16(m₁ + m₂)/g base segments");
+  expect(spherePaths.lissajous.segments({ ...c, samples: 8 })).toBe(48);
+});
 
 test("each new path opens from an edited latitude with only its own controls, and returns", async ({
   page,

@@ -128,7 +128,7 @@ export const spherePaths: Record<SpherePathId, SpherePath> = {
     noun: "Lissajous curve",
     fibersLabel: "Fibers on the Lissajous curve",
     countNote:
-      "Samples are even in parameter t, not spherical arc length. Arc samples divide each fiber; the curve uses at least 16 base segments per unit of m₁ + m₂.",
+      "Samples are even in parameter t, not spherical arc length. Arc samples divide each fiber; the curve uses at least 16(m₁ + m₂)/g base segments, g the frequencies' common factor.",
     parameterLabel: "Moving point t",
     traceLabel: "Trace the Lissajous curve",
     traceHelp: tiered(
