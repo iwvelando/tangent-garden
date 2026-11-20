@@ -154,6 +154,9 @@ export default function TesseractApp({
     [view, setView] = useState({ ...initialView }),
     [spinning, setSpinning] = useState(false),
     [diagramView, setDiagramView] = useState<View>({ ...initialView }),
+    // Where Reset view and Home return: an example's opening cameras until
+    // another example or a link replaces the study, or the defaults.
+    [home, setHome] = useState<{ view: View; diagramView: View } | null>(null),
     [stacked, setStacked] = useState(
       () => matchMedia("(max-width: 700px)").matches,
     );
@@ -488,6 +491,13 @@ export default function TesseractApp({
   // the sender's layers, views, and motion.
   const [linkNotice, setLinkNotice] = useState("");
   const openStudy = (study: TesseractStudy, preset: number | null = null) => {
+    // An example's opening cameras are home while its study stays open; a
+    // link's are not.
+    setHome(
+      preset === null
+        ? null
+        : { view: { ...study.view }, diagramView: { ...study.diagramView } },
+    );
     touched.current = null;
     stop();
     generation.current++;
@@ -1611,8 +1621,8 @@ export default function TesseractApp({
                 disabled={held || !!exporting}
                 onClick={() => {
                   setSpinning(false);
-                  setView({ ...initialView });
-                  setDiagramView({ ...initialView });
+                  setView({ ...(home?.view ?? initialView) });
+                  setDiagramView({ ...(home?.diagramView ?? initialView) });
                   pairedShadow.current = null;
                 }}
               >
@@ -1625,6 +1635,17 @@ export default function TesseractApp({
             ref={stage}
             aria-busy={busy || lagging}
             data-config={frame ? JSON.stringify(frame.config) : undefined}
+            // An example's own cameras, part of its thumbnail fingerprint.
+            data-opening={
+              preset !== null &&
+              (tesseractPresets[preset].view ||
+                tesseractPresets[preset].diagramView)
+                ? JSON.stringify({
+                    view: tesseractPresets[preset].view,
+                    diagramView: tesseractPresets[preset].diagramView,
+                  })
+                : undefined
+            }
             data-progress={preview ? motionProgress : progress}
             data-time={preview ? progress : undefined}
           >
@@ -1647,6 +1668,8 @@ export default function TesseractApp({
                   config={frame.config}
                   view={shownView}
                   diagramView={shownDiagramView}
+                  home={home?.view}
+                  diagramHome={home?.diagramView}
                   {...{ layers, dark, scheme }}
                   layout={liveLayout}
                   onSelect={

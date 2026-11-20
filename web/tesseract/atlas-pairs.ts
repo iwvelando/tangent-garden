@@ -1,6 +1,7 @@
 // Descriptor-owned 4D atlas vocabulary. No renderer or object registry is
 // imported here, so each object's descriptor can publish its own catalog.
 import { roundedRange, type AtlasAxis, type AtlasRanges } from "../atlas-queue";
+import { pathOf, spherePaths } from "./sphere-paths";
 import type { Config } from "./types";
 export type TesseractPairId =
   "flower" | "latitude" | "rotation" | "window" | "eye";
@@ -134,7 +135,15 @@ export function weaveAtlasPoints(c: Config): number {
   const n = c.curves,
     s = c.samples;
   if (c.mode === "paired")
-    return (n + 1) * (s + 2) + 7 * (s + 1) + n + 1 + Math.max(0, 128 - s) + 8;
+    // At least the flower's 128 base segments, or the path's own.
+    return (
+      (n + 1) * (s + 2) +
+      7 * (s + 1) +
+      n +
+      1 +
+      Math.max(0, Math.max(128, spherePaths[pathOf(c)].segments(c)) - s) +
+      8
+    );
   return (
     c.count * (c.weave!.family === "tori" ? 2 * n : n) * (s + 2) + 3 * (s + 1)
   );

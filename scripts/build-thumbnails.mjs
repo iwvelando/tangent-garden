@@ -83,10 +83,15 @@ try {
           const spatial = document.querySelector(
             ".spatial-stage[aria-busy=false]",
           )?.dataset;
+          const four = document.querySelector(
+            ".tesseract-stage[aria-busy=false]",
+          )?.dataset;
           const text =
             notebook === "4d"
-              ? document.querySelector(".tesseract-stage[aria-busy=false]")
-                  ?.dataset.config
+              ? four?.config &&
+                (four.opening
+                  ? `{"config":${four.config},${four.opening.slice(1)}`
+                  : four.config)
               : notebook === "3d"
                 ? spatial?.config &&
                   (spatial.cut ||

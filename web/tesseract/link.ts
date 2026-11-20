@@ -90,9 +90,21 @@ const weave = {
     // Only playback moves the traced point, so a link never carries an
     // offset: 0 is the only value it accepts.
     trace: { optional: { range: [0, 0] } },
-    path: { optional: { options: { latitude: true, flower: true } } },
+    path: {
+      optional: {
+        options: {
+          latitude: true,
+          flower: true,
+          "great-circle": true,
+          lissajous: true,
+        },
+      },
+    },
     amplitude: { optional: "number" },
     petals: { optional: "number" },
+    tilt: { optional: "number" },
+    azimuthal: { optional: "number" },
+    polar: { optional: "number" },
   },
 } satisfies SchemaOf<Weave>;
 // The square-root journey. Only playback moves the point, so a link
@@ -200,8 +212,8 @@ export function presetStudy(index: number): TesseractStudy {
   return {
     config: structuredClone(preset.config),
     layers: { ...defaultLayers },
-    view: { ...initialView },
-    diagramView: { ...initialView },
+    view: { ...(preset.view ?? initialView) },
+    diagramView: { ...(preset.diagramView ?? initialView) },
     motion: preset.motion,
     duration: defaultDuration,
     repeat: preset.repeat ?? "once",

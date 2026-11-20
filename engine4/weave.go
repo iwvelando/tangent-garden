@@ -32,6 +32,12 @@ type WeaveParameters struct {
 	Path      string  `json:"path,omitempty"`
 	Amplitude float64 `json:"amplitude,omitempty"`
 	Petals    *int    `json:"petals,omitempty"` // absent means 5
+	// A great circle's tilt β in radians (absent means 0, the equator) and
+	// a spherical Lissajous curve's whole frequencies m₁ and m₂ (absent
+	// means defaultAzimuthal and defaultPolar); see sphere_path.go.
+	Tilt      float64 `json:"tilt,omitempty"`
+	Azimuthal *int    `json:"azimuthal,omitempty"`
+	Polar     *int    `json:"polar,omitempty"`
 }
 type WeaveDiagnostics struct {
 	Family          string  `json:"family"`
@@ -55,6 +61,9 @@ type CorrespondenceDiagnostics struct {
 	Chart        string  `json:"chart"`
 	Coincident   bool    `json:"coincident"`
 	Path         string  `json:"path,omitempty"`
+	// The path's exact closing parameter T, reported for the great circle
+	// and spherical Lissajous paths; the latitude and flower close at 2π.
+	Period float64 `json:"period,omitempty"`
 	// Only needed when distinct parameter samples coincide at a pole.
 	// Entry j is the first sample at that point; Selected retains j.
 	Aliases []int `json:"aliases,omitempty"`
@@ -371,9 +380,10 @@ func pairedWeavePoints(n, samples int) int {
 	return (n+1)*(samples+2) + 3*(samples+1) + (samples + 1) + 3*(samples+1) + n + 1
 }
 
-// pairedWeave draws Base sphere and fibers: a latitude or spherical flower
-// of S² with n uniform parameter samples δ_j = 2πj/n, their fibers, and a moving
-// point at δ = δ_selected + 2π·frac(trace) with its own fiber. One request
+// pairedWeave draws Base sphere and fibers: one closed path of S² (a
+// spherePath) with n uniform parameter samples t_j = Tj/n over its period
+// T, their fibers, and a moving point at t = t_selected + T·frac(trace) with
+// its own fiber. One request
 // produces both panes, so a frame never mixes a base point with another
 // moment's fiber. The bouquet is the result; the base sphere its companion.
 func pairedWeave(q Request, r Result) (Result, error) {
@@ -381,38 +391,17 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		return r, fmt.Errorf("spherical weave parameters are required")
 	}
 	w := *q.Weave
-	flower := w.Path == "flower"
-	if w.Path != "" && w.Path != "latitude" && !flower {
-		return r, fieldErr("weave.path", "Base path must be Latitude or Spherical flower")
+	if err := validateSpherePath(w); err != nil {
+		return r, err
 	}
-	petals := 5
-	if flower {
-		if w.Petals != nil {
-			petals = *w.Petals
-		}
-		if petals < 1 || petals > 8 {
-			return r, fieldErr("weave.petals", "Petals must be a whole number from 1 to 8")
-		}
-		// The latitude's rounding tolerance: a touch entered as constant
-		// expressions can round past a pole, which the snap below restores.
-		if !finite(w.Alpha) || w.Alpha < -weaveTolerance || w.Alpha > math.Pi/2+weaveTolerance {
-			return r, fieldErr("weave.alpha", "Central latitude α must be between 0 and π/2")
-		}
-		if !finite(w.Amplitude) || w.Amplitude < 0 || w.Alpha-w.Amplitude < -weaveTolerance ||
-			w.Alpha+w.Amplitude > math.Pi/2+weaveTolerance {
-			return r, fieldErr("weave.amplitude", "Flower amplitude A must be nonnegative and keep α ± A within 0 and π/2")
-		}
-	}
+	latitude := w.Path == "" || w.Path == "latitude"
 	for i, a := range q.Angles {
 		if !finite(a) || math.Abs(a) > 1e6 {
 			return r, fieldErr(fmt.Sprintf("angles.%d", i), "rotation angles must be finite and within ±1000000 radians")
 		}
 	}
 	if q.Curves < 1 || q.Curves > 32 {
-		if flower {
-			return r, fieldErr("curves", "use 1–32 fibers on the flower")
-		}
-		return r, fieldErr("curves", "use 1–32 fibers on the latitude")
+		return r, fieldErr("curves", "use 1–32 fibers on the %s", newSpherePath(w, 0).noun)
 	}
 	if q.Samples < 8 || q.Samples > 256 {
 		return r, fieldErr("samples", "use 8–256 arc samples")
@@ -420,16 +409,15 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	if !finite(q.Clip) || q.Clip < 2 || q.Clip > 12 {
 		return r, fieldErr("clip", "stereographic window radius must be between 2 and 12")
 	}
-	for _, field := range []struct {
-		name, key string
-		v         float64
-	}{{"Central latitude α", "alpha", w.Alpha}, {"Latitude start", "alphaFrom", w.AlphaFrom}, {"Latitude end", "alphaTo", w.AlphaTo}} {
-		// A flower offers trace and rotations, not a latitude sweep.
-		if flower && field.key != "alpha" {
-			continue
-		}
-		if !finite(field.v) || field.v < -weaveTolerance || field.v > math.Pi/2+weaveTolerance {
-			return r, fieldErr("weave."+field.key, "%s must be between 0 and π/2", field.name)
+	// The latitude's α and sweep endpoints; the flower checked its own α.
+	if latitude {
+		for _, field := range []struct {
+			name, key string
+			v         float64
+		}{{"Central latitude α", "alpha", w.Alpha}, {"Latitude start", "alphaFrom", w.AlphaFrom}, {"Latitude end", "alphaTo", w.AlphaTo}} {
+			if !finite(field.v) || field.v < -weaveTolerance || field.v > math.Pi/2+weaveTolerance {
+				return r, fieldErr("weave."+field.key, "%s must be between 0 and π/2", field.name)
+			}
 		}
 	}
 	if w.Selected < 0 || w.Selected >= q.Curves {
@@ -441,35 +429,18 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	}
 	// The maximum counts stay well inside the ceiling; the check keeps it so
 	// if they grow.
-	baseSamples := q.Samples
-	if flower && w.Amplitude > 0 {
-		// Even the lowest circle resolution must resolve every petal.
-		baseSamples = max(baseSamples, 16*petals)
-	}
+	path := newSpherePath(w, q.Samples)
+	baseSamples := path.segments
 	if pairedWeavePoints(q.Curves, q.Samples)+baseSamples-q.Samples > maxPoints {
 		return r, fmt.Errorf("base sphere and fibers exceeds budget: at most 65,536 points; reduce fibers or samples")
 	}
 
 	n, j := q.Curves, w.Selected
-	alpha := weaveLatitudes(w.Alpha, 0, 1)[0]
-	collapsed := (alpha == 0 || alpha == math.Pi/2) && (!flower || w.Amplitude == 0)
-	pointAt := func(t float64) Vec3 {
-		if !flower || w.Amplitude == 0 {
-			return latitudePoint(alpha, t)
-		}
-		a := w.Alpha + w.Amplitude*math.Cos(float64(petals)*t)
-		// Reuse the latitude's rounding-distance pole policy.
-		if a <= weaveTolerance {
-			a = 0
-		} else if a >= math.Pi/2-weaveTolerance {
-			a = math.Pi / 2
-		}
-		return latitudePoint(a, t)
-	}
+	collapsed, pointAt, period := path.constant, path.point, path.period
 	b := newWeaveBuilder(q, &r, "fibers")
-	section := Section{ID: "weave/latitude/0", Kind: "torus", Level: alpha, Dimension: 2}
-	if flower && w.Amplitude > 0 {
-		section.Kind, section.Dimension = "flower", 1
+	section := Section{ID: "weave/latitude/0", Kind: "torus", Level: path.level, Dimension: 2}
+	if path.kind != "" {
+		section.Kind, section.Dimension = path.kind, 1
 	}
 	if collapsed {
 		section.Kind, section.Dimension = "circle", 1
@@ -487,14 +458,14 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	// The moving point: frac(trace) of a turn past the selected sample. At
 	// a whole number of turns it is that sample, drawn once.
 	f := w.Trace - math.Floor(w.Trace)
-	sampleDelta := func(i int) float64 { return 2 * math.Pi * float64(i) / float64(n) }
+	sampleDelta := func(i int) float64 { return period * float64(i) / float64(n) }
 	delta := sampleDelta(j)
 	if f != 0 {
 		u := float64(j)/float64(n) + f
 		if u >= 1 {
 			u--
 		}
-		delta = 2 * math.Pi * u
+		delta = period * u
 	}
 	moving := pointAt(delta)
 	_, chart := hopfFiber(moving)
@@ -503,15 +474,16 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	if f == 0 || collapsed {
 		c.MovingSample = j
 	}
-	if flower {
-		c.Path = "flower"
+	c.Path = path.name
+	if path.reportPeriod {
+		c.Period = period
 	}
 	// Preserve the original latitude path exactly, including its trace
-	// presentation. Nonconstant flowers merge repeated pole fibers and use
-	// the frozen sample itself when the trace lands on it.
+	// presentation. Every other nonconstant path merges repeated pole fibers
+	// and uses the frozen sample itself when the trace lands on it.
 	var points []Vec3
 	var aliases []int
-	if flower && w.Amplitude > 0 {
+	if path.distinct {
 		points, aliases = make([]Vec3, n), make([]int, n)
 		duplicates := false
 		for i := range points {
@@ -528,7 +500,7 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		if duplicates {
 			c.Aliases = aliases
 		}
-		x := delta / (2 * math.Pi) * float64(n)
+		x := delta / period * float64(n)
 		if math.Abs(x-math.Round(x)) <= 8e-15*float64(n) {
 			i := int(math.Round(x)) % n
 			delta, moving = sampleDelta(i), points[i]
@@ -580,10 +552,7 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		curve := Path{Source: section.ID + "/base", SectionID: section.ID, Branch: "0", Role: "base-curve",
 			Parameters: make([]float64, 0, baseSamples+1), Points: make([]Vec3, 0, baseSamples+1)}
 		for i := 0; i <= baseSamples; i++ {
-			t := float64(i) * b.step
-			if baseSamples != q.Samples {
-				t = float64(i) * (2 * math.Pi / float64(baseSamples))
-			}
+			t := float64(i) * (period / float64(baseSamples))
 			p := pointAt(t)
 			if i == baseSamples {
 				p = curve.Points[0]

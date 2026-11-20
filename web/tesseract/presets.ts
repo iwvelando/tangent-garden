@@ -1,4 +1,4 @@
-import type { Config, Motion } from "./types";
+import type { Config, Motion, View } from "./types";
 import type { TesseractPhrase } from "./phrase";
 import type { Pace, Repeat } from "../timing";
 import { defaultConfig, objects } from "./objects";
@@ -21,6 +21,11 @@ export const tesseractPresets: {
   pace?: Pace;
   // The phrase Play a phrase plays, for a preset that opens with one.
   phrase?: TesseractPhrase;
+  // The drawing's and a paired companion's opening cameras, where they
+  // differ from initialView. Reset view and Home return to them while the
+  // study is this example's.
+  view?: View;
+  diagramView?: View;
 }[] = [
   {
     name: "A cube beyond a cube",
@@ -301,6 +306,96 @@ export const tesseractPresets: {
         },
       ],
     },
+  },
+  // Opens a great circle tilted 3π/4 from the equator, over the great
+  // Clifford torus its 28 fibers fill, sample zero selected, and plays its
+  // phrase as a loop: one fiber traces the circle, the circle tilts over
+  // both poles to π/4 and the torus leans with it, then it tilts back to
+  // the opening drawing.
+  {
+    name: "A great circle, a leaning torus",
+    detail:
+      "The fibers over a great circle fill a torus that splits the 3-sphere in half. Trace the circle, then tilt it, and the whole torus leans in four dimensions.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 28,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.2, 0.15, 0.3, 0.2, 0.1],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 0,
+        path: "great-circle",
+        tilt: (3 * Math.PI) / 4,
+      },
+    },
+    motion: "phrase",
+    repeat: "loop",
+    phrase: {
+      target: "weave.trace",
+      also: ["weave.tilt"],
+      phases: [
+        {
+          name: "Trace the great circle",
+          duration: 6,
+          pace: "steady",
+          key: "1",
+        },
+        {
+          name: "Tilt over the poles",
+          duration: 5,
+          pace: "ease",
+          keys: { "weave.tilt": "pi/4" },
+        },
+        {
+          name: "Tilt back",
+          duration: 5,
+          pace: "ease",
+          keys: { "weave.tilt": "3*pi/4" },
+        },
+      ],
+    },
+  },
+  // Opens the spherical Lissajous curve m₁ = 2, m₂ = 1 with 32 fibers,
+  // sample zero (the north pole) selected, in a rotation that weaves the
+  // fibers into one loop around that pole's fiber. Both panes open at their
+  // own cameras: the base sphere turned to show both loops of the curve,
+  // and the bouquet seen from its side, slightly enlarged and centered on
+  // its woven core. It traces the curve once around a seamless loop.
+  {
+    name: "A Lissajous path, a woven bouquet",
+    detail:
+      "A point circles the pole twice while it swings once from pole to pole. Each of its points lifts to a whole circle, and the circles of any two different points link.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 32,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.2, 0.15, 0.3, 0.9, Math.PI / 2],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 0,
+        path: "lissajous",
+        azimuthal: 2,
+        polar: 1,
+      },
+    },
+    view: { yaw: -1.16, pitch: 0.72, zoom: 1.11, panX: -10.8, panY: -6.6 },
+    diagramView: { yaw: 0.77, pitch: 0.64, zoom: 1, panX: 0, panY: 0 },
+    motion: "trace",
+    repeat: "loop",
   },
   // Opens one cell of the 24-cell, its center and the dual edges from it,
   // turning in a seamless double rotation.

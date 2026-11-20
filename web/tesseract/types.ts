@@ -50,9 +50,15 @@ export type Weave = {
   // only the sampler below sets.
   selected?: number;
   trace?: number;
-  path?: "latitude" | "flower";
+  path?: "latitude" | "flower" | "great-circle" | "lissajous";
   amplitude?: number;
   petals?: number;
+  // A great circle's tilt β (absent is 0) and a spherical Lissajous
+  // curve's whole frequencies m₁ and m₂ (sphere-paths.ts gives their
+  // absent defaults).
+  tilt?: number;
+  azimuthal?: number;
+  polar?: number;
 };
 export type Bypass = {
   inner: number;
@@ -173,6 +179,8 @@ export type Result = {
       | "torus"
       | "circle"
       | "flower"
+      | "great-circle"
+      | "lissajous"
       | "primal"
       | "dual";
     radius?: number;
@@ -228,7 +236,10 @@ export type Result = {
       base: Vec3;
       chart: "north" | "south";
       coincident: boolean;
-      path?: "flower";
+      path?: Exclude<Weave["path"], "latitude">;
+      // The exact closing parameter of a great circle or Lissajous curve;
+      // the latitude and flower close at 2π.
+      period?: number;
       aliases?: number[];
     };
   };
@@ -350,6 +361,7 @@ export type TesseractTarget =
   | "weave.alpha"
   | "weave.spread"
   | "weave.amplitude"
+  | "weave.tilt"
   | "weave.trace"
   | "root.t"
   | "root.radius";

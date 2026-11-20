@@ -234,7 +234,13 @@ export const tesseractExamples: Example[] = tesseractPresets.map((p) => ({
                 ? "Stereographic curves"
                 : "Shadows",
   keywords: `${p.config.object} 4D ${p.config.mode}${p.repeat === "loop" ? " seamless loop" : p.repeat === "back-and-forth" ? " back and forth" : ""}`,
-  fingerprint: fingerprint(p.config),
+  // A preset's own cameras are part of its picture; presets without them
+  // keep the fingerprints they had before those existed.
+  fingerprint: fingerprint(
+    p.view || p.diagramView
+      ? { config: p.config, view: p.view, diagramView: p.diagramView }
+      : p.config,
+  ),
 }));
 const hyperImages = import.meta.glob<string>("./4d/*.webp", {
   query: "?url",

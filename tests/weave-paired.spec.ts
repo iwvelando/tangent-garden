@@ -9,6 +9,19 @@ import {
   openShapeExport,
 } from "./helpers";
 import { decodeVideo, frameDifference, probe } from "./video";
+import {
+  correspondence,
+  desc,
+  meta,
+  openPreset,
+  panel,
+  pointOn,
+  raster,
+  roles,
+  selectedField,
+  settle,
+  stage,
+} from "./hopf-helpers";
 import { objects } from "../web/tesseract/objects";
 import { motions } from "../web/tesseract/types";
 import { helpText } from "../web/help";
@@ -16,20 +29,8 @@ import { helpText } from "../web/help";
 // Base sphere and fibers (docs/tesseracts.md): one latitude of S² beside
 // the Hopf fibers over its points, with a selection and a moving point.
 const name = "A circle over every point";
-const stage = (p: Page) => p.locator(".tesseract-stage");
-const settle = (p: Page) =>
-  expect(stage(p)).toHaveAttribute("aria-busy", "false");
-const panel = (p: Page, mode: "base" | "stereo") =>
-  p.locator(`svg[data-representation="${mode}"]`);
-const desc = async (p: Page, mode: "base" | "stereo") =>
-  JSON.parse(
-    (await panel(p, mode).locator(":scope > desc").textContent()) ?? "{}",
-  );
-const meta = async (p: Page) =>
-  JSON.parse((await p.locator("#tesseract-artwork > desc").textContent())!);
-const selectedField = (p: Page) =>
-  p.getByRole("spinbutton", { name: "Selected fiber", exact: true });
 const flower = "A flower below, a bouquet above";
+const open = (p: Page, preset = name) => openPreset(p, preset);
 test("the latitude's existing selection help stays unchanged", () => {
   const c = objects.weave.defaults({} as any);
   c.mode = "paired";
@@ -50,83 +51,6 @@ test("flower trace help distinguishes fixed path settings from its changing lati
     "nonconstant flowers",
   );
 });
-const open = async (p: Page, preset = name) => {
-  await p.goto("/?study=4d");
-  await settle(p);
-  await choosePreset(p, { label: preset });
-  await settle(p);
-};
-// What each pane draws as moving and selected, by sample.
-const roles = (p: Page) =>
-  p
-    .locator("#tesseract-artwork [data-correspondence]")
-    .evaluateAll((es) =>
-      es.map((e) => [
-        e
-          .closest("svg[data-representation]")!
-          .getAttribute("data-representation"),
-        e.getAttribute("data-correspondence"),
-        e.getAttribute("data-sample") ?? e.getAttribute("data-source"),
-      ]),
-    );
-const correspondence = async (p: Page) => ({
-  base: (await desc(p, "base")).weave.correspondence,
-  stereo: (await desc(p, "stereo")).weave.correspondence,
-});
-// A screen point on a drawn element: a base marker's center, or a vertex
-// of a fiber path, in page coordinates.
-const pointOn = (p: Page, selector: string, vertex = 0) =>
-  p.locator(selector).evaluate((e, vertex) => {
-    const svg = e.ownerSVGElement!;
-    const m = svg.getScreenCTM()!;
-    let x: number, y: number;
-    if (e.tagName === "g") {
-      const c = e.querySelector("circle:last-child") as SVGCircleElement;
-      x = c.cx.baseVal.value;
-      y = c.cy.baseVal.value;
-    } else {
-      const d = e
-        .getAttribute("d")!
-        .match(/-?\d+(?:\.\d+)?/g)!
-        .map(Number);
-      const i = Math.min(vertex, d.length / 2 - 1);
-      x = d[2 * i];
-      y = d[2 * i + 1];
-    }
-    return { x: m.a * x + m.c * y + m.e, y: m.b * x + m.d * y + m.f };
-  }, vertex);
-
-// The live drawing rasterized as export rasterizes it.
-const raster = (page: Page, width: number, height: number) =>
-  page.evaluate(
-    async ({ width, height }) => {
-      const svg = document
-        .getElementById("tesseract-artwork")!
-        .cloneNode(true) as SVGSVGElement;
-      svg.setAttribute("width", String(width));
-      svg.setAttribute("height", String(height));
-      const url = URL.createObjectURL(
-        new Blob([new XMLSerializer().serializeToString(svg)], {
-          type: "image/svg+xml",
-        }),
-      );
-      try {
-        const image = new Image();
-        image.src = url;
-        await image.decode();
-        const c = document.createElement("canvas");
-        c.width = width;
-        c.height = height;
-        const ctx = c.getContext("2d")!;
-        ctx.drawImage(image, 0, 0);
-        return Array.from(ctx.getImageData(0, 0, width, height).data);
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    },
-    { width, height },
-  );
-
 test("the preset opens the base sphere first, with linked identities and no text in the artwork", async ({
   page,
 }) => {

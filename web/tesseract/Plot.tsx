@@ -61,6 +61,7 @@ export function Plot({
   onSelect,
   onStep,
   primary,
+  home = initialView,
 }: {
   result: Result;
   config: Config;
@@ -78,6 +79,8 @@ export function Plot({
   onStep?: (step: 1 | -1) => void;
   // The paired result's own panel, which a gallery thumbnail shows.
   primary?: boolean;
+  // The camera Home returns to.
+  home?: View;
 }) {
   const ref = useRef<SVGSVGElement>(null),
     state = useRef({ view, onView });
@@ -294,7 +297,7 @@ export function Plot({
             v = zoomed(v, 1 / 1.1);
             break;
           case "Home":
-            Object.assign(v, initialView);
+            Object.assign(v, home);
             break;
           case "[":
           case "]": {
@@ -323,6 +326,9 @@ export function StudyPlot(
     onDiagramView: (v: View) => void;
     onSelect?: (sample: number) => void;
     onStep?: (step: 1 | -1) => void;
+    // Where each pane's Home key returns, initialView when absent.
+    home?: View;
+    diagramHome?: View;
   },
 ) {
   const touchEnabled = useDrawingTouch();
@@ -352,6 +358,7 @@ export function StudyPlot(
             viewport={viewport}
             id={`${p.id ?? "tesseract"}-${panel.config.mode}`}
             onView={index === 0 ? p.onView : p.onDiagramView}
+            home={index === 0 ? p.home : p.diagramHome}
             onSelect={p.onSelect}
             onStep={p.onStep}
             primary={index === 0}
