@@ -337,6 +337,38 @@ const cases: Case[] = [
     },
     "Fibers on the flower",
   ],
+  // A neighborhood's width and fiber count, and the path's count, which
+  // under a neighborhood names its points.
+  [
+    "weave.width",
+    (c) => c.weave?.sampling === "neighborhood",
+    (c) => (c.weave!.width = 0),
+    "Neighborhood width",
+  ],
+  [
+    "weave.width",
+    (c) => c.weave?.sampling === "neighborhood",
+    (c) => (c.weave!.width = 1.5),
+    "Neighborhood width",
+  ],
+  [
+    "weave.nearby",
+    (c) => c.weave?.sampling === "neighborhood",
+    (c) => (c.weave!.nearby = 2.5),
+    "Fibers in the neighborhood",
+  ],
+  [
+    "weave.nearby",
+    (c) => c.weave?.sampling === "neighborhood",
+    (c) => (c.weave!.nearby = 33),
+    "Fibers in the neighborhood",
+  ],
+  [
+    "curves",
+    (c) => c.weave?.sampling === "neighborhood",
+    (c) => (c.curves = 33),
+    "Points on the Lissajous curve",
+  ],
   // The 24-cell: a fractional cell is refused by the worker, by name, and
   // its rotation fields are the shared angle controls.
   [
@@ -404,9 +436,15 @@ const cases: Case[] = [
   ],
 ];
 
-const study = (config: Config, motion: TesseractStudy["motion"]) =>
+const study = (
+  config: Config,
+  motion: TesseractStudy["motion"],
+  phrase?: TesseractStudy["phrase"],
+) =>
   ({
     config,
+    // A phrase example's link carries its phrase.
+    ...(phrase ? { phrase } : {}),
     layers: { edges: true, guides: true, faces: true, selectedSection: 0 },
     view: initialView,
     diagramView: initialView,
@@ -423,7 +461,10 @@ test("validation errors stand under the control they name", async ({
     expect(found, path).toBeDefined();
     const config = structuredClone(found!.config);
     change(config);
-    const token = await writeStudyLink("4d", study(config, found!.motion));
+    const token = await writeStudyLink(
+      "4d",
+      study(config, found!.motion, found!.phrase),
+    );
     await page.goto("about:blank");
     await page.goto(
       studyHref("http://localhost/?study=4d", "4d", token).replace(
@@ -498,7 +539,10 @@ const openedStudy = async (
   const found = tesseractPresets.find((p) => which(p.config))!;
   const config = structuredClone(found.config);
   change(config);
-  const token = await writeStudyLink("4d", study(config, found.motion));
+  const token = await writeStudyLink(
+    "4d",
+    study(config, found.motion, found.phrase),
+  );
   await page.goto(
     studyHref("http://localhost/?study=4d", "4d", token).replace(
       "http://localhost",

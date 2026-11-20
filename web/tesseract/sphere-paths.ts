@@ -44,6 +44,10 @@ const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
 // defaultPolar).
 export const defaultAzimuthal = 2;
 export const defaultPolar = 1;
+// Absent neighborhood width and fiber count (Go's defaultNeighborhoodWidth
+// and defaultNearby).
+export const defaultNeighborhoodWidth = 1 / 8;
+export const defaultNearby = 17;
 
 export const spherePaths: Record<SpherePathId, SpherePath> = {
   latitude: {

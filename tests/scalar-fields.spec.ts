@@ -1769,6 +1769,39 @@ test("flower geometry fields share scalar parsing and preserve overlapping edits
   ).toBeUndefined();
 });
 
+test("a Hopf neighborhood's width shares scalar parsing, and an example drops its pending entry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "scalars")
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else return send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  const weave = async () =>
+    JSON.parse((await stage.getAttribute("data-config"))!).weave;
+  await settle();
+  await choosePreset(page, { label: "A short stretch, an opening fan" });
+  await settle();
+  await field(page, "Neighborhood width").fill("1/phi/4");
+  await settle();
+  expect((await weave()).width).toBe(1 / phi / 4);
+  for (const bad of ["t", "x", "a", "1/0"]) {
+    await field(page, "Neighborhood width").fill(bad);
+    await expect(page.getByRole("alert")).toBeVisible();
+  }
+  await field(page, "Neighborhood width").fill("pi/30");
+  await choosePreset(page, { label: "A short stretch, an opening fan" });
+  await settle();
+  await page.waitForTimeout(400);
+  expect((await weave()).width).toBe(0.12);
+});
+
 test("the cut plane's normal and offset share the bounded scalar parser", async ({
   page,
 }) => {

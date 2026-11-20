@@ -158,7 +158,21 @@ test("sheet definitions describe the active curve and descriptor-owned 4D object
     expect(lines.join(" ")).toContain(d.name);
     expect(lines.join(" ")).toContain(d.explanation(p.config)[2]);
     expect(lines.join(" ")).toContain(String(p.config.angles[3]));
+    // An absent choice is its first option, as the notebook shows it.
+    expect(lines.join(" "), p.name).not.toContain("undefined");
   }
+  const fan = tesseractSheetDefinition(
+    tesseractPresets.find((p) => p.name === "A short stretch, an opening fan")!
+      .config,
+  );
+  expect(fan).toEqual(
+    expect.arrayContaining([
+      "Base path: Spherical Lissajous",
+      "Fiber sampling: Neighborhood",
+      "Neighborhood width = 0.12",
+      "Fibers in the neighborhood = 25",
+    ]),
+  );
   const root = structuredClone(
     tesseractPresets.find((p) => p.config.object === "root")!.config,
   );

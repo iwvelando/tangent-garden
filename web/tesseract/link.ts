@@ -115,6 +115,11 @@ const weave = {
         max: maxPolygonVertices,
       },
     },
+    // Fiber sampling, absent (the whole path) in older links. The
+    // neighborhood's fields stay in a study under the whole path.
+    sampling: { optional: { options: { path: true, neighborhood: true } } },
+    width: { optional: "number" },
+    nearby: { optional: "number" },
   },
 } satisfies SchemaOf<Weave>;
 // The square-root journey. Only playback moves the point, so a link

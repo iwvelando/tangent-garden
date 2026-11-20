@@ -1,7 +1,7 @@
 // Descriptor-owned 4D atlas vocabulary. No renderer or object registry is
 // imported here, so each object's descriptor can publish its own catalog.
 import { roundedRange, type AtlasAxis, type AtlasRanges } from "../atlas-queue";
-import { pathOf, spherePaths } from "./sphere-paths";
+import { defaultNearby, pathOf, spherePaths } from "./sphere-paths";
 import type { Config } from "./types";
 export type TesseractPairId =
   "flower" | "latitude" | "rotation" | "window" | "eye";
@@ -134,16 +134,26 @@ export function cubeAtlasPoints(c: Config): number {
 export function weaveAtlasPoints(c: Config): number {
   const n = c.curves,
     s = c.samples;
-  if (c.mode === "paired")
+  if (c.mode === "paired") {
     // At least the flower's 128 base segments, or the path's own.
+    const segments = Math.max(128, spherePaths[pathOf(c)].segments(c));
+    // A neighborhood draws its own fibers, the path's sample markers and
+    // its stretch of the base curve (engine4 neighborhoodPoints).
+    const k =
+      c.weave!.sampling === "neighborhood"
+        ? (c.weave!.nearby ?? defaultNearby)
+        : 0;
+    const fibers = k || n;
     return (
-      (n + 1) * (s + 2) +
+      (fibers + 1) * (s + 2) +
       7 * (s + 1) +
-      n +
+      fibers +
       1 +
-      Math.max(0, Math.max(128, spherePaths[pathOf(c)].segments(c)) - s) +
-      8
+      Math.max(0, segments - s) +
+      8 +
+      (k ? n + segments + 2 : 0)
     );
+  }
   return (
     c.count * (c.weave!.family === "tori" ? 2 * n : n) * (s + 2) + 3 * (s + 1)
   );

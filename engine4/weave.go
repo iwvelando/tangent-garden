@@ -40,6 +40,13 @@ type WeaveParameters struct {
 	Polar     *int    `json:"polar,omitempty"`
 	// A geodesic polygon's vertices, in order; see sphere_path.go.
 	Vertices []PolygonVertex `json:"vertices,omitempty"`
+	// Fiber sampling: the whole path (absent or "path") or a neighborhood
+	// of the moving point, Width of the period wide with Nearby fibers
+	// (absent means defaultNeighborhoodWidth and defaultNearby); see
+	// neighborhood.go.
+	Sampling string   `json:"sampling,omitempty"`
+	Width    *float64 `json:"width,omitempty"`
+	Nearby   *int     `json:"nearby,omitempty"`
 }
 
 // PolygonVertex is a corner of a geodesic polygon on the base sphere, in
@@ -82,6 +89,8 @@ type CorrespondenceDiagnostics struct {
 	// Only needed when distinct parameter samples coincide at a pole.
 	// Entry j is the first sample at that point; Selected retains j.
 	Aliases []int `json:"aliases,omitempty"`
+	// Present only under neighborhood sampling.
+	Neighborhood *NeighborhoodDiagnostics `json:"neighborhood,omitempty"`
 }
 type sphereCircle struct {
 	id, role string
@@ -436,7 +445,15 @@ func pairedWeave(q Request, r Result) (Result, error) {
 			return r, fieldErr(fmt.Sprintf("angles.%d", i), "rotation angles must be finite and within ±1000000 radians")
 		}
 	}
+	hood, err := neighborhoodOf(w)
+	if err != nil {
+		return r, err
+	}
 	if q.Curves < 1 || q.Curves > 32 {
+		// Under a neighborhood the path's samples are its selectable points.
+		if hood != nil {
+			return r, fieldErr("curves", "use 1–32 points on the %s", newSpherePath(w, 0).noun)
+		}
 		return r, fieldErr("curves", "use 1–32 fibers on the %s", newSpherePath(w, 0).noun)
 	}
 	if q.Samples < 8 || q.Samples > 256 {
@@ -467,7 +484,11 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	// if they grow.
 	path := newSpherePath(w, q.Samples)
 	baseSamples := path.segments
-	if pairedWeavePoints(q.Curves, q.Samples)+baseSamples-q.Samples+len(path.corners) > maxPoints {
+	budget := pairedWeavePoints(q.Curves, q.Samples) + baseSamples - q.Samples + len(path.corners)
+	if hood != nil {
+		budget = neighborhoodPoints(q.Curves, hood.k, q.Samples, baseSamples, len(path.corners))
+	}
+	if budget > maxPoints {
 		return r, fmt.Errorf("base sphere and fibers exceeds budget: at most 65,536 points; reduce fibers or samples")
 	}
 
@@ -515,11 +536,12 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		c.Period = period
 	}
 	// Preserve the original latitude path exactly, including its trace
-	// presentation. Every other nonconstant path merges repeated pole fibers
-	// and uses the frozen sample itself when the trace lands on it.
+	// presentation. Every other nonconstant path, and every nonconstant
+	// neighborhood, merges repeated pole fibers and uses the frozen sample
+	// itself when the trace lands on it.
 	var points []Vec3
 	var aliases []int
-	if path.distinct {
+	if path.distinct || hood != nil && !collapsed {
 		points, aliases = make([]Vec3, n), make([]int, n)
 		duplicates := false
 		for i := range points {
@@ -570,6 +592,25 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		rep, _ := hopfFiber(moving)
 		b.source(fiberCircle(section.ID+"/core", "collapsed", 2, rep), section.ID)
 		marker(section.ID+"/base/core", "sample", moving)
+		if hood != nil {
+			collapsedNeighborhood(*hood, c, period)
+		}
+	} else if hood != nil {
+		// The whole path's samples are markers only; space draws the cells
+		// and the moving point's fiber, a sample's own when it is on one.
+		for i := 0; i < n; i++ {
+			if aliases[i] == i {
+				marker(fmt.Sprintf("%s/base/%d", section.ID, i), "sample", points[i])
+			}
+		}
+		b.neighborhoodSamples(*hood, c, period, pointAt, section.ID, marker)
+		rep, _ := hopfFiber(moving)
+		if c.MovingSample >= 0 {
+			b.source(fiberCircle(fmt.Sprintf("%s/fiber/%d", section.ID, c.MovingSample), "fiber", 0, rep), section.ID)
+		} else {
+			b.source(fiberCircle("weave/moving", "moving", 0, rep), section.ID)
+			marker("weave/moving/base", "moving", moving)
+		}
 	} else {
 		for i := 0; i < n; i++ {
 			p := pointAt(sampleDelta(i))
@@ -588,6 +629,8 @@ func pairedWeave(q Request, r Result) (Result, error) {
 			b.source(fiberCircle("weave/moving", "moving", 0, rep), section.ID)
 			marker("weave/moving/base", "moving", moving)
 		}
+	}
+	if !collapsed {
 		// The base path itself, closed exactly, through its corners.
 		ts := baseCurveParameters(period, baseSamples, path.corners)
 		curve := Path{Source: section.ID + "/base", SectionID: section.ID, Branch: "0", Role: "base-curve",
@@ -601,6 +644,23 @@ func pairedWeave(q Request, r Result) (Result, error) {
 			base.Evaluations++
 		}
 		base.Paths = append(base.Paths, curve)
+		if hood != nil {
+			// The neighborhood's stretch, on the base curve. A whole-width
+			// stretch is the closed path.
+			nh := c.Neighborhood
+			unwrapped, at := arcParameters(ts, period, nh.From, nh.To)
+			arc := Path{Source: "weave/near/arc", SectionID: section.ID, Branch: "0", Role: "neighborhood",
+				Parameters: unwrapped, Points: make([]Vec3, 0, len(at))}
+			for i, t := range at {
+				p := pointAt(t)
+				if hood.width == 1 && i == len(at)-1 {
+					p = arc.Points[0]
+				}
+				arc.Points = append(arc.Points, p)
+				base.Evaluations++
+			}
+			base.Paths = append(base.Paths, arc)
+		}
 	}
 	b.window()
 	// Three great circles of the base sphere.

@@ -22,6 +22,8 @@ import { cellOf } from "./polytope";
 import { polygonDefaults, type PolygonVertex } from "../sphere-polygon";
 import {
   defaultAzimuthal,
+  defaultNearby,
+  defaultNeighborhoodWidth,
   defaultPolar,
   pathOf,
   resultPath,
@@ -198,6 +200,8 @@ export type ObjectDescriptor = {
     help: Help<string> | ((c: Config) => Help<string>);
     group?: string;
     endpoint?: boolean;
+    // Shown after the count fields, beside a choice placed there.
+    after?: "counts";
     visible?: (c: Config) => boolean;
     fallback?: number;
     whole?: { min: number; max: number };
@@ -241,11 +245,13 @@ export type ObjectDescriptor = {
   reconcile?: (c: Config) => Config;
   choicesFirst?: boolean;
   choices?: {
-    key: "obstacle" | "family" | "path" | "view" | "sheet";
+    key: "obstacle" | "family" | "path" | "sampling" | "view" | "sheet";
     label: string;
     help: Help<string>;
     values: { value: string; label: string }[];
     visible?: (c: Config) => boolean;
+    // Shown after the count fields, with the numeric fields placed there.
+    after?: "counts";
   }[];
   flat?: (c: Config) => boolean;
   // The result's mode, then its companion's.
@@ -405,7 +411,28 @@ type Correspondence = NonNullable<
 // A dual coordinate, a whole number or a half.
 const rational = (n: number) =>
   (n < 0 ? "−" : "") + (Math.abs(n) === 0.5 ? "½" : String(Math.abs(n)));
+// Base sphere and fibers sampled over a neighborhood of the moving point.
+const sampledNeighborhood = (c: Config) =>
+  c.mode === "paired" && c.weave?.sampling === "neighborhood";
+// The path's count: its fibers, or under a neighborhood its selectable
+// points, which the neighborhood centers on.
+const pathCountLabel = (c: Config) =>
+  sampledNeighborhood(c)
+    ? `Points on the ${spherePaths[pathOf(c)].noun}`
+    : spherePaths[pathOf(c)].fibersLabel;
+// A path's explanation, with what a neighborhood shows.
+const neighborhoodExplanation = ([title, text, formula]: [
+  string,
+  string,
+  string,
+]): [string, string, string] => [
+  title,
+  `${text} Here a neighborhood draws many fibers over a short stretch instead: nearby points have nearby fibers, so the stretch lifts to a fan of linked circles that twists as it travels.`,
+  formula,
+];
 function correspondenceReadouts(c: Correspondence) {
+  const h = c.neighborhood,
+    period = c.period ?? 2 * Math.PI;
   return [
     { label: "Selected fiber", value: `${c.selected + 1} of ${c.fibers}` },
     {
@@ -419,6 +446,19 @@ function correspondenceReadouts(c: Correspondence) {
       label: `Base point ${"xyz"[i]}`,
       value: liveReadout(withoutResidue(n), [-1, 1]),
     })),
+    // The neighborhood's stretch, unwrapped around the moving point.
+    ...(h
+      ? [
+          {
+            label: "Neighborhood from",
+            value: liveReadout(h.from, [-period / 2, period]),
+          },
+          {
+            label: "Neighborhood to",
+            value: liveReadout(h.to, [0, (3 * period) / 2]),
+          },
+        ]
+      : []),
     // A geodesic polygon's side under the moving point.
     ...(c.sides
       ? [
@@ -1000,9 +1040,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         ? "Both views share one timeline. Orbit, pan or zoom either view before playback; animation holds both."
         : "Animation holds your current view. Drag, pan, or zoom before playback to choose the framing.",
     viewingHelp: (c) =>
-      c.mode === "paired"
-        ? "1: base sphere · 2: fibers · tap a point or fiber to select it · [ and ] step the selection · drag to orbit · shift-drag to pan · each view zooms independently"
-        : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
+      sampledNeighborhood(c)
+        ? "1: base sphere · 2: fibers · tap a point on the sphere to move the neighborhood · [ and ] step it · drag to orbit · shift-drag to pan · each view zooms independently"
+        : c.mode === "paired"
+          ? "1: base sphere · 2: fibers · tap a point or fiber to select it · [ and ] step the selection · drag to orbit · shift-drag to pan · each view zooms independently"
+          : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
     movingLegend: (c) =>
       c.mode === "paired" ? "Moving point and its fiber" : undefined,
     rotations: true,
@@ -1032,12 +1074,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     countFields: (c) =>
       c.mode === "paired"
         ? [
-            {
-              key: "curves",
-              label: spherePaths[pathOf(c)].fibersLabel,
-              min: 1,
-              max: 32,
-            },
+            { key: "curves", label: pathCountLabel(c), min: 1, max: 32 },
             { key: "samples", label: "Arc samples", min: 8, max: 256 },
           ]
         : [
@@ -1054,15 +1091,19 @@ export const objects: Record<Object4, ObjectDescriptor> = {
             { key: "samples", label: "Arc samples", min: 8, max: 256 },
           ],
     countNote: (c) =>
-      c.mode === "paired"
-        ? spherePaths[pathOf(c)].countNote
-        : "Arc samples divide each full circle. A study draws at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides.",
+      sampledNeighborhood(c)
+        ? "The points are evenly spaced along the path, as its fibers would be; select one to center the neighborhood there. Arc samples divide each fiber and the path."
+        : c.mode === "paired"
+          ? spherePaths[pathOf(c)].countNote
+          : "Arc samples divide each full circle. A study draws at most 65,536 points: latitudes × circles per latitude × (samples + 2), plus the window guides.",
     selection: {
       label: "Selected fiber",
       help: (c) =>
         tiered(
           "Which sampled point and fiber are selected, from 1 to the number of fibers.",
-          `Tap a point or fiber in either view, or press [ or ] there, to choose another. ${spherePaths[pathOf(c)].traceLabel} starts from it.`,
+          sampledNeighborhood(c)
+            ? `Tap a point on the base sphere, or press [ or ] in either view, to move the neighborhood. ${spherePaths[pathOf(c)].traceLabel} starts from it.`
+            : `Tap a point or fiber in either view, or press [ or ] there, to choose another. ${spherePaths[pathOf(c)].traceLabel} starts from it.`,
         ),
       visible: (c) => c.mode === "paired",
       count: (c) => c.curves,
@@ -1105,6 +1146,20 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           label: p.label,
         })),
         visible: (c) => c.mode === "paired",
+      },
+      {
+        key: "sampling",
+        label: "Fiber sampling",
+        help: tiered(
+          "Fibers over the whole path, or densely over a stretch around the selected point.",
+          "A neighborhood keeps the path's points for selection and travels with the traced point. Repeated pole points share one fiber.",
+        ),
+        values: [
+          { value: "path", label: "Whole path" },
+          { value: "neighborhood", label: "Neighborhood" },
+        ],
+        visible: (c) => c.mode === "paired",
+        after: "counts",
       },
       {
         key: "family",
@@ -1193,6 +1248,29 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         visible: (c) => c.mode === "paired" && c.weave!.path === "lissajous",
       },
       {
+        key: "width",
+        label: "Neighborhood width",
+        fallback: defaultNeighborhoodWidth,
+        help: tiered(
+          "Fraction of the path, above 0 and at most 1.",
+          "Measured in the path's own parameter: arc length on the great circle and polygon, t elsewhere. Its fibers sit at the centers of equal cells, so at 1 they are spaced evenly around the whole path.",
+        ),
+        visible: sampledNeighborhood,
+        after: "counts",
+      },
+      {
+        key: "nearby",
+        label: "Fibers in the neighborhood",
+        fallback: defaultNearby,
+        whole: { min: 1, max: 32 },
+        help: tiered(
+          "Whole number from 1 to 32.",
+          "An odd count puts the middle fiber on the selected or moving point, drawn once in the accent color.",
+        ),
+        visible: sampledNeighborhood,
+        after: "counts",
+      },
+      {
         key: "spread",
         label: "Latitude spread",
         help: tiered(
@@ -1245,11 +1323,13 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     // A summary that stays the same through the motion: the moving fiber
     // is counted among the sources only between samples.
     diagnostics: (r) =>
-      r.weave?.correspondence
-        ? `${r.weave.correspondence.fibers} ${r.weave.correspondence.fibers === 1 ? "fiber" : "fibers"} over one ${resultPath(r.weave.correspondence.path).noun} of S², and the moving point's fiber. Open ends mark the projection window, not broken curves.`
-        : r.weave
-          ? `${r.weave.sources} source circles on the unit 3-sphere. Open ends mark the projection window, not broken curves.`
-          : "",
+      r.weave?.correspondence?.neighborhood
+        ? `${r.weave.correspondence.neighborhood.fibers} ${r.weave.correspondence.neighborhood.fibers === 1 ? "fiber" : "fibers"} over a stretch of one ${resultPath(r.weave.correspondence.path).noun} of S², around the moving point. Open ends mark the projection window, not broken curves.`
+        : r.weave?.correspondence
+          ? `${r.weave.correspondence.fibers} ${r.weave.correspondence.fibers === 1 ? "fiber" : "fibers"} over one ${resultPath(r.weave.correspondence.path).noun} of S², and the moving point's fiber. Open ends mark the projection window, not broken curves.`
+          : r.weave
+            ? `${r.weave.sources} source circles on the unit 3-sphere. Open ends mark the projection window, not broken curves.`
+            : "",
     readouts: (r) =>
       r.weave
         ? [
@@ -1273,23 +1353,27 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ]
         : [],
     colorNote: (c) =>
-      c.mode === "paired"
-        ? spherePaths[pathOf(c)].colorNote
-        : `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
+      sampledNeighborhood(c)
+        ? `${spherePaths[pathOf(c)].colorNote} A broad wash marks the neighborhood's stretch on the base sphere.`
+        : c.mode === "paired"
+          ? spherePaths[pathOf(c)].colorNote
+          : `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
     explanation: (c) =>
-      c.mode === "paired"
-        ? spherePaths[pathOf(c)].explanation
-        : c.weave!.family === "tori"
-          ? [
-              "Tori on a sphere",
-              "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or opens into a line when it passes through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
-              "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
-            ]
-          : [
-              "Rings from a sphere",
-              "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections. Each Hopf fiber is a great circle that the Hopf map sends to a single point of S², and any two distinct fibers link once. Fibers over one latitude lie on its torus; at α = 0 or π/2 they coincide and are drawn once. The declared 4D rotation turns the whole sphere before projection. Fibers are circles, not sealed solids.",
-              "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   z₁ = x + iy, z₂ = z + iw",
-            ],
+      sampledNeighborhood(c)
+        ? neighborhoodExplanation(spherePaths[pathOf(c)].explanation)
+        : c.mode === "paired"
+          ? spherePaths[pathOf(c)].explanation
+          : c.weave!.family === "tori"
+            ? [
+                "Tori on a sphere",
+                "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or opens into a line when it passes through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
+                "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
+              ]
+            : [
+                "Rings from a sphere",
+                "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections. Each Hopf fiber is a great circle that the Hopf map sends to a single point of S², and any two distinct fibers link once. Fibers over one latitude lie on its torus; at α = 0 or π/2 they coincide and are drawn once. The declared 4D rotation turns the whole sphere before projection. Fibers are circles, not sealed solids.",
+                "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   z₁ = x + iy, z₂ = z + iw",
+              ],
     title: (c) =>
       c.mode === "paired" || c.mode === "base"
         ? "Tangent Garden — Hopf fibers over a base sphere"
@@ -1319,7 +1403,12 @@ export const objects: Record<Object4, ObjectDescriptor> = {
             {
               value: "trace",
               label: spherePaths[pathOf(c)].traceLabel,
-              help: spherePaths[pathOf(c)].traceHelp,
+              help: sampledNeighborhood(c)
+                ? withMore(
+                    spherePaths[pathOf(c)].traceHelp,
+                    "The neighborhood travels with the point.",
+                  )
+                : spherePaths[pathOf(c)].traceHelp,
               loops: true,
             },
             ...rotationMotions.map((m) => ({
@@ -1351,6 +1440,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
               ? (["weave.alpha"] as const)
               : []),
             ...spherePaths[pathOf(c)].phrase,
+            ...(sampledNeighborhood(c) ? (["weave.width"] as const) : []),
             ...phraseRotations,
             "clip",
           ]

@@ -832,8 +832,10 @@ export default function TesseractApp({
   const liftFields =
     descriptor.numericFields?.filter((f) => !f.visible || f.visible(config)) ??
     [];
-  const renderNumericFields = (endpoints: boolean) => {
-    const fields = liftFields.filter((f) => !!f.endpoint === endpoints);
+  const renderNumericFields = (endpoints: boolean, afterCounts = false) => {
+    const fields = liftFields.filter(
+      (f) => !!f.endpoint === endpoints && !!f.after === afterCounts,
+    );
     const rows: (typeof fields)[] = [];
     for (const f of fields) {
       const previous = rows.at(-1);
@@ -899,27 +901,33 @@ export default function TesseractApp({
       </div>
     ));
   };
-  const choices = descriptor.choices
-    ?.filter((choice) => !choice.visible || choice.visible(config))
-    .map((choice) => (
-      <ChoiceField
-        key={choice.key}
-        choice={choice}
-        config={config}
-        help={choice.help}
-        onChoose={(value) =>
-          update((c) =>
-            (descriptor.reconcile ?? ((c) => c))({
-              ...c,
-              [parameterKey]: {
-                ...c[parameterKey],
-                [choice.key]: value,
-              },
-            }),
-          )
-        }
-      />
-    ));
+  const choiceFields = (afterCounts: boolean) =>
+    descriptor.choices
+      ?.filter(
+        (choice) =>
+          !!choice.after === afterCounts &&
+          (!choice.visible || choice.visible(config)),
+      )
+      .map((choice) => (
+        <ChoiceField
+          key={choice.key}
+          choice={choice}
+          config={config}
+          help={choice.help}
+          onChoose={(value) =>
+            update((c) =>
+              (descriptor.reconcile ?? ((c) => c))({
+                ...c,
+                [parameterKey]: {
+                  ...c[parameterKey],
+                  [choice.key]: value,
+                },
+              }),
+            )
+          }
+        />
+      ));
+  const choices = choiceFields(false);
   const info = descriptor.explanation(config);
   // Adding or removing a vertex renumbers the fields after it, so
   // evaluations still pending for them land first; a preset or object
@@ -1394,6 +1402,8 @@ export default function TesseractApp({
                         (c, samples) => ({ ...c, samples }),
                       )
                     )}
+                    {choiceFields(true)}
+                    {renderNumericFields(false, true)}
                     {selection?.visible(config) && (
                       <SelectionField
                         config={config}

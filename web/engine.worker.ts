@@ -459,11 +459,14 @@ self.onmessage = async ({
       // descriptor (tesseract/sphere-paths.ts); this classic worker imports
       // nothing.
       const path = pairedWeave ? (weave.path ?? "latitude") : undefined;
+      // Neighborhood sampling reads its width and fiber count; the path's
+      // own count is then its selectable points.
+      const neighborhood = pairedWeave && weave.sampling === "neighborhood";
       const spherePath = path
         ? {
             usesAlpha: path === "latitude" || path === "flower",
             sweep: path === "latitude",
-            fibersLabel: `Fibers on the ${{ latitude: "latitude", flower: "flower", "great-circle": "great circle", lissajous: "Lissajous curve", polygon: "polygon" }[path]}`,
+            fibersLabel: `${neighborhood ? "Points" : "Fibers"} on the ${{ latitude: "latitude", flower: "flower", "great-circle": "great circle", lissajous: "Lissajous curve", polygon: "polygon" }[path]}`,
           }
         : undefined;
       if (weave) {
@@ -527,6 +530,15 @@ self.onmessage = async ({
                 ],
               ]
             : []),
+          ...(neighborhood && weave.width !== undefined
+            ? [
+                ["weave.width", "Neighborhood width", weave.width] as [
+                  string,
+                  string,
+                  number,
+                ],
+              ]
+            : []),
           ["clip", "Projection window radius", q.clip],
         ] as [string, string, number][];
         // A polygon's vertices, by field (Go checks their count and sides).
@@ -570,6 +582,9 @@ self.onmessage = async ({
                 ],
                 ["weave.polar", "Polar frequency m₂", weave.polar ?? 1],
               ]
+            : []),
+          ...(neighborhood && weave.nearby !== undefined
+            ? [["weave.nearby", "Fibers in the neighborhood", weave.nearby]]
             : []),
         ] as [string, string, number][]) {
           if (!Number.isFinite(value))
@@ -758,6 +773,9 @@ self.onmessage = async ({
                 azimuthal: path === "lissajous" ? weave.azimuthal : undefined,
                 polar: path === "lissajous" ? weave.polar : undefined,
                 vertices: path === "polygon" ? weave.vertices : undefined,
+                sampling: neighborhood ? "neighborhood" : undefined,
+                width: neighborhood ? weave.width : undefined,
+                nearby: neighborhood ? weave.nearby : undefined,
                 spread: q.count === 1 || pairedWeave ? 0 : weave.spread,
               },
               // Inactive in the paired view, which draws one base path.
