@@ -39,3 +39,34 @@ test("fails with no crash", async ({ page }) => {
 test("crashes every time", async ({ page }) => {
   await crash(page);
 });
+
+// On CI the same JavaScriptCore fault also reaches a test as the engine's
+// own alert: a WebAssembly trap, or the Go runtime gone from a worker.
+async function engineAlert(page: Page, text: string) {
+  await page.setContent(`<p role="alert"></p>`);
+  await page.locator("p").evaluate((p, t) => (p.textContent = t), text);
+  expect(1).toBe(2);
+}
+
+test("engine traps once", async ({ page }, testInfo) => {
+  if (testInfo.retry === 0)
+    await engineAlert(
+      page,
+      "Out of bounds memory access (evaluating 'this._inst.exports.resume()')",
+    );
+});
+
+test("engine exits once", async ({ page }, testInfo) => {
+  if (testInfo.retry === 0)
+    await engineAlert(page, "Go program has already exited");
+});
+
+test("engine traps every time", async ({ page }) => {
+  await engineAlert(page, "Out of bounds memory access");
+});
+
+// Any other engine error is the product's, even a stack overflow.
+test("engine overflows its stack once", async ({ page }, testInfo) => {
+  if (testInfo.retry === 0)
+    await engineAlert(page, "Maximum call stack size exceeded.");
+});

@@ -530,19 +530,30 @@ for (const colorScheme of ["light", "dark"] as const)
             `2 / Fibers in space (${stacked ? "bottom" : "right"})`,
           ]);
         }
-        // The experiment, Play and Open study can all be reached.
-        for (const target of [
-          control.locator("input, select"),
-          dialog.getByRole("button", { name: "Play animation", exact: true }),
-          dialog.getByRole("button", { name: "Open study", exact: true }),
-        ]) {
-          await target.scrollIntoViewIfNeeded();
-          const box = (await target.boundingBox())!;
-          expect(box.x).toBeGreaterThanOrEqual(0);
-          expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
-          expect(box.y).toBeGreaterThanOrEqual(0);
-          expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
-        }
+        // The experiment, Play and Open study can all be reached. Under a
+        // full suite's load the dialog once moved after the scroll and
+        // before the measurement (#485), so each is scrolled to again until
+        // it rests in view; one that never does still fails.
+        for (const [name, target] of [
+          ["experiment", control.locator("input, select")],
+          [
+            "Play",
+            dialog.getByRole("button", { name: "Play animation", exact: true }),
+          ],
+          [
+            "Open study",
+            dialog.getByRole("button", { name: "Open study", exact: true }),
+          ],
+        ] as const)
+          await expect(async () => {
+            await target.scrollIntoViewIfNeeded();
+            const box = (await target.boundingBox())!;
+            const at = `step ${step}, ${name}`;
+            expect(box.x, at).toBeGreaterThanOrEqual(0);
+            expect(box.x + box.width, at).toBeLessThanOrEqual(viewport.width);
+            expect(box.y, at).toBeGreaterThanOrEqual(0);
+            expect(box.y + box.height, at).toBeLessThanOrEqual(viewport.height);
+          }).toPass({ timeout: 15_000 });
         // Keyboard operation of each experiment.
         if (step === 0) {
           await selectedFiber(dialog).focus();

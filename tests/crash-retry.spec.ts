@@ -2,13 +2,14 @@ import { test, expect } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
-// The WebKit project retries a test once, and only when its page crashed
-// (tests/crash-retry.ts). This runs three small tests under that rule, in a
-// Playwright of their own, with a Chromium page that really crashes.
+// The WebKit project retries a test once, and only when its page crashed or
+// its engine trapped (tests/crash-retry.ts). This runs small tests under
+// that rule, in a Playwright of their own, with a Chromium page that really
+// crashes.
 
 type Attempt = { status: string; error?: { message: string } };
 
-test("only a page crash earns a retry, and each crash is reported", async ({}, testInfo) => {
+test("only a lost page or a trapped engine earns a retry, and each is reported", async ({}, testInfo) => {
   const summary = testInfo.outputPath("summary.md");
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -64,6 +65,19 @@ test("only a page crash earns a retry, and each crash is reported", async ({}, t
     /crash/i,
   );
 
+  // A WebAssembly trap or a Go runtime gone from the engine is retried too.
+  expect(of("engine traps once")).toEqual(["failed", "passed"]);
+  expect(of("engine exits once")).toEqual(["failed", "passed"]);
+  expect(of("engine traps every time")).toEqual(["failed", "failed"]);
+  expect(
+    attempts.get("engine traps every time")![1].error!.message,
+  ).not.toContain("retried only after");
+  // No other engine error is.
+  expect(of("engine overflows its stack once")).toEqual(["failed", "failed"]);
+  expect(
+    attempts.get("engine overflows its stack once")![1].error!.message,
+  ).toContain("retried only after");
+
   // The job summary lists every crash, including the one that passed after.
   const lines = (await readFile(summary, "utf8")).trim().split("\n");
   expect(lines.filter((l) => l.includes("crashes once"))).toHaveLength(1);
@@ -71,5 +85,14 @@ test("only a page crash earns a retry, and each crash is reported", async ({}, t
   expect(lines.filter((l) => l.includes("loses its page once"))).toHaveLength(
     1,
   );
+  expect(lines.filter((l) => l.includes("engine traps once"))).toHaveLength(1);
+  expect(lines.filter((l) => l.includes("engine traps once"))[0]).toContain(
+    "Out of bounds memory access",
+  );
+  expect(lines.filter((l) => l.includes("engine exits once"))).toHaveLength(1);
+  expect(
+    lines.filter((l) => l.includes("engine traps every time")),
+  ).toHaveLength(2);
   expect(lines.some((l) => l.includes("fails"))).toBe(false);
+  expect(lines.some((l) => l.includes("overflows"))).toBe(false);
 });
