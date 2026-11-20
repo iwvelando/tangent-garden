@@ -564,6 +564,41 @@ func TestNeighborhoodWholeWidth(t *testing.T) {
 	}
 }
 
+// Across paths, selections and trace offsets, a stretch's parameters
+// increase by more than weaveTolerance, so a base-curve point at one of
+// its ends is not drawn again beside it, and a whole-width stretch closes
+// exactly even where c − T/2 and c + T/2 reduce to neighboring floats.
+func TestNeighborhoodArcEndsAcrossSelections(t *testing.T) {
+	polygon := []PolygonVertex{{U: 0, V: 0}, {U: 1.3, V: .4}, {U: 2.9, V: -.5}, {U: 4.4, V: .9}}
+	for _, n := range []int{5, 8, 13, 32} {
+		for j := 0; j < n; j++ {
+			for name, q := range map[string]Request{
+				"great circle": greatCircleRequest(.7, n, j),
+				"Lissajous":    lissajousRequest(3, 2, n, j),
+				"latitude":     pairedRequest(.6, n, j),
+				"polygon":      polygonRequest(polygon, n, j),
+			} {
+				for _, trace := range []float64{0, .013, .37} {
+					for _, w := range []float64{.125, 3. / 7, 1} {
+						q.Weave.Trace = trace
+						r := weaveCompute(t, withNeighborhood(q, w, 7))
+						arc := weavePaths(*r.Companion, "neighborhood")[0]
+						for i := 1; i < len(arc.Parameters); i++ {
+							if arc.Parameters[i]-arc.Parameters[i-1] <= weaveTolerance {
+								t.Fatalf("%s n=%d j=%d trace=%g w=%g: arc parameters %d and %d are %g apart",
+									name, n, j, trace, w, i-1, i, arc.Parameters[i]-arc.Parameters[i-1])
+							}
+						}
+						if w == 1 && !closedPath(arc) {
+							t.Fatalf("%s n=%d j=%d trace=%g: the whole-width arc does not close", name, n, j, trace)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestNeighborhoodValidationAndInactiveFields(t *testing.T) {
 	cases := []struct {
 		name, field string

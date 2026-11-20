@@ -469,12 +469,12 @@ export const tesseractPresets: {
     repeat: "loop",
   },
   // Opens the woven Lissajous bouquet's path m = (2, 1) sampled over a
-  // neighborhood: 25 fibers over an eighth of the path, centered on
-  // sample 10 of 32, where the stretch's fibers fan out across the
-  // window. Same rotation and cameras as the woven bouquet. Its phrase
-  // carries the stretch once around the path, tightening into a ring at
-  // each pole, then opens it to the whole path, where its fibers are an
-  // even sampling of the full bouquet, and closes it again.
+  // neighborhood: 25 fibers over w = 0.12 of the path, centered on
+  // sample 11 of 32 (selected: 10), where the stretch's fibers fan out
+  // across the window. Same rotation and cameras as the woven bouquet.
+  // Its phrase carries the stretch once around the path, tightening into
+  // a ring at each pole, then opens it to the whole path, where its
+  // fibers are an even sampling of the full bouquet, and closes it again.
   {
     name: "A short stretch, an opening fan",
     detail:
