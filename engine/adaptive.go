@@ -88,8 +88,23 @@ var plane = refine.Metric[Vec]{
 // size and a tiny study is not judged against a larger one. Scaling by a
 // power of two is exact, so the radius is unchanged wherever the floors do
 // not apply.
-func studyRadius(points []*Vec) float64 {
-	unit := spreadUnit(points)
+func studyRadius(points []*Vec) float64 { return pathRadius(points, pathRounding{}) }
+
+// pathRounding is what a path's points are rounded by: they read k stencil
+// derivatives of the base curve, whose coordinates' quartiles reach base in
+// magnitude. Each derivative divides the base's rounding by the stencil's
+// spacing, 10⁻⁴ of the domain (docs/mathematics.md, Scale and
+// translation), so a caustic or an evolute, at k = 2, carries about 10⁸
+// times the base's rounding. The base itself, and a pointwise image such
+// as an inversion's, have k = 0 and are measured by their own coordinates.
+type pathRounding struct {
+	k    int
+	base float64
+}
+
+// pathRadius is studyRadius of a path rounded by r (see spreadUnit).
+func pathRadius(points []*Vec, r pathRounding) float64 {
+	unit := spreadUnit(points, r)
 	// One allocation for every scaled point, not one each: allocation
 	// costs WASM's collector more than the arithmetic.
 	scaled, values := make([]*Vec, len(points)), make([]Vec, len(points))
@@ -110,9 +125,10 @@ func studyRadius(points []*Vec) float64 {
 // spreadUnit is the power of two at or below the larger interquartile
 // range of points' coordinates, taken as refine.Radius takes its quartiles,
 // or of their full range where that is zero, or of their largest
-// quartile where the spread is only rounding, and 1 for points all at the
+// quartile where the spread is only rounding (or the base's, for a path
+// that reads its derivatives, if larger), and 1 for points all at the
 // origin.
-func spreadUnit(points []*Vec) float64 {
+func spreadUnit(points []*Vec, r pathRounding) float64 {
 	var xs, ys []float64
 	for _, p := range points {
 		if p != nil {
@@ -142,15 +158,46 @@ func spreadUnit(points []*Vec) float64 {
 	// A spread within 2⁻⁴⁰ of the points' quartiles' magnitude is rounding,
 	// as where a curve collapses to a point: such points are measured in
 	// that magnitude, which is as small as the study is, and which an
-	// asymptote's outliers do not reach.
-	magnitude := 0.0
-	for _, vs := range [][]float64{xs, ys} {
-		magnitude = math.Max(magnitude, math.Max(math.Abs(vs[len(vs)/4]), math.Abs(vs[3*len(vs)/4])))
+	// asymptote's outliers do not reach. A path that reads k derivatives of
+	// the base is rounded 10⁴ times more by each, in proportion to the
+	// base's coordinates, so its spread is rounding within 2⁻⁴⁰·10^(4k) of
+	// the larger of the two magnitudes: a caustic gathered into a focus is
+	// that point, wherever the study is placed, also at the origin, where
+	// its own coordinates are only rounding.
+	magnitude := quartileMagnitude(xs, ys)
+	if r.k > 0 {
+		magnitude = math.Max(magnitude, r.base)
 	}
-	if s <= 0x1p-40*magnitude {
+	if s <= 0x1p-40*math.Pow(1e4, float64(r.k))*magnitude {
 		s = magnitude
 	}
 	return binade(s)
+}
+
+// quartileMagnitude is the largest magnitude of the sorted coordinates'
+// quartiles, as spreadUnit takes them.
+func quartileMagnitude(xs, ys []float64) float64 {
+	magnitude := 0.0
+	for _, vs := range [][]float64{xs, ys} {
+		if len(vs) > 0 {
+			magnitude = math.Max(magnitude, math.Max(math.Abs(vs[len(vs)/4]), math.Abs(vs[3*len(vs)/4])))
+		}
+	}
+	return magnitude
+}
+
+// baseRounding is the rounding of a path that reads k derivatives of the
+// base curve's points (see pathRounding).
+func baseRounding(base []*Vec, k int) pathRounding {
+	var xs, ys []float64
+	for _, p := range base {
+		if p != nil {
+			xs, ys = append(xs, p.X), append(ys, p.Y)
+		}
+	}
+	sort.Float64s(xs)
+	sort.Float64s(ys)
+	return pathRounding{k: k, base: quartileMagnitude(xs, ys)}
 }
 
 // focus is the refinement of a view (see refine.Focus): the pieces that
@@ -190,14 +237,15 @@ func (v View) valid() bool {
 
 // refinePath refines points, broken after each interval in broken, with the
 // curve evaluated by at (see refine.Refine), at refine.Epsilon of the
-// path's own robust radius, and more finely where it meets the view, when
-// there is one. It returns the intervals refinement broke.
-func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, hi float64, view *View) (*RefinedPath, []int) {
+// path's own robust radius, measured as its rounding r allows, and more
+// finely where it meets the view, when there is one. It returns the
+// intervals refinement broke.
+func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, hi float64, view *View, r pathRounding) (*RefinedPath, []int) {
 	breaks := make([]bool, len(points))
 	for i := range broken {
 		breaks[i+1] = true
 	}
-	tolerance := refine.Epsilon * studyRadius(points)
+	tolerance := refine.Epsilon * pathRadius(points, r)
 	var path *refine.Path[Vec]
 	var found []int
 	var focused float64
@@ -232,6 +280,7 @@ func refinePath(points []*Vec, broken map[int]bool, at func(float64) *Vec, lo, h
 func (q Request) adapt(out *Result, f, g curveFunc) {
 	lo, hi := q.Curve.Min, q.Curve.Max
 	a, broken := q.adaptCurves(out, f, g)
+	derivedRounding := baseRounding(out.Base, derivedOrder(q))
 	note := func(intervals []int) {
 		for _, i := range intervals {
 			broken[i] = true
@@ -243,7 +292,7 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 			// The passage test's breaks give way to refinement's.
 			out.Inversion.Breaks = []int{}
 		}
-		a.Derived, found = refinePath(out.Derived, broken, derived, lo, hi, q.View)
+		a.Derived, found = refinePath(out.Derived, broken, derived, lo, hi, q.View, derivedRounding)
 		note(found)
 		if at := q.virtualAt(f, g, out); at != nil {
 			n := float64(q.Samples - 1)
@@ -257,7 +306,7 @@ func (q Request) adapt(out *Result, f, g curveFunc) {
 	stations := q.sharedStations(f, g)
 	for _, member := range out.Family {
 		if at := q.memberAlong(stations, out, member); at != nil {
-			path, _ := refinePath(member.Points, broken, at, lo, hi, q.View)
+			path, _ := refinePath(member.Points, broken, at, lo, hi, q.View, derivedRounding)
 			a.Family = append(a.Family, path)
 		}
 	}
@@ -286,10 +335,10 @@ func (q Request) adaptCurves(out *Result, f, g curveFunc) (*AdaptiveResult, map[
 	}
 	a := &AdaptiveResult{}
 	var found []int
-	a.Base, found = refinePath(out.Base, nil, position(f), lo, hi, q.View)
+	a.Base, found = refinePath(out.Base, nil, position(f), lo, hi, q.View, pathRounding{})
 	note(found)
 	if out.Input != nil {
-		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi, q.View)
+		a.Input, found = refinePath(out.Input, broken, position(g), lo, hi, q.View, baseRounding(out.Base, inputOrder(q.Input)))
 		note(found)
 	}
 	return a, broken

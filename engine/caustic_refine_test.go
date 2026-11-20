@@ -253,3 +253,49 @@ func TestRefinedCausticsAgreeWithTheSamples(t *testing.T) {
 		t.Fatalf("no total internal reflection among the samples: %v", gaps)
 	}
 }
+
+// A lamp at one focus of the ellipse (1.25 cos t, sin t) sends every
+// reflected ray through the other, (−0.75, 0), and a lamp at the center of
+// a circle sends every ray back through it, so each catacaustic is one
+// point. Its samples are that point within the rounding of the two stencil
+// derivatives a caustic reads, which refinement must not take for a shape:
+// wherever the study is placed and at whatever scale, the refined caustic
+// is the point, without breaks or unresolved pieces (#471).
+func TestRefinedCausticGatheredToAPointHasNoBreaks(t *testing.T) {
+	for _, c := range []struct {
+		name, x, y  string
+		lamp, focus Vec
+	}{
+		{"ellipse's focus", "1.25*cos(t)", "sin(t)", Vec{0.75, 0}, Vec{-0.75, 0}},
+		{"circle's center", "cos(t)", "sin(t)", Vec{}, Vec{}},
+		{"off-center circle's center", "3+cos(t)", "2+sin(t)", Vec{3, 2}, Vec{3, 2}},
+	} {
+		for _, m := range append(append([]similarity{{"unit", 1, Vec{}}}, scaledCopies...), translatedCopies...) {
+			t.Run(c.name+", "+m.name, func(t *testing.T) {
+				q := request("catacaustic", c.x, c.y, 0, 2*math.Pi)
+				q.Source = Source{Kind: "point", Position: c.lamp}
+				q.Samples, q.Lines = 1600, 48
+				q, ok := m.copyOf(adaptive(q))
+				if !ok {
+					t.Fatal("the copy cannot carry the map")
+				}
+				path := compute(t, q).Adaptive.Derived
+				if path.Breaks != 0 || path.Unresolved != 0 || path.Exhausted {
+					t.Fatalf("breaks %d, unresolved %d, exhausted %v; want none", path.Breaks, path.Unresolved, path.Exhausted)
+				}
+				// The translation budget for two stencil derivatives
+				// (docs/mathematics.md, Scale and translation).
+				focus, size := m.at(c.focus), 2.5*m.s
+				limit := 256 * 0x1p-53 * 1e8 * (size + m.c.Norm())
+				for k, p := range path.Points {
+					if p == nil {
+						t.Fatalf("break at position %g", path.At[k])
+					}
+					if d := p.Sub(focus).Norm(); d > limit {
+						t.Fatalf("point at %g is %g from the focus, beyond %g", path.At[k], d, limit)
+					}
+				}
+			})
+		}
+	}
+}

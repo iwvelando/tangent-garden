@@ -1833,10 +1833,14 @@ function App({
                   <button
                     ref={atlasButton}
                     type="button"
+                    // Disabled while an edited field is still evaluating,
+                    // but not while the study computes: the click waits for
+                    // it, and a focused button that is disabled drops focus
+                    // to the page, as after an adoption returns it here.
                     disabled={
                       family?.enabled ||
                       !frame ||
-                      busy ||
+                      scalarStates.some((s) => s.pending) ||
                       !!error ||
                       !!atlasBudget(config, 3, atlasFacts(frame, config)).error
                     }
