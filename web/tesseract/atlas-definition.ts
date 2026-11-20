@@ -27,7 +27,8 @@ export function tesseractSheetDefinition(
     ...(d.choices ?? [])
       .filter((f) => !f.visible || f.visible(c))
       .map((f) => {
-        const value = parameters?.[f.key];
+        // An absent choice is its first option, as the notebook shows it.
+        const value = parameters?.[f.key] ?? f.values[0].value;
         return `${f.label}: ${f.values.find((v) => v.value === value)?.label ?? String(value)}`;
       }),
     ...d.radiusFields.map((f) => `${f.label} = ${c[f.key]}`),

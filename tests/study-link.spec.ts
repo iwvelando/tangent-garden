@@ -1246,6 +1246,30 @@ test("fields a link predates take the notebook's defaults", async () => {
   }
   for (const key of ["tilt", "azimuthal", "polar"])
     assert.equal(key in readWeave.config.weave!, false);
+  // Neighborhood sampling carries its own optional fields, kept under the
+  // whole path too; links without them open the whole path.
+  for (const fields of [
+    { path: "lissajous", sampling: "neighborhood", width: 0.12, nearby: 25 },
+    { sampling: "path", width: 1 / 3, nearby: 4 },
+  ]) {
+    const study = structuredClone(pairedStudy) as any;
+    Object.assign(study.config.weave, fields);
+    assert.deepEqual(
+      tesseractStudy(
+        (await readStudyLink(await writeStudyLink("4d", study))).study,
+      ),
+      study,
+    );
+  }
+  for (const key of ["sampling", "width", "nearby"])
+    assert.equal(key in readWeave.config.weave!, false);
+  const unknownSampling = structuredClone(pairedStudy) as any;
+  unknownSampling.config.weave.sampling = "local";
+  await refused(
+    () => tesseractStudy(unknownSampling),
+    "config.weave.sampling",
+    /one of/,
+  );
   const unknownPath = structuredClone(pairedStudy) as any;
   unknownPath.config.weave.path = "spiral";
   await refused(
@@ -3042,9 +3066,15 @@ test("every production preset and edited study restores exactly with measured sa
     }
     // A broad corpus bound leaves room for compressor changes. Every preset
     // shares most inactive settings with its notebook's frozen first study.
+    // The 2D and 3D corpora measured 0.18 and 0.20 of their full length;
+    // the 4D corpus 0.551 at 29 presets, since its paired weave presets
+    // differ throughout from the frozen tesseract.
     const total = (key: "full" | "selected") =>
       lengths.reduce((n, x) => n + x[key], 0);
-    assert.ok(total("selected") < 0.55 * total("full"));
+    assert.ok(
+      total("selected") < (notebook === "4d" ? 0.6 : 0.3) * total("full"),
+      `${notebook}: ${total("selected")} of ${total("full")}`,
+    );
     const summary = (key: "full" | "selected") => {
       const xs = lengths.map((x) => x[key]).sort((a, b) => a - b);
       return [

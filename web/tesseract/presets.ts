@@ -468,6 +468,69 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
+  // Opens the woven Lissajous bouquet's path m = (2, 1) sampled over a
+  // neighborhood: 25 fibers over an eighth of the path, centered on
+  // sample 10 of 32, where the stretch's fibers fan out across the
+  // window. Same rotation and cameras as the woven bouquet. Its phrase
+  // carries the stretch once around the path, tightening into a ring at
+  // each pole, then opens it to the whole path, where its fibers are an
+  // even sampling of the full bouquet, and closes it again.
+  {
+    name: "A short stretch, an opening fan",
+    detail:
+      "Fibers over a short stretch of a Lissajous path form a fan of linked circles. It twists as the stretch travels the path, then opens into the whole bouquet.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 32,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.2, 0.15, 0.3, 0.9, Math.PI / 2],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 10,
+        path: "lissajous",
+        azimuthal: 2,
+        polar: 1,
+        sampling: "neighborhood",
+        width: 0.12,
+        nearby: 25,
+      },
+    },
+    view: { yaw: -1.16, pitch: 0.72, zoom: 1.11, panX: -10.8, panY: -6.6 },
+    diagramView: { yaw: 0.77, pitch: 0.64, zoom: 1, panX: 0, panY: 0 },
+    motion: "phrase",
+    repeat: "loop",
+    phrase: {
+      target: "weave.trace",
+      also: ["weave.width"],
+      phases: [
+        {
+          name: "Carry the stretch along the path",
+          duration: 10,
+          pace: "steady",
+          key: "1",
+        },
+        {
+          name: "Open to the whole path",
+          duration: 5,
+          pace: "ease",
+          keys: { "weave.width": "1" },
+        },
+        {
+          name: "Close to a stretch",
+          duration: 5,
+          pace: "ease",
+          keys: { "weave.width": "0.12" },
+        },
+      ],
+    },
+  },
   // Opens one cell of the 24-cell, its center and the dual edges from it,
   // turning in a seamless double rotation.
   {

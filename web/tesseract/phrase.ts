@@ -18,6 +18,7 @@ import {
 import { roundedGenerated } from "../atlas-queue";
 import type { Pace } from "../timing";
 import { modeLabel, objects } from "./objects";
+import { defaultNeighborhoodWidth } from "./sphere-paths";
 import type { Config, Result, TesseractTarget, View } from "./types";
 
 // The drawing's orbit and zoom limits (Plot.tsx), and the whole turns a
@@ -44,6 +45,7 @@ const targetLabels: Record<TesseractTarget, string> = {
   "weave.spread": "Latitude spread",
   "weave.amplitude": "Flower amplitude A",
   "weave.tilt": "Tilt β",
+  "weave.width": "Neighborhood width",
   "weave.trace": "Trace (turns)",
   "root.t": "Journey parameter t",
   "root.radius": "Radius r",
@@ -80,6 +82,8 @@ export function tesseractTargetValue(c: Config, t: TesseractTarget): number {
       return c.weave!.amplitude ?? 0;
     case "weave.tilt":
       return c.weave!.tilt ?? 0;
+    case "weave.width":
+      return c.weave!.width ?? defaultNeighborhoodWidth;
     case "weave.trace":
       return c.weave!.trace ?? 0;
     case "root.t":
@@ -118,6 +122,8 @@ export function applyTesseractTarget(
       return { ...c, weave: { ...c.weave!, amplitude: v } };
     case "weave.tilt":
       return { ...c, weave: { ...c.weave!, tilt: v } };
+    case "weave.width":
+      return { ...c, weave: { ...c.weave!, width: v } };
     case "weave.trace":
       return { ...c, weave: { ...c.weave!, trace: v } };
     case "root.t":

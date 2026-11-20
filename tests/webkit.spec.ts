@@ -1369,6 +1369,65 @@ test("a Hopf polygon's vertices edit, add and remove after click and blur in Web
   ).toMatchObject({ path: "polygon", sides: 3 });
 });
 
+// The neighborhood's choice and fields commit on change and blur, and a
+// tap on the base sphere moves it, in Safari's engine on a phone layout.
+test("a Hopf neighborhood opens, edits and moves after click and blur in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=4d");
+  await choosePreset(page, { label: "A Lissajous path, a woven bouquet" });
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  const config = async () =>
+    JSON.parse((await page.locator("#tesseract-artwork > desc").textContent())!)
+      .config;
+  const neighborhood = async () =>
+    JSON.parse(
+      (await page
+        .locator('svg[data-representation="base"] > desc')
+        .textContent())!,
+    ).weave.correspondence.neighborhood;
+  await settle();
+  await page
+    .getByRole("combobox", { name: "Fiber sampling", exact: true })
+    .selectOption("neighborhood");
+  await settle();
+  expect((await neighborhood()).fibers).toBe(17);
+  const width = page.getByRole("textbox", {
+    name: "Neighborhood width",
+    exact: true,
+  });
+  await width.click();
+  await width.fill("1/4");
+  await width.blur();
+  const nearby = page.getByRole("spinbutton", {
+    name: "Fibers in the neighborhood",
+    exact: true,
+  });
+  await nearby.click();
+  await nearby.fill("9");
+  await nearby.blur();
+  await settle();
+  expect((await config()).weave).toMatchObject({
+    sampling: "neighborhood",
+    width: 0.25,
+    nearby: 9,
+  });
+  expect(await neighborhood()).toMatchObject({ width: 0.25, fibers: 9 });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page
+    .locator('svg[data-representation="base"] g[data-sample="3"]')
+    .click();
+  await settle();
+  expect((await config()).weave.selected).toBe(3);
+  await page
+    .getByRole("combobox", { name: "Fiber sampling", exact: true })
+    .selectOption("path");
+  await settle();
+  await expect(width).toHaveCount(0);
+});
+
 test("the harmonic fit returns focus to its entry by click and by keyboard in WebKit", async ({
   page,
 }) => {

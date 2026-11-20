@@ -96,6 +96,10 @@ const polytopeStroke: Partial<
   // behind the moving point bright.
   circuit: { width: 1.8, opacity: 0.6 },
   trace: { width: 3.4, opacity: 1 },
+  // A Hopf neighborhood's fibers, and its stretch as a broad wash under
+  // the base path.
+  near: { width: 1.6, opacity: 0.82 },
+  neighborhood: { width: 11, opacity: 0.36 },
 };
 // Guides, then the quiet circuits, then the trace on top.
 const journeyRank: Partial<Record<Result["paths"][number]["role"], number>> = {
@@ -474,6 +478,19 @@ export function Drawing({
               </g>
             );
           }
+          if (m.role === "near")
+            // A neighborhood cell's point: small, in the path's ink.
+            return (
+              <circle
+                key={m.id}
+                data-marker={m.id}
+                data-role={m.role}
+                cx={x}
+                cy={y}
+                r={2.8}
+                fill={sectionInk(0, dark, scheme)}
+              />
+            );
           if (m.role === "start" || m.role === "current")
             // The journey's moving point, ringed by the background so it
             // reads over the trace, and an open ring where it started.

@@ -62,6 +62,12 @@ export type Weave = {
   polar?: number;
   // A geodesic polygon's vertices, read only while it is the path.
   vertices?: PolygonVertex[];
+  // Fiber sampling: the whole path (absent) or a neighborhood of the
+  // moving point, width w of the path's period with nearby fibers. Both
+  // are read only under the neighborhood and kept under the whole path.
+  sampling?: "path" | "neighborhood";
+  width?: number;
+  nearby?: number;
 };
 export type Bypass = {
   inner: number;
@@ -146,6 +152,9 @@ export type Result = {
       | "moving"
       | "base-curve"
       | "globe"
+      // A neighborhood's fibers and its stretch of the base path.
+      | "near"
+      | "neighborhood"
       // The 24-cell's roles (./polytope.ts).
       | "primal"
       | "dual"
@@ -211,6 +220,7 @@ export type Result = {
       | "moving"
       | "comparison"
       | "sample"
+      | "near"
       | "center"
       | "vertex"
       | "start"
@@ -249,6 +259,16 @@ export type Result = {
       side?: number;
       sides?: number;
       aliases?: number[];
+      // Only under neighborhood sampling (engine4/neighborhood.go).
+      neighborhood?: {
+        width: number;
+        fibers: number;
+        // The stretch's ends c ∓ wT/2, unwrapped.
+        from: number;
+        to: number;
+        parameters: number[];
+        aliases?: number[];
+      };
     };
   };
   // A dual pair, the 24-cell and its polar (engine4/cell24.go) or the
@@ -370,6 +390,7 @@ export type TesseractTarget =
   | "weave.spread"
   | "weave.amplitude"
   | "weave.tilt"
+  | "weave.width"
   | "weave.trace"
   | "root.t"
   | "root.radius";
