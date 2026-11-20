@@ -384,12 +384,14 @@ test("the choice stop offers the descriptor's Base path, redraws the latitude, a
   await expect(path.locator("option")).toHaveText([
     "Latitude",
     "Spherical flower",
+    "Great circle",
+    "Spherical Lissajous",
   ]);
   const opening = await drawn(dialog, "base");
   expect(opening).toMatchObject({ path: "flower", fibers: 20 });
   await path.selectOption("latitude");
   await ready(dialog);
-  // The correspondence names only a flower path.
+  // The correspondence names every path but the latitude.
   const plain = await drawn(dialog, "base");
   expect(plain.path).toBeUndefined();
   expect(plain.fibers).toBe(20);

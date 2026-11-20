@@ -1229,6 +1229,30 @@ test("fields a link predates take the notebook's defaults", async () => {
     ),
     flowerStudy,
   );
+  // The great circle and spherical Lissajous paths carry their own
+  // optional fields; links without them keep every earlier path.
+  for (const fields of [
+    { path: "great-circle", tilt: (3 * Math.PI) / 4 },
+    { path: "lissajous", azimuthal: 3, polar: 5 },
+  ]) {
+    const study = structuredClone(pairedStudy) as any;
+    Object.assign(study.config.weave, fields);
+    assert.deepEqual(
+      tesseractStudy(
+        (await readStudyLink(await writeStudyLink("4d", study))).study,
+      ),
+      study,
+    );
+  }
+  for (const key of ["tilt", "azimuthal", "polar"])
+    assert.equal(key in readWeave.config.weave!, false);
+  const unknownPath = structuredClone(pairedStudy) as any;
+  unknownPath.config.weave.path = "spiral";
+  await refused(
+    () => tesseractStudy(unknownPath),
+    "config.weave.path",
+    /one of/,
+  );
   pane.config.mode = "base";
   await refused(() => tesseractStudy(pane), "config.mode", /one of/);
   // The 24-cell: links before it have no cell24 field and open unchanged;

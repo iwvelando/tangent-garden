@@ -43,6 +43,7 @@ const targetLabels: Record<TesseractTarget, string> = {
   "weave.alpha": "Central latitude α",
   "weave.spread": "Latitude spread",
   "weave.amplitude": "Flower amplitude A",
+  "weave.tilt": "Tilt β",
   "weave.trace": "Trace (turns)",
   "root.t": "Journey parameter t",
   "root.radius": "Radius r",
@@ -77,6 +78,8 @@ export function tesseractTargetValue(c: Config, t: TesseractTarget): number {
       return c.weave!.spread;
     case "weave.amplitude":
       return c.weave!.amplitude ?? 0;
+    case "weave.tilt":
+      return c.weave!.tilt ?? 0;
     case "weave.trace":
       return c.weave!.trace ?? 0;
     case "root.t":
@@ -113,6 +116,8 @@ export function applyTesseractTarget(
       return { ...c, weave: { ...c.weave!, spread: v } };
     case "weave.amplitude":
       return { ...c, weave: { ...c.weave!, amplitude: v } };
+    case "weave.tilt":
+      return { ...c, weave: { ...c.weave!, tilt: v } };
     case "weave.trace":
       return { ...c, weave: { ...c.weave!, trace: v } };
     case "root.t":
