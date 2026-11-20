@@ -386,6 +386,7 @@ test("the choice stop offers the descriptor's Base path, redraws the latitude, a
     "Spherical flower",
     "Great circle",
     "Spherical Lissajous",
+    "Geodesic polygon",
   ]);
   const opening = await drawn(dialog, "base");
   expect(opening).toMatchObject({ path: "flower", fibers: 20 });
@@ -407,6 +408,15 @@ test("the choice stop offers the descriptor's Base path, redraws the latitude, a
   await dialog.getByRole("button", { name: "Pause", exact: true }).click();
   await progress.fill("0.5");
   await expect(progress).toHaveValue("0.5");
+  // The polygon arrives with the octant triangle, as in the notebook.
+  await path.selectOption("polygon");
+  await ready(dialog);
+  expect(await drawn(dialog, "base")).toMatchObject({
+    path: "polygon",
+    sides: 3,
+    fibers: 20,
+  });
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
   // Choosing again stops playback and restores the flower exactly.
   await path.selectOption("flower");
   await ready(dialog);

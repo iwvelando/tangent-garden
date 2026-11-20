@@ -463,7 +463,7 @@ self.onmessage = async ({
         ? {
             usesAlpha: path === "latitude" || path === "flower",
             sweep: path === "latitude",
-            fibersLabel: `Fibers on the ${{ latitude: "latitude", flower: "flower", "great-circle": "great circle", lissajous: "Lissajous curve" }[path]}`,
+            fibersLabel: `Fibers on the ${{ latitude: "latitude", flower: "flower", "great-circle": "great circle", lissajous: "Lissajous curve", polygon: "polygon" }[path]}`,
           }
         : undefined;
       if (weave) {
@@ -529,6 +529,15 @@ self.onmessage = async ({
             : []),
           ["clip", "Projection window radius", q.clip],
         ] as [string, string, number][];
+        // A polygon's vertices, by field (Go checks their count and sides).
+        if (path === "polygon")
+          for (const [k, vertex] of (weave.vertices ?? []).entries())
+            for (const c of ["u", "v"] as const)
+              fields.push([
+                `weave.vertices.${k}.${c}`,
+                `Vertex ${k + 1} ${c}`,
+                vertex[c],
+              ]);
         for (const [field, label, value] of fields)
           if (!Number.isFinite(value))
             throw fieldError(field, `${label} must be a finite constant.`);
@@ -748,6 +757,7 @@ self.onmessage = async ({
                 petals: path === "flower" ? weave.petals : undefined,
                 azimuthal: path === "lissajous" ? weave.azimuthal : undefined,
                 polar: path === "lissajous" ? weave.polar : undefined,
+                vertices: path === "polygon" ? weave.vertices : undefined,
                 spread: q.count === 1 || pairedWeave ? 0 : weave.spread,
               },
               // Inactive in the paired view, which draws one base path.

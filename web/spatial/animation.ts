@@ -1,3 +1,4 @@
+import { vertexLabel } from "../sphere-polygon";
 import { carries, revealGeodesics, travel } from "./geodesic-path";
 import {
   projectsInput,
@@ -283,7 +284,7 @@ const seedTarget = (t: Target) => {
     : null;
 };
 // The labels of a geodesic polygon's vertex fields, numbered from 1.
-export const vertexLabel = (n: number, c: "u" | "v") => `Vertex ${n} ${c}`;
+export { vertexLabel };
 const isVertex = (t: Target): t is VertexTarget => t.startsWith("vertex");
 const vertexTarget = (t: Target) => {
   const match = /^vertex(\d+)([UV])$/.exec(t);

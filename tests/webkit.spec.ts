@@ -1318,6 +1318,57 @@ test("flower controls, pole selection and paired still work after click and blur
   await expect(amp).toHaveCount(0);
 });
 
+// The polygon's vertex fields commit on blur and its buttons act on click,
+// though Safari does not focus a clicked button.
+test("a Hopf polygon's vertices edit, add and remove after click and blur in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=4d");
+  await choosePreset(page, { label: "A flower below, a bouquet above" });
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  const config = async () =>
+    JSON.parse((await page.locator("#tesseract-artwork > desc").textContent())!)
+      .config;
+  await settle();
+  await page
+    .getByRole("combobox", { name: "Base path", exact: true })
+    .selectOption("polygon");
+  await settle();
+  expect((await config()).weave.vertices).toEqual([
+    { u: 0, v: 0 },
+    { u: Math.PI / 2, v: 0 },
+    { u: 0, v: Math.PI / 2 },
+  ]);
+  const v2 = page.getByRole("textbox", { name: "Vertex 2 v", exact: true });
+  await v2.click();
+  await v2.fill("-pi/8");
+  await v2.blur();
+  await settle();
+  expect((await config()).weave.vertices[1].v).toBe(-Math.PI / 8);
+  await page.getByRole("button", { name: "Add a vertex", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "Vertex 4 u", exact: true }),
+  ).toBeVisible();
+  await settle();
+  await page
+    .getByRole("button", { name: "Remove vertex 1", exact: true })
+    .click();
+  await settle();
+  const vertices = (await config()).weave.vertices;
+  expect(vertices).toHaveLength(3);
+  expect(vertices[0].v).toBe(-Math.PI / 8);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(
+    JSON.parse(
+      (await page
+        .locator('svg[data-representation="base"] > desc')
+        .textContent())!,
+    ).weave.correspondence,
+  ).toMatchObject({ path: "polygon", sides: 3 });
+});
+
 test("the harmonic fit returns focus to its entry by click and by keyboard in WebKit", async ({
   page,
 }) => {

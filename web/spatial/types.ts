@@ -227,7 +227,8 @@ export type GeodesicConfig = {
 // polygon; links made before polygons have none. Mirrors
 // engine3.TransportRequest.
 export type TransportPath = "thread" | "triangle" | "polygon";
-export type PolygonVertex = { u: number; v: number };
+import type { PolygonVertex } from "../sphere-polygon";
+export type { PolygonVertex };
 export type TransportConfig = {
   path: TransportPath;
   angle: number;
@@ -236,8 +237,7 @@ export type TransportConfig = {
   vertices?: PolygonVertex[];
 };
 export const maxTransportArrows = 36;
-export const minPolygonVertices = 3;
-export const maxPolygonVertices = 12;
+export { maxPolygonVertices, minPolygonVertices } from "../sphere-polygon";
 export const maxGeodesicThreads = 32;
 export const maxGeodesicSamples = 20000;
 export const maxGeodesicPoints = 200000;

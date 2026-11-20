@@ -4,6 +4,7 @@
 // component branches on a path's name. The mathematics, sampling and pole
 // rules belong to Go (engine4/sphere_path.go, docs/tesseracts.md).
 import { tiered, type Help } from "../help";
+import { maxPolygonVertices } from "../sphere-polygon";
 import type { Config, TesseractTarget, Weave } from "./types";
 
 export type SpherePathId = NonNullable<Weave["path"]>;
@@ -153,5 +154,37 @@ export const spherePaths: Record<SpherePathId, SpherePath> = {
         ? Math.max(c.samples, (16 * (m1 + m2)) / gcd(m1, m2))
         : c.samples;
     },
+  },
+  polygon: {
+    label: "Geodesic polygon",
+    noun: "polygon",
+    fibersLabel: "Fibers on the polygon",
+    countNote:
+      "Fibers sit at points evenly spaced in arc length around the polygon. Arc samples divide each fiber and the polygon, whose corners are drawn exactly.",
+    parameterLabel: "Moving point t",
+    traceLabel: "Trace the polygon",
+    traceHelp: tiered(
+      "Moves a point once around the polygon from the selected fiber, carrying its whole fiber.",
+      "It turns each corner without a jump, meets each sampled fiber exactly and returns to the start, so it can loop. Vertices and rotation stay fixed.",
+    ),
+    layerLabel: "Polygon, points and fibers",
+    colorNote:
+      "The polygon, its points and their fibers share one color. The selected fiber is stronger; the moving point and fiber take the accent color. The base sphere shows the unrotated correspondence. Open ends mark the projection window.",
+    explanation: [
+      "Corners, seams between tori",
+      "Each side of the polygon is an arc of a great circle, and the fibers over a great circle fill a Clifford torus that halves the 3-sphere. So the bouquet is a ring of torus pieces, one for each side, stitched together along the fibers over the corners. Tracing carries one fiber across each seam without a jump; only the direction it sweeps in turns.",
+      "p(t) = pᵢ cos(t − sᵢ) + (Bᵢ × pᵢ) sin(t − sᵢ),   pᵢ = (cos v cos u, cos v sin u, sin v)",
+    ],
+    usesAlpha: false,
+    sweep: false,
+    phrase: [],
+    // The arc samples and at most one inserted corner for each vertex
+    // after the first (Go inserts those no uniform point already meets).
+    segments: (c) =>
+      c.samples +
+      Math.max(
+        0,
+        Math.min(maxPolygonVertices, c.weave!.vertices?.length ?? 0) - 1,
+      ),
   },
 };

@@ -6,9 +6,7 @@ import { tiered, type Help } from "../help";
 import {
   maxGeodesicSamples,
   maxGeodesicThreads,
-  maxPolygonVertices,
   maxTransportArrows,
-  minPolygonVertices,
   type GeodesicConfig,
   type PolygonVertex,
   type GeodesicResult,
@@ -21,7 +19,8 @@ import {
 import { count, plural } from "../number-format";
 import { roundedGenerated } from "../atlas";
 import { surfaceCapabilities } from "./surface";
-import { vertexLabel } from "./animation";
+import { nextVertex, polygonDefaults } from "../sphere-polygon";
+import { PolygonVertexFields } from "../PolygonVertexFields";
 export { revealGeodesics, threadPath } from "./geodesic-path";
 
 // Whether a kind's geodesic threads can be launched: the controls appear
@@ -430,51 +429,10 @@ export function transportDefaults(s: SurfaceConfig): TransportConfig {
 }
 
 // A polygon starts as the octant triangle's corners, (r, 0, 0), (0, r, 0)
-// and (0, 0, r), so choosing it keeps the path the triangle drew.
-export const polygonDefaults = (): PolygonVertex[] => [
-  { u: 0, v: 0 },
-  { u: Math.PI / 2, v: 0 },
-  { u: 0, v: Math.PI / 2 },
-];
-
-// The vertex an added one follows: the middle of the closing side, from
-// the last vertex back to the first, so the path keeps its shape. Its
-// coordinates are generated angles (see generatedAngle); a pole keeps the
-// longitude it was entered with.
-export function nextVertex(vs: PolygonVertex[]): PolygonVertex {
-  // A link may leave a polygon short of three: fill in the octant's next
-  // corner.
-  if (vs.length < 3) return polygonDefaults()[vs.length];
-  const point = ({ u, v }: PolygonVertex) => [
-    Math.cos(v) * Math.cos(u),
-    Math.cos(v) * Math.sin(u),
-    Math.sin(v),
-  ];
-  const a = point(vs[vs.length - 1]),
-    b = point(vs[0]);
-  const m = a.map((x, k) => x + b[k]);
-  const size = Math.hypot(...m);
-  if (!(size > 1e-9)) return { ...vs[vs.length - 1] };
-  const v = Math.asin(Math.max(-1, Math.min(1, m[2] / size)));
-  const u =
-    Math.hypot(m[0], m[1]) > 1e-12 * size
-      ? Math.atan2(m[1], m[0])
-      : vs[vs.length - 1].u;
-  return { u: generatedAngle(u), v: generatedAngle(v) };
-}
-
-// A generated angle in radians: a simple fraction of π (denominators up to
-// 12, as the fields show them) when it lies within its rounding budget of
-// one, and otherwise the value with any rounding tail removed. Both are
-// meaningful doubles, so candidates keep at most 15 digits.
-function generatedAngle(x: number) {
-  const budget = Number.EPSILON * Math.max(Math.abs(x), Math.PI);
-  for (let q = 1; q <= 12; q++) {
-    const exact = (Math.round((x * q) / Math.PI) * Math.PI) / q;
-    if (Math.abs(exact - x) <= budget) return exact;
-  }
-  return roundedGenerated(x, Math.PI, 15);
-}
+// and (0, 0, r), so choosing it keeps the path the triangle drew. The
+// defaults and the vertex an added one follows are shared with the 4D
+// notebook's Hopf polygon.
+export { nextVertex, polygonDefaults };
 
 // Carrying a tangent arrow (`surface.geodesics.transport`). Absent means
 // off, as in links made before it.
@@ -575,58 +533,21 @@ export function TransportFields({
         />
       </div>
       {t.path === "polygon" && (
-        <>
-          {vertices.map((vertex, i) => (
-            <div
-              className="term"
-              role="group"
-              aria-labelledby={`spatial-vertex-${i}`}
-              key={i}
-            >
-              <div className="term-heading">
-                <span id={`spatial-vertex-${i}`}>Vertex {i + 1}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove vertex ${i + 1}`}
-                  disabled={vertices.length <= minPolygonVertices}
-                  onClick={() =>
-                    editVertices((vs) => vs.filter((_, j) => j !== i))
-                  }
-                >
-                  Remove
-                </button>
-              </div>
-              <div className="pair">
-                {(["u", "v"] as const).map((c) =>
-                  vector(
-                    vertexLabel(i + 1, c),
-                    vertex[c],
-                    (value) =>
-                      set((t) => ({
-                        ...t,
-                        vertices: (t.vertices ?? []).map((p, j) =>
-                          j === i ? { ...p, [c]: value } : p,
-                        ),
-                      })),
-                    i === 0 && c === "u"
-                      ? transportFieldHelp.vertices
-                      : undefined,
-                  ),
-                )}
-              </div>
-            </div>
-          ))}
-          <button
-            className="closure"
-            type="button"
-            disabled={vertices.length >= maxPolygonVertices}
-            onClick={() => editVertices((vs) => [...vs, nextVertex(vs)])}
-          >
-            {vertices.length >= maxPolygonVertices
-              ? `At most ${maxPolygonVertices} vertices`
-              : "Add a vertex"}
-          </button>
-        </>
+        <PolygonVertexFields
+          vertices={vertices}
+          idPrefix="spatial"
+          help={transportFieldHelp.vertices}
+          field={vector}
+          edit={(i, c, value) =>
+            set((t) => ({
+              ...t,
+              vertices: (t.vertices ?? []).map((p, j) =>
+                j === i ? { ...p, [c]: value } : p,
+              ),
+            }))
+          }
+          editVertices={editVertices}
+        />
       )}
     </>
   );

@@ -397,6 +397,77 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
+  // Opens an equilateral triangle with its vertices on the latitude v = π/6,
+  // a third of a turn apart, and 30 fibers, ten on each side, so samples 0,
+  // 10 and 20 sit on the vertices. The three sides' pieces of great
+  // Clifford tori close into one torus whose hole has three corners.
+  // Sample zero, vertex 1, is selected, and the trace carries its fiber
+  // around all three corners in a seamless loop.
+  {
+    name: "A spherical triangle, three stitched tori",
+    detail:
+      "Each side of a triangle on the sphere is part of a great circle, so its fibers lie on one torus. Three tori meet along the fibers over the corners; trace a fiber across each seam.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 30,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.35, 0.15, 0.15, 0.2, 0.5],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 0,
+        path: "polygon",
+        vertices: [
+          { u: 0, v: Math.PI / 6 },
+          { u: (2 * Math.PI) / 3, v: Math.PI / 6 },
+          { u: (4 * Math.PI) / 3, v: Math.PI / 6 },
+        ],
+      },
+    },
+    view: { yaw: 0.32, pitch: 0.35, zoom: 1.25, panX: 0, panY: 0 },
+    motion: "trace",
+    repeat: "loop",
+  },
+  // Opens a five-pointed star {5/2} whose vertices lie on the latitude
+  // v = π/10, each joined to the one two places on by a great-circle arc,
+  // so the sides cross. 30 fibers put six on each side and one on every
+  // vertex. Sample zero is selected, and the trace loops around the star.
+  {
+    name: "A star on the sphere, a crossing bouquet",
+    detail:
+      "Five great-circle arcs cross to make a star. The fibers over each arc fill part of one torus, and the five pieces weave through one another as the sides cross.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 30,
+      samples: 128,
+      clip: 3,
+      angles: [0, 0.35, 0.15, 0.15, 0.2, 0.5],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 0,
+        path: "polygon",
+        vertices: [0, 4, 8, 12, 16].map((k) => ({
+          u: (k * Math.PI) / 5,
+          v: Math.PI / 10,
+        })),
+      },
+    },
+    view: { yaw: 0.32, pitch: 0.35, zoom: 1.25, panX: 0, panY: 0 },
+    motion: "trace",
+    repeat: "loop",
+  },
   // Opens one cell of the 24-cell, its center and the dual edges from it,
   // turning in a seamless double rotation.
   {

@@ -488,7 +488,7 @@ func TestSpherePathValidationAndInactiveFields(t *testing.T) {
 	}
 	q = pairedRequest(.6, 12, 0)
 	q.Weave.Path = "arbitrary"
-	if _, err := Compute(q); err == nil || err.(*FieldError).Message != "Base path must be Latitude, Spherical flower, Great circle or Spherical Lissajous" {
+	if _, err := Compute(q); err == nil || err.(*FieldError).Message != "Base path must be Latitude, Spherical flower, Great circle, Spherical Lissajous or Geodesic polygon" {
 		t.Errorf("unknown path: %v", err)
 	}
 	// Rounding at the tilt's ends is accepted.

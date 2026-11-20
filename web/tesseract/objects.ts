@@ -19,6 +19,7 @@ import {
 import { tiered, withMore, type Help } from "../help";
 import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import { cellOf } from "./polytope";
+import { polygonDefaults, type PolygonVertex } from "../sphere-polygon";
 import {
   defaultAzimuthal,
   defaultPolar,
@@ -226,8 +227,17 @@ export type ObjectDescriptor = {
     cycleCoincident?: boolean;
     instructions?: (c: Config) => string;
   };
-  // Keeps a study valid after a count changes, such as a selection beyond
-  // a reduced count.
+  // A geodesic polygon's vertex list, edited with the 3D notebook's
+  // vertex fields (../PolygonVertexFields.tsx), while visible. Its fields
+  // are <parameterKey>.vertices.<k>.u and .v.
+  vertexList?: {
+    visible: (c: Config) => boolean;
+    get: (c: Config) => PolygonVertex[];
+    set: (c: Config, vertices: PolygonVertex[]) => Config;
+    help: Help<string>;
+  };
+  // Keeps a study valid after a count or choice changes, such as a
+  // selection beyond a reduced count, or a polygon chosen without vertices.
   reconcile?: (c: Config) => Config;
   choicesFirst?: boolean;
   choices?: {
@@ -409,6 +419,15 @@ function correspondenceReadouts(c: Correspondence) {
       label: `Base point ${"xyz"[i]}`,
       value: liveReadout(withoutResidue(n), [-1, 1]),
     })),
+    // A geodesic polygon's side under the moving point.
+    ...(c.sides
+      ? [
+          {
+            label: "Moving point side",
+            value: `${formatCount((c.side ?? 0) + 1)} of ${formatCount(c.sides)}`,
+          },
+        ]
+      : []),
   ];
 }
 // Entering a dual pair's sections or perspective reconciles only the newly
@@ -1000,7 +1019,10 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     sectionDetail: () => "",
     legend: "latitudes",
     sectionKey: (s, i, level = formatNumber(s.level)) =>
-      s.kind === "flower" || s.kind === "great-circle" || s.kind === "lissajous"
+      s.kind === "flower" ||
+      s.kind === "great-circle" ||
+      s.kind === "lissajous" ||
+      s.kind === "polygon"
         ? ["1: ", spherePaths[s.kind].label, ""]
         : ([
             `${i + 1}: α = `,
@@ -1047,21 +1069,36 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       get: (c) => c.weave!.selected ?? 0,
       set: (c, index) => ({ ...c, weave: { ...c.weave!, selected: index } }),
     },
-    reconcile: (c) =>
-      c.mode === "paired" &&
-      Number.isInteger(c.curves) &&
-      c.curves >= 1 &&
-      (c.weave!.selected ?? 0) >= c.curves
+    // A selection beyond a reduced count moves to the last fiber. Choosing
+    // the polygon fills in the octant triangle when there are no vertices;
+    // any vertices are kept whatever the path.
+    reconcile: (c) => {
+      if (c.mode !== "paired") return c;
+      if (pathOf(c) === "polygon" && !c.weave!.vertices?.length)
+        c = { ...c, weave: { ...c.weave!, vertices: polygonDefaults() } };
+      return Number.isInteger(c.curves) &&
+        c.curves >= 1 &&
+        (c.weave!.selected ?? 0) >= c.curves
         ? { ...c, weave: { ...c.weave!, selected: c.curves - 1 } }
-        : c,
+        : c;
+    },
+    vertexList: {
+      visible: (c) => c.mode === "paired" && pathOf(c) === "polygon",
+      get: (c) => c.weave!.vertices ?? [],
+      set: (c, vertices) => ({ ...c, weave: { ...c.weave!, vertices } }),
+      help: tiered(
+        "Each corner's longitude u and latitude v on the base sphere.",
+        "3–12 vertices, u within ±100000 and v within ±π/2, joined in order by shorter great-circle arcs. Neighbors, and the last and first, may neither coincide nor lie opposite, within 10⁻⁶ radians; sides may cross.",
+      ),
+    },
     choicesFirst: true,
     choices: [
       {
         key: "path",
         label: "Base path",
         help: tiered(
-          "A latitude, smooth flower, great circle or spherical Lissajous curve on the base sphere.",
-          "The flower varies α as α₀ + A cos(kt); with amplitude zero it is the latitude. Repeated pole samples share one fiber; the selected sample keeps its identity.",
+          "A latitude, smooth flower, great circle, spherical Lissajous curve or geodesic polygon on the base sphere.",
+          "The flower varies α as α₀ + A cos(kt); with amplitude zero it is the latitude. A polygon joins its vertices by shorter great-circle arcs. Repeated pole samples share one fiber; the selected sample keeps its identity.",
         ),
         values: Object.entries(spherePaths).map(([value, p]) => ({
           value,
