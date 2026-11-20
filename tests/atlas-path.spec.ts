@@ -4,7 +4,12 @@ import { presets } from "../web/presets";
 import type { Config } from "../web/types";
 import type { PlanarStudy } from "../web/planar-link";
 import { copiedStudy, openAtlas, settled } from "./gallery-helpers";
-import { exportImage, openAnimation, openExportSettings } from "./helpers";
+import {
+  choosePreset,
+  exportImage,
+  openAnimation,
+  openExportSettings,
+} from "./helpers";
 import { decodeVideo, frameDifference, probe } from "./video";
 import { decodePng } from "./png";
 import { readFile } from "node:fs/promises";
@@ -791,6 +796,103 @@ test("after a path is animated, Play comes into view once it is ready, taking fo
     }
   }
 });
+
+// An ordinary adoption, like Cancel, returns focus to the atlas button, and
+// it stays there while the adopted study computes and after it settles: the
+// button stays enabled meanwhile, as a focused button that is disabled
+// drops focus to the page (#480). Focus is quiet after a pointer, ringed
+// after the keyboard.
+for (const [notebook, preset, name, stage] of [
+  [
+    "2d",
+    "Hypotrochoid & its evolute",
+    "A field of possible flowers",
+    ".plot-wrap",
+  ],
+  [
+    "3d",
+    "The focal sheets of an ellipsoid",
+    "A field of possible forms",
+    ".spatial-stage",
+  ],
+  [
+    "4d",
+    "A flower below, a bouquet above",
+    "A field of possible worlds",
+    ".tesseract-stage",
+  ],
+])
+  test(`after adopting a ${notebook} variant, focus stays on the atlas button by pointer and keyboard`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(notebook === "2d" ? "/" : `/?study=${notebook}`);
+    await choosePreset(page, { label: preset });
+    const busy = page.locator(`${stage}[aria-busy]`).first();
+    await expect(busy).toHaveAttribute("aria-busy", "false");
+    const entry = page.getByRole("button", {
+      name: "Explore parameter atlas",
+      exact: true,
+    });
+    const atlas = page.getByRole("dialog", { name, exact: true });
+    for (const via of ["pointer", "keyboard"] as const) {
+      await entry.click();
+      await expect(atlas).toBeVisible();
+      const generate = atlas.getByRole("button", {
+        name: "Generate atlas",
+        exact: true,
+      });
+      await expect(
+        atlas.locator('.atlas-cell[data-state="valid"]').first(),
+      ).toBeVisible();
+      await expect(generate).toBeVisible();
+      await atlas
+        .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+        .click();
+      const adopt = atlas.getByRole("button", {
+        name: "Adopt variant",
+        exact: true,
+      });
+      await expect(adopt).toBeEnabled();
+      // Record every place focus lands, and the entry's disabled changes,
+      // from the adoption until the stage settles.
+      await page.evaluate(() => {
+        const w = window as unknown as { trail: string[] };
+        w.trail = [];
+        const note = () =>
+          w.trail.push(
+            document.activeElement?.textContent?.trim() ||
+              document.activeElement?.tagName ||
+              "",
+          );
+        document.addEventListener("focusin", note, true);
+        document.addEventListener("focusout", () => setTimeout(note), true);
+      });
+      if (via === "keyboard") {
+        await adopt.focus();
+        await page.keyboard.press("Enter");
+      } else await adopt.click();
+      await expect(atlas).toBeHidden();
+      await expect(busy).toHaveAttribute("aria-busy", "false");
+      await page.waitForTimeout(300);
+      await expect(entry).toBeFocused();
+      const trail = await page.evaluate(
+        () => (window as unknown as { trail: string[] }).trail,
+      );
+      expect(trail.at(-1)).toBe("Explore parameter atlas");
+      expect(trail).not.toContain("BODY");
+      if (via === "pointer")
+        await expect(page.locator(".atlas-entry").first()).toHaveAttribute(
+          "data-quiet",
+          "",
+        );
+      else
+        await expect(page.locator(".atlas-entry").first()).not.toHaveAttribute(
+          "data-quiet",
+          "",
+        );
+    }
+  });
 
 // The light pair's cells again: (0, −1), then (1, 0), then (2, 1), 1.1 s
 // each. At 15 frames a second, 33 frames put frame 16 on the middle stop.

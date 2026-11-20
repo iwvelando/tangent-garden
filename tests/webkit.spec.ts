@@ -1,6 +1,11 @@
 import { expect, devices, type Locator, type Page } from "@playwright/test";
 import { test } from "./crash-retry";
 import { decodePng } from "./png";
+import {
+  delayJourneyDrawings,
+  recordJourneyNavigation,
+  expectStillNavigation,
+} from "./gallery-helpers";
 
 for (const viewport of [
   { width: 390, height: 844 },
@@ -162,11 +167,8 @@ async function openGalleryJourney(page: Page, gallery: Locator, name: string) {
   return journey;
 }
 
-// A journey step changes asynchronously, and presenting a step's drawing can
-// move the step buttons: at 390 × 844 "Next step" drops about 160 px when the
-// opening drawing replaces its placeholder. A click dispatched in between
-// lands on the dialog instead, and the journey stays on its step. So each
-// click waits for the shown step's drawing, and for the step it reached.
+// A journey step changes asynchronously, so each click waits for the shown
+// step's drawing, and for the step it reached, before the next.
 async function nextSteps(dialog: Locator, count: number) {
   const status = dialog.getByText(/^Step \d+ of \d+$/);
   for (let i = 0; i < count; i++) {
@@ -181,6 +183,23 @@ async function nextSteps(dialog: Locator, count: number) {
     await expect(status).toHaveText(new RegExp(`^Step ${at + 1} of`));
   }
 }
+
+// Presenting a 3D or 4D journey's first drawing, once its renderer loads,
+// never moves the step buttons, nor does a step change (#455).
+for (const width of [390, 1440])
+  for (const title of ["Threads becoming surfaces", "What a shadow leaves out"])
+    test(`${title} keeps Next step still from opening through every step in WebKit at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
+      await delayJourneyDrawings(page);
+      await page.goto("/");
+      await expect(page.locator(".plot-wrap")).toHaveAttribute(
+        "aria-busy",
+        "false",
+      );
+      expectStillNavigation(await recordJourneyNavigation(page, title));
+    });
 
 test("construction layer labels work by click, keyboard and scalar blur at phone width in WebKit", async ({
   page,
@@ -2126,6 +2145,55 @@ test("atlas portrait Generate clearance survives first open and landscape rotati
   await expect(adopt).toBeEnabled();
   await expect(adopt).toBeInViewport({ ratio: 1 });
 });
+
+// After a tapped Adopt variant, quiet focus returns to the atlas button and
+// stays there while the adopted study computes (#480).
+for (const [notebook, preset, name, stage] of [
+  [
+    "2d",
+    "Hypotrochoid & its evolute",
+    "A field of possible flowers",
+    ".plot-wrap",
+  ],
+  [
+    "3d",
+    "The focal sheets of an ellipsoid",
+    "A field of possible forms",
+    ".spatial-stage",
+  ],
+])
+  test(`${notebook} atlas pointer adoption keeps quiet focus on the atlas button`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(notebook === "2d" ? "/" : `/?study=${notebook}`);
+    await choosePreset(page, { label: preset });
+    const busy = page.locator(`${stage}[aria-busy]`).first();
+    await expect(busy).toHaveAttribute("aria-busy", "false");
+    const entry = page.getByRole("button", {
+      name: "Explore parameter atlas",
+      exact: true,
+    });
+    await entry.click();
+    const atlas = page.getByRole("dialog", { name, exact: true });
+    await atlas
+      .getByRole("button", { name: "Inspect row 1, column 1", exact: true })
+      .click();
+    const adopt = atlas.getByRole("button", {
+      name: "Adopt variant",
+      exact: true,
+    });
+    await expect(adopt).toBeEnabled();
+    await adopt.click();
+    await expect(atlas).toBeHidden();
+    await expect(busy).toHaveAttribute("aria-busy", "false");
+    await page.waitForTimeout(300);
+    await expect(entry).toBeFocused();
+    await expect(page.locator(".atlas-entry").first()).toHaveAttribute(
+      "data-quiet",
+      "",
+    );
+  });
 
 for (const [title, x, y] of [
   ["Ellipse & its pedal", "Pole x", "Pole y"],

@@ -14,6 +14,9 @@ import {
   journeyTitles,
   settled,
   copiedStudy,
+  delayJourneyDrawings,
+  recordJourneyNavigation,
+  expectStillNavigation,
 } from "./gallery-helpers";
 
 import { readFile } from "node:fs/promises";
@@ -1739,6 +1742,29 @@ for (const width of [1280, 390])
         busy: "false",
       });
   });
+
+// Presenting a step's drawing never moves the step buttons beside it, at
+// opening, while a 3D or 4D drawing's renderer still loads, nor between steps
+// of different notebooks (#455). The renderers are delayed so that the
+// placeholder is certainly shown first.
+for (const width of [1280, 390])
+  for (const title of [
+    "Order inside apparent chaos",
+    "Threads becoming surfaces",
+    "What a shadow leaves out",
+    "Rules that grow a garden",
+  ])
+    test(`${title} keeps Next step still from opening through every step at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+      await delayJourneyDrawings(page);
+      await page.goto("/");
+      await settled(page);
+      expectStillNavigation(await recordJourneyNavigation(page, title), {
+        waits: title !== "Rules that grow a garden",
+      });
+    });
 
 test("journey keeps keyboard focus on a step button at either end of the path", async ({
   page,

@@ -732,6 +732,16 @@ func derivativeOrder(q Request) int {
 	return constructionOrder(q.Kind)
 }
 
+// derivedOrder is the number of the base's stencil derivatives a request's
+// derived curve reads: its input's and its construction's, or only its
+// input's for an inversion, which maps points.
+func derivedOrder(q Request) int {
+	if q.Kind == "inversion" {
+		return inputOrder(q.Input)
+	}
+	return inputOrder(q.Input) + constructionOrder(q.Kind)
+}
+
 // constructionOrder is the number of stable derivatives a construction needs
 // of the curve it acts on.
 func constructionOrder(kind string) int {

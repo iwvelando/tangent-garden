@@ -81,6 +81,7 @@ func AnchoredInvolutes(q Request, f func(float64) Vec, anchor float64, strings [
 		// has nothing to insert, and they share the input and its arc
 		// length there: each is evaluated once for them all.
 		stations, arcs := q.sharedStations(f, g), map[float64]float64{}
+		r := baseRounding(first.Base, derivedOrder(q))
 		for k, c := range strings {
 			offset := -c - arc
 			at := q.alongStations(stations, func(t float64, p, d, dd Vec) *Vec {
@@ -92,7 +93,7 @@ func AnchoredInvolutes(q Request, f func(float64) Vec, anchor float64, strings [
 				}
 				return Involute(p, d, dd, s, offset)
 			})
-			path, _ := refinePath(out.Members[k], broken, at, lo, hi, q.View)
+			path, _ := refinePath(out.Members[k], broken, at, lo, hi, q.View, r)
 			out.Refined = append(out.Refined, path)
 		}
 	}

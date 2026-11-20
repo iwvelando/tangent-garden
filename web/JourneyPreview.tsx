@@ -28,6 +28,7 @@ import { probeSample, sampleProbe } from "./planar-probe";
 import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
 import { useQuietFocus } from "./quiet-focus";
 import { useTheme } from "./useTheme";
+import { useMediaQuery } from "./useMediaQuery";
 import type { AnimationView, Viewport } from "./animation";
 import type { Frame } from "./types";
 import "./journey.css";
@@ -390,19 +391,13 @@ export function JourneyPreview({
               onStep={selecting ? stepItem : undefined}
             />
           ) : (
-            <div className="journey-drawing">
-              <div className="journey-art" aria-busy={pending} />
-              <p
-                className="journey-feedback note"
-                role={error ? "alert" : pending && slow ? "status" : undefined}
-              >
-                {error
-                  ? `${error} Return to your study or try another step.`
-                  : pending && slow
-                    ? `Preparing step ${index + 1}…`
-                    : ""}
-              </p>
-            </div>
+            <PendingDrawing
+              shape={steps[shown].notebook === "4d"}
+              pending={pending}
+              slow={slow}
+              requested={index}
+              error={error}
+            />
           )}
           <div
             className="journey-navigation"
@@ -588,6 +583,74 @@ function StepControl({
         onChange={(e) => onEdit(e.target.valueAsNumber / n)}
       />
     </Field>
+  );
+}
+
+// A 3D or 4D step's drawing before its renderer has loaded. It keeps the
+// rows that drawing fills, so presenting it moves nothing beside it, such as
+// the step buttons below it on a phone: a 4D drawing's paired captions, and
+// the player every notebook's journey drawing ends with (the Play and Stop
+// buttons above the progress slider and its note). The reserved rows repeat
+// the player's classes, so they take its size wherever it is drawn, but are
+// hidden, hold no text and are left out of the accessibility tree.
+function PendingDrawing({
+  shape,
+  pending,
+  slow,
+  requested,
+  error,
+}: {
+  shape: boolean;
+  pending: boolean;
+  slow: boolean;
+  requested: number;
+  error?: string;
+}) {
+  const narrow = useMediaQuery("(max-width: 700px)");
+  const blank = "\u00a0";
+  return (
+    <div className="journey-drawing">
+      {shape && (
+        <div
+          className="paired-view-labels journey-reserve"
+          data-layout={narrow ? "rows" : "columns"}
+          aria-hidden="true"
+        >
+          <span />
+          <span />
+        </div>
+      )}
+      <div className="journey-art" aria-busy={pending} />
+      <p
+        className="journey-feedback note"
+        role={error ? "alert" : pending && slow ? "status" : undefined}
+      >
+        {error
+          ? `${error} Return to your study or try another step.`
+          : pending && slow
+            ? `Preparing step ${requested + 1}…`
+            : ""}
+      </p>
+      <div className="playback journey-reserve" aria-hidden="true" inert>
+        <div className="animation-buttons">
+          <button type="button" className="export" tabIndex={-1} disabled>
+            {blank}
+          </button>
+          <button type="button" tabIndex={-1} disabled>
+            {blank}
+          </button>
+        </div>
+        <div className="timeline">
+          <div className="field">
+            <div className="field-label">
+              <span>{blank}</span>
+            </div>
+            <input type="range" tabIndex={-1} disabled />
+          </div>
+          <div className="note">{blank}</div>
+        </div>
+      </div>
+    </div>
   );
 }
 

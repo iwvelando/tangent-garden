@@ -59,8 +59,9 @@ const heightRange = (k: number, lo: number, hi: number) =>
 // semi-axis on a cylinder, hypot(Δu, Δv, Δz) with Δz the range of heights
 // on a paraboloid, and s·hypot(cosh v̄·Δu, sinh v₁ − sinh v₀) on the
 // helicoid–catenoid family.
-// A patch's default length is capped at the admitted thread length. The
-// length is generated, so it is kept to three significant figures rather
+// Every default length is capped at the admitted thread length, 100000, so
+// a large ellipsoid or torus launches a shorter fan rather than a refusal.
+// The length is generated, so it is kept to three significant figures rather
 // than show its arithmetic.
 export function geodesicDefaults(s: SurfaceConfig): GeodesicConfig {
   const du = s.uMax - s.uMin,
@@ -98,7 +99,7 @@ export function geodesicDefaults(s: SurfaceConfig): GeodesicConfig {
     direction: 45,
     spread: 60,
     count: 12,
-    length: patch ? Math.min(length, 100000) : length,
+    length: Math.min(length, 100000),
     samples: 1200,
     selected: 1,
   };

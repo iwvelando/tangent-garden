@@ -742,27 +742,40 @@ test("an edited cylinder fan reopens from its link and reveals along its length"
   expect(await pixels(page)).toBe(drawn);
 });
 
-// Launch defaults must remain valid at the largest admitted patch scale,
-// even when twice the metric diagonal exceeds the thread length limit.
-test("large patches launch threads with a valid default length", async ({
+// Launch defaults must remain valid at the largest admitted scale, even when
+// twice a patch's metric diagonal, or a turn around a whole ellipsoid or a
+// torus, exceeds the thread length limit (#483).
+test("large surfaces launch threads with a valid default length", async ({
   page,
 }) => {
   await ready(page);
   await choosePreset(page, { label: "A torus revealing its centers" });
-  for (const [kind, label] of [
-    ["cylinder", "Semi-axis a"],
-    ["helicoid-catenoid", "Scale s"],
-  ]) {
+  for (const [kind, fields] of [
+    ["cylinder", [["Semi-axis a", "100000"]]],
+    ["helicoid-catenoid", [["Scale s", "100000"]]],
+    [
+      "ellipsoid",
+      [
+        ["Axis a", "100000"],
+        ["Axis b", "80000"],
+        ["Axis c", "60000"],
+      ],
+    ],
+    ["torus", [["Major radius R", "10000"]]],
+  ] as const) {
     await page.getByLabel("Surface", { exact: true }).selectOption(kind);
     await settled(page);
-    await field(page, label).fill("100000");
-    await expect.poll(async () => (await config(page)).surface.a).toBe(100000);
+    for (const [label, value] of fields) await field(page, label).fill(value);
+    await expect
+      .poll(async () => (await config(page)).surface.a)
+      .toBe(Number(fields[0][1]));
+    await settled(page);
     await launch(page).check();
     await settled(page);
     await expect(page.getByRole("alert")).toHaveCount(0);
-    expect((await config(page)).surface.geodesics.length).toBeLessThanOrEqual(
-      100000,
-    );
+    const length = (await config(page)).surface.geodesics.length;
+    expect(length).toBeGreaterThan(0);
+    expect(length).toBeLessThanOrEqual(100000);
     await expect(note(page)).toContainText("12 threads");
     await launch(page).uncheck();
     await settled(page);

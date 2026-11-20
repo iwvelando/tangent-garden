@@ -3555,10 +3555,12 @@ export default function SpatialApp({
               <button
                 ref={atlasButton}
                 type="button"
+                // Disabled while an edited field is still evaluating, but
+                // not while the study computes, as in the 2D notebook.
                 disabled={
                   engraving ||
                   !frame ||
-                  busy ||
+                  pending ||
                   !!failure ||
                   !!spatialAtlasBudget(
                     config,

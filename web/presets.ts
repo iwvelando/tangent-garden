@@ -1773,8 +1773,10 @@ export const presets: {
   // gathers into that single point, while the camera closes on the mirror.
   // After a hold both return with the opening view, and the point opens
   // into the caustic again. Branches through infinity stay unjoined
-  // gaps. The study opens off the focus because a caustic that is one point
-  // is too ill-conditioned for an opening state.
+  // gaps. The study opens off the focus, where the caustic is a curve to
+  // watch gather; at the focus its samples are the point within the
+  // rounding of the caustic's two stencil derivatives, which refinement
+  // treats as rounding (docs/mathematics.md, Scale and translation).
   {
     title: "A caustic gathered into a focus",
     note: "A lamp carried to one focus of an oval mirror sends every ray through the other, gathering its caustic into a single point that opens again as the lamp leaves",
