@@ -1,6 +1,7 @@
 import { readout as formatNumber } from "../number-format";
 import { tiered, type Help } from "../help";
 import type { LineWeight } from "../line-weight";
+import type { PolygonVertex } from "../sphere-polygon";
 import {
   objects,
   phraseMotion,
@@ -50,7 +51,7 @@ export type Weave = {
   // only the sampler below sets.
   selected?: number;
   trace?: number;
-  path?: "latitude" | "flower" | "great-circle" | "lissajous";
+  path?: "latitude" | "flower" | "great-circle" | "lissajous" | "polygon";
   amplitude?: number;
   petals?: number;
   // A great circle's tilt β (absent is 0) and a spherical Lissajous
@@ -59,6 +60,8 @@ export type Weave = {
   tilt?: number;
   azimuthal?: number;
   polar?: number;
+  // A geodesic polygon's vertices, read only while it is the path.
+  vertices?: PolygonVertex[];
 };
 export type Bypass = {
   inner: number;
@@ -181,6 +184,7 @@ export type Result = {
       | "flower"
       | "great-circle"
       | "lissajous"
+      | "polygon"
       | "primal"
       | "dual";
     radius?: number;
@@ -240,6 +244,10 @@ export type Result = {
       // The exact closing parameter of a great circle or Lissajous curve;
       // the latitude and flower close at 2π.
       period?: number;
+      // A geodesic polygon's side count, and the side holding the moving
+      // point, counted from 0; a vertex begins its departing side.
+      side?: number;
+      sides?: number;
       aliases?: number[];
     };
   };

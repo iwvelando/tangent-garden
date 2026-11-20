@@ -1,6 +1,9 @@
 package engine4
 
-import "math"
+import (
+	"fmt"
+	"math"
+)
 
 // Base sphere and fibers lifts one closed analytic path on the unit base
 // sphere S² (docs/tesseracts.md, "Base sphere and fibers" and the path
@@ -14,8 +17,11 @@ type spherePath struct {
 	kind   string  // section kind of a nonconstant path other than the latitude
 	level  float64 // section level: α for the latitude and flower
 	period float64 // the exact closing parameter T, p(t + T) = p(t)
-	// Base-curve segments, at least the arc samples.
+	// Base-curve segments, at least the arc samples, and the parameters of
+	// corners the base curve must pass through exactly: a geodesic
+	// polygon's vertices after the first, inserted between them.
 	segments int
+	corners  []float64
 	// The point on S², with exact poles where the path's pole rule snaps
 	// them, and dp/dt of the formula. Increasing t is the path's orientation.
 	point      func(t float64) Vec3
@@ -29,6 +35,10 @@ type spherePath struct {
 	// Report the period in the diagnostics. The latitude and flower omit it,
 	// so their results keep their bytes.
 	reportPeriod bool
+	// A geodesic polygon's side count, and the side holding t; absent for
+	// every other path.
+	sides int
+	side  func(t float64) int
 }
 
 // The absent spherical Lissajous frequencies.
@@ -82,10 +92,126 @@ func validateSpherePath(w WeaveParameters) error {
 		if m2 < 1 || m2 > 8 {
 			return fieldErr("weave.polar", "Polar frequency m₂ must be a whole number from 1 to 8")
 		}
+	case "polygon":
+		return validatePolygon(w.Vertices)
 	default:
-		return fieldErr("weave.path", "Base path must be Latitude, Spherical flower, Great circle or Spherical Lissajous")
+		return fieldErr("weave.path", "Base path must be Latitude, Spherical flower, Great circle, Spherical Lissajous or Geodesic polygon")
 	}
 	return nil
+}
+
+// A geodesic polygon has 3–maxPolygonVertices vertices, and each side
+// subtends at least minPolygonSide radians and falls short of a half circle
+// by as much: the limits of the 3D notebook's polygon (engine3/transport.go).
+const (
+	maxPolygonVertices = 12
+	minPolygonSide     = 1e-6
+)
+
+// validatePolygon checks the vertices' count and coordinates, and that
+// each side, from a vertex to the next and from the last to the first, has
+// one shortest great-circle arc: its ends neither coincide nor lie
+// opposite, within minPolygonSide. A side's refusal names its later vertex.
+// Nonadjacent vertices may coincide or lie opposite, and sides may cross.
+func validatePolygon(vs []PolygonVertex) error {
+	n := len(vs)
+	if n < 3 || n > maxPolygonVertices {
+		return fieldErr("weave.vertices", "a polygon has 3–%d vertices", maxPolygonVertices)
+	}
+	field := func(k int, c string) string { return fmt.Sprintf("weave.vertices.%d.%s", k, c) }
+	for k, p := range vs {
+		if !finite(p.U) || math.Abs(p.U) > 1e5 {
+			return fieldErr(field(k, "u"), "vertex %d: u must be finite and within ±100000", k+1)
+		}
+		if !(math.Abs(p.V) <= math.Pi/2) {
+			return fieldErr(field(k, "v"), "vertex %d: v is a latitude, within ±π/2", k+1)
+		}
+	}
+	ps := polygonPoints(vs)
+	for i := range ps {
+		j := (i + 1) % n
+		switch theta := sideAngle(ps[i], ps[j]); {
+		case theta < minPolygonSide:
+			return fieldErr(field(j, "u"), "vertices %d and %d coincide, so the side between them has no direction", i+1, j+1)
+		case theta > math.Pi-minPolygonSide:
+			return fieldErr(field(j, "u"), "vertices %d and %d lie opposite, so no single shortest arc joins them", i+1, j+1)
+		}
+	}
+	return nil
+}
+
+// polygonPoints are the vertices on the unit base sphere, X(u, v) =
+// (cos v cos u, cos v sin u, sin v) as in the 3D notebook's chart, with the
+// pole rule's exact poles.
+func polygonPoints(vs []PolygonVertex) []Vec3 {
+	ps := make([]Vec3, len(vs))
+	for k, p := range vs {
+		cv := math.Cos(p.V)
+		ps[k] = snapPole(Vec3{cv * math.Cos(p.U), cv * math.Sin(p.U), math.Sin(p.V)})
+	}
+	return ps
+}
+
+// sideAngle is the angle between unit vectors a and b, stable near 0 and π.
+func sideAngle(a, b Vec3) float64 {
+	c := cross(a, b)
+	return math.Atan2(math.Sqrt(dot(c, c)), dot(a, b))
+}
+
+// polygonPath is the geodesic polygon through the validated vertices,
+// parameterized by arc length t from vertex 1, of period the perimeter L.
+// Side i runs from p_i to p_{i+1}, the last back to p₀, along the shorter
+// great-circle arc: p(t) = p_i cos σ + (B_i × p_i) sin σ, σ = t − s_i, with
+// B_i = p_i × p_{i+1}/|p_i × p_{i+1}| and s_i the arc length at vertex i.
+// A t within weaveTolerance of a corner is that exact vertex, which begins
+// its departing side. The base curve draws the arc samples uniformly in
+// t and inserts each later corner that is not within weaveTolerance of one.
+func polygonPath(w WeaveParameters, samples int) spherePath {
+	ps := polygonPoints(w.Vertices)
+	m := len(ps)
+	starts := make([]Vec3, m) // B_i × p_i, the side's unit tangent at p_i
+	at := make([]float64, m+1)
+	for i, p := range ps {
+		b := cross(p, ps[(i+1)%m])
+		l := math.Sqrt(dot(b, b))
+		starts[i] = cross(Vec3{b[0] / l, b[1] / l, b[2] / l}, p)
+		at[i+1] = at[i] + sideAngle(p, ps[(i+1)%m])
+	}
+	// The side holding t, and whether t is that side's first vertex.
+	locate := func(t float64) (int, bool) {
+		for i, s := range at {
+			if math.Abs(t-s) <= weaveTolerance {
+				return i % m, true
+			}
+		}
+		i := 0
+		for i+1 < m && t >= at[i+1] {
+			i++
+		}
+		return i, false
+	}
+	return spherePath{name: "polygon", noun: "polygon", kind: "polygon", period: at[m], segments: samples,
+		corners: at[1:m],
+		point: func(t float64) Vec3 {
+			i, vertex := locate(t)
+			if vertex {
+				return ps[i]
+			}
+			p, d := ps[i], starts[i]
+			s, c := math.Sincos(t - at[i])
+			return snapPole(Vec3{p[0]*c + d[0]*s, p[1]*c + d[1]*s, p[2]*c + d[2]*s})
+		},
+		derivative: func(t float64) Vec3 {
+			i, vertex := locate(t)
+			if vertex {
+				return starts[i]
+			}
+			p, d := ps[i], starts[i]
+			s, c := math.Sincos(t - at[i])
+			return Vec3{d[0]*c - p[0]*s, d[1]*c - p[1]*s, d[2]*c - p[2]*s}
+		},
+		distinct: true, reportPeriod: true, sides: m,
+		side: func(t float64) int { i, _ := locate(t); return i }}
 }
 
 // snapLatitude applies the latitude's rounding-distance pole policy to α.
@@ -118,6 +244,8 @@ func latitudeVelocity(alpha, da, t float64) Vec3 {
 // arc-sample count N, the least number of base-curve segments.
 func newSpherePath(w WeaveParameters, samples int) spherePath {
 	switch w.Path {
+	case "polygon":
+		return polygonPath(w, samples)
 	case "great-circle":
 		// p(t) = (cos t, cos β sin t, sin β sin t): unit speed, turning
 		// counterclockwise about (0, −sin β, cos β).

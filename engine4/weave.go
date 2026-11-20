@@ -38,6 +38,16 @@ type WeaveParameters struct {
 	Tilt      float64 `json:"tilt,omitempty"`
 	Azimuthal *int    `json:"azimuthal,omitempty"`
 	Polar     *int    `json:"polar,omitempty"`
+	// A geodesic polygon's vertices, in order; see sphere_path.go.
+	Vertices []PolygonVertex `json:"vertices,omitempty"`
+}
+
+// PolygonVertex is a corner of a geodesic polygon on the base sphere, in
+// the 3D notebook's sphere chart: longitude U and latitude V, the point
+// (cos V cos U, cos V sin U, sin V).
+type PolygonVertex struct {
+	U float64 `json:"u"`
+	V float64 `json:"v"`
 }
 type WeaveDiagnostics struct {
 	Family          string  `json:"family"`
@@ -64,6 +74,11 @@ type CorrespondenceDiagnostics struct {
 	// The path's exact closing parameter T, reported for the great circle
 	// and spherical Lissajous paths; the latitude and flower close at 2π.
 	Period float64 `json:"period,omitempty"`
+	// A geodesic polygon's side count, and the side holding the moving
+	// point, counted from 0: side i runs from vertex i + 1 to the next, and
+	// a vertex begins the side departing from it.
+	Side  *int `json:"side,omitempty"`
+	Sides int  `json:"sides,omitempty"`
 	// Only needed when distinct parameter samples coincide at a pole.
 	// Entry j is the first sample at that point; Selected retains j.
 	Aliases []int `json:"aliases,omitempty"`
@@ -380,6 +395,27 @@ func pairedWeavePoints(n, samples int) int {
 	return (n+1)*(samples+2) + 3*(samples+1) + (samples + 1) + 3*(samples+1) + n + 1
 }
 
+// baseCurveParameters are a base curve's parameters: segments equal steps
+// over the period, ending at the period itself, with each corner (in
+// increasing order) inserted where it falls, unless a step is within
+// weaveTolerance of it. Such a step's point is the corner, since the
+// path's own snap makes it so.
+func baseCurveParameters(period float64, segments int, corners []float64) []float64 {
+	ts := make([]float64, 0, segments+1+len(corners))
+	corner := 0
+	for i := 0; i <= segments; i++ {
+		t := float64(i) * (period / float64(segments))
+		for ; corner < len(corners) && corners[corner] < t-weaveTolerance; corner++ {
+			ts = append(ts, corners[corner])
+		}
+		if corner < len(corners) && corners[corner] <= t+weaveTolerance {
+			corner++
+		}
+		ts = append(ts, t)
+	}
+	return ts
+}
+
 // pairedWeave draws Base sphere and fibers: one closed path of S² (a
 // spherePath) with n uniform parameter samples t_j = Tj/n over its period
 // T, their fibers, and a moving point at t = t_selected + T·frac(trace) with
@@ -431,7 +467,7 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	// if they grow.
 	path := newSpherePath(w, q.Samples)
 	baseSamples := path.segments
-	if pairedWeavePoints(q.Curves, q.Samples)+baseSamples-q.Samples > maxPoints {
+	if pairedWeavePoints(q.Curves, q.Samples)+baseSamples-q.Samples+len(path.corners) > maxPoints {
 		return r, fmt.Errorf("base sphere and fibers exceeds budget: at most 65,536 points; reduce fibers or samples")
 	}
 
@@ -518,6 +554,10 @@ func pairedWeave(q Request, r Result) (Result, error) {
 		}
 		_, c.Chart = hopfFiber(moving)
 	}
+	if path.side != nil {
+		side := path.side(c.Parameter)
+		c.Side, c.Sides = &side, path.sides
+	}
 	b.diag.Correspondence = c
 	// The base pane draws the same selection and moving point; its counts
 	// belong to the bouquet.
@@ -548,16 +588,15 @@ func pairedWeave(q Request, r Result) (Result, error) {
 			b.source(fiberCircle("weave/moving", "moving", 0, rep), section.ID)
 			marker("weave/moving/base", "moving", moving)
 		}
-		// The base path itself, closed exactly.
+		// The base path itself, closed exactly, through its corners.
+		ts := baseCurveParameters(period, baseSamples, path.corners)
 		curve := Path{Source: section.ID + "/base", SectionID: section.ID, Branch: "0", Role: "base-curve",
-			Parameters: make([]float64, 0, baseSamples+1), Points: make([]Vec3, 0, baseSamples+1)}
-		for i := 0; i <= baseSamples; i++ {
-			t := float64(i) * (period / float64(baseSamples))
+			Parameters: ts, Points: make([]Vec3, 0, len(ts))}
+		for i, t := range ts {
 			p := pointAt(t)
-			if i == baseSamples {
+			if i == len(ts)-1 {
 				p = curve.Points[0]
 			}
-			curve.Parameters = append(curve.Parameters, t)
 			curve.Points = append(curve.Points, p)
 			base.Evaluations++
 		}

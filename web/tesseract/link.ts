@@ -11,6 +11,7 @@ import { objects, defaultConfig } from "./objects";
 import { tesseractPresets } from "./presets";
 import { lineWeightSchema } from "../line-weight";
 import { maxPhases, maxPhraseTracks } from "../phrase-timeline";
+import { maxPolygonVertices } from "../sphere-polygon";
 import {
   maxTurns,
   pitchLimit,
@@ -97,6 +98,7 @@ const weave = {
           flower: true,
           "great-circle": true,
           lissajous: true,
+          polygon: true,
         },
       },
     },
@@ -105,6 +107,14 @@ const weave = {
     tilt: { optional: "number" },
     azimuthal: { optional: "number" },
     polar: { optional: "number" },
+    // A geodesic polygon's vertices, absent in older links. Like the other
+    // paths' fields, they stay in a study while another path is chosen.
+    vertices: {
+      optional: {
+        list: { fields: { u: "number", v: "number" } },
+        max: maxPolygonVertices,
+      },
+    },
   },
 } satisfies SchemaOf<Weave>;
 // The square-root journey. Only playback moves the point, so a link

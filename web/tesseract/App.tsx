@@ -58,6 +58,8 @@ import {
 import { AnimationPanel, type MotionExport } from "./AnimationPanel";
 import { StudyPlot } from "./Plot";
 import { ChoiceField, SelectionField } from "./DescriptorControls";
+import { PolygonVertexFields } from "../PolygonVertexFields";
+import type { PolygonVertex } from "../sphere-polygon";
 import { exportBaseSize, type ExportLayout } from "../export-quality";
 import { drawnInks, inks, movingInk, sectionInk } from "./Drawing";
 import { paneCaptions } from "./Composition";
@@ -906,17 +908,31 @@ export default function TesseractApp({
         config={config}
         help={choice.help}
         onChoose={(value) =>
-          update((c) => ({
-            ...c,
-            [parameterKey]: {
-              ...c[parameterKey],
-              [choice.key]: value,
-            },
-          }))
+          update((c) =>
+            (descriptor.reconcile ?? ((c) => c))({
+              ...c,
+              [parameterKey]: {
+                ...c[parameterKey],
+                [choice.key]: value,
+              },
+            }),
+          )
         }
       />
     ));
   const info = descriptor.explanation(config);
+  // Adding or removing a vertex renumbers the fields after it, so
+  // evaluations still pending for them land first; a preset or object
+  // chosen meanwhile wins.
+  const vertexList = descriptor.vertexList;
+  async function editVertices(
+    change: (vs: PolygonVertex[]) => PolygonVertex[],
+  ) {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    if (token !== generation.current || !vertexList) return;
+    update((c) => vertexList.set(c, change(vertexList.get(c))));
+  }
   const selection = descriptor.selection;
   // Choosing a sample from either view or the field stops playback and
   // returns to the entered study, as any edit does.
@@ -1307,6 +1323,35 @@ export default function TesseractApp({
                   <>
                     {descriptor.choicesFirst && choices}
                     {renderNumericFields(false)}
+                    {vertexList?.visible(config) && (
+                      <PolygonVertexFields
+                        vertices={vertexList.get(config)}
+                        idPrefix="tesseract"
+                        help={vertexList.help}
+                        field={(label, value, change, help) => (
+                          <Field label={label} help={help}>
+                            <ScalarInput
+                              name={label}
+                              value={value}
+                              onChange={change}
+                            />
+                          </Field>
+                        )}
+                        edit={(i, k, value) =>
+                          update((c) =>
+                            vertexList.set(
+                              c,
+                              vertexList
+                                .get(c)
+                                .map((p, j) =>
+                                  j === i ? { ...p, [k]: value } : p,
+                                ),
+                            ),
+                          )
+                        }
+                        editVertices={(change) => void editVertices(change)}
+                      />
+                    )}
                     {descriptor.countFields ? (
                       <>
                         {[0, 2].map((start) => (
