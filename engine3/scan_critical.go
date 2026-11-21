@@ -7,7 +7,7 @@ import (
 	"tangentgarden/engine/expr"
 )
 
-// Issue #406's optional arm: beside each candidate, points where Newton's
+// The scan's critical-point search (scan.go): beside each candidate, points where Newton's
 // method finds F's gradient vanishing. Scanning the level, these solve
 // ∇F = 0; scanning a, they solve ∇ₓF = 0 and F = c together, for x and a.
 // Seeds are the study's grid points where the sampled gradient is least

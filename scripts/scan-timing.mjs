@@ -1,10 +1,10 @@
-// Issue #406's research measurements: each corpus scan stepped through the
+// Scan timings: each corpus scan stepped through the
 // production WASM engine under Node, as the page's worker steps it, with
 // the time per step (a step is one mesher call: the most a cancel waits for
 // when it does not close the worker), the reply's size and the module's
 // memory. Not a benchmark of a device: engine time on this machine only.
 //
-//   make wasm && node scripts/scan-research.mjs [--runs 3] [--case name]
+//   make wasm && node scripts/scan-timing.mjs [--runs 3] [--case name]
 import { readFileSync } from "node:fs";
 import { runInThisContext } from "node:vm";
 
@@ -128,6 +128,19 @@ const cases = [
     1.5,
   ],
   [
+    "double torus in its thin box, 96 cells",
+    implicit(
+      "((x^2 + y^2)^2 - x^2 + y^2)^2 + z^2",
+      0.02,
+      1,
+      cube(1.3, 0.7, 0.15),
+      96,
+    ),
+    "level",
+    0.005,
+    0.1,
+  ],
+  [
     "tanglecube, 64 cells, 65 samples, 12 bisections",
     implicit(tangle, -15, 1, cube(3), 64),
     "level",
@@ -166,7 +179,9 @@ for (const [name, q, axis, from, to, extra] of cases) {
     last = reply;
   }
   const kinds = {};
-  for (const c of last.candidates) kinds[c.kind] = (kinds[c.kind] ?? 0) + 1;
+  for (const c of last.candidates)
+    kinds[c.merged ? "merged box" : c.kind] =
+      (kinds[c.merged ? "merged box" : c.kind] ?? 0) + 1;
   const stable = last.candidates.filter((c) => c.stability === "stable").length;
   console.log(
     [
@@ -177,7 +192,7 @@ for (const [name, q, axis, from, to, extra] of cases) {
       `step median ${fmt(median(steps), 1)} max ${fmt(Math.max(...steps), 1)} ms`,
       `reply ≤ ${fmt(bytes / 1024, 1)} KiB`,
       `memory ${fmt(before / 2 ** 20)}→${fmt(memory() / 2 ** 20)} MiB`,
-      `stop ${last.stop}`,
+      `stop ${last.stop}${last.curtailed ? " (bisection curtailed)" : ""}`,
       `candidates ${JSON.stringify(kinds)} stable ${stable}`,
     ].join("  "),
   );

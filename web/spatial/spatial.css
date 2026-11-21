@@ -548,7 +548,9 @@
   }
 }
 
-/* Issue #406's research scan (ScanPanel.tsx): not a public feature. */
+/* Scan for changes (ScanPanel.tsx): a disclosure like the others under an
+   implicit study's fields. Each gap has one owner: the summary's, then
+   each block's top margin. */
 .scan-panel {
   --scan-complete: #2f6f68;
   --scan-cut: #b07a1a;
@@ -563,18 +565,38 @@
   --scan-spread: #7fbcae33;
   --scan-box-spread: #e0b25a40;
 }
-.scan-panel .check {
-  margin: 6px 0;
+/* Open, the panel ends a paragraph's margin above the next disclosure's
+   rule, below the Scan button or the last candidate alike. */
+.scan-panel[open] {
+  padding-bottom: 12px;
+}
+.scan-intro {
+  margin: 8px 0 12px;
+}
+.scan-intro .note,
+.scan-note .note,
+.scan-report .note {
+  margin: 0;
+}
+.scan-intro .hint {
+  margin-top: 4px;
 }
 .scan-actions {
-  margin: 10px 0 4px;
+  margin: 2px 0 0;
+}
+.scan-report {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.scan-report [role="status"]:empty {
+  display: none;
 }
 .scan-track {
   display: block;
   width: 100%;
   max-width: 300px;
   height: auto;
-  margin: 6px 0;
 }
 .scan-axis {
   stroke: var(--border);
@@ -608,19 +630,25 @@
 .scan-candidates {
   list-style: none;
   padding: 0;
-  margin: 8px 0 0;
+  margin: 0;
 }
 .scan-candidate {
+  display: grid;
+  gap: 4px;
   border-top: 1px solid var(--border);
-  padding: 8px 0;
+  padding: 10px 0;
+}
+.scan-candidate:last-child {
+  padding-bottom: 0;
 }
 .scan-title {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 8px;
+  gap: 2px 8px;
   align-items: baseline;
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 13px;
+  line-height: 1.4;
 }
 .scan-stability {
   font-size: 12px;
@@ -629,26 +657,75 @@
 .scan-stability.unstable {
   color: var(--scan-cut);
 }
+.scan-lead,
+.scan-closeup {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.scan-closeup {
+  margin-top: 4px;
+}
+.scan-note .note + .note {
+  margin-top: 4px;
+}
+/* Either side, as the event strip's states: each a button holding its
+   image over its label, the pair's images level however a label wraps. */
 .scan-sides {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 2px;
 }
-.scan-sides figure {
-  margin: 0;
+.scan-side {
   display: grid;
+  grid-template-rows: auto 1fr;
+  align-content: start;
   gap: 4px;
-}
-.scan-sides img,
-.scan-placeholder {
-  width: 100%;
-  height: auto;
-  aspect-ratio: 3 / 2;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--paper);
-}
-.scan-sides button {
+  margin: 0;
+  padding: 6px;
+  text-align: left;
+  font: inherit;
   font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.scan-sides.plain .scan-side {
+  grid-template-rows: auto;
+}
+.scan-side:hover:not(:disabled) {
+  border-color: #9bb8ae;
+}
+.scan-side[aria-pressed="true"] {
+  border-color: #638f82;
+  box-shadow: inset 0 0 0 1px #638f82;
+}
+.scan-side:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.scan-side:focus-visible {
+  outline: 2px solid #74a89a;
+  outline-offset: 2px;
+}
+.scan-image {
+  display: block;
+  aspect-ratio: 3 / 2;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.scan-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.scan-side-label {
+  color: var(--muted);
 }

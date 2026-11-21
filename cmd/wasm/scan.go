@@ -8,7 +8,7 @@ import (
 	"tangentgarden/engine3"
 )
 
-// Issue #406's research scan (engine3/scan.go). One scan belongs to this
+// The topology-change scan (engine3/scan.go). One scan belongs to this
 // disposable worker, as in registerSpatialFit: {"start": request} replaces
 // it, and {"step": true} makes at most one mesher call and returns the scan
 // as it stands. The page steps it until it stops, and cancels it by

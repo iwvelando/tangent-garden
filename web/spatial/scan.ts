@@ -1,13 +1,11 @@
-// Issue #406's research preview: with ?research=406 in the address, an
-// implicit study can be scanned along its level or shape parameter for
-// places where the mesh's reading changes (engine3/scan.go). Without it
-// nothing here changes the app, its links or its gallery. Not a public
-// feature: it does not merge as is.
+// Scan for changes: an implicit study scanned along its level or shape
+// parameter for places where the mesh's reading changes (engine3/scan.go;
+// docs/mathematics.md, Scanning for topology changes). One scan at a time,
+// in a worker of its own. Nothing of a scan enters a link, history or
+// export.
 import { EngineClient } from "../engine-client";
 import { count, plural, readout } from "../number-format";
 import type { ImplicitConfig } from "./types";
-
-export { eventScan } from "./research";
 
 // The request and its reply, as engine3 defines them.
 export type ScanAxis = "level" | "a";
@@ -70,7 +68,10 @@ export type ScanCandidate = {
   finer?: ScanRecheck;
   stability: "stable" | "unstable" | "unchecked";
   spread: [number, number];
-  critical?: ScanCritical[];
+  // Null when the search was not made, and empty when it found none.
+  critical: ScanCritical[] | null;
+  // A merged box interval's count of the box candidates it holds.
+  merged?: number;
 };
 export type ScanResult = {
   axis: ScanAxis;
@@ -83,6 +84,8 @@ export type ScanResult = {
   stop: "running" | "complete" | "calls" | "cells" | "canceled";
   unresolved: number;
   singular: number;
+  // Bisection stopped short of its depth to keep room for the rechecks.
+  curtailed: boolean;
 };
 // The engine's limits (engine3/scan.go).
 export const scanLimits = {
@@ -204,16 +207,43 @@ export function describeReading(r: ScanReading): string {
 
 // The value of the axis, as text: "c = −12.5" or "a = 1".
 export const axisValue = (axis: ScanAxis, v: number) =>
-  `${axis === "level" ? "c" : "a"} = ${readout(v)}`;
+  `${axis === "level" ? "c" : "a"}\u00a0=\u00a0${readout(v)}`;
 
-// A candidate's headline: what kind of change, near where.
+// The critical value that leads a candidate: the one nearest its spread,
+// and of those the one found at most points.
+export function leadingCritical(c: ScanCandidate): ScanCritical | undefined {
+  const off = (k: ScanCritical) =>
+    Math.max(0, c.spread[0] - k.value, k.value - c.spread[1]);
+  return [...(c.critical ?? [])].sort(
+    (a, b) => off(a) - off(b) || b.points - a.points,
+  )[0];
+}
+
+// A Morse index, read as the event it makes when the level passes it.
+export function indexName(axis: ScanAxis, k: ScanCritical): string {
+  if (k.index < 0) return "degenerate";
+  if (axis === "a") return `index ${count(k.index)}`;
+  return k.index === 0
+    ? "index 0, a minimum"
+    : k.index === 3
+      ? "index 3, a maximum"
+      : `index ${count(k.index)}, a saddle`;
+}
+
+// A candidate's headline: its critical point when one was found, else what
+// kind of change, near where.
 export function candidateTitle(axis: ScanAxis, c: ScanCandidate): string {
+  const lead = leadingCritical(c);
+  if (lead && c.kind !== "unresolved")
+    return `Critical point at ${axisValue(axis, lead.value)}`;
   const near = axisValue(axis, (c.spread[0] + c.spread[1]) / 2);
   switch (c.kind) {
     case "change":
       return `Change near ${near}`;
     case "box":
-      return `Box cut near ${near}`;
+      return c.merged
+        ? `${count(c.merged)} box cuts near ${near}`
+        : `Box cut near ${near}`;
     case "singular":
       return `Singular sample at ${axisValue(axis, c.through!.value)}`;
     case "unresolved":
@@ -222,10 +252,82 @@ export function candidateTitle(axis: ScanAxis, c: ScanCandidate): string {
 }
 
 export const stabilityText: Record<ScanCandidate["stability"], string> = {
-  stable: "Found on all three grids",
-  unstable: "Not found the same way on every grid",
+  stable: "On all three grids",
+  unstable: "Not the same on every grid",
   unchecked: "Not rechecked",
 };
+
+const recheckText: Record<ScanRecheck["outcome"], string> = {
+  pending: "pending",
+  agrees: "the same change",
+  below: "the change lies lower",
+  above: "the change lies higher",
+  differs: "reads differently",
+  unresolved: "incomplete",
+  skipped: "skipped at the work limit",
+};
+
+const between = (axis: ScanAxis, lo: number, hi: number) =>
+  `${axisValue(axis, lo)} and ${readout(hi)}`;
+
+// A candidate's note in two tiers: what changed and where, then how the
+// grids saw it.
+export function candidateNote(
+  axis: ScanAxis,
+  c: ScanCandidate,
+): { brief: string; more: string } {
+  const change = `${describeReading(c.before)} → ${describeReading(c.after)}`;
+  const spread = between(axis, c.spread[0], c.spread[1]);
+  const lead = leadingCritical(c);
+  const more: string[] = [];
+  let brief: string;
+  switch (c.kind) {
+    case "unresolved":
+      brief = c.through
+        ? `${change}, through a sample at ${axisValue(axis, c.through.value)} whose mesh is ${describeReading(c.through.reading)}: no change is claimed.`
+        : `${change}: an incomplete mesh shows no topology to compare.`;
+      break;
+    case "singular":
+      brief = `Reads ${describeReading(c.through!.reading)}, with vertices where ∇F vanishes, between samples that read ${describeReading(c.before)}.`;
+      break;
+    default:
+      brief = c.merged
+        ? `${change} through ${count(c.merged)} changes the grids do not agree on, between ${spread}.`
+        : `${change}, between ${spread}.`;
+  }
+  if (lead && c.kind !== "unresolved") {
+    const others = (c.critical ?? []).filter((k) => k !== lead);
+    more.push(
+      `The critical point, ${indexName(axis, lead)}, ${lead.points > 1 ? `found at ${count(lead.points)} points` : "found at one point"} by Newton's method: numerical evidence, not a certificate.`,
+    );
+    if (others.length)
+      more.push(
+        `Also near: ${others.map((k) => `${axisValue(axis, k.value)} (${indexName(axis, k)})`).join("; ")}.`,
+      );
+  } else if (c.critical && c.kind !== "unresolved")
+    more.push("No critical point was found near it.");
+  if (c.merged)
+    more.push(
+      "Merged: each was unstable, with no critical point beside it, as where the box cuts a band thinner than a cell.",
+    );
+  if (c.kind === "change" || c.kind === "box") {
+    if (!c.merged) {
+      const own = between(axis, c.lo, c.hi);
+      more.push(
+        `On this grid between ${own}, after ${plural(c.depth, "bisection", "bisections")}.`,
+      );
+    }
+    const rechecks = [c.lattice, c.finer]
+      .filter((r): r is ScanRecheck => !!r)
+      .map((r) => `${count(r.cells)} cells, ${recheckText[r.outcome]}`);
+    if (rechecks.length) more.push(`Rechecked on ${rechecks.join("; ")}.`);
+  }
+  if (c.through && c.kind === "change")
+    more.push(
+      `Through a sample at ${axisValue(axis, c.through.value)} that reads ${describeReading(c.through.reading)}, with vertices where ∇F vanishes.`,
+    );
+  return { brief, more: more.join(" ") };
+}
 
 export function stopText(r: ScanResult): string {
   switch (r.stop) {

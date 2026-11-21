@@ -1,23 +1,30 @@
-// Issue #406's research preview of the scan (scan.ts): its settings, its
-// progress, and the candidates it found, each with small previews of the
-// study either side and a way to draw either side at full quality. Shown
-// only with ?research=406. Not a public feature.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Field, FieldErrorContext, type FieldErrorTarget } from "../Field";
+// Scan for changes (scan.ts): an implicit study's scan along its level or
+// shape parameter, its progress, and the candidates it found, each led by
+// its critical point when one was found, with small previews of the study
+// either side that draw that side at full quality when chosen.
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { roundedGenerated } from "../atlas-queue";
+import type { EngineClient } from "../engine-client";
+import {
+  CheckSetting,
+  Field,
+  FieldErrorContext,
+  HelpText,
+  HelpToggle,
+  useHelp,
+  type FieldErrorTarget,
+} from "../Field";
 import { tiered } from "../help";
+import { useShowDrawing } from "../MobileNotebookNav";
 import { count, plural, readout } from "../number-format";
-import { ScalarInput } from "../ScalarInput";
-import type { ColorScheme } from "../color-schemes";
-import type { CutSpec } from "./cut";
-import { drawPreview, type PreviewIntent } from "./event-previews";
-import type { SpatialCamera } from "./link";
-import type { Layers } from "./renderer";
-import type { Sight } from "./sight";
-import type { SpatialConfig, SpatialResult } from "./types";
+import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
+import { drawPreview, type PreviewLook } from "./event-previews";
 import {
   axisValue,
+  candidateNote,
   candidateTitle,
-  describeReading,
+  indexName,
+  leadingCritical,
   ScanSession,
   scanLimits,
   stabilityText,
@@ -28,38 +35,71 @@ import {
   type ScanResult,
   type ScanState,
 } from "./scan";
+import {
+  closeUpZoom,
+  ScanPreviews,
+  scanPreviewed,
+  type ScanPreviewIntent,
+  type ScanPreviewSlots,
+} from "./scan-previews";
+import type { SpatialConfig, SpatialResult } from "./types";
 
-// Suggested ranges: the stories' covered levels, and the research studies'.
-export const scanRanges: Record<
-  string,
-  { axis: ScanAxis; from: number; to: number }
-> = {
-  "Two drops become one": { axis: "level", from: 0.64, to: 1.44 },
-  "The instant a handle appears": { axis: "level", from: 0.64, to: 1.44 },
-  "The tanglecube's three events": { axis: "level", from: -20, to: 4 },
-  "Two handles open at once": { axis: "level", from: 0.01, to: 0.1 },
-  "The tanglecube": { axis: "level", from: -18, to: 4 },
-  "A double torus": { axis: "level", from: 0.005, to: 0.1 },
-  "A gyroid, cut open": { axis: "level", from: -1.5, to: 1.5 },
-  "Research: a sphere grows through its box": {
-    axis: "level",
-    from: 0.5,
-    to: 3.5,
-  },
-  "Research: a drop born beside a bowl": { axis: "level", from: -1, to: 1.4 },
-  "Research: two drops parted by a": { axis: "a", from: 0.6, to: 1.4 },
-  "Research: a pole": { axis: "level", from: 0.5, to: 1.5 },
+export type ScanSuggestion = { axis: ScanAxis; from: number; to: number };
+
+// The panel's always-visible note, and its help.
+export const scanIntro =
+  "Meshes the study across a range and lists where its pieces change: what these grids show, not a proof.";
+export const scanIntroHelp = tiered(
+  `At most ${count(scanLimits.cells)} grid cells and ${count(scanLimits.calls)} meshes a scan; Cancel keeps what was found.`,
+  "Changing the study, except the value scanned, forgets the scan. Nothing of it enters a link or export.",
+);
+export const scanAxisHelp = tiered(
+  "The value scanned: the level c, or the shape parameter a when F reads it.",
+  "The box, cells and refinement stay the study's. Each mesh is kept only as its reading: the Euler characteristics of its closed pieces and of the pieces the box cuts.",
+);
+export const scanRangeHelp = tiered(
+  "The range scanned, both ends included.",
+  "Nothing outside it is searched. Each end within ±100000, the second above the first.",
+);
+export const scanSamplesHelp = tiered(
+  `Evenly spaced meshes, ${scanLimits.samples[0]}–${scanLimits.samples[1]}.`,
+  "A change undone before the next sample is not seen; more samples see closer pairs.",
+);
+export const scanDepthHelp = tiered(
+  `Halvings of each bracket, ${scanLimits.depth[0]}–${scanLimits.depth[1]}.`,
+  "Bisection stops early when the rechecks need the rest of the work limit. The grids' disagreement usually outweighs a narrower bracket.",
+);
+export const scanRecheckHelp = tiered(
+  "Looks for each change again on two other grids.",
+  "One with a cell more, which moves the lattice, and one with half again as many (two thirds at the grid limit). A change found on all three is stable, and its spread across them is its uncertainty.",
+);
+export const scanCriticalHelp = tiered(
+  "Looks beside each change for points where ∇F vanishes, by Newton's method.",
+  "Numerical evidence, not a certificate. It finds a birth's level, which the mesh sees late, and tells a change inside the box from one the box makes. Unstable box changes with none beside them merge.",
+);
+
+// A range about a value, for a study no example suggests one for.
+function around(v: number): [number, number] {
+  const d = Math.max(0.25, Math.abs(v) / 4);
+  const scale = Math.max(Math.abs(v), d);
+  return [roundedGenerated(v - d, scale), roundedGenerated(v + d, scale)];
+}
+
+// The panel's labels for the scan's request paths, so an error is shown
+// under the field it names.
+const errorLabel: Record<string, string> = {
+  "scan.axis": "Scan along",
+  "scan.from": "Scan from",
+  "scan.to": "Scan to",
+  "scan.samples": "Samples",
+  "scan.depth": "Bisections",
 };
-
-// At most this many candidates get previews, two each.
-const previewed = 6;
-
-type Previews = Record<number, { before?: string; after?: string }>;
 
 export function ScanPanel({
   config,
   usesA,
-  preset,
+  suggestion,
+  client,
   settle,
   onChoose,
   run,
@@ -68,40 +108,26 @@ export function ScanPanel({
 }: {
   config: SpatialConfig;
   usesA: boolean;
-  preset: string;
+  // The example's suggested range. The notebook mounts the panel afresh
+  // whenever an example or link replaces the study, forgetting any scan.
+  suggestion?: ScanSuggestion;
+  // The notebook's engine, which resolves the range's expressions.
+  client: { current: EngineClient | null };
   // Waits for the notebook's pending evaluations; false if another study
   // replaced this one meanwhile.
   settle: () => Promise<boolean>;
   onChoose: (axis: ScanAxis, value: number) => void;
   run: (config: SpatialConfig) => Promise<SpatialResult>;
-  look: {
-    camera: SpatialCamera;
-    layers: Layers;
-    dark: boolean;
-    scheme: ColorScheme;
-    cut: CutSpec | null;
-    sight: Sight;
-  };
+  // The previews' look, read when a scan's previews are asked for.
+  look: () => PreviewLook;
   held: boolean;
 }) {
   const q = config.implicit;
-  const suggested = scanRanges[preset];
-  const [axis, setAxis] = useState<ScanAxis>(suggested?.axis ?? "level");
-  const around = (v: number): [number, number] => {
-    const d = Math.max(0.25, Math.abs(v) * 0.25);
-    return [v - d, v + d];
-  };
+  const value = (axis: ScanAxis) => (axis === "level" ? q.level : q.a);
+  const [axis, setAxis] = useState<ScanAxis>(suggestion?.axis ?? "level");
   const [range, setRange] = useState<[number, number]>(() =>
-    suggested
-      ? [suggested.from, suggested.to]
-      : around(axis === "level" ? q.level : q.a),
+    suggestion ? [suggestion.from, suggestion.to] : around(q.level),
   );
-  // A newly opened example suggests its own range.
-  useEffect(() => {
-    if (!suggested) return;
-    setAxis(suggested.axis);
-    setRange([suggested.from, suggested.to]);
-  }, [preset]);
   const [samples, setSamples] = useState(17);
   const [depth, setDepth] = useState(5);
   const [recheck, setRecheck] = useState(true);
@@ -113,6 +139,30 @@ export function ScanPanel({
     session.current = s;
     return () => s.dispose();
   }, []);
+  // The range's expressions resolve here, apart from the notebook's, so a
+  // range being typed never holds or refuses the study itself.
+  const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
+  const jobs = useRef(new Set<Promise<void>>());
+  const generation = useRef(0);
+  const scalarStatus = useMemo(
+    () => ({
+      client,
+      generation,
+      track: (job: Promise<void>) => {
+        jobs.current.add(job);
+        void job.finally(() => jobs.current.delete(job));
+      },
+      report: (id: string, s: ScalarState | null) =>
+        setScalars((old) => {
+          if (!s && !(id in old)) return old;
+          const next = { ...old };
+          if (s) next[id] = s;
+          else delete next[id];
+          return next;
+        }),
+    }),
+    [],
+  );
   // The scan belongs to the study it was asked of: any change but the
   // scanned value itself forgets it.
   const studyKey = JSON.stringify({
@@ -128,9 +178,30 @@ export function ScanPanel({
       session.current?.clear();
     }
   }, [studyKey]);
+  // An error found before the scan starts, under the field it names.
+  const [problem, setProblem] = useState<{
+    label: string;
+    message: string;
+  } | null>(null);
 
   async function scan() {
+    await Promise.allSettled([...jobs.current]);
     if (!(await settle())) return;
+    const named = (label: string, message: string) => {
+      setProblem({ label, message });
+      return false;
+    };
+    const ok =
+      (Number.isFinite(range[0]) ||
+        named("Scan from", "Scan from must be a finite constant.")) &&
+      (Number.isFinite(range[1]) ||
+        named("Scan to", "Scan to must be a finite constant.")) &&
+      (Number.isInteger(samples) ||
+        named("Samples", "Samples must be a whole number.")) &&
+      (Number.isInteger(depth) ||
+        named("Bisections", "Bisections must be a whole number."));
+    if (!ok) return;
+    setProblem(null);
     const request: ScanRequest = {
       implicit: { ...q },
       axis,
@@ -151,281 +222,286 @@ export function ScanPanel({
     state.status === "canceled"
       ? state.result
       : null;
-  const error =
+  // A range's own parse error first, then one found before starting, then
+  // the engine's, each under its field.
+  const typed = Object.values(scalars).find((s) => s.error);
+  const failed =
     state.status === "failed"
-      ? { field: state.field ?? "", message: state.message }
+      ? {
+          label: errorLabel[state.field ?? ""] ?? "Scan from",
+          message: state.message,
+        }
       : null;
-  // A scan error is shown under the scan's own field it names.
-  const errorLabel: Record<string, string> = {
-    "scan.axis": "Scan along",
-    "scan.from": "Scan from",
-    "scan.to": "Scan to",
-    "scan.samples": "Samples",
-    "scan.depth": "Bisections",
-  };
+  const shown = typed?.error
+    ? { id: typed.control, message: typed.error }
+    : (problem ?? failed);
   const target = useMemo<FieldErrorTarget | null>(
     () =>
-      error
+      shown
         ? {
-            label: errorLabel[error.field] ?? "Scan from",
-            message: error.message,
+            ...("id" in shown && shown.id
+              ? { id: shown.id }
+              : { label: "label" in shown ? shown.label : "Scan from" }),
+            message: shown.message,
             claim: () => {},
             touch: () => {},
           }
         : null,
-    [error?.field, error?.message],
+    [JSON.stringify(shown)],
   );
 
-  // Previews: the study at each shown candidate's two ends, one calculation
-  // at a time, after the scan and while the notebook is idle.
-  const [previews, setPreviews] = useState<Previews>({});
-  const previewKey =
-    state.status === "done" || state.status === "canceled"
-      ? JSON.stringify([
-          studyKey,
-          state.result?.candidates.map((c) => [c.lo, c.hi]),
-          look.layers,
-          look.dark,
-          look.scheme,
-          look.cut,
-          look.sight,
-        ])
-      : "";
+  // Previews of the first candidates that change, after the scan stops,
+  // while the notebook is idle.
+  const [slots, setSlots] = useState<ScanPreviewSlots>([]);
+  const previews = useRef<ScanPreviews | null>(null);
   useEffect(() => {
-    setPreviews({});
-    if (!previewKey || !result || held) return;
-    let current = true;
-    const urls: string[] = [];
+    const p = new ScanPreviews(run, drawPreview, setSlots);
+    previews.current = p;
+    return () => p.dispose();
+  }, []);
+  const stopped =
+    (state.status === "done" || state.status === "canceled") && result
+      ? result
+      : null;
+  const shownLook = look();
+  const previewKey = stopped
+    ? JSON.stringify([
+        studyKey,
+        stopped.candidates.map((c) => [c.lo, c.hi]),
+        shownLook.layers,
+        shownLook.dark,
+        shownLook.scheme,
+        shownLook.cut,
+        shownLook.sight,
+      ])
+    : "";
+  useEffect(() => {
+    previews.current?.hold(held);
+    if (!stopped) {
+      previews.current?.request(null);
+      return;
+    }
     const at = (v: number): SpatialConfig => ({
       ...config,
       implicit: {
         ...config.implicit,
-        ...(result.axis === "level" ? { level: v } : { a: v }),
+        ...(stopped.axis === "level" ? { level: v } : { a: v }),
       },
     });
-    void (async () => {
-      const shown = result.candidates.slice(0, previewed);
-      for (let k = 0; k < shown.length && current; k++) {
-        for (const side of ["before", "after"] as const) {
-          const c = shown[k];
-          try {
-            const r = await run(at(side === "before" ? c.lo : c.hi));
-            if (!current) return;
-            const intent = {
-              ...look,
-              story: { previewZoom: 1 },
-            } as unknown as PreviewIntent;
-            const url = URL.createObjectURL(await drawPreview(r, intent));
-            if (!current) {
-              URL.revokeObjectURL(url);
-              return;
-            }
-            urls.push(url);
-            setPreviews((p) => ({ ...p, [k]: { ...p[k], [side]: url } }));
-          } catch {
-            // A failed preview leaves its place empty.
-          }
-        }
-      }
-    })();
-    return () => {
-      current = false;
-      for (const u of urls) URL.revokeObjectURL(u);
+    const intent: ScanPreviewIntent = {
+      key: previewKey,
+      look: shownLook,
+      candidates: previewedOf(stopped).map((c) => {
+        const lead = leadingCritical(c);
+        return {
+          before: at(c.lo),
+          after: at(c.hi),
+          ...(lead && {
+            focus: { center: lead.at, zoom: closeUpZoom(config.implicit) },
+          }),
+        };
+      }),
     };
+    previews.current?.request(intent);
   }, [previewKey, held]);
 
-  const value = axis === "level" ? q.level : q.a;
+  const showDrawing = useShowDrawing();
+  const intro = useHelp();
   return (
-    <details className="spatial-details scan-panel" open>
-      <summary>Scan for changes (research)</summary>
-      <FieldErrorContext.Provider value={target}>
-        <p className="note">
-          Meshes the study across a range and reports where its pieces change. A
-          candidate is what the mesh shows on these grids, not a proof.
-        </p>
-        <Field
-          label="Scan along"
-          help={tiered(
-            "The level c, or the shape parameter a when F reads it.",
-            "Only the chosen value changes; the box, cells and refinement stay the study's.",
-          )}
-        >
-          <select
-            value={axis}
-            disabled={running}
-            onChange={(e) => {
-              const next = e.target.value as ScanAxis;
-              setAxis(next);
-              setRange(around(next === "level" ? q.level : q.a));
-            }}
-          >
-            <option value="level">Level c</option>
-            <option value="a" disabled={!usesA}>
-              Shape parameter a{usesA ? "" : " (F does not read a)"}
-            </option>
-          </select>
-        </Field>
-        <div className="pair">
-          <Field
-            label="Scan from"
-            help={tiered(
-              "The range scanned, both ends included; nothing outside it.",
-              "Each end within ±100000, the second above the first.",
-            )}
-          >
-            <ScalarInput
-              name="Scan from"
-              value={range[0]}
-              onChange={(v) => setRange((r) => [v, r[1]])}
-            />
-          </Field>
-          <Field label="Scan to">
-            <ScalarInput
-              name="Scan to"
-              value={range[1]}
-              onChange={(v) => setRange((r) => [r[0], v])}
-            />
-          </Field>
-        </div>
-        <div className="pair">
-          <Field
-            label="Samples"
-            help={tiered(
-              `Evenly spaced meshes, ${scanLimits.samples[0]}–${scanLimits.samples[1]}.`,
-              "Two changes between neighboring samples that undo each other are not seen.",
-            )}
-          >
-            <input
-              type="number"
-              min={scanLimits.samples[0]}
-              max={scanLimits.samples[1]}
-              step="1"
-              value={Number.isNaN(samples) ? "" : samples}
+    <details className="spatial-details scan-panel">
+      <summary>Scan for changes</summary>
+      <ScalarStatus.Provider value={scalarStatus}>
+        <FieldErrorContext.Provider value={target}>
+          <div className="scan-intro">
+            <p className="note">
+              {scanIntro}{" "}
+              <HelpToggle topic="scanning for changes" help={intro} />
+            </p>
+            <HelpText help={intro}>{scanIntroHelp}</HelpText>
+          </div>
+          <Field label="Scan along" help={scanAxisHelp}>
+            <select
+              value={axis}
               disabled={running}
-              onChange={(e) => setSamples(e.target.valueAsNumber)}
-            />
+              onChange={(e) => {
+                const next = e.target.value as ScanAxis;
+                setAxis(next);
+                setRange(around(value(next)));
+              }}
+            >
+              <option value="level">Level c</option>
+              <option value="a" disabled={!usesA}>
+                Shape parameter a{usesA ? "" : " (F does not read a)"}
+              </option>
+            </select>
           </Field>
-          <Field
-            label="Bisections"
-            help={tiered(
-              `Halvings of each bracket, ${scanLimits.depth[0]}–${scanLimits.depth[1]}.`,
-              "Finer brackets on one grid; the grids' disagreement usually outweighs them.",
-            )}
-          >
-            <input
-              type="number"
-              min={scanLimits.depth[0]}
-              max={scanLimits.depth[1]}
-              step="1"
-              value={Number.isNaN(depth) ? "" : depth}
-              disabled={running}
-              onChange={(e) => setDepth(e.target.valueAsNumber)}
-            />
-          </Field>
-        </div>
-        <label className="check">
-          <input
-            type="checkbox"
+          <div className="pair">
+            <Field label="Scan from" help={scanRangeHelp}>
+              <ScalarInput
+                name="Scan from"
+                value={range[0]}
+                disabled={running}
+                onChange={(v) => setRange((r) => [v, r[1]])}
+              />
+            </Field>
+            <Field label="Scan to">
+              <ScalarInput
+                name="Scan to"
+                value={range[1]}
+                disabled={running}
+                onChange={(v) => setRange((r) => [r[0], v])}
+              />
+            </Field>
+          </div>
+          <div className="pair">
+            <Field label="Samples" help={scanSamplesHelp}>
+              <input
+                type="number"
+                min={scanLimits.samples[0]}
+                max={scanLimits.samples[1]}
+                step="1"
+                value={Number.isNaN(samples) ? "" : samples}
+                disabled={running}
+                onChange={(e) => setSamples(e.target.valueAsNumber)}
+              />
+            </Field>
+            <Field label="Bisections" help={scanDepthHelp}>
+              <input
+                type="number"
+                min={scanLimits.depth[0]}
+                max={scanLimits.depth[1]}
+                step="1"
+                value={Number.isNaN(depth) ? "" : depth}
+                disabled={running}
+                onChange={(e) => setDepth(e.target.valueAsNumber)}
+              />
+            </Field>
+          </div>
+          <CheckSetting
+            label="Recheck on two other grids"
+            topic="rechecking on two other grids"
             checked={recheck}
             disabled={running}
-            onChange={(e) => setRecheck(e.target.checked)}
+            onChange={setRecheck}
+            help={scanRecheckHelp}
           />
-          Recheck on two other grids
-        </label>
-        <label className="check">
-          <input
-            type="checkbox"
+          <CheckSetting
+            label="Look for critical points"
+            topic="looking for critical points"
             checked={critical}
             disabled={running}
-            onChange={(e) => setCritical(e.target.checked)}
+            onChange={setCritical}
+            help={scanCriticalHelp}
           />
-          Look for critical points
-        </label>
-        <div className="scan-actions">
-          {running ? (
-            <button type="button" onClick={() => session.current?.cancel()}>
-              Cancel scan
-            </button>
-          ) : (
-            <button type="button" onClick={() => void scan()}>
-              Scan
-            </button>
-          )}
-        </div>
-      </FieldErrorContext.Provider>
+          <div className="scan-actions">
+            {running ? (
+              <button type="button" onClick={() => session.current?.cancel()}>
+                Cancel scan
+              </button>
+            ) : (
+              <button type="button" onClick={() => void scan()}>
+                Scan
+              </button>
+            )}
+          </div>
+        </FieldErrorContext.Provider>
+      </ScalarStatus.Provider>
+      {state.status === "running" && !result && (
+        <p className="note scan-progress">Starting the scan…</p>
+      )}
       {result && (
         <ScanReport
           result={result}
           state={state}
-          previews={previews}
-          value={value}
-          axis={axis}
+          slots={slots}
+          value={value(result.axis)}
+          selectable={result.axis === axis}
           onChoose={async (a, v) => {
-            if (await settle()) onChoose(a, v);
+            if (!(await settle())) return;
+            onChoose(a, v);
+            showDrawing();
           }}
         />
-      )}
-      {state.status === "running" && !result && (
-        <p className="note">Starting the scan…</p>
       )}
     </details>
   );
 }
 
+const capitalized = (s: string) => s[0].toUpperCase() + s.slice(1);
+const sides = (c: ScanCandidate) => c.kind === "change" || c.kind === "box";
+// The candidates with previews: the first that change.
+const previewedOf = (r: ScanResult) =>
+  r.candidates.filter(sides).slice(0, scanPreviewed);
+
 function ScanReport({
   result,
   state,
-  previews,
+  slots,
   value,
-  axis,
+  selectable,
   onChoose,
 }: {
   result: ScanResult;
   state: ScanState;
-  previews: Previews;
+  slots: ScanPreviewSlots;
   value: number;
-  axis: ScanAxis;
+  selectable: boolean;
   onChoose: (axis: ScanAxis, value: number) => void;
 }) {
   const running = state.status === "running";
   const elapsed = "elapsed" in state ? state.elapsed : 0;
-  const changes = result.candidates.filter(
-    (c) => c.kind === "change" || c.kind === "box",
-  ).length;
+  const changes = result.candidates.filter(sides).length;
+  const unresolved = result.candidates.length - changes;
+  const found = [
+    plural(changes, "candidate", "candidates"),
+    ...(unresolved ? [`${count(unresolved)} singular or unresolved`] : []),
+  ].join(" and ");
   const summary = running
     ? `Meshed ${plural(result.calls, "study", "studies")}…`
-    : `${state.status === "canceled" ? "Canceled" : stopText(result)}: ${plural(changes, "candidate", "candidates")} from ${plural(result.calls, "mesh", "meshes")}, in ${readout(elapsed / 1000, 2)} s.`;
+    : `${stopText({ ...result, stop: state.status === "canceled" ? "canceled" : result.stop })}: ${found} from ${plural(result.calls, "mesh", "meshes")}, in ${readout(elapsed / 1000, 2)} s.`;
+  const previewed = previewedOf(result);
   return (
     <div className="scan-report">
       <p className="note" role="status">
         {running ? "" : summary}
       </p>
-      {running && <p className="note">{summary}</p>}
+      {running && <p className="note scan-progress">{summary}</p>}
       <ScanTrack result={result} value={value} />
+      {result.curtailed && (
+        <p className="note">
+          Bisection stopped early, to leave the work limit room for the
+          rechecks.
+        </p>
+      )}
       {result.unresolved > 0 && (
         <p className="note">
           {plural(result.unresolved, "sample", "samples")} left out: their
           meshes are incomplete, so they show no topology.
         </p>
       )}
-      <ol className="scan-candidates">
-        {result.candidates.map((c, k) => (
-          <CandidateItem
-            key={k}
-            c={c}
-            axis={result.axis}
-            images={previews[k]}
-            value={value}
-            onChoose={(v) => onChoose(result.axis, v)}
-            selectable={result.axis === axis}
-          />
-        ))}
-      </ol>
       {!running && !result.candidates.length && (
         <p className="note">
-          No sample reads differently from its neighbor. A change between two
-          samples that is undone before the next is not seen; try more samples.
+          No sample reads differently from its neighbor. A change undone before
+          the next sample is not seen; try more samples.
         </p>
+      )}
+      {result.candidates.length > 0 && (
+        <ol className="scan-candidates">
+          {result.candidates.map((c, k) => {
+            const p = previewed.indexOf(c);
+            return (
+              <CandidateItem
+                key={k}
+                c={c}
+                axis={result.axis}
+                slots={p >= 0 ? (slots[p] ?? null) : undefined}
+                value={value}
+                selectable={selectable && !running}
+                onChoose={(v) => onChoose(result.axis, v)}
+              />
+            );
+          })}
+        </ol>
       )}
     </div>
   );
@@ -479,93 +555,121 @@ function ScanTrack({ result, value }: { result: ScanResult; value: number }) {
   );
 }
 
+// A note's two tiers, as help shows them: the brief always, the rest
+// behind Show more.
+function TieredNote({ brief, more }: { brief: string; more: string }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="scan-note">
+      <p className="note">
+        {brief}
+        {more && (
+          <>
+            {" "}
+            <button
+              type="button"
+              className="text-button help-more"
+              aria-expanded={open}
+              aria-controls={id}
+              onClick={() => setOpen(!open)}
+            >
+              {open ? "Show less" : "Show more"}
+            </button>
+          </>
+        )}
+      </p>
+      {more && (
+        <p className="note" id={id} hidden={!open}>
+          {more}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CandidateItem({
   c,
   axis,
-  images,
+  slots,
   value,
-  onChoose,
   selectable,
+  onChoose,
 }: {
   c: ScanCandidate;
   axis: ScanAxis;
-  images?: { before?: string; after?: string };
+  // A previewed candidate's images (null until asked for); undefined for
+  // one past the previewed, which shows its sides without images.
+  slots?: ScanPreviewSlots[number] | null;
   value: number;
-  onChoose: (v: number) => void;
   selectable: boolean;
+  onChoose: (v: number) => void;
 }) {
-  const where =
-    c.spread[0] === c.lo && c.spread[1] === c.hi
-      ? `Between ${readout(c.lo)} and ${readout(c.hi)}.`
-      : `Between ${readout(c.lo)} and ${readout(c.hi)} on this grid; from ${readout(c.spread[0])} to ${readout(c.spread[1])} across the grids.`;
-  const rechecks = [c.lattice, c.finer]
-    .filter((r) => r)
-    .map(
-      (r) =>
-        `${count(r!.cells)} cells: ${
-          {
-            pending: "pending",
-            agrees: "the same change",
-            below: "the change lies lower",
-            above: "the change lies higher",
-            differs: "reads differently",
-            unresolved: "incomplete",
-            skipped: "skipped",
-          }[r!.outcome]
-        }`,
-    );
-  const critical = c.critical ?? [];
+  const lead = leadingCritical(c);
+  const note = candidateNote(axis, c);
+  const leads = lead && c.kind !== "unresolved";
+  const closeUp = leads && slots !== undefined;
   return (
-    <li className={`scan-candidate ${c.kind}`}>
+    <li
+      className={`scan-candidate ${c.kind}`}
+      data-kind={c.kind}
+      data-stability={c.stability}
+    >
       <p className="scan-title">
         <b>{candidateTitle(axis, c)}</b>
         <span className={`scan-stability ${c.stability}`}>
           {stabilityText[c.stability]}
         </span>
       </p>
-      <p className="note">
-        {describeReading(c.before)} → {describeReading(c.after)}. {where}
-        {c.through
-          ? ` Through a sample at ${readout(c.through.value)} that reads ${describeReading(c.through.reading)}${c.through.reading.singular ? ", with vertices where ∇F vanishes" : ""}.`
-          : ""}
-      </p>
-      {rechecks.length > 0 && (
-        <p className="note">Rechecked on {rechecks.join("; ")}.</p>
-      )}
-      {critical.length > 0 && (
-        <p className="note">
-          {critical
-            .map(
-              (k) =>
-                `A critical point${k.points > 1 ? ` (${count(k.points)} found)` : ""} at ${axisValue(axis, k.value)}${k.index >= 0 ? `, index ${count(k.index)}` : ", degenerate"}`,
-            )
-            .join("; ")}
-          , found numerically.
+      {leads && (
+        <p className="scan-lead">
+          {capitalized(indexName(axis, lead))} ·{" "}
+          {plural(lead.points, "point", "points")} · found numerically
         </p>
       )}
-      {(c.kind === "change" || c.kind === "box") && (
-        <div className="scan-sides">
-          {(["before", "after"] as const).map((side) => {
-            const v = side === "before" ? c.lo : c.hi;
-            return (
-              <figure key={side}>
-                {images?.[side] ? (
-                  <img src={images[side]} alt="" width={180} height={120} />
-                ) : (
-                  <div className="scan-placeholder" />
-                )}
+      <TieredNote brief={note.brief} more={note.more} />
+      {sides(c) && (
+        <>
+          {closeUp && (
+            <p className="scan-closeup">Close-ups about the critical point</p>
+          )}
+          <div
+            className={`scan-sides${slots === undefined ? " plain" : ""}`}
+            role="group"
+            aria-label="Either side"
+          >
+            {(["before", "after"] as const).map((side) => {
+              const v = side === "before" ? c.lo : c.hi;
+              const slot = slots?.[side];
+              return (
                 <button
                   type="button"
+                  key={side}
+                  className="scan-side"
+                  data-side={side}
                   aria-pressed={value === v}
                   disabled={!selectable}
                   onClick={() => onChoose(v)}
                 >
-                  {side === "before" ? "Before" : "After"}: {axisValue(axis, v)}
+                  {slots !== undefined && (
+                    <span
+                      className="scan-image"
+                      aria-busy={!slot || slot.status === "pending"}
+                    >
+                      {slot?.status === "ready" && (
+                        <img src={slot.url} alt="" />
+                      )}
+                    </span>
+                  )}
+                  <span className="scan-side-label">
+                    {side === "before" ? "Before" : "After"} ·{" "}
+                    {axisValue(axis, v)}
+                  </span>
                 </button>
-              </figure>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </li>
   );

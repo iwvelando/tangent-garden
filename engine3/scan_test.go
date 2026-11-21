@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Issue #406's research scanner (scan.go): a bounded coarse scan of one
+// The topology-change scan (scan.go): a bounded coarse scan of one
 // scalar, bisection of the brackets where the mesh's reading changes, and
 // a recheck of each bracket's ends on two other grids. These tests run it
 // over fields whose events are known exactly (the curated stories, and
@@ -394,14 +394,19 @@ func TestScanBudgets(t *testing.T) {
 	if r.Stop != "calls" || r.Calls != 20 {
 		t.Errorf("call limit: stop %q after %d", r.Stop, r.Calls)
 	}
-	// The coarse pass finished, and bisection stopped partway: every
-	// candidate is still found, with less depth, none rechecked.
-	if len(r.Candidates) != 3 {
-		t.Errorf("%v", brief(r))
+	// The coarse pass finished, leaving too few calls to recheck its three
+	// brackets even unbisected: bisection never starts, every candidate is
+	// still found, and the rechecks use what is left, the first candidate's
+	// lattice and no more.
+	if len(r.Candidates) != 3 || !r.Curtailed {
+		t.Errorf("curtailed %v: %v", r.Curtailed, brief(r))
 	}
-	for _, c := range r.Candidates {
-		if c.Depth > 1 || c.Stability != "unchecked" {
+	for k, c := range r.Candidates {
+		if c.Depth != 0 || c.Stability != "unchecked" {
 			t.Errorf("%+v", c)
+		}
+		if lattice := "skipped"; k == 0 && c.Lattice.Outcome != "agrees" || k > 0 && c.Lattice.Outcome != lattice || c.Finer.Outcome != "skipped" {
+			t.Errorf("candidate %d's rechecks: %s, %s", k, c.Lattice.Outcome, c.Finer.Outcome)
 		}
 	}
 
@@ -409,7 +414,7 @@ func TestScanBudgets(t *testing.T) {
 	maxScanCells = 10 * cubeCells
 	r = runScan(t, req)
 	maxScanCells = savedCells
-	if r.Stop != "cells" || r.Calls != 10 || len(r.Samples) != 10 {
+	if r.Stop != "cells" || r.Calls != 10 || len(r.Samples) != 10 || r.Curtailed {
 		t.Errorf("cell limit: stop %q after %d calls, %d samples", r.Stop, r.Calls, len(r.Samples))
 	}
 
@@ -553,13 +558,14 @@ func TestScanCritical(t *testing.T) {
 // recheck of the change before it.
 func TestScanRecheckReach(t *testing.T) {
 	drops := runScan(t, ScanRequest{Implicit: scanStudy("((x-a)^2+y^2+z^2)*((x+a)^2+y^2+z^2)", 1, 1, Box{-2, 2, -1.2, 1.2, -1.2, 1.2}, 40),
-		Axis: "a", From: 0.6, To: 1.4, Samples: 7, Depth: 8, Recheck: true})
+		Axis: "a", From: 0.6, To: 1.3986, Samples: 7, Depth: 8, Recheck: true})
 	if len(drops.Candidates) != 1 {
 		t.Fatalf("%v", brief(drops))
 	}
-	// The study grid's bracket starts at the coarse sample a = 1; the
-	// lattice's lies wholly below it, which only a wider look can find.
-	if c := drops.Candidates[0]; math.Abs(c.Lo-1) > 1e-12 || c.Stability != "stable" || !(c.Lattice.Hi < c.Lo) {
+	// The study grid's bracket lies above the coarse sample a = 0.9993,
+	// just below the event; the lattice's lies wholly below that sample,
+	// which only a wider look can find.
+	if c := drops.Candidates[0]; c.Lo < 0.9993 || c.Stability != "stable" || !(c.Lattice.Hi < 0.9993) {
 		t.Errorf("drops: %q, lattice %+v", c.Stability, c.Lattice)
 	}
 
@@ -582,6 +588,19 @@ func TestScanRecheckReach(t *testing.T) {
 	}
 	if c := r.Candidates[0]; c.Stability != "stable" || !(c.Spread[0] <= -12.5 && c.Spread[1] >= -12.5) {
 		t.Errorf("the drops join: %q, spread %v", c.Stability, c.Spread)
+	}
+	// The same field negated, scanned over the negated range: {−F = c} is
+	// {F = −c}, so the same surfaces pass in reverse order, and the singular
+	// sample at 12.5 now comes just before the change, whose rechecks it
+	// does not narrow either.
+	q.F = "-(" + q.F + ")"
+	r = runScan(t, ScanRequest{Implicit: q, Axis: "level", From: -4, To: 18, Samples: 17, Depth: 8, Recheck: true})
+	n := len(r.Candidates)
+	if n < 2 || r.Candidates[n-2].Kind != "singular" || r.Candidates[n-2].Through.Value != 12.5 {
+		t.Fatalf("negated: %v", brief(r))
+	}
+	if c := r.Candidates[n-1]; c.Kind != "change" || c.Stability != "stable" || !(c.Spread[0] <= 12.5 && c.Spread[1] >= 12.5) {
+		t.Errorf("negated, the drops part: %q, spread %v", c.Stability, c.Spread)
 	}
 }
 
@@ -612,6 +631,259 @@ func TestScanCriticalGroups(t *testing.T) {
 			if math.Abs(got.Value-w.Value) > 1e-7 || got.Index != w.Index || got.Points != w.Points {
 				t.Errorf("%+v, want %+v", got, w)
 			}
+		}
+	}
+}
+
+// Every value the scan meshes is cleaned of floating-point tails first, as
+// roundedGenerated cleans the app's generated defaults, so the value shown
+// and set is the value meshed: the coarse samples of [0.6, 1.4] are 0.6,
+// 0.7, …, 1.4 exactly, never 0.9999999999999999, and their midpoints are
+// short decimals too. A range whose ends are not short decimals keeps
+// its samples within rounding of the exact interpolation, and its ends.
+func TestScanGeneratedValues(t *testing.T) {
+	q := scanStudy("((x-a)^2+y^2+z^2)*((x+a)^2+y^2+z^2)", 1, 0.6, Box{-2, 2, -1.2, 1.2, -1.2, 1.2}, 24)
+	r := runScan(t, ScanRequest{Implicit: q, Axis: "a", From: 0.6, To: 1.4, Samples: 9, Depth: 8, Recheck: true})
+	digits := func(v float64) int {
+		s := strings.TrimLeft(strings.Replace(strconv.FormatFloat(math.Abs(v), 'e', -1, 64), ".", "", 1), "0")
+		return len(s[:strings.IndexByte(s, 'e')])
+	}
+	coarse := 0
+	for _, s := range r.Samples {
+		if s.Coarse {
+			want, _ := strconv.ParseFloat(strconv.FormatFloat(0.6+0.1*float64(coarse), 'f', 1, 64), 64)
+			if s.Value != want {
+				t.Errorf("coarse sample %d is %v, want %v", coarse, s.Value, want)
+			}
+			coarse++
+		}
+		// Bisecting a step of 0.1 eight times leaves at most 12 digits.
+		if digits(s.Value) > 12 {
+			t.Errorf("sample %v has a tail", s.Value)
+		}
+	}
+	if coarse != 9 || len(r.Candidates) != 1 {
+		t.Fatalf("%d coarse samples, %v", coarse, brief(r))
+	}
+	c := r.Candidates[0]
+	for _, v := range []float64{c.Lo, c.Hi, c.Lattice.Lo, c.Lattice.Hi, c.Finer.Lo, c.Finer.Hi} {
+		if digits(v) > 12 {
+			t.Errorf("bracket end %v has a tail", v)
+		}
+	}
+
+	// Whatever the step, every value meshed, recheck ends and midpoints
+	// included, is already clean: cleaning it again changes nothing.
+	// (TestScanGeneratedRounding checks the cleaning itself.)
+	for _, span := range [][2]float64{{0.6, 1.4}, {0.9, 1.1}} {
+		r := runScan(t, ScanRequest{Implicit: q, Axis: "a", From: span[0], To: span[1], Samples: 7, Depth: 8, Recheck: true})
+		// Seven samples: lerp alone would end at 1.3999999999999997.
+		if first, last := r.Samples[0].Value, r.Samples[len(r.Samples)-1].Value; first != span[0] || last != span[1] {
+			t.Errorf("%v: ends %v, %v", span, first, last)
+		}
+		values := []float64{}
+		for _, s := range r.Samples {
+			values = append(values, s.Value)
+		}
+		for _, c := range r.Candidates {
+			for _, rc := range []*ScanRecheck{c.Lattice, c.Finer} {
+				values = append(values, rc.Lo, rc.Hi)
+			}
+		}
+		for _, v := range values {
+			if w := generated(v, span[1]); w != v {
+				t.Errorf("%v meshes %v, whose clean value is %v", span, v, w)
+			}
+		}
+	}
+
+	// Ends that are meaningful doubles: π/4 and π/2 stay exact, and every
+	// coarse sample stays within rounding of π/4 + kπ/44. Twelve samples, where
+	// lerp alone would end at 1.5707963267948963.
+	lo, hi := math.Pi/4, math.Pi/2
+	r = runScan(t, ScanRequest{Implicit: scanStudy("x^2+y^2+z^2", 1, 1, cube(2), 12), Axis: "level", From: lo, To: hi, Samples: 12})
+	if r.Samples[0].Value != lo || r.Samples[len(r.Samples)-1].Value != hi {
+		t.Errorf("ends %v, %v", r.Samples[0].Value, r.Samples[len(r.Samples)-1].Value)
+	}
+	for k, s := range r.Samples {
+		exact := lo + (hi-lo)*float64(k)/11
+		if math.Abs(s.Value-exact) > 4*0x1p-52*hi {
+			t.Errorf("sample %d is %v, %g from %v", k, s.Value, s.Value-exact, exact)
+		}
+	}
+}
+
+// generated keeps a value's shortest decimal within rounding of its
+// operands' scale, as roundedGenerated does: tails of sums and products
+// go, cancellation's tail goes with its operands' scale, and a value with
+// no short decimal that close stays.
+func TestScanGeneratedRounding(t *testing.T) {
+	// Variables, so the arithmetic is the machine's, not Go's exact
+	// constant arithmetic.
+	a, b, c, d := 1.65, 1.15, 1.6, 0.75
+	cases := []struct{ v, scale, want float64 }{
+		{lerp(0.6, 1.4, 4, 8), 1.4, 1},
+		{a - 1, a, 0.65},
+		{b - 1, b, 0.15},
+		{c * d, c, 1.2},
+		{math.Pi, math.Pi, math.Pi},
+		{1e-300 / 3, 1e-300, 1e-300 / 3},
+		{0, 1, 0},
+		{-0.30000000000000004, 0.3, -0.3},
+	}
+	for _, tc := range cases {
+		if got := generated(tc.v, tc.scale); got != tc.want {
+			t.Errorf("generated(%v, %v) = %v, want %v", tc.v, tc.scale, got, tc.want)
+		}
+	}
+}
+
+// The recheck reserve: bisection stops early enough that the candidates'
+// rechecks fit the cell limit, and the scan says it stopped bisecting
+// early. Unreserved, twelve bisections of the tanglecube story's three
+// brackets leave too few cells to recheck them all.
+func TestScanRecheckReserve(t *testing.T) {
+	q := spatialPresets(t)["The tanglecube's three events"].Implicit
+	req := ScanRequest{Implicit: q, Axis: "level", From: -18, To: 4, Samples: 17, Depth: 12, Recheck: true}
+	full := runScan(t, req)
+	if full.Curtailed || full.Stop != "complete" {
+		t.Fatalf("unlimited: curtailed %v, stop %q", full.Curtailed, full.Stop)
+	}
+	const limit = 4_000_000
+	if full.Cells <= limit {
+		t.Fatalf("the full scan meshes %d cells, within the test's limit", full.Cells)
+	}
+	saved := maxScanCells
+	maxScanCells = limit
+	r := runScan(t, req)
+	maxScanCells = saved
+	if r.Stop != "complete" || !r.Curtailed || r.Cells > limit {
+		t.Errorf("stop %q, curtailed %v, %d cells", r.Stop, r.Curtailed, r.Cells)
+	}
+	if len(r.Candidates) != 3 {
+		t.Fatalf("%v", brief(r))
+	}
+	for _, c := range r.Candidates {
+		if c.Depth >= 12 || c.Depth < 1 {
+			t.Errorf("depth %d", c.Depth)
+		}
+		if c.Stability != "stable" || c.Lattice.Outcome != "agrees" || c.Finer.Outcome != "agrees" {
+			t.Errorf("%v: %q, %s, %s", brief(ScanResult{Candidates: []ScanCandidate{c}}), c.Stability, c.Lattice.Outcome, c.Finer.Outcome)
+		}
+	}
+	// The call limit is reserved the same way: 2 + depth calls a bracket
+	// on each recheck grid. Sixty calls leave three bisections each, and a
+	// fourth for the first bracket, bisected first.
+	savedCalls := maxScanCalls
+	maxScanCalls = 60
+	r = runScan(t, req)
+	maxScanCalls = savedCalls
+	if r.Stop != "complete" || !r.Curtailed || r.Calls > 60 {
+		t.Errorf("call limit: stop %q, curtailed %v, %d calls", r.Stop, r.Curtailed, r.Calls)
+	}
+	for _, c := range r.Candidates {
+		if c.Depth < 3 || c.Depth > 4 || c.Stability != "stable" {
+			t.Errorf("call limit: depth %d, %q", c.Depth, c.Stability)
+		}
+	}
+	// Without rechecks nothing is reserved.
+	req.Recheck = false
+	maxScanCells = limit
+	r = runScan(t, req)
+	maxScanCells = saved
+	if r.Curtailed || r.Stop != "complete" || r.Candidates[0].Depth != 12 {
+		t.Errorf("without rechecks: curtailed %v, stop %q, depth %d", r.Curtailed, r.Stop, r.Candidates[0].Depth)
+	}
+}
+
+// Merged box intervals. In *A double torus*'s thin box the face cut near
+// c = 0.0225 is followed by a cascade of box candidates, every one
+// unstable, where the face's cut band is thinner than a cell. They merge
+// into one box interval from the closed double torus to the three cut
+// pieces. The holes closing at 1/16, which the critical search finds, and
+// the stable box event above stay apart.
+func TestScanMergedBox(t *testing.T) {
+	q := spatialPresets(t)["A double torus"].Implicit
+	r := runScan(t, ScanRequest{Implicit: q, Axis: "level", From: 0.005, To: 0.1, Samples: 17, Depth: 5, Recheck: true, Critical: true})
+	if len(r.Candidates) != 3 {
+		t.Fatalf("%v", brief(r))
+	}
+	m, holes, top := r.Candidates[0], r.Candidates[1], r.Candidates[2]
+	if m.Kind != "box" || m.Merged < 3 || m.Stability != "unstable" || len(m.Critical) != 0 ||
+		!slices.Equal(m.Before.Pieces, []int{-2}) || len(m.Before.Cut) != 0 ||
+		len(m.After.Pieces) != 0 || !slices.Equal(m.After.Cut, []int{0, 0, 0}) {
+		t.Errorf("merged: %+v", m)
+	}
+	if !(m.Lo < 0.0225 && m.Hi > 0.0235 && m.Hi < 0.024) || m.Spread[0] > m.Lo || m.Spread[1] < m.Hi || m.Lattice != nil || m.Finer != nil {
+		t.Errorf("merged interval [%g, %g], spread %v", m.Lo, m.Hi, m.Spread)
+	}
+	if holes.Merged != 0 || holes.Stability != "stable" || len(holes.Critical) != 1 || math.Abs(holes.Critical[0].Value-1.0/16) > 1e-7 {
+		t.Errorf("the holes: %+v", holes)
+	}
+	if top.Merged != 0 || top.Stability != "stable" {
+		t.Errorf("above: %+v", top)
+	}
+	// Without the critical search no candidate is known to have no
+	// critical point, and none merges.
+	r = runScan(t, ScanRequest{Implicit: q, Axis: "level", From: 0.005, To: 0.1, Samples: 17, Depth: 5, Recheck: true})
+	for _, c := range r.Candidates {
+		if c.Merged != 0 {
+			t.Errorf("merged without the critical search: %+v", c)
+		}
+	}
+	if len(r.Candidates) < 5 {
+		t.Errorf("%v", brief(r))
+	}
+}
+
+// mergeBoxes joins a run of box candidates only when every one is
+// unstable, none has a critical point, and each begins within a coarse
+// step of where the one before ends.
+func TestScanMergeBoxesRules(t *testing.T) {
+	read := func(cut ...int) ScanReading {
+		return ScanReading{Status: "cut", Pieces: []int{}, Cut: cut}
+	}
+	box := func(lo, hi float64, before, after int) ScanCandidate {
+		return ScanCandidate{Lo: lo, Hi: hi, Before: read(before), After: read(after), Kind: "box", Stability: "unstable",
+			Spread: [2]float64{lo - 0.01, hi}, Singular: []float64{}, Critical: []ScanCritical{}}
+	}
+	run := func() []ScanCandidate {
+		return []ScanCandidate{box(1, 1.1, 1, 2), box(1.2, 1.3, 2, 3), box(1.4, 1.5, 3, 4)}
+	}
+	got := mergeBoxes(run(), 0.5)
+	if len(got) != 1 || got[0].Merged != 3 || got[0].Lo != 1 || got[0].Hi != 1.5 || got[0].Before.Cut[0] != 1 || got[0].After.Cut[0] != 4 ||
+		got[0].Spread != [2]float64{0.99, 1.5} {
+		t.Errorf("a run: %+v", got)
+	}
+	breaks := []struct {
+		name string
+		part func([]ScanCandidate) []ScanCandidate
+	}{
+		{"stable", func(c []ScanCandidate) []ScanCandidate { c[1].Stability = "stable"; return c }},
+		{"unchecked", func(c []ScanCandidate) []ScanCandidate { c[1].Stability = "unchecked"; return c }},
+		{"critical", func(c []ScanCandidate) []ScanCandidate {
+			c[1].Critical = []ScanCritical{{Value: 1.25, Index: 1, Points: 1}}
+			return c
+		}},
+		{"change", func(c []ScanCandidate) []ScanCandidate { c[1].Kind = "change"; return c }},
+		{"far", func(c []ScanCandidate) []ScanCandidate {
+			for k := range c[1:] {
+				c[k+1].Lo += 1
+				c[k+1].Hi += 1
+			}
+			return c
+		}},
+	}
+	for _, b := range breaks {
+		got := mergeBoxes(b.part(run()), 0.5)
+		// The middle candidate parts the run: nothing merges, except
+		// across a gap, where the last two still do.
+		want := 3
+		if b.name == "far" {
+			want = 2
+		}
+		if len(got) != want {
+			t.Errorf("%s: %d candidates", b.name, len(got))
 		}
 	}
 }

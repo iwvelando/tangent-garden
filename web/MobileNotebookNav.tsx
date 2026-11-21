@@ -11,6 +11,10 @@ import { useMediaQuery } from "./useMediaQuery";
 
 const DrawingTouch = createContext(true);
 export const useDrawingTouch = () => useContext(DrawingTouch);
+// Brings the drawing into view as the Drawing button does, so Controls
+// returns to the same place; nothing where the navigation is not shown.
+const ShowDrawing = createContext<() => void>(() => {});
+export const useShowDrawing = () => useContext(ShowDrawing);
 
 const editable =
   'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea';
@@ -218,47 +222,53 @@ export function NotebookMain({
     setInControls(controls);
   };
 
+  const showDrawing = () => {
+    if (nav.current?.getClientRects().length) jump(false);
+  };
+
   return (
-    <DrawingTouch.Provider value={!narrow || adjusting}>
-      <main inert={inert} aria-hidden={inert || undefined}>
-        <nav
-          ref={nav}
-          className="mobile-notebook-nav"
-          aria-label="Notebook sections"
-        >
-          <button
-            type="button"
-            aria-current={!inControls ? "location" : undefined}
-            onClick={() => jump(false)}
+    <ShowDrawing.Provider value={showDrawing}>
+      <DrawingTouch.Provider value={!narrow || adjusting}>
+        <main inert={inert} aria-hidden={inert || undefined}>
+          <nav
+            ref={nav}
+            className="mobile-notebook-nav"
+            aria-label="Notebook sections"
           >
-            Drawing
-          </button>
-          <button
-            type="button"
-            aria-current={inControls ? "location" : undefined}
-            onClick={() => jump(true)}
-          >
-            Controls
-          </button>
-          <button
-            type="button"
-            aria-pressed={adjusting}
-            aria-label={adjusting ? "Done adjusting view" : "Adjust view"}
-            onClick={() => {
-              if (!adjusting) jump(false);
-              setAdjusting((value) => !value);
-            }}
-          >
-            {adjusting ? "Done" : "Adjust view"}
-          </button>
-          <span className="mobile-nav-hint">
-            {adjusting
-              ? "Drag or pinch to adjust. Tap Done to scroll."
-              : "Swipe to scroll. Adjust view to pan or zoom."}
-          </span>
-        </nav>
-        {children}
-      </main>
-    </DrawingTouch.Provider>
+            <button
+              type="button"
+              aria-current={!inControls ? "location" : undefined}
+              onClick={() => jump(false)}
+            >
+              Drawing
+            </button>
+            <button
+              type="button"
+              aria-current={inControls ? "location" : undefined}
+              onClick={() => jump(true)}
+            >
+              Controls
+            </button>
+            <button
+              type="button"
+              aria-pressed={adjusting}
+              aria-label={adjusting ? "Done adjusting view" : "Adjust view"}
+              onClick={() => {
+                if (!adjusting) jump(false);
+                setAdjusting((value) => !value);
+              }}
+            >
+              {adjusting ? "Done" : "Adjust view"}
+            </button>
+            <span className="mobile-nav-hint">
+              {adjusting
+                ? "Drag or pinch to adjust. Tap Done to scroll."
+                : "Swipe to scroll. Adjust view to pan or zoom."}
+            </span>
+          </nav>
+          {children}
+        </main>
+      </DrawingTouch.Provider>
+    </ShowDrawing.Provider>
   );
 }

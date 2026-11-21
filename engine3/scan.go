@@ -5,14 +5,14 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"strconv"
 
 	"tangentgarden/engine/expr"
 )
 
-// Issue #406's research prototype: a bounded scan of one implicit study
-// along one scalar, the level c or the shape parameter a, for the places
-// where its mesh's reading changes. It is not a public feature and does not
-// merge as is.
+// A bounded scan of one implicit study along one scalar, the level c or the
+// shape parameter a, for the places where its mesh's reading changes
+// (docs/mathematics.md, Scanning for topology changes).
 //
 // The scan meshes the study at evenly spaced values of the axis, both ends
 // exact, and keeps only each mesh's reading (ScanReading), never the mesh.
@@ -22,14 +22,18 @@ import (
 // bracket in two. Each candidate is then looked for again on two other
 // grids, one cell finer (which moves the lattice inside the same box) and
 // one half again as fine: the change must appear between the same coarse
-// samples there, and is bisected there to the same width. A candidate is
-// the mesh's evidence of a change between two values on these grids; it
-// never certifies that F has a critical value there, nor that nothing
-// changes between two samples that read alike.
+// samples there, or within two coarse steps beyond them, and is bisected
+// there to the same width. A candidate is the mesh's evidence of a change
+// between two values on these grids; it never certifies that F has a
+// critical value there, nor that nothing changes between two samples that
+// read alike. Every value meshed is cleaned of floating-point tails first
+// (generated), so a value shown and set is the value meshed.
 //
 // Work is bounded by the calls to the mesher and the base grid cells they
-// mesh in all; each call is also bounded by the mesher's own limits. Step
-// makes at most one call, so a caller can stop between calls.
+// mesh in all; each call is also bounded by the mesher's own limits.
+// Bisection stops early when going on would leave too little for the
+// rechecks (reserved). Step makes at most one call, so a caller can stop
+// between calls.
 
 // ScanRequest is one study and the axis it is scanned along: "level" moves
 // Implicit.Level, "a" moves Implicit.A, which F must read. The scan covers
@@ -125,8 +129,12 @@ type ScanCandidate struct {
 	Finer     *ScanRecheck `json:"finer,omitempty"`
 	Stability string       `json:"stability"`
 	Spread    [2]float64   `json:"spread"`
-	// Critical values found beside the candidate, when asked for.
-	Critical []ScanCritical `json:"critical,omitempty"`
+	// Critical values found beside the candidate: null when the search was
+	// not made, and empty when it found none.
+	Critical []ScanCritical `json:"critical"`
+	// Merged counts the box candidates a merged box interval holds; 0 for
+	// any other candidate.
+	Merged int `json:"merged,omitempty"`
 }
 
 // ScanResult is the scan so far. Stop is "running", "complete", "calls" or
@@ -145,6 +153,9 @@ type ScanResult struct {
 	Stop       string          `json:"stop"`
 	Unresolved int             `json:"unresolved"`
 	Singular   int             `json:"singular"`
+	// Curtailed: bisection stopped short of the depth asked for, to keep
+	// the rechecks within the work limits.
+	Curtailed bool `json:"curtailed"`
 }
 
 const (
@@ -195,6 +206,7 @@ type Scan struct {
 	runs              []scanRun
 	calls, cells      int
 	stop              string
+	curtailed         bool
 }
 
 func (q ScanRequest) validate() error {
@@ -271,6 +283,10 @@ func (s *Scan) Cancel() {
 	}
 }
 
+// scale is the operands' scale of every value the scan computes: each is
+// interpolated, halved or stepped from the range's ends.
+func (s *Scan) scale() float64 { return math.Max(math.Abs(s.q.From), math.Abs(s.q.To)) }
+
 // study is the base study at value v of the axis, on a grid of cells.
 func (s *Scan) study(v float64, cells int) ImplicitRequest {
 	q := s.base
@@ -283,13 +299,43 @@ func (s *Scan) study(v float64, cells int) ImplicitRequest {
 	return q
 }
 
+// reserved reports whether bisecting bracket k once more leaves room in
+// the work limits for the rechecks of every bracket found so far. Each
+// recheck reads its two ends and is bisected about as often as its
+// bracket was, so with bracket k one deeper they need, on each recheck
+// grid, 2 + depth calls a bracket. A bracket with an unresolved end is not
+// rechecked; widening a recheck's interval is not reserved.
+func (s *Scan) reserved(k int) bool {
+	calls, cells := s.calls+1, s.cells+gridCells(s.base.Box, s.base.Cells)
+	if s.q.Recheck {
+		for _, finer := range []bool{false, true} {
+			g := scanGrid(s.base, finer)
+			if g == 0 {
+				continue
+			}
+			n := gridCells(s.base.Box, g)
+			for j, b := range s.brackets {
+				if !resolved(s.readings[b.lo]) || !resolved(s.readings[b.hi]) {
+					continue
+				}
+				d := b.depth
+				if j == k {
+					d++
+				}
+				calls += 2 + d
+				cells += (2 + d) * n
+			}
+		}
+	}
+	return calls <= maxScanCalls && cells <= maxScanCells
+}
+
 // afford reports whether one more call on a grid of cells fits the work
 // limits, and stops the scan when it does not.
 func (s *Scan) afford(cells int) bool {
-	n := s.base.Box.shape(cells)
 	if s.calls >= maxScanCalls {
 		s.stop = "calls"
-	} else if s.cells+n[0]*n[1]*n[2] > maxScanCells {
+	} else if s.cells+gridCells(s.base.Box, cells) > maxScanCells {
 		s.stop = "cells"
 	} else {
 		return true
@@ -298,10 +344,16 @@ func (s *Scan) afford(cells int) bool {
 	return false
 }
 
+// gridCells counts the cells of the box's grid of cells along its longest
+// side.
+func gridCells(b Box, cells int) int {
+	n := b.shape(cells)
+	return n[0] * n[1] * n[2]
+}
+
 func (s *Scan) read(v float64, cells int) ScanReading {
-	n := s.base.Box.shape(cells)
 	s.calls++
-	s.cells += n[0] * n[1] * n[2]
+	s.cells += gridCells(s.base.Box, cells)
 	return scanRead(s.study(v, cells))
 }
 
@@ -417,7 +469,17 @@ func (s *Scan) Step() bool {
 			if !s.afford(s.base.Cells) {
 				return false
 			}
-			v := lerp(s.q.From, s.q.To, s.next, s.q.Samples-1)
+			// The range's ends are as entered: lerp's hi·i/n need not
+			// return hi at i = n.
+			var v float64
+			switch s.next {
+			case 0:
+				v = s.q.From
+			case s.q.Samples - 1:
+				v = s.q.To
+			default:
+				v = generated(lerp(s.q.From, s.q.To, s.next, s.q.Samples-1), s.scale())
+			}
 			s.readings[v] = s.read(v, s.base.Cells)
 			s.coarse[v] = true
 			s.next++
@@ -435,10 +497,17 @@ func (s *Scan) Step() bool {
 				continue
 			}
 			b := s.brackets[k]
-			m := b.lo + (b.hi-b.lo)/2
+			m := generated(b.lo+(b.hi-b.lo)/2, s.scale())
 			if !(m > b.lo && m < b.hi) {
 				// No double lies between: the bracket is as narrow as it gets.
 				s.brackets[k].depth = s.q.Depth
+				continue
+			}
+			if !s.reserved(k) {
+				// The rechecks need what is left: bisection stops here.
+				s.curtailed = true
+				s.candidates()
+				s.stage = 2
 				continue
 			}
 			if !s.afford(s.base.Cells) {
@@ -490,7 +559,7 @@ func (s *Scan) recheck(run *scanRun) bool {
 	case 1:
 		v = r.Hi
 	default:
-		v = r.Lo + (r.Hi-r.Lo)/2
+		v = generated(r.Lo+(r.Hi-r.Lo)/2, s.scale())
 		if r.Depth >= run.want || !(v > r.Lo && v < r.Hi) {
 			done("agrees")
 			return false
@@ -546,11 +615,11 @@ func (s *Scan) judge(run *scanRun, r *ScanRecheck, c *ScanCandidate, done func(s
 			run.want++
 		}
 	case same(r.Before, c.After) && run.widen < maxScanWiden && r.Lo > run.floor:
-		r.Lo = math.Max(run.floor, r.Lo-run.step)
+		r.Lo = math.Max(run.floor, generated(r.Lo-run.step, s.scale()))
 		run.widen++
 		run.phase = 0
 	case same(r.After, c.Before) && run.widen < maxScanWiden && r.Hi < run.ceil:
-		r.Hi = math.Min(run.ceil, r.Hi+run.step)
+		r.Hi = math.Min(run.ceil, generated(r.Hi+run.step, s.scale()))
 		run.widen++
 		run.phase = 1
 	case same(r.Before, c.After):
@@ -784,6 +853,8 @@ func (s *Scan) finish() {
 	}
 	if s.q.Critical && s.stop != "canceled" {
 		s.critical()
+		// Only once the search has found no critical point beside them.
+		s.cands = mergeBoxes(s.cands, (s.q.To-s.q.From)/float64(s.q.Samples-1))
 	}
 	s.stage = 3
 }
@@ -791,7 +862,7 @@ func (s *Scan) finish() {
 // Result is the scan as it stands.
 func (s *Scan) Result() ScanResult {
 	out := ScanResult{Axis: s.q.Axis, From: s.q.From, To: s.q.To, Samples: []ScanSample{}, Candidates: []ScanCandidate{},
-		Calls: s.calls, Cells: s.cells, Stop: s.stop}
+		Calls: s.calls, Cells: s.cells, Stop: s.stop, Curtailed: s.curtailed}
 	for _, v := range s.values() {
 		r := s.readings[v]
 		out.Samples = append(out.Samples, ScanSample{Value: v, Coarse: s.coarse[v], Reading: r})
@@ -810,6 +881,62 @@ func (s *Scan) Result() ScanResult {
 			}
 		}
 		out.Candidates = append(out.Candidates, c)
+	}
+	return out
+}
+
+// generated is a value the scan computed, cleaned of floating-point tails
+// before it is meshed, as roundedGenerated (web/atlas-queue.ts) cleans the
+// app's generated defaults: the shortest decimal of at most 15 significant
+// digits within rounding of its operands' scale, scale, or the value
+// itself when there is none. Fifteen digits, which every double keeps, so
+// a value that is itself a meaningful double, as a multiple of π, stays.
+func generated(v, scale float64) float64 {
+	if !finite(v) || v == 0 {
+		return v
+	}
+	budget := 0x1p-52 * math.Max(math.Abs(v), scale)
+	for digits := 1; digits <= 15; digits++ {
+		short, err := strconv.ParseFloat(strconv.FormatFloat(v, 'g', digits, 64), 64)
+		if err == nil && finite(short) && math.Abs(short-v) <= budget {
+			return short
+		}
+	}
+	return v
+}
+
+// mergeBoxes joins each run of two or more box candidates that the mesh
+// cannot tell apart into one box interval: every one unstable, none with a
+// critical point found beside it, and each beginning within a coarse step
+// of where the one before ends, with no other candidate between. A face
+// whose cut band is thinner than a cell reads a cascade of such changes.
+// The interval reads Before at its first end and After at its last, its
+// spread is theirs together, and Merged counts the candidates it holds.
+func mergeBoxes(cands []ScanCandidate, step float64) []ScanCandidate {
+	joins := func(c ScanCandidate) bool {
+		return c.Kind == "box" && c.Stability == "unstable" && len(c.Critical) == 0
+	}
+	out := []ScanCandidate{}
+	for k := 0; k < len(cands); {
+		j := k + 1
+		for joins(cands[k]) && j < len(cands) && joins(cands[j]) && cands[j].Lo-cands[j-1].Hi < step {
+			j++
+		}
+		if j-k < 2 {
+			out = append(out, cands[k])
+			k = j
+			continue
+		}
+		first, last := cands[k], cands[j-1]
+		m := ScanCandidate{Lo: first.Lo, Hi: last.Hi, Before: first.Before, After: last.After, Kind: "box", Depth: first.Depth,
+			Singular: []float64{}, Stability: "unstable", Spread: first.Spread, Critical: []ScanCritical{}, Merged: j - k}
+		for _, c := range cands[k:j] {
+			m.Depth = min(m.Depth, c.Depth)
+			m.Singular = append(m.Singular, c.Singular...)
+			m.Spread = [2]float64{math.Min(m.Spread[0], c.Spread[0]), math.Max(m.Spread[1], c.Spread[1])}
+		}
+		out = append(out, m)
+		k = j
 	}
 	return out
 }

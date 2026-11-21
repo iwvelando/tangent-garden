@@ -1,4 +1,3 @@
-import { eventScan } from "./research";
 import type { SpatialFamilySettings } from "./family";
 import type { Pace, Repeat } from "../timing";
 import type { Cut } from "./cut";
@@ -322,6 +321,10 @@ export const spatialPresets: {
   // opens with none.
   story?: StoryId;
   family?: SpatialFamilySettings;
+  // The range Scan for changes suggests when the example opens
+  // (ScanPanel.tsx): the value scanned and its ends. One without suggests
+  // a range about the study's own value. Never in a link.
+  scan?: { axis: "level" | "a"; from: number; to: number };
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -1330,6 +1333,7 @@ export const spatialPresets: {
   },
   {
     name: "Two drops meeting",
+    scan: { axis: "a", from: 0.8, to: 1.2 },
     detail:
       "Points whose distances to two foci multiply to a constant: two drops that join through a saddle as the constant grows",
     config: {
@@ -1364,6 +1368,7 @@ export const spatialPresets: {
   },
   {
     name: "A double torus",
+    scan: { axis: "level", from: 0.005, to: 0.1 },
     detail:
       "A thickened figure eight: a closed surface of genus two, cut through its middle to show both holes",
     config: {
@@ -1398,6 +1403,7 @@ export const spatialPresets: {
   },
   {
     name: "The tanglecube",
+    scan: { axis: "level", from: -18, to: 4 },
     detail:
       "x⁴ − 5x² + y⁴ − 5y² + z⁴ − 5z² = −11.8: a closed cage of genus five, cut by planes across its diagonal",
     config: {
@@ -1430,6 +1436,7 @@ export const spatialPresets: {
   },
   {
     name: "A gyroid, cut open",
+    scan: { axis: "level", from: -1.5, to: 1.5 },
     detail:
       "sin x cos y + sin y cos z + sin z cos x = 0 over one period: a surface that divides space into two intertwined labyrinths, cut open by its box and by a diagonal plane",
     config: {
@@ -2223,6 +2230,7 @@ export const spatialPresets: {
   // 1, so the last frame is the first, bit for bit, and the animation loops.
   {
     name: "A Schwarz surface breathing",
+    scan: { axis: "a", from: 0, to: Math.PI },
     detail:
       "cos x + cos y + cos z = −1.6 cos a: corner caps open into Schwarz's labyrinth, close to a drop and return, looping",
     config: {
@@ -6737,6 +6745,7 @@ export const spatialPresets: {
   // by one vertex.
   {
     name: "Two drops become one",
+    scan: { axis: "level", from: 0.64, to: 1.44 },
     detail:
       "Two drops touch at one point at c = 1 and join through a neck above it",
     story: "two-drops",
@@ -6788,6 +6797,7 @@ export const spatialPresets: {
   },
   {
     name: "The instant a handle appears",
+    scan: { axis: "level", from: 0.64, to: 1.44 },
     detail:
       "As c falls through 1, a sphere's two dimples meet at its center and open into a torus",
     story: "handle",
@@ -6848,6 +6858,7 @@ export const spatialPresets: {
   // at the third.
   {
     name: "The tanglecube's three events",
+    scan: { axis: "level", from: -20, to: 4 },
     detail:
       "Eight drops join into a cage of genus five, its six windows close into a hollow shell, and the hollow vanishes",
     story: "tanglecube",
@@ -6911,6 +6922,7 @@ export const spatialPresets: {
   // above the event, cut by z = 0; its film lowers the level through it.
   {
     name: "Two handles open at once",
+    scan: { axis: "level", from: 0.01, to: 0.1 },
     detail:
       "As c falls through 1/16, a flat sphere's two pairs of dimples meet at once and open into a double torus",
     story: "two-handles",
@@ -7065,92 +7077,4 @@ export const spatialPresets: {
     view: { ...initialView, yaw: 0.6, pitch: -1.15 },
     layers: { surface: false, normals: false },
   },
-  // Issue #406's research studies, listed only in its preview.
-  ...(eventScan ? eventScanStudies() : []),
 ];
-
-// Research studies for issue #406, never in the gallery: fields chosen for
-// one difficulty each of scanning for topology changes (engine3/scan.go).
-// ScanPanel.tsx suggests each one's range.
-function eventScanStudies(): (typeof spatialPresets)[number][] {
-  const study = (
-    name: string,
-    detail: string,
-    f: string,
-    level: number,
-    a: number,
-    half: [number, number, number],
-    cells: number,
-  ): (typeof spatialPresets)[number] => ({
-    name,
-    detail,
-    config: {
-      ...base,
-      format: "implicit",
-      implicit: {
-        f,
-        a,
-        level,
-        box: {
-          xMin: -half[0],
-          xMax: half[0],
-          yMin: -half[1],
-          yMax: half[1],
-          zMin: -half[2],
-          zMax: half[2],
-        },
-        cells,
-        refine: 0,
-        sections: { normal: { x: 0, y: 0, z: 1 }, from: 0, to: 0, count: 0 },
-      },
-    },
-    view: { ...initialView, yaw: 0.6, pitch: 0.45 },
-  });
-  return [
-    // F = r² has no critical point in the range: the box cuts the sphere
-    // at c = 1, 2 and 3, by its faces, edges and corners.
-    study(
-      "Research: a sphere grows through its box",
-      "Only the box changes what it shows, at c = 1, 2 and 3",
-      "x^2+y^2+z^2",
-      1.5,
-      1,
-      [1, 1, 1],
-      32,
-    ),
-    // g(x) + y² + z² with a tilted double well g(t) = t⁴ − 2t² + t: a drop
-    // is born at c ≈ −0.0733 and joins the bowl at c ≈ 0.1295, closer than
-    // a coarse scan's step.
-    study(
-      "Research: a drop born beside a bowl",
-      "Two events 0.2 apart cancel; a coarse scan sees neither",
-      "x^4 - 2*x^2 + x + y^2 + z^2",
-      0.03,
-      1,
-      [2.2, 2.2, 2.2],
-      48,
-    ),
-    // (r² + a²)² − 4a²x² at c = 1: the origin's value is a⁴, so one
-    // sphere parts into two drops at a = 1.
-    study(
-      "Research: two drops parted by a",
-      "Scan the shape parameter: the sphere parts at a = 1",
-      "((x-a)^2+y^2+z^2)*((x+a)^2+y^2+z^2)",
-      1,
-      0.8,
-      [2, 1.2, 1.2],
-      40,
-    ),
-    // 1/(r² − 1) changes sign across the unit sphere without crossing any
-    // level: every mesh is incomplete.
-    study(
-      "Research: a pole",
-      "Every level crosses a pole; nothing can be compared",
-      "1/(x^2+y^2+z^2-1)",
-      1,
-      1,
-      [1.5, 1.5, 1.5],
-      25,
-    ),
-  ];
-}

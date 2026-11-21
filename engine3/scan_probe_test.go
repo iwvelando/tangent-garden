@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// Issue #406's evidence tables: SCAN_REPORT=1 go test ./engine3 -run
+// The scan's evidence tables: SCAN_REPORT=1 go test ./engine3 -run
 // TestScanReport -v prints each corpus case's candidates beside the exact
 // events. It asserts nothing; scan_test.go does.
 
