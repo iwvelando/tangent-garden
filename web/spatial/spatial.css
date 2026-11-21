@@ -393,10 +393,53 @@
 .event-strip {
   margin-top: 14px;
 }
+/* The event chooser (several events only), in the heading's row: one
+   pressed button per event, its label beside its critical level. */
+.event-choices {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.event-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 3px 9px 4px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.event-choice:hover:not(:disabled) {
+  border-color: #9bb8ae;
+}
+.event-choice[aria-pressed="true"] {
+  border-color: #638f82;
+  box-shadow: inset 0 0 0 1px #638f82;
+}
+.event-choice:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.event-choice:focus-visible {
+  outline: 2px solid #74a89a;
+  outline-offset: 2px;
+}
+.event-choice-level {
+  font-size: 11px;
+  color: var(--muted);
+}
 .event-heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   font-size: 12px;
   color: var(--muted);
 }
@@ -482,6 +525,20 @@
   }
   .event-states {
     gap: 8px;
+  }
+  /* On a phone the chooser takes its own row, its buttons side by side,
+     each label over its level. */
+  .event-choices {
+    flex-basis: 100%;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  }
+  .event-choice {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding: 4px 7px 5px;
+    text-align: left;
   }
   .event-state {
     padding: 6px 7px 8px;

@@ -168,6 +168,10 @@ import {
 import { curveInputs } from "./inputs";
 import { implicitGrid, implicitNote } from "./implicit";
 import {
+  bracket,
+  criticalAt,
+  eventFor,
+  stories,
   storyContext,
   storyNote,
   type EventState,
@@ -345,6 +349,10 @@ export default function SpatialApp({
   // The curated event the study opened as (story.ts), kept until another
   // study replaces it; it applies only while the study is its recipe.
   const [story, setStory] = useState<StoryId | undefined>(undefined);
+  // The event the strip shows, for a story with several: transient, never
+  // in a link, and decided by the level when a study opens (story.ts's
+  // eventFor).
+  const [shownEvent, setShownEvent] = useState<number | undefined>(undefined);
   // Selecting even the base study's current event state ends playback.
   const [eventSelection, setEventSelection] = useState(0);
   const [preset, setPreset] = useState("0"),
@@ -619,6 +627,7 @@ export default function SpatialApp({
     setPreset(preset);
     setCustomOpened(study.config.format === "parametric");
     setStory(study.story);
+    setShownEvent(undefined);
     setConfig(study.config);
     setFamily(study.family);
     setLayers(study.layers);
@@ -1871,7 +1880,7 @@ export default function SpatialApp({
       s = drawnStory.story;
     return [
       ...storyNote(s, level, r),
-      ...implicitNote(r, { genus: level !== s.critical }),
+      ...implicitNote(r, { genus: !criticalAt(s, level) }),
     ].join(" ");
   };
   const implicitControls = (
@@ -2137,8 +2146,20 @@ export default function SpatialApp({
   }, [active, fitWaiting, busy, failure]);
   // The event strip, while the study has a story: its context now, its
   // previews, and choosing a state.
-  const event = useMemo(() => storyContext(config, story), [key, story]);
+  const event = useMemo(
+    () => storyContext(config, story, shownEvent),
+    [key, story, shownEvent],
+  );
   const eventStory = event?.eligible ? event.story : null;
+  const eventShown = event?.eligible ? event.event : 0;
+  // When the level moves onto another event's state, the strip follows it
+  // there; choosing an event leaves the level where it is.
+  const eventLevel = config.format === "implicit" ? config.implicit.level : NaN;
+  useEffect(() => {
+    const s = story && stories[story];
+    if (!s) return;
+    setShownEvent((shown) => eventFor(s, eventLevel, shown));
+  }, [eventLevel, story]);
   const previews = useRef<EventPreviews | null>(null);
   const [slots, setSlots] = useState<PreviewSlots | null>(null);
   useEffect(() => {
@@ -2158,6 +2179,7 @@ export default function SpatialApp({
     ? {
         key: JSON.stringify([
           eventStory.id,
+          eventShown,
           { ...config.implicit, level: 0 },
           layers,
           theme.dark,
@@ -2166,10 +2188,17 @@ export default function SpatialApp({
           userSight.spec,
         ]),
         story: eventStory,
+        event: eventShown,
         configs: {
-          before: atLevel(config, eventStory.levels.before),
-          critical: atLevel(config, eventStory.levels.critical),
-          after: atLevel(config, eventStory.levels.after),
+          before: atLevel(
+            config,
+            bracket(eventStory, eventShown).levels.before,
+          ),
+          critical: atLevel(
+            config,
+            bracket(eventStory, eventShown).levels.critical,
+          ),
+          after: atLevel(config, bracket(eventStory, eventShown).levels.after),
         },
         camera:
           spatialPresets.find((p) => p.story === eventStory.id)?.view ??
@@ -2193,7 +2222,7 @@ export default function SpatialApp({
     const token = generation.current;
     await Promise.allSettled([...jobs.current]);
     if (token !== generation.current) return;
-    const level = eventStory.levels[state];
+    const level = bracket(eventStory, eventShown).levels[state];
     setConfig((c) =>
       c.format === "implicit"
         ? { ...c, implicit: { ...c.implicit, level } }
@@ -4946,6 +4975,7 @@ export default function SpatialApp({
               slots={slots}
               waiting={!!failure}
               onSelect={(state) => void chooseState(state)}
+              onShow={setShownEvent}
             />
           )}
           <div className="camera-controls">

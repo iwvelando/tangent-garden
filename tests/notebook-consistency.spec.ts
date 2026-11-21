@@ -153,7 +153,7 @@ test("each 3D example names itself above a shared construction title", async ({
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
-  expect(titles).toHaveLength(164);
+  expect(titles).toHaveLength(166);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "A staircase's shadow, unwinding",
@@ -300,6 +300,8 @@ test("each 3D example names itself above a shared construction title", async ({
     "A ring through a sphere",
     "Two drops become one",
     "The instant a handle appears",
+    "The tanglecube's three events",
+    "Two handles open at once",
   ];
   const eyebrows = new Set<string>();
   for (const label of titles) {
@@ -365,7 +367,7 @@ test("each 3D example names itself above a shared construction title", async ({
     );
     eyebrows.add(await heading.locator(".eyebrow").innerText());
   }
-  expect(eyebrows.size).toBe(164);
+  expect(eyebrows.size).toBe(166);
   expect(eyebrows).toContain("THREE HARMONICS; THE THREAD PAUSES TWICE");
   await choosePreset(page, { label: "Helix · a ribbon staircase" });
   await page.getByRole("textbox", { name: "z(t)", exact: true }).fill("t/4");

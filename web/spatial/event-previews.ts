@@ -1,5 +1,5 @@
-// The event strip's previews (story.ts): the study at each of its story's
-// three levels, drawn small by the ordinary renderer. One calculation is in
+// The event strip's previews (story.ts): the study at each of the shown
+// event's three levels, drawn small by the ordinary renderer. One calculation is in
 // flight at a time, and only the latest intent is kept: a newer one
 // replaces it at once, clearing its images, and a reply for any earlier
 // one, even an identical intent asked for again, is dropped. Calculations
@@ -20,12 +20,14 @@ import {
   type Story,
 } from "./story";
 
-// What the strip asks for: the study at each state's level, and how to draw
-// it. key identifies everything else, so a change of level alone, which
-// the previews do not depend on, asks for nothing.
+// What the strip asks for: the study at each of the shown event's states,
+// and how to draw it. key identifies everything else, the event included,
+// so a change of level alone, which the previews do not depend on, asks
+// for nothing.
 export type PreviewIntent = {
   key: string;
   story: Story;
+  event: number;
   configs: Record<EventState, SpatialConfig>;
   camera: SpatialCamera;
   layers: Layers;
@@ -138,7 +140,7 @@ export class EventPreviews {
       let result: SpatialResult | null = await this.run(intent.configs[state]);
       if (!current()) return null;
       const level = result.implicit!;
-      const reading = stateReading(intent.story, state, level),
+      const reading = stateReading(intent.story, intent.event, state, level),
         pieces = level.components.map((c) => c.euler).sort((a, b) => a - b);
       const blob = await this.draw(result, intent);
       // The mesh is released; only its image and reading are kept.
@@ -171,11 +173,12 @@ export async function drawPreview(
     renderer.setCut(intent.cut);
     renderer.setSight(intent.sight);
     // Closer than the story's view, which frames the whole box: a preview
-    // is small, and the surface is what it compares.
+    // is small, and the surface is what it compares. A story whose surface
+    // fills its box can ask for less.
     const view: View = {
       ...result.bounds,
       ...intent.camera,
-      zoom: intent.camera.zoom * previewZoom,
+      zoom: intent.camera.zoom * (intent.story.previewZoom ?? previewZoom),
     };
     renderer.draw(view, intent.layers, intent.dark, previewPage);
     return await new Promise<Blob>((resolve, reject) =>

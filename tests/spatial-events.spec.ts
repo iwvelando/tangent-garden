@@ -7,6 +7,7 @@ import { probe } from "./video";
 import { execFileSync } from "node:child_process";
 import { wireStudy } from "./study-link-wire";
 import {
+  bracket,
   eventStates,
   heldLevel,
   holdPlan,
@@ -28,12 +29,15 @@ import type { ImplicitResult, SpatialConfig } from "../web/spatial/types";
 // a finite-resolution observation compared against them, never the proof.
 
 // The recipes, written here independently of the app.
-const fields: Record<StoryId, (x: number, y: number, z: number) => number> = {
+const fields: Partial<
+  Record<StoryId, (x: number, y: number, z: number) => number>
+> = {
   "two-drops": (x, y, z) =>
     ((x - 1) ** 2 + y ** 2 + z ** 2) * ((x + 1) ** 2 + y ** 2 + z ** 2),
   handle: (x, y, z) => (x ** 2 + y ** 2 - 1) ** 2 + z ** 2,
 };
-const ids = Object.keys(fields) as StoryId[];
+const ids = Object.keys(fields) as ("two-drops" | "handle")[];
+const field = (id: StoryId) => fields[id]!;
 const storyPreset = (id: StoryId) =>
   spatialPresets.findIndex((p) => p.story === id);
 const storyConfig = (id: StoryId): SpatialConfig =>
@@ -89,25 +93,26 @@ function mesh(
 
 test("each story's states straddle its one critical level", () => {
   for (const id of ids) {
-    const s = stories[id];
+    const s = bracket(stories[id], 0);
+    expect(stories[id].events).toHaveLength(1);
     expect(s.critical).toBe(1);
     expect(s.levels.critical).toBe(1);
     // Analytic: the field at the origin is the critical level.
-    expect(fields[id](0, 0, 0)).toBe(1);
+    expect(field(id)(0, 0, 0)).toBe(1);
     for (const state of ["before", "after"] as const) {
-      expect(s.levels[state]).toBeGreaterThanOrEqual(s.range[0]);
-      expect(s.levels[state]).toBeLessThanOrEqual(s.range[1]);
+      expect(s.levels[state]).toBeGreaterThanOrEqual(stories[id].range[0]);
+      expect(s.levels[state]).toBeLessThanOrEqual(stories[id].range[1]);
       expect(s.levels[state]).not.toBe(1);
     }
     expect(Math.sign(s.levels.before - 1)).toBe(-Math.sign(s.levels.after - 1));
   }
   // The drops join as c rises; the handle appears as it falls.
-  expect(stories["two-drops"].levels.before).toBeLessThan(1);
-  expect(stories.handle.levels.before).toBeGreaterThan(1);
-  expect(stories["two-drops"].below.pieces).toEqual([2, 2]);
-  expect(stories["two-drops"].above.pieces).toEqual([2]);
-  expect(stories.handle.below.pieces).toEqual([0]);
-  expect(stories.handle.above.pieces).toEqual([2]);
+  expect(bracket(stories["two-drops"], 0).levels.before).toBeLessThan(1);
+  expect(bracket(stories.handle, 0).levels.before).toBeGreaterThan(1);
+  expect(stories["two-drops"].sides[0].pieces).toEqual([2, 2]);
+  expect(stories["two-drops"].sides[1].pieces).toEqual([2]);
+  expect(stories.handle.sides[0].pieces).toEqual([0]);
+  expect(stories.handle.sides[1].pieces).toEqual([2]);
 });
 
 test("the proved region holds every point with F ≤ c up to the story's reach", () => {
@@ -127,7 +132,7 @@ test("the proved region holds every point with F ≤ c up to the story's reach",
           const x = -3 + i * h,
             y = -3 + j * h,
             z = -3 + k * h;
-          if (fields[id](x, y, z) > c) continue;
+          if (field(id)(x, y, z) > c) continue;
           inside++;
           expect(Math.abs(x)).toBeLessThanOrEqual(e.x);
           expect(Math.abs(y)).toBeLessThanOrEqual(e.y);
@@ -187,7 +192,7 @@ test("a story applies while its recipe and an enclosing box remain", () => {
       state: "critical",
     });
     expect(
-      at((c) => (c.implicit.level = stories[id].levels.after)),
+      at((c) => (c.implicit.level = bracket(stories[id], 0).levels.after)),
     ).toMatchObject({ state: "after" });
     expect(at((c) => (c.implicit.level = 0.9))).toMatchObject({ state: null });
     // What it does not: another expression, even one drawing the same
@@ -308,7 +313,7 @@ test("without a story, every note is as before", () => {
 test("the level rests at the bracket's levels, and its ends are exact", () => {
   for (const id of ids) {
     const s = stories[id],
-      { before, after } = s.levels;
+      { before, after } = bracket(s, 0).levels;
     // The story's own film: before to after, resting at each end.
     const plan = holdPlan({ target: "level", from: before, to: after }, s)!;
     expect(plan.at).toEqual([0, 1]);
@@ -361,22 +366,23 @@ test("story presets open their before state and their own film", () => {
     expect(i).toBeGreaterThan(0);
     const study = presetStudy(i);
     expect(study.story).toBe(id);
-    expect(study.config.implicit.level).toBe(stories[id].levels.before);
+    const levels = bracket(stories[id], 0).levels;
+    expect(study.config.implicit.level).toBe(levels.before);
     expect(study.config.implicit.f).toBe(stories[id].f);
     expect(study.animation.mode).toBe("parameters");
     expect(study.animation.holds).toBe(true);
     expect(study.animation.tracks).toEqual([
       {
         target: "level",
-        from: String(stories[id].levels.before),
-        to: String(stories[id].levels.after),
+        from: String(levels.before),
+        to: String(levels.after),
       },
     ]);
     // The film starts from the view the preset opens with.
     expect(study.animation.path.keys[0]).toMatchObject(study.view);
-    expect(eventStates.map((s) => stories[id].names[s]).every(Boolean)).toBe(
-      true,
-    );
+    expect(
+      eventStates.map((s) => bracket(stories[id], 0).names[s]).every(Boolean),
+    ).toBe(true);
   }
   // Every other preset opens without a story or holds.
   for (const [i, p] of spatialPresets.entries())
@@ -520,7 +526,9 @@ for (const id of ids)
         await state(page, next).click();
         await settled(page);
         await expect(state(page, next)).toHaveAttribute("aria-pressed", "true");
-        const level = s.levels[next as keyof typeof s.levels];
+        const level = bracket(s, 0).levels[
+          next as (typeof eventStates)[number]
+        ];
         expect((await shownConfig(page)).implicit.level).toBe(level);
         await expect(
           page.getByRole("textbox", { name: "Level c", exact: true }),
@@ -543,7 +551,9 @@ for (const id of ids)
     await state(page, "after").focus();
     await page.keyboard.press("Enter");
     await settled(page);
-    expect((await shownConfig(page)).implicit.level).toBe(s.levels.after);
+    expect((await shownConfig(page)).implicit.level).toBe(
+      bracket(s, 0).levels.after,
+    );
     await state(page, "critical").focus();
     await page.keyboard.press("Space");
     await settled(page);
@@ -578,7 +588,7 @@ for (const id of ids)
     await page.getByRole("slider", { name: "Animation progress" }).fill("0.7");
     await expect(stage(page)).toHaveAttribute("data-progress", "0.7");
     expect((await shownConfig(page)).implicit.level).not.toBe(
-      stories[id].levels.before,
+      bracket(stories[id], 0).levels.before,
     );
     await expect(note(page)).toContainText(
       id === "handle" ? "surface is a torus" : "surface is one drop",

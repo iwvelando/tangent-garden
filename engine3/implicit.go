@@ -223,15 +223,20 @@ func (q ImplicitRequest) validate() error {
 
 // field is F − c sampled on the box's grid.
 type field struct {
-	usesA      bool
-	f          func(Vec3) float64
-	c          float64
-	box        Box
-	n          [3]int
-	h          [3]float64
-	values     []float64
-	nonfinite  int
-	vertices   map[int]int32
+	usesA     bool
+	f         func(Vec3) float64
+	c         float64
+	box       Box
+	n         [3]int
+	h         [3]float64
+	values    []float64
+	nonfinite int
+	// The mesh vertex found on each key plus one, 0 where none is: a grid
+	// edge's key 7p + bits − 1, then a grid point's 7·len(values) + p
+	// (field.vertex). entries counts the keys set. A table, not a map: a
+	// map's growth was most of a large level set's allocation.
+	vertices   []int32
+	entries    int
 	rejected   map[int]Vec3
 	positions  []float64
 	normals    []float64
@@ -344,8 +349,8 @@ func (s *field) root(a, b Vec3, ga, gb float64) (float64, bool) {
 // p + bits crosses the level, or false where it is not a crossing.
 func (s *field) vertex(p, bits int) (int32, bool) {
 	e := 7*p + bits - 1
-	if v, ok := s.vertices[e]; ok {
-		return v, true
+	if v := s.vertices[e]; v != 0 {
+		return v - 1, true
 	}
 	if _, ok := s.rejected[e]; ok {
 		return 0, false
@@ -355,7 +360,7 @@ func (s *field) vertex(p, bits int) (int32, bool) {
 	q := s.index(i+di, j+dj, k+dk)
 	a, b := s.node(i, j, k), s.node(i+di, j+dj, k+dk)
 	ga, gb := s.values[p], s.values[q]
-	if len(s.vertices)+len(s.rejected) >= maxImplicitCrossings {
+	if s.entries+len(s.rejected) >= maxImplicitCrossings {
 		s.overflowed = true
 		return 0, false
 	}
@@ -376,7 +381,7 @@ func (s *field) vertex(p, bits int) (int32, bool) {
 	case gb == 0:
 		key, x = 7*len(s.values)+q, b
 	}
-	v, ok := s.vertices[key]
+	v, ok := s.vertices[key]-1, s.vertices[key] != 0
 	if !ok {
 		v = int32(len(s.positions) / 3)
 		s.positions = append(s.positions, x.X, x.Y, x.Z)
@@ -389,9 +394,13 @@ func (s *field) vertex(p, bits int) (int32, bool) {
 			s.singular++
 		}
 		s.normals = append(s.normals, n.X, n.Y, n.Z)
-		s.vertices[key] = v
+		s.vertices[key] = v + 1
+		s.entries++
 	}
-	s.vertices[e] = v
+	if key != e {
+		s.vertices[e] = v + 1
+		s.entries++
+	}
 	return v, true
 }
 
@@ -474,7 +483,10 @@ func (s *field) marchTet(g [4]float64, at [4]Vec3, crossing func(u, w int) (int3
 	if len(positive) == 0 || len(negative) == 0 {
 		return
 	}
-	var ring []int32
+	// Three or four vertices, in a fixed array: a slice here was one
+	// allocation per crossing tetrahedron.
+	var ring [4]int32
+	rung := 0
 	ok := true
 	// Every sign-changing edge is sought, so each discontinuity is counted.
 	add := func(u, w int) {
@@ -483,7 +495,8 @@ func (s *field) marchTet(g [4]float64, at [4]Vec3, crossing func(u, w int) (int3
 		}
 		v, found := crossing(u, w)
 		ok = ok && found
-		ring = append(ring, v)
+		ring[rung] = v
+		rung++
 	}
 	switch len(positive) {
 	case 1:
@@ -522,7 +535,7 @@ func (s *field) marchTet(g [4]float64, at [4]Vec3, crossing func(u, w int) (int3
 		s.triangles = append(s.triangles, a, b, c)
 	}
 	emit(ring[0], ring[1], ring[2])
-	if len(ring) == 4 {
+	if rung == 4 {
 		emit(ring[0], ring[2], ring[3])
 	}
 }
@@ -585,8 +598,10 @@ func (m *ImplicitResult) topology() {
 		}
 		return v
 	}
-	edges := map[[2]int32]int{}
-	var order [][2]int32
+	// A closed mesh has 3/2 edges per triangle: sized for that, the map and
+	// the list do not grow.
+	edges := make(map[[2]int32]int, len(m.Triangles)/2+1)
+	order := make([][2]int32, 0, len(m.Triangles)/2+1)
 	for k := 0; k < len(m.Triangles); k += 3 {
 		t := m.Triangles[k : k+3]
 		for e := range 3 {
@@ -831,12 +846,13 @@ func sample(q ImplicitRequest) (*field, error) {
 		return nil, fieldErr("implicit.f", "F(x, y, z) cannot use t; animate a or the level instead")
 	}
 	s := &field{usesA: uses.A, f: func(p Vec3) float64 { return f(p.X, p.Y, p.Z, 0) }, c: q.Level, box: q.Box, n: q.Box.shape(q.Cells),
-		vertices: map[int]int32{}, rejected: map[int]Vec3{}, positions: []float64{}, normals: []float64{}, triangles: []int32{}}
+		rejected: map[int]Vec3{}, positions: []float64{}, normals: []float64{}, triangles: []int32{}}
 	sides := q.Box.sides()
 	for k := range 3 {
 		s.h[k] = sides[k] / float64(s.n[k])
 	}
 	s.values = make([]float64, (s.n[0]+1)*(s.n[1]+1)*(s.n[2]+1))
+	s.vertices = make([]int32, 8*len(s.values))
 	for k := 0; k <= s.n[2]; k++ {
 		for j := 0; j <= s.n[1]; j++ {
 			for i := 0; i <= s.n[0]; i++ {
@@ -971,10 +987,12 @@ func implicit(q ImplicitRequest) (Result, error) {
 	}
 	out.Truncated = budget.Truncated
 	// The mesh, the sections and the box fit on their own.
-	var positions, points []*Vec3
-	for v := int32(0); v < int32(len(out.Positions)/3); v++ {
-		p := out.vertex(v)
-		positions = append(positions, &p)
+	var points []*Vec3
+	vertices := make([]Vec3, len(out.Positions)/3)
+	positions := make([]*Vec3, len(vertices))
+	for v := range vertices {
+		vertices[v] = out.vertex(int32(v))
+		positions[v] = &vertices[v]
 	}
 	for _, section := range out.Sections {
 		for _, path := range section.Paths {

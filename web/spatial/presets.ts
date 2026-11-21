@@ -274,6 +274,24 @@ const handleView: SpatialCamera = {
   panX: 0,
   panY: 0,
 };
+// Off the cube's diagonal, so no two drops line up, with the edges and
+// faces where the tanglecube's events happen turned toward the reader.
+const tangleView: SpatialCamera = {
+  yaw: 0.42,
+  pitch: 0.42,
+  zoom: 1.7,
+  panX: 0,
+  panY: 0,
+};
+// From above the flat double torus and a little to the side, so both
+// holes and the dimples over them show.
+const twoHandlesView: SpatialCamera = {
+  yaw: 0.2,
+  pitch: -0.75,
+  zoom: 1.6,
+  panX: 0,
+  panY: 0,
+};
 
 // A preset may open with its own cut (see cut.ts), its own sight (see
 // sight.ts), its own camera path to fly (see Flight), and its own
@@ -6812,6 +6830,130 @@ export const spatialPresets: {
             yaw: 0.1,
             pitch: 0.35,
             zoom: 1.3,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
+  // The topology theater's stories with several events, or several
+  // critical points at one (story.ts). The tanglecube opens with its eight
+  // drops in [−3, 3]³, which holds every level up to 4; its film raises
+  // the level through all three events, resting at each side, while the
+  // camera turns a sixth of the way about the cube and draws back as the
+  // surface grows to fill it. z = 0 holds four of the edge saddles and
+  // four of the face saddles, so its section is born at the first event,
+  // four ovals join into a ring at the second, and the ring's hole closes
+  // at the third.
+  {
+    name: "The tanglecube's three events",
+    detail:
+      "Eight drops join into a cage of genus five, its six windows close into a hollow shell, and the hollow vanishes",
+    story: "tanglecube",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "x^4 - 5*x^2 + y^4 - 5*y^2 + z^4 - 5*z^2",
+        a: 1,
+        level: -15,
+        box: {
+          xMin: -3,
+          xMax: 3,
+          yMin: -3,
+          yMax: 3,
+          zMin: -3,
+          zMax: 3,
+        },
+        // As fine a mesh as 48 cells at this size, with every side's
+        // narrowing feature over five cells wide, and half the work per
+        // frame of the film.
+        cells: 32,
+        refine: 0,
+        sections: { normal: { x: 0, y: 0, z: 1 }, from: 0, to: 0, count: 1 },
+      },
+    },
+    view: tangleView,
+    // Sheets seen through, so the hollow inside the shell and its
+    // vanishing show from outside.
+    sight: {
+      sheets: "through",
+      opacity: 0.6,
+      hidden: "faint",
+      weight: "regular",
+    },
+    flight: {
+      duration: 20,
+      holds: true,
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "level", from: "-15", to: "2" }],
+      },
+      path: {
+        style: "steady",
+        keys: [
+          { ...tangleView, name: "The eight drops", turns: 0 },
+          {
+            ...tangleView,
+            name: "Around the closing cage",
+            yaw: 0.42 + Math.PI / 3,
+            pitch: 0.5,
+            zoom: 1.3,
+            turns: 0,
+          },
+        ],
+      },
+    },
+  },
+  // The double torus's two holes open at one level, c = 1/16, in a box
+  // that holds every level up to 0.1. It opens on the dimpled sphere
+  // above the event, cut by z = 0; its film lowers the level through it.
+  {
+    name: "Two handles open at once",
+    detail:
+      "As c falls through 1/16, a flat sphere's two pairs of dimples meet at once and open into a double torus",
+    story: "two-handles",
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f: "((x^2 + y^2)^2 - x^2 + y^2)^2 + z^2",
+        a: 1,
+        level: 0.09,
+        box: {
+          xMin: -1.3,
+          xMax: 1.3,
+          yMin: -0.7,
+          yMax: 0.7,
+          zMin: -0.4,
+          zMax: 0.4,
+        },
+        // As fine a mesh as 96 cells at this size, the holes and the gaps
+        // between the dimples nearly eight cells wide at the sides' levels,
+        // and less than half the work per frame.
+        cells: 64,
+        refine: 0,
+        sections: { normal: { x: 0, y: 0, z: 1 }, from: 0, to: 0, count: 1 },
+      },
+    },
+    view: twoHandlesView,
+    flight: {
+      duration: 14,
+      holds: true,
+      animate: {
+        mode: "parameters",
+        tracks: [{ target: "level", from: "0.09", to: "0.04" }],
+      },
+      path: {
+        style: "steady",
+        keys: [
+          { ...twoHandlesView, name: "Over the dimples", turns: 0 },
+          {
+            ...twoHandlesView,
+            name: "Through both holes",
+            yaw: -0.15,
+            pitch: -1.05,
+            zoom: 1.5,
             turns: 0,
           },
         ],
