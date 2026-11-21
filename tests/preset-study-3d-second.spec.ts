@@ -1,5 +1,6 @@
 import { spatial, walk } from "./preset-study";
 
-// The second half of the 3D examples replace the whole study (see
-// preset-study.ts); the rest are in preset-study-3d-first.spec.ts.
-walk(spatial, 60);
+// 3D examples 60–119 replace the whole study (see preset-study.ts); the
+// others are in preset-study-3d-first.spec.ts and
+// preset-study-3d-third.spec.ts.
+walk(spatial, 60, 119);
