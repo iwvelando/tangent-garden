@@ -1769,6 +1769,39 @@ test("flower geometry fields share scalar parsing and preserve overlapping edits
   ).toBeUndefined();
 });
 
+test("a carried point's starting phase shares scalar parsing, and an example drops its pending entry", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "scalars")
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else return send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/?study=4d");
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  const weave = async () =>
+    JSON.parse((await stage.getAttribute("data-config"))!).weave;
+  await settle();
+  await choosePreset(page, { label: "Eight laps, one turn of phase" });
+  await settle();
+  await field(page, "Starting phase φ₀").fill("-pi/phi");
+  await settle();
+  expect((await weave()).phase).toBe(-Math.PI / phi);
+  for (const bad of ["t", "x", "a", "1/0"]) {
+    await field(page, "Starting phase φ₀").fill(bad);
+    await expect(page.getByRole("alert")).toBeVisible();
+  }
+  await field(page, "Starting phase φ₀").fill("e");
+  await choosePreset(page, { label: "Eight laps, one turn of phase" });
+  await settle();
+  await page.waitForTimeout(400);
+  expect((await weave()).phase).toBe(Math.PI);
+});
+
 test("a Hopf neighborhood's width shares scalar parsing, and an example drops its pending entry", async ({
   page,
 }) => {

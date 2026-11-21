@@ -47,6 +47,11 @@ type WeaveParameters struct {
 	Sampling string   `json:"sampling,omitempty"`
 	Width    *float64 `json:"width,omitempty"`
 	Nearby   *int     `json:"nearby,omitempty"`
+	// Carry a marked point along the moving fiber by horizontal transport,
+	// starting Phase radians from the north chart's representative; see
+	// phase.go. Phase is read only when Transport is set.
+	Transport bool    `json:"transport,omitempty"`
+	Phase     float64 `json:"phase,omitempty"`
 }
 
 // PolygonVertex is a corner of a geodesic polygon on the base sphere, in
@@ -91,6 +96,8 @@ type CorrespondenceDiagnostics struct {
 	Aliases []int `json:"aliases,omitempty"`
 	// Present only under neighborhood sampling.
 	Neighborhood *NeighborhoodDiagnostics `json:"neighborhood,omitempty"`
+	// Present only when a marked point is carried.
+	Transport *TransportDiagnostics `json:"transport,omitempty"`
 }
 type sphereCircle struct {
 	id, role string
@@ -439,6 +446,9 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	if err := validateSpherePath(w); err != nil {
 		return r, err
 	}
+	if err := validateTransport(w); err != nil {
+		return r, err
+	}
 	latitude := w.Path == "" || w.Path == "latitude"
 	for i, a := range q.Angles {
 		if !finite(a) || math.Abs(a) > 1e6 {
@@ -487,6 +497,9 @@ func pairedWeave(q Request, r Result) (Result, error) {
 	budget := pairedWeavePoints(q.Curves, q.Samples) + baseSamples - q.Samples + len(path.corners)
 	if hood != nil {
 		budget = neighborhoodPoints(q.Curves, hood.k, q.Samples, baseSamples, len(path.corners))
+	}
+	if w.Transport {
+		budget += transportPoints(path, q.Samples)
 	}
 	if budget > maxPoints {
 		return r, fmt.Errorf("base sphere and fibers exceeds budget: at most 65,536 points; reduce fibers or samples")
@@ -661,6 +674,9 @@ func pairedWeave(q Request, r Result) (Result, error) {
 			}
 			base.Paths = append(base.Paths, arc)
 		}
+	}
+	if w.Transport {
+		b.transport(w, path, sampleDelta(j), c.Base, c)
 	}
 	b.window()
 	// Three great circles of the base sphere.

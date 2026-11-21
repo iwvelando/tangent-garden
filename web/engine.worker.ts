@@ -462,6 +462,8 @@ self.onmessage = async ({
       // Neighborhood sampling reads its width and fiber count; the path's
       // own count is then its selectable points.
       const neighborhood = pairedWeave && weave.sampling === "neighborhood";
+      // A carried marked point reads its starting phase.
+      const transport = pairedWeave && !!weave.transport;
       const spherePath = path
         ? {
             usesAlpha: path === "latitude" || path === "flower",
@@ -533,6 +535,15 @@ self.onmessage = async ({
           ...(neighborhood && weave.width !== undefined
             ? [
                 ["weave.width", "Neighborhood width", weave.width] as [
+                  string,
+                  string,
+                  number,
+                ],
+              ]
+            : []),
+          ...(transport && weave.phase !== undefined
+            ? [
+                ["weave.phase", "Starting phase φ₀", weave.phase] as [
                   string,
                   string,
                   number,
@@ -776,6 +787,8 @@ self.onmessage = async ({
                 sampling: neighborhood ? "neighborhood" : undefined,
                 width: neighborhood ? weave.width : undefined,
                 nearby: neighborhood ? weave.nearby : undefined,
+                transport: transport || undefined,
+                phase: transport ? weave.phase : undefined,
                 spread: q.count === 1 || pairedWeave ? 0 : weave.spread,
               },
               // Inactive in the paired view, which draws one base path.

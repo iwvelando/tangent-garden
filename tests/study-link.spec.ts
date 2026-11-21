@@ -1263,6 +1263,30 @@ test("fields a link predates take the notebook's defaults", async () => {
   }
   for (const key of ["sampling", "width", "nearby"])
     assert.equal(key in readWeave.config.weave!, false);
+  // A carried point and its starting phase, kept while the point is not
+  // carried; links without them carry no point.
+  for (const fields of [
+    { path: "polygon", transport: true, phase: Math.PI },
+    { phase: -2.5 },
+  ]) {
+    const study = structuredClone(pairedStudy) as any;
+    Object.assign(study.config.weave, fields);
+    assert.deepEqual(
+      tesseractStudy(
+        (await readStudyLink(await writeStudyLink("4d", study))).study,
+      ),
+      study,
+    );
+  }
+  for (const key of ["transport", "phase"])
+    assert.equal(key in readWeave.config.weave!, false);
+  const notCarried = structuredClone(pairedStudy) as any;
+  notCarried.config.weave.transport = "yes";
+  await refused(
+    () => tesseractStudy(notCarried),
+    "config.weave.transport",
+    /boolean|true or false/,
+  );
   const unknownSampling = structuredClone(pairedStudy) as any;
   unknownSampling.config.weave.sampling = "local";
   await refused(

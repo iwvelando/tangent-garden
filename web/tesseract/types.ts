@@ -68,6 +68,11 @@ export type Weave = {
   sampling?: "path" | "neighborhood";
   width?: number;
   nearby?: number;
+  // Carry a marked point along the moving fiber (absent: off), starting
+  // phase radians from the north chart's representative (absent: 0). The
+  // phase is read only while the point is carried, and kept otherwise.
+  transport?: boolean;
+  phase?: number;
 };
 export type Bypass = {
   inner: number;
@@ -155,6 +160,10 @@ export type Result = {
       // A neighborhood's fibers and its stretch of the base path.
       | "near"
       | "neighborhood"
+      // A carried marked point's trail, the horizontal lift over the last
+      // turn, and the gap along the moving fiber between the trail's ends.
+      | "lift"
+      | "holonomy"
       // The 24-cell's roles (./polytope.ts).
       | "primal"
       | "dual"
@@ -225,7 +234,10 @@ export type Result = {
       | "vertex"
       | "start"
       | "current"
-      | "branch-point";
+      | "branch-point"
+      // A carried marked point, and where it started.
+      | "marked"
+      | "marked-start";
     point: Vec3;
     fourPoint: [number, number, number, number];
     family: number;
@@ -268,6 +280,16 @@ export type Result = {
         to: number;
         parameters: number[];
         aliases?: number[];
+      };
+      // Only while a marked point is carried (engine4/phase.go). Start and
+      // point are unrotated points of S³; one turn of the path turns the
+      // point by the holonomy, in (−π, π].
+      transport?: {
+        holonomy: number;
+        start: [number, number, number, number];
+        point: [number, number, number, number];
+        inside: boolean;
+        startInside: boolean;
       };
     };
   };

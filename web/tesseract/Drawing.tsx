@@ -100,6 +100,10 @@ const polytopeStroke: Partial<
   // the base path.
   near: { width: 1.6, opacity: 0.82 },
   neighborhood: { width: 11, opacity: 0.36 },
+  // A carried point's trail, the horizontal lift, dotted over the fibers,
+  // and the holonomy's gap along the moving fiber as a broad wash.
+  lift: { width: 3.4, opacity: 1 },
+  holonomy: { width: 11, opacity: 0.36 },
 };
 // Guides, then the quiet circuits, then the trace on top.
 const journeyRank: Partial<Record<Result["paths"][number]["role"], number>> = {
@@ -179,7 +183,15 @@ export function Drawing({
   if (correspondence) {
     const rank = (source: string) => {
       const r = role(source);
-      return r === "moving" ? 2 : r === "selected" ? 1 : 0;
+      return source === "weave/lift"
+        ? 3
+        : source === "weave/holonomy"
+          ? 1.5
+          : r === "moving"
+            ? 2
+            : r === "selected"
+              ? 1
+              : 0;
     };
     mapped.sort((a, b) => rank(a.source) - rank(b.source));
   }
@@ -384,24 +396,26 @@ export function Drawing({
             d={d(p.points)}
             fill="none"
             stroke={
-              r === "moving"
+              r === "moving" || p.role === "lift" || p.role === "holonomy"
                 ? movingInk(dark, scheme)
                 : curved || (latitudes && p.sectionId)
                   ? sectionInk(sectionIndex(p.sectionId), dark, scheme)
                   : colors[p.family]
             }
             strokeDasharray={
-              p.role === "diagonal"
-                ? "5 6"
-                : p.role === "circuit" && p.branch === "2"
-                  ? "7 6"
-                  : p.dashed
-                    ? "7 5"
-                    : curved &&
-                        (result.sections[sectionIndex(p.sectionId)]?.level ??
-                          0) < 0
+              p.role === "lift"
+                ? "0.1 7"
+                : p.role === "diagonal"
+                  ? "5 6"
+                  : p.role === "circuit" && p.branch === "2"
+                    ? "7 6"
+                    : p.dashed
                       ? "7 5"
-                      : undefined
+                      : curved &&
+                          (result.sections[sectionIndex(p.sectionId)]?.level ??
+                            0) < 0
+                        ? "7 5"
+                        : undefined
             }
             {...stroke(
               own
@@ -491,9 +505,15 @@ export function Drawing({
                 fill={sectionInk(0, dark, scheme)}
               />
             );
-          if (m.role === "start" || m.role === "current")
-            // The journey's moving point, ringed by the background so it
-            // reads over the trace, and an open ring where it started.
+          if (
+            m.role === "start" ||
+            m.role === "current" ||
+            m.role === "marked" ||
+            m.role === "marked-start"
+          )
+            // The journey's moving point or a carried Hopf point, ringed by
+            // the background so it reads over its trail, and an open ring
+            // where it started.
             return (
               <circle
                 key={m.id}
@@ -501,14 +521,20 @@ export function Drawing({
                 data-role={m.role}
                 cx={x}
                 cy={y}
-                r={m.role === "current" ? 7 : 11}
-                fill={m.role === "current" ? movingInk(dark, scheme) : "none"}
+                r={m.role === "current" || m.role === "marked" ? 7 : 11}
+                fill={
+                  m.role === "current" || m.role === "marked"
+                    ? movingInk(dark, scheme)
+                    : "none"
+                }
                 stroke={
-                  m.role === "current"
+                  m.role === "current" || m.role === "marked"
                     ? plotPalette(dark, scheme).bg
                     : movingInk(dark, scheme)
                 }
-                {...stroke(m.role === "current" ? 2 : 1.8)}
+                {...stroke(
+                  m.role === "current" || m.role === "marked" ? 2 : 1.8,
+                )}
               />
             );
           if (m.role === "branch-point")

@@ -118,15 +118,18 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+/* Values line up in a 10ch column; a longer value widens its own row's
+   column and its label wraps, rather than either running into the next
+   readout. */
 .lift-readout > span {
   display: grid;
-  grid-template-columns: 1fr 10ch;
+  grid-template-columns: minmax(0, 1fr) minmax(10ch, max-content);
   gap: 8px;
-  white-space: nowrap;
 }
 .lift-readout b {
   font-weight: 400;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 @media (max-width: 700px) {
   .tesseract-canvas-wrap {

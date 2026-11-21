@@ -29,7 +29,15 @@ export type SpherePath = {
   phrase: TesseractTarget[];
   // Base-curve segments for N arc samples, as Go draws them.
   segments: (c: Config) => number;
+  // At least the carried point's quadrature pieces per period, before
+  // corners (engine4 transportPieces): the segments, or T·max|p′|·8. The
+  // flower's and polygon's bound every admitted amplitude and perimeter,
+  // so an atlas varying them stays within its reservation.
+  transportPieces: (c: Config) => number;
 };
+// Pieces per period at speed at most v over a period T (engine4
+// transportStep, 1/8 of a radian on S²).
+const pieces = (period: number, speed: number) => Math.ceil(period * speed * 8);
 
 export const pathOf = (c: Config): SpherePathId => c.weave?.path ?? "latitude";
 // The descriptor of a result's path (correspondence.path, absent for the
@@ -74,6 +82,7 @@ export const spherePaths: Record<SpherePathId, SpherePath> = {
     sweep: true,
     phrase: [],
     segments: (c) => c.samples,
+    transportPieces: (c) => Math.max(c.samples, pieces(2 * Math.PI, 1)),
   },
   flower: {
     label: "Spherical flower",
@@ -102,6 +111,9 @@ export const spherePaths: Record<SpherePathId, SpherePath> = {
       (c.weave!.amplitude ?? 0) > 0
         ? Math.max(c.samples, 16 * whole(c.weave!.petals, 5))
         : c.samples,
+    // |p′| ≤ √(4A²k² + 1), with A ≤ π/4 and k ≤ 8.
+    transportPieces: (c) =>
+      Math.max(c.samples, 128, pieces(2 * Math.PI, Math.hypot(4 * Math.PI, 1))),
   },
   "great-circle": {
     label: "Great circle",
@@ -127,6 +139,7 @@ export const spherePaths: Record<SpherePathId, SpherePath> = {
     sweep: false,
     phrase: ["weave.tilt"],
     segments: (c) => c.samples,
+    transportPieces: (c) => Math.max(c.samples, pieces(2 * Math.PI, 1)),
   },
   lissajous: {
     label: "Spherical Lissajous",
@@ -157,6 +170,18 @@ export const spherePaths: Record<SpherePathId, SpherePath> = {
       return m1 >= 1 && m2 >= 1
         ? Math.max(c.samples, (16 * (m1 + m2)) / gcd(m1, m2))
         : c.samples;
+    },
+    // |p′| ≤ √(m₁² + m₂²) over a period of 2π/g.
+    transportPieces: (c) => {
+      const m1 = Math.min(
+        8,
+        Math.max(1, whole(c.weave!.azimuthal, defaultAzimuthal)),
+      );
+      const m2 = Math.min(8, Math.max(1, whole(c.weave!.polar, defaultPolar)));
+      return Math.max(
+        spherePaths.lissajous.segments(c),
+        pieces((2 * Math.PI) / gcd(m1, m2), Math.hypot(m1, m2)),
+      );
     },
   },
   polygon: {
@@ -190,5 +215,10 @@ export const spherePaths: Record<SpherePathId, SpherePath> = {
         0,
         Math.min(maxPolygonVertices, c.weave!.vertices?.length ?? 0) - 1,
       ),
+    // Unit speed over a perimeter below 12π, and its inserted corners.
+    transportPieces: (c) =>
+      Math.max(c.samples, pieces(12 * Math.PI, 1)) +
+      spherePaths.polygon.segments(c) -
+      c.samples,
   },
 };
