@@ -153,6 +153,7 @@ import { KeyViews, KeyViewEasing, KeyViewSwitch } from "../KeyViews";
 import {
   heldLevel,
   holdPlan,
+  restsAtMost,
   holdShare,
   type Holds,
   type Story,
@@ -281,6 +282,11 @@ type Session = {
   pieces?: Piece[];
   refined?: Map<number, Promise<Frame>>;
   plain?: Frame;
+  // The last calculated frame of varying parameters and the request it
+  // answers: a frame asking for the same, as every frame of a rest does
+  // while the camera flies on, reuses it rather than calculating it again.
+  // One is kept; an engine's reply depends on its request alone.
+  last?: { key: string; frame: Promise<Frame> };
   // Present only while riding a ray: its polyline, the bounds its lens is
   // framed about, and the trace's total optical path.
   ride?: { path: RidePath; around: Bounds3; total: number };
@@ -316,11 +322,18 @@ export const redraws = (s: Pick<Session, "mode" | "between" | "phrase">) =>
     !!s.phrase?.phases.some((p) => p.moves)
   );
 // The rests' help: where the level rests, and for how long.
-const holdsHelp = (story: Story) =>
-  tiered(
-    `The level rests at c = ${story.levels.before} and c = ${story.levels.after} as it passes them.`,
-    `Each rest takes ${progressPercent(holdShare)} of the duration, and the level moves steadily between them, every frame calculated. It applies only while the study keeps its story's expression and box.`,
+const holdsHelp = (story: Story) => {
+  const levels = story.sides.map((s) => formatNumber(s.level));
+  if (story.order === "down") levels.reverse();
+  const at =
+    levels.length === 2
+      ? `c = ${levels[0]} and c = ${levels[1]}`
+      : `c = ${levels.slice(0, -1).join(", ")} and ${levels.at(-1)}`;
+  return tiered(
+    `The level rests at ${at} as it passes them.`,
+    `Each rest takes ${progressPercent(Math.min(holdShare, restsAtMost / levels.length))} of the duration, and the level moves steadily between them, every frame calculated. It applies only while the study keeps its story's expression and box.`,
   );
+};
 
 type Props = {
   family?: {
@@ -889,14 +902,23 @@ export function SpatialAnimationPanel({
     else if (p === 0 && !coarse) current = s.first;
     else if (p === 1 && !coarse) current = s.final;
     else
-      current = await refinedFrame(s, p, (view) =>
-        engine.computeSpatial(values.config, {
+      current = await refinedFrame(s, p, (view) => {
+        const options = {
           ...(s.probe
             ? probeOptions(probeTarget(s.original.config, s.probe))
             : {}),
           ...(view && { view }),
-        }),
-      );
+        };
+        const key = JSON.stringify([values.config, options]);
+        if (s.last?.key === key) return s.last.frame;
+        const frame = engine.computeSpatial(values.config, options);
+        const last = (s.last = { key, frame });
+        // A failed calculation is not kept, so the next frame asks again.
+        frame.catch(() => {
+          if (s.last === last) s.last = undefined;
+        });
+        return frame;
+      });
     // The probe moves along the fixed study from the start of the curve
     // (or a surface's first row) to its end, exactly: one sample at a time,
     // or through every t between them. While parameters vary it stands on

@@ -8,32 +8,54 @@ import type { NumericTrack } from "./animation";
 import type { ImplicitResult, SpatialConfig, Vec3 } from "./types";
 import { readout } from "../number-format";
 
-export type StoryId = "two-drops" | "handle";
+export type StoryId = "two-drops" | "handle" | "tanglecube" | "two-handles";
 export type EventState = "before" | "critical" | "after";
 export const eventStates: EventState[] = ["before", "critical", "after"];
-// One side of the critical level: what the surface is for every regular
-// level there, the Euler characteristics of its closed pieces in
-// ascending order, and the feature that narrows toward the event.
-type Side = { name: string; pieces: number[]; feature: string };
+// What narrows toward an event, as a subject: "the gap between them", or
+// "its necks", which takes "are".
+type Feature = { what: string; are?: true };
+// One side of the story's critical levels: what the surface is for every
+// regular level there, the Euler characteristics of its closed pieces in
+// ascending order, the strip's regular level on this side and its short
+// name, and the feature that narrows toward the event below this side and
+// toward the one above it (absent when nothing narrows).
+export type Side = {
+  name: string;
+  pieces: number[];
+  level: number;
+  title: string;
+  toward: { below?: Feature; above?: Feature };
+};
+// One critical level: its short name on the strip, its label in the
+// event chooser, and what happens there, as a clause.
+export type StoryEvent = {
+  critical: number;
+  title: string;
+  label: string;
+  meeting: string;
+};
 export type Story = {
   id: StoryId;
   // The recipe, matched exactly: another expression, even one drawing the
   // same surface, is an ordinary study.
   f: string;
-  critical: number;
-  // The levels the story covers, and its bracket: a regular level on each
-  // side and the critical level itself.
+  // The levels the story covers.
   range: [number, number];
-  levels: Record<EventState, number>;
-  // Short names for the strip's states, shown outside the artwork.
-  names: Record<EventState, string>;
-  below: Side;
-  above: Side;
-  // What happens at the critical level, as a clause.
-  meeting: string;
+  // The critical levels, ascending, and the k + 1 sides between them:
+  // sides[i] lies below events[i] and sides[i + 1] above it, so a side
+  // between two events belongs to both their brackets.
+  events: StoryEvent[];
+  sides: Side[];
+  // The order the strip and the film reach the events in: as c rises, or
+  // as it falls.
+  order: "up" | "down";
   // Half-widths of the box about the origin that holds the solid F ≤ c,
   // and so the level set F = c; each grows with c.
   extent: (c: number) => Vec3;
+  // How much closer than the story's view the strip's previews are drawn
+  // (event-previews.ts; 1.5 when absent): less for a surface that fills
+  // its box.
+  previewZoom?: number;
   // The explanation below the drawing: its title, formula and an aside,
   // and a short paragraph.
   explanation: { title: string; formula: [string, string]; text: string };
@@ -45,21 +67,32 @@ export type Story = {
 const drops: Story = {
   id: "two-drops",
   f: "((x-1)^2+y^2+z^2)*((x+1)^2+y^2+z^2)",
-  critical: 1,
   range: [0.64, 1.44],
-  levels: { before: 0.84, critical: 1, after: 1.16 },
-  names: {
-    before: "Two drops",
-    critical: "Touching at a point",
-    after: "One drop",
-  },
-  below: {
-    name: "two separate drops",
-    pieces: [2, 2],
-    feature: "the gap between them",
-  },
-  above: { name: "one drop", pieces: [2], feature: "its neck" },
-  meeting: "the drops touch at the origin",
+  events: [
+    {
+      critical: 1,
+      title: "Touching at a point",
+      label: "The drops touch",
+      meeting: "the drops touch at the origin",
+    },
+  ],
+  sides: [
+    {
+      name: "two separate drops",
+      pieces: [2, 2],
+      level: 0.84,
+      title: "Two drops",
+      toward: { above: { what: "the gap between them" } },
+    },
+    {
+      name: "one drop",
+      pieces: [2],
+      level: 1.16,
+      title: "One drop",
+      toward: { below: { what: "its neck" } },
+    },
+  ],
+  order: "up",
   explanation: {
     title: "Two drops that meet at one point.",
     formula: ["F = d₁² d₂² = c", "d₁, d₂ to (±1, 0, 0)"],
@@ -81,22 +114,33 @@ const drops: Story = {
 const handle: Story = {
   id: "handle",
   f: "(x^2+y^2-1)^2+z^2",
-  critical: 1,
   range: [0.64, 1.44],
+  events: [
+    {
+      critical: 1,
+      title: "Pinched at the center",
+      label: "A handle appears",
+      meeting: "the dimples meet at the origin",
+    },
+  ],
+  sides: [
+    {
+      name: "a torus",
+      pieces: [0],
+      level: 0.84,
+      title: "A torus",
+      toward: { above: { what: "its hole" } },
+    },
+    {
+      name: "a sphere",
+      pieces: [2],
+      level: 1.16,
+      title: "A sphere",
+      toward: { below: { what: "the gap between its dimples" } },
+    },
+  ],
   // Descending: the sphere comes first.
-  levels: { before: 1.16, critical: 1, after: 0.84 },
-  names: {
-    before: "A sphere",
-    critical: "Pinched at the center",
-    after: "A torus",
-  },
-  below: { name: "a torus", pieces: [0], feature: "its hole" },
-  above: {
-    name: "a sphere",
-    pieces: [2],
-    feature: "the gap between its dimples",
-  },
-  meeting: "the dimples meet at the origin",
+  order: "down",
   explanation: {
     title: "The instant a handle appears.",
     formula: ["(ρ² − 1)² + z² = c", "ρ² = x² + y²"],
@@ -108,24 +152,219 @@ const handle: Story = {
     return { x: r, y: r, z: Math.sqrt(c) };
   },
 };
+// The tanglecube F = g(x) + g(y) + g(z) with g(t) = t⁴ − 5t², whose
+// critical points are 0 (g = 0, g″ = −10) and ±√(5/2) (g = −25/4,
+// g″ = 20). F's critical points are their products: with k coordinates
+// nonzero, F = −25k/4 and the index is 3 − k. Eight drops about the
+// minima at −75/4 join along the cube's twelve edges at −25/2, its six
+// windows close at −25/4, and the hollow about the maximum at the origin
+// vanishes at 0 (docs/mathematics.md, Curated events).
+const tanglecube: Story = {
+  id: "tanglecube",
+  f: "x^4 - 5*x^2 + y^4 - 5*y^2 + z^4 - 5*z^2",
+  range: [-18, 4],
+  events: [
+    {
+      critical: -12.5,
+      title: "Touching at twelve points",
+      label: "Drops join",
+      meeting:
+        "the eight drops touch at the midpoints of the cube's twelve edges",
+    },
+    {
+      critical: -6.25,
+      title: "Closing at six points",
+      label: "Windows close",
+      meeting: "the six windows close at the centers of the cube's faces",
+    },
+    {
+      critical: 0,
+      title: "A point inside",
+      label: "The hollow vanishes",
+      meeting: "the hollow inside shrinks to the origin",
+    },
+  ],
+  sides: [
+    {
+      name: "eight separate drops",
+      pieces: [2, 2, 2, 2, 2, 2, 2, 2],
+      level: -15,
+      title: "Eight drops",
+      toward: { above: { what: "the gaps between them", are: true } },
+    },
+    {
+      name: "one surface of genus 5",
+      pieces: [-8],
+      level: -10,
+      title: "Genus 5",
+      toward: {
+        below: { what: "its necks", are: true },
+        above: { what: "its windows", are: true },
+      },
+    },
+    {
+      name: "two nested spheres",
+      pieces: [2, 2],
+      level: -3,
+      title: "A hollow shell",
+      toward: {
+        below: { what: "the shell's wall at the face centers" },
+        above: { what: "the hollow" },
+      },
+    },
+    {
+      name: "one sphere",
+      pieces: [2],
+      level: 2,
+      title: "One sphere",
+      toward: {},
+    },
+  ],
+  order: "up",
+  // The surface fills its box above the first event.
+  previewZoom: 1,
+  explanation: {
+    title: "Eight drops, a cage, a shell, a ball.",
+    formula: ["Σ (xᵢ⁴ − 5xᵢ²) = c", "each term g(t) = t⁴ − 5t²"],
+    text: "Each term g has critical points at 0 and ±√(5/2), so F's critical points are the 27 points whose coordinates are those: 8 minima at −18.75, 12 saddles at −12.5, 6 at −6.25 and a maximum at the origin. Between critical levels a level set only deforms. Eight drops join along the cube's edges into one surface of genus 5, its six windows close into a hollow shell, and the hollow shrinks to the origin and vanishes. The plane z = 0 cuts four tubes, then a ring, then a disk.",
+  },
+  // g(x) ≤ c − g(y) − g(z) ≤ c + 25/2, reached with y, z = ±√(5/2).
+  extent: (c) => {
+    const r = Math.sqrt((5 + Math.sqrt(75 + 4 * c)) / 2);
+    return { x: r, y: r, z: r };
+  },
+};
+// The double torus F = h² + z² with h = (x² + y²)² − x² + y², whose zero
+// set in the plane is a lemniscate. Away from it ∇F vanishes only at the
+// centers of its loops, (±1/√2, 0, 0), where h = −1/4, F = 1/16 and the
+// Hessian is diag(−2, −2, 2): both holes open at one level.
+const twoHandles: Story = {
+  id: "two-handles",
+  f: "((x^2 + y^2)^2 - x^2 + y^2)^2 + z^2",
+  range: [0.01, 0.1],
+  events: [
+    {
+      critical: 0.0625,
+      title: "Pinched at two points",
+      label: "Two handles appear",
+      meeting: "the dimples meet at (±1/√2, 0, 0), the centers of both holes",
+    },
+  ],
+  sides: [
+    {
+      name: "a surface of genus 2",
+      pieces: [-2],
+      level: 0.04,
+      title: "A double torus",
+      toward: { above: { what: "its holes", are: true } },
+    },
+    {
+      name: "a sphere",
+      pieces: [2],
+      level: 0.09,
+      title: "A sphere",
+      toward: { below: { what: "the gaps between its dimples", are: true } },
+    },
+  ],
+  order: "down",
+  explanation: {
+    title: "Two handles appear at once.",
+    formula: ["h² + z² = c", "h = (x² + y²)² − x² + y²"],
+    text: "h vanishes on a lemniscate, and each level is the double of the plane region where |h| ≤ √c. Below c = 1/16 that region has two holes, one in each loop: a surface of genus 2. Above it the holes are gone: a sphere, dimpled twice. At c = 1/16 both dimples meet at once, at the loops' centers, where ∇F = 0 and the Hessian is diag(−2, −2, 2). The plane z = 0 cuts the outline, and below the event the two holes inside it.",
+  },
+  // With u = x², v = y² and s = √c, |h| ≤ s: u is greatest on v = 0,
+  // v is greatest, (1 + 4s)/8, where u = (1 − 2v)/2, and z² = c − h² is
+  // greatest on h = 0.
+  extent: (c) => {
+    const s = Math.sqrt(c);
+    return {
+      x: Math.sqrt((1 + Math.sqrt(1 + 4 * s)) / 2),
+      y: Math.sqrt((1 + 4 * s) / 8),
+      z: s,
+    };
+  },
+};
 export const stories: Record<StoryId, Story> = {
   "two-drops": drops,
   handle,
+  tanglecube,
+  "two-handles": twoHandles,
 };
 export const storyIds = Object.keys(stories) as StoryId[];
 
+// The events in the order the story reaches them.
+export const eventOrder = (story: Story): number[] => {
+  const order = story.events.map((_, i) => i);
+  return story.order === "up" ? order : order.reverse();
+};
+// An event's three states: the side it is reached from, its critical
+// level and the side it leads to, in the story's order.
+export type Bracket = {
+  critical: number;
+  levels: Record<EventState, number>;
+  names: Record<EventState, string>;
+  sides: Record<"before" | "after", Side>;
+};
+export function bracket(story: Story, event: number): Bracket {
+  const e = story.events[event],
+    below = story.sides[event],
+    above = story.sides[event + 1];
+  const [before, after] =
+    story.order === "up" ? [below, above] : [above, below];
+  return {
+    critical: e.critical,
+    levels: { before: before.level, critical: e.critical, after: after.level },
+    names: { before: before.title, critical: e.title, after: after.title },
+    sides: { before, after },
+  };
+}
+export const stateAt = (story: Story, event: number, level: number) => {
+  const { levels } = bracket(story, event);
+  return eventStates.find((s) => levels[s] === level) ?? null;
+};
+
+// The event the strip shows once the level moves to a new value: the one
+// shown already when the level is one of its states or none's; otherwise
+// the event whose state the level is, a side between two leading to the
+// next in the story's order. With none shown, a level on no state opens at
+// the nearest event.
+export function eventFor(story: Story, level: number, shown?: number): number {
+  const known =
+    shown !== undefined && shown >= 0 && shown < story.events.length;
+  if (known && stateAt(story, shown, level)) return shown;
+  const order = eventOrder(story);
+  const holding = order.filter((i) => stateAt(story, i, level));
+  // A side's level is "before" one event and "after" the previous one.
+  const leads = holding.find((i) => stateAt(story, i, level) !== "after");
+  if (leads !== undefined) return leads;
+  if (holding.length) return holding[0];
+  if (known) return shown;
+  if (!Number.isFinite(level)) return order[0];
+  let nearest = order[0];
+  for (const i of order)
+    if (
+      Math.abs(story.events[i].critical - level) <
+      Math.abs(story.events[nearest].critical - level)
+    )
+      nearest = i;
+  return nearest;
+}
+
 export type StoryContext =
-  | { story: Story; eligible: true; state: EventState | null }
+  | { story: Story; eligible: true; event: number; state: EventState | null }
   | { story: Story; eligible: false; reason: string };
 
 // Whether a study is its story's recipe in a box that holds every level
-// the story covers, and which of the strip's states it stands at. The
-// level, resolution, refinement, sections, the shape parameter (which
-// neither recipe uses), layers, camera and animation keep the story; null
-// when the study has none or is not a level set.
+// the story covers, which event the strip shows (the one shown, or with
+// none, the level's: eventFor), and which of its states the study stands
+// at. The level,
+// resolution, refinement, sections, the shape parameter (which no recipe
+// uses), layers, camera and animation keep the story; null when the study
+// has none or is not a level set.
 export function storyContext(
   config: SpatialConfig,
   id: StoryId | undefined,
+  shown?: number,
 ): StoryContext | null {
   const story = id && stories[id];
   if (!story || config.format !== "implicit") return null;
@@ -152,12 +391,25 @@ export function storyContext(
     return {
       story,
       eligible: false,
-      reason: `The box no longer holds the surface at every level up to ${story.range[1]}, so it could cut the surface open.`,
+      reason: `The box no longer holds the surface at every level up to ${readout(story.range[1])}, so it could cut the surface open.`,
     };
-  return { story, eligible: true, state: stateAt(story, q.level) };
+  const event =
+    shown !== undefined && shown >= 0 && shown < story.events.length
+      ? shown
+      : eventFor(story, q.level);
+  return {
+    story,
+    eligible: true,
+    event,
+    state: stateAt(story, event, q.level),
+  };
 }
-export const stateAt = (story: Story, level: number) =>
-  eventStates.find((s) => story.levels[s] === level) ?? null;
+// The critical level a level is, if any.
+export const criticalAt = (story: Story, level: number) =>
+  story.events.find((e) => e.critical === level) ?? null;
+// The side a regular level lies on.
+export const sideAt = (story: Story, level: number) =>
+  story.events.filter((e) => e.critical < level).length;
 
 // What the mesh shows, when it is whole enough to compare: the Euler
 // characteristics of its pieces, ascending; otherwise why not, as a
@@ -191,7 +443,7 @@ export function observedClass(
 
 // The story's sentences for the main note, before the mesh's own: the
 // analytic surface at this level, and whether the mesh agrees, cannot be
-// compared, or does not resolve it. At the critical level the surface is
+// compared, or does not resolve it. At a critical level the surface is
 // singular, so no genus is given (implicitNote's genus: false).
 export function storyNote(
   story: Story,
@@ -199,23 +451,43 @@ export function storyNote(
   r: ImplicitResult,
 ): string[] {
   const [low, high] = story.range;
-  if (level === story.critical)
+  const event = criticalAt(story, level);
+  if (event)
     return [
-      `At the critical level c = ${story.critical} ${story.meeting}, where ∇F vanishes: the surface is not a manifold there, so it has no genus. The mesh is a finite picture of it and can look smooth.`,
+      `At the critical level c = ${readout(event.critical)} ${event.meeting}, where ∇F vanishes: the surface is not a manifold there, so it has no genus. The mesh is a finite picture of it and can look smooth.`,
     ];
   if (!(level >= low && level <= high))
     return [
-      `The story's analysis covers levels from ${low} to ${high}; at c = ${readout(level)} the notes describe the mesh alone.`,
+      `The story's analysis covers levels from ${readout(low)} to ${readout(high)}; at c = ${readout(level)} the notes describe the mesh alone.`,
     ];
-  const side = level < story.critical ? story.below : story.above;
-  const where = `${level < story.critical ? "Below" : "Above"} the critical level c = ${story.critical} the surface is ${side.name}`;
+  const i = sideAt(story, level),
+    side = story.sides[i];
+  const below = story.events[i - 1],
+    above = story.events[i];
+  const where = `${
+    below && above
+      ? `Between the critical levels c = ${readout(below.critical)} and c = ${readout(above.critical)}`
+      : below
+        ? `Above the critical level c = ${readout(below.critical)}`
+        : `Below the critical level c = ${readout(above.critical)}`
+  } the surface is ${side.name}`;
   const seen = observedClass(r);
   if (!seen.complete)
     return [`${where}, but this mesh ${seen.why}, so it cannot confirm that.`];
   if (sameClass(seen.pieces, side.pieces))
     return [`${where}, and the mesh agrees.`];
+  // What narrows toward the nearer event.
+  const nearBelow =
+    !above ||
+    (below !== undefined && level - below.critical < above.critical - level);
+  const near = nearBelow ? below : above,
+    feature = nearBelow ? side.toward.below : side.toward.above;
+  if (!feature)
+    return [
+      `${where}, but the mesh reads otherwise. Use more cells or refinement.`,
+    ];
   return [
-    `${where}, but the mesh reads otherwise: ${side.feature} is finer than this grid resolves at this level. Use more cells or refinement, or a level farther from ${story.critical}.`,
+    `${where}, but the mesh reads otherwise: ${feature.what} ${feature.are ? "are" : "is"} finer than this grid resolves at this level. Use more cells or refinement, or a level farther from ${readout(near.critical)}.`,
   ];
 }
 const sameClass = (a: number[], b: number[]) =>
@@ -226,21 +498,22 @@ const sameClass = (a: number[], b: number[]) =>
 // singular, which no finite mesh shows faithfully.
 export function stateReading(
   story: Story,
+  event: number,
   state: EventState,
   r: ImplicitResult,
 ): "agrees" | "differs" | "incomplete" | "singular" {
   if (state === "critical") return "singular";
   const seen = observedClass(r);
   if (!seen.complete) return "incomplete";
-  const level = story.levels[state];
-  const side = level < story.critical ? story.below : story.above;
+  const side = bracket(story, event).sides[state];
   return sameClass(seen.pieces, side.pieces) ? "agrees" : "differs";
 }
 
-// The level's rests beside the event: while the level track passes one of
-// the bracket's regular levels, it rests there for `share` of the
+// The level's rests beside the events: while the level track passes one
+// of the sides' regular levels, it rests there for `share` of the
 // duration, and moves at a steady rate between. `at` holds the motion's
 // progress at each rest, ascending, and `levels` the levels themselves.
+// Rests take at most `restsAtMost` of the timeline between them.
 export type Holds = {
   from: number;
   to: number;
@@ -249,6 +522,7 @@ export type Holds = {
   share: number;
 };
 export const holdShare = 0.15;
+export const restsAtMost = 0.6;
 export function holdPlan(
   track: NumericTrack,
   story: Story,
@@ -258,8 +532,8 @@ export function holdPlan(
   const { from, to } = track;
   if (!(Number.isFinite(from) && Number.isFinite(to)) || from === to)
     return null;
-  const rests = [story.levels.before, story.levels.after]
-    .map((level) => ({ level, u: (level - from) / (to - from) + 0 }))
+  const rests = story.sides
+    .map(({ level }) => ({ level, u: (level - from) / (to - from) + 0 }))
     .filter(({ u }) => u >= 0 && u <= 1)
     .sort((a, b) => a.u - b.u);
   if (!rests.length) return null;
@@ -268,7 +542,7 @@ export function holdPlan(
     to,
     at: rests.map((r) => r.u),
     levels: rests.map((r) => r.level),
-    share,
+    share: Math.min(share, restsAtMost / rests.length),
   };
 }
 // The level at time q of the timeline, in [0, 1]: exactly `from` at 0,
