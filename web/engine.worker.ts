@@ -44,7 +44,7 @@ declare const tangentGardenShorten: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenSpatialProbe: (json: string) => string;
-// Issue #406's research scan: readings only, as plain JSON.
+// Scan for changes (engine3/scan.go): readings only, as plain JSON.
 declare const tangentGardenImplicitScan: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
 // (cmd/wasm/lift); the page puts them back (web/lifted.ts). A refusal is

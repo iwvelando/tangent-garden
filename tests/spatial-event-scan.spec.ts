@@ -167,6 +167,13 @@ test("cancel closes the scan's worker at once and keeps what it found; the setti
     "one piece, closed, of genus 5",
   );
   await expect(p.getByRole("button", { name: "Cancel scan" })).toBeVisible();
+  // Past the drops' birth at −75/4, between the fourth and fifth samples:
+  // the coarse pass has bracketed a change, which Cancel must keep.
+  await expect
+    .poll(() => p.locator(".scan-track line.scan-tick").count(), {
+      timeout: 30_000,
+    })
+    .toBeGreaterThan(8);
   const before = (await engines(page)).length;
   const asked = Date.now();
   await p.getByRole("button", { name: "Cancel scan" }).click();
@@ -185,8 +192,21 @@ test("cancel closes the scan's worker at once and keeps what it found; the setti
   await expect(p.getByLabel("Scan from", { exact: true })).toBeEnabled();
   // Zero-width ticks count as hidden: what the scan found is counted.
   expect(await p.locator(".scan-track line.scan-tick").count()).toBeGreaterThan(
-    0,
+    8,
   );
+  // The changes bracketed so far are kept, unchecked; the scan does not
+  // claim that every sample read alike.
+  const kept = p.locator(".scan-candidate");
+  await expect(kept.first().locator(".scan-title b")).toHaveText(
+    /^Change near c\s=\s−1[89]/,
+  );
+  await expect(kept.first()).toContainText(
+    "no surface → 8 closed pieces of χ 2",
+  );
+  await expect(kept.first().locator(".scan-stability")).toHaveText(
+    "Not rechecked",
+  );
+  await expect(p).not.toContainText("No sample reads differently");
 });
 
 // F = r² in [−1.3, 1.3]³ has no critical point there: the box cuts the
@@ -254,6 +274,15 @@ test("box events; a change to the study forgets its scan; errors name their fiel
   await expect(
     p.locator(".field", { hasText: "Bisections" }).locator(".field-error"),
   ).toHaveText("Bisections must be a whole number.");
+  // A study the engine refuses is the study's error, beside Scan, not a
+  // range field's.
+  await p.getByLabel("Bisections", { exact: true }).fill("3");
+  await page.getByLabel("F(x, y, z)", { exact: true }).fill("x^2+");
+  await scanButton(page).click();
+  await expect(p.locator(".scan-actions .field-error")).toContainText(
+    "F(x, y, z)",
+  );
+  await expect(p.locator(".field .field-error")).toHaveCount(0);
 });
 
 // Two drops meeting: F = (r² + a²)² − 4a²x² at c = 0.9, whose origin has

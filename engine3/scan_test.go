@@ -432,6 +432,49 @@ func TestScanBudgets(t *testing.T) {
 	}
 }
 
+// The page cancels a scan by closing its worker, so the last reply is all
+// it keeps. Before the rechecks, that reply holds the candidates the
+// brackets so far make, unchecked, exactly as Cancel settles them: during
+// the coarse pass and during bisection alike. The tanglecube story from
+// −18 to 4 changes at −12.5, −6.25 and 0; sixteen samples, 22/15 apart,
+// put them between the fourth and fifth, ninth and tenth, and thirteenth
+// and fourteenth.
+func TestScanResultBeforeRechecks(t *testing.T) {
+	q := spatialPresets(t)["The tanglecube's three events"].Implicit
+	req := ScanRequest{Implicit: q, Axis: "level", From: -18, To: 4, Samples: 16, Depth: 5, Recheck: true}
+	for _, steps := range []int{1, 8, 16, 16 + 4, 16 + 3*5} {
+		s, err := NewScan(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range steps {
+			s.Step()
+		}
+		kept := s.Result()
+		if kept.Stop != "running" || kept.Calls != steps {
+			t.Fatalf("after %d steps: %q, %d calls", steps, kept.Stop, kept.Calls)
+		}
+		s.Cancel()
+		settled := s.Result()
+		if !slices.EqualFunc(kept.Candidates, settled.Candidates, func(a, b ScanCandidate) bool {
+			return a.Lo == b.Lo && a.Hi == b.Hi && a.Kind == b.Kind && a.Depth == b.Depth && a.Stability == b.Stability &&
+				a.Lattice == nil && a.Finer == nil && b.Lattice == nil && b.Finer == nil
+		}) {
+			t.Errorf("after %d steps the reply holds %v; Cancel settles %v", steps, brief(kept), brief(settled))
+		}
+		// A change is bracketed once the sample after it is meshed.
+		want := 0
+		for _, after := range []int{5, 10, 14} {
+			if steps >= after {
+				want++
+			}
+		}
+		if len(kept.Candidates) != want {
+			t.Errorf("after %d steps: %d candidates, want %d: %v", steps, len(kept.Candidates), want, brief(kept))
+		}
+	}
+}
+
 // At the mesher's grid limit neither one cell more nor one half again as
 // many fits: the rechecks use one cell fewer and two thirds as many.
 func TestScanGridAtLimit(t *testing.T) {

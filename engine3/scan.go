@@ -703,73 +703,23 @@ func (s *Scan) values() []float64 {
 
 // bracketCoarse makes a bracket of each neighboring pair sampled so far
 // that read differently.
-func (s *Scan) bracketCoarse() {
+func (s *Scan) bracketCoarse() { s.brackets = s.coarseBrackets() }
+
+func (s *Scan) coarseBrackets() []scanBracket {
 	vals := s.values()
-	s.brackets = nil
+	var out []scanBracket
 	for k := 1; k < len(vals); k++ {
 		if !same(s.readings[vals[k-1]], s.readings[vals[k]]) {
-			s.brackets = append(s.brackets, scanBracket{vals[k-1], vals[k], 0})
+			out = append(out, scanBracket{vals[k-1], vals[k], 0})
 		}
 	}
+	return out
 }
 
-// candidates turns the brackets into candidates, joining two either side
-// of a class that lasts only between them and is unresolved or singular,
-// and plans the rechecks.
+// candidates turns the brackets into candidates and plans the rechecks.
 func (s *Scan) candidates() {
-	s.cands = nil
+	s.cands = s.found(s.brackets)
 	vals := s.values()
-	singular := func(lo, hi float64) []float64 {
-		out := []float64{}
-		for _, v := range vals {
-			if v >= lo && v <= hi && s.readings[v].Singular > 0 {
-				out = append(out, v)
-			}
-		}
-		return out
-	}
-	bs := slices.Clone(s.brackets)
-	sort.Slice(bs, func(i, j int) bool { return bs[i].lo < bs[j].lo })
-	for k := 0; k < len(bs); k++ {
-		b := bs[k]
-		c := ScanCandidate{Lo: b.lo, Hi: b.hi, Before: s.readings[b.lo], After: s.readings[b.hi], Depth: b.depth}
-		if k+1 < len(bs) {
-			n := bs[k+1]
-			mid := s.readings[b.hi]
-			odd := singular(b.hi, n.lo)
-			// Every sample of the middle class is singular: a blip.
-			blip := len(odd) > 0
-			for _, v := range vals {
-				if v >= b.hi && v <= n.lo && s.readings[v].Singular == 0 {
-					blip = false
-				}
-			}
-			if same(mid, s.readings[n.lo]) && (!resolved(mid) || blip) {
-				through := b.hi
-				if len(odd) > 0 {
-					through = odd[0]
-				}
-				c.Hi, c.After, c.Depth = n.hi, s.readings[n.hi], min(b.depth, n.depth)
-				c.Through = &ScanSample{Value: through, Coarse: s.coarse[through], Reading: s.readings[through]}
-				k++
-			}
-		}
-		switch {
-		case !resolved(c.Before) || !resolved(c.After) || c.Through != nil && !resolved(c.Through.Reading):
-			c.Kind = "unresolved"
-		case c.Through != nil && same(c.Before, c.After):
-			c.Kind = "singular"
-		case !slices.Equal(c.Before.Cut, c.After.Cut):
-			// What the box cuts changes. A change only in closed pieces,
-			// beside cut ones that stay the same, is a change.
-			c.Kind = "box"
-		default:
-			c.Kind = "change"
-		}
-		c.Singular = singular(c.Lo, c.Hi)
-		c.Stability, c.Spread = "unchecked", [2]float64{c.Lo, c.Hi}
-		s.cands = append(s.cands, c)
-	}
 	s.runs = nil
 	s.next = 0
 	if !s.q.Recheck {
@@ -830,6 +780,65 @@ func (s *Scan) candidates() {
 	}
 }
 
+// found turns brackets into candidates, unchecked, joining two either side
+// of a class that lasts only between them and is unresolved or singular.
+func (s *Scan) found(brackets []scanBracket) []ScanCandidate {
+	out := []ScanCandidate{}
+	vals := s.values()
+	singular := func(lo, hi float64) []float64 {
+		at := []float64{}
+		for _, v := range vals {
+			if v >= lo && v <= hi && s.readings[v].Singular > 0 {
+				at = append(at, v)
+			}
+		}
+		return at
+	}
+	bs := slices.Clone(brackets)
+	sort.Slice(bs, func(i, j int) bool { return bs[i].lo < bs[j].lo })
+	for k := 0; k < len(bs); k++ {
+		b := bs[k]
+		c := ScanCandidate{Lo: b.lo, Hi: b.hi, Before: s.readings[b.lo], After: s.readings[b.hi], Depth: b.depth}
+		if k+1 < len(bs) {
+			n := bs[k+1]
+			mid := s.readings[b.hi]
+			odd := singular(b.hi, n.lo)
+			// Every sample of the middle class is singular: a blip.
+			blip := len(odd) > 0
+			for _, v := range vals {
+				if v >= b.hi && v <= n.lo && s.readings[v].Singular == 0 {
+					blip = false
+				}
+			}
+			if same(mid, s.readings[n.lo]) && (!resolved(mid) || blip) {
+				through := b.hi
+				if len(odd) > 0 {
+					through = odd[0]
+				}
+				c.Hi, c.After, c.Depth = n.hi, s.readings[n.hi], min(b.depth, n.depth)
+				c.Through = &ScanSample{Value: through, Coarse: s.coarse[through], Reading: s.readings[through]}
+				k++
+			}
+		}
+		switch {
+		case !resolved(c.Before) || !resolved(c.After) || c.Through != nil && !resolved(c.Through.Reading):
+			c.Kind = "unresolved"
+		case c.Through != nil && same(c.Before, c.After):
+			c.Kind = "singular"
+		case !slices.Equal(c.Before.Cut, c.After.Cut):
+			// What the box cuts changes. A change only in closed pieces,
+			// beside cut ones that stay the same, is a change.
+			c.Kind = "box"
+		default:
+			c.Kind = "change"
+		}
+		c.Singular = singular(c.Lo, c.Hi)
+		c.Stability, c.Spread = "unchecked", [2]float64{c.Lo, c.Hi}
+		out = append(out, c)
+	}
+	return out
+}
+
 // finish settles the candidates when the scan stops before rechecking.
 func (s *Scan) finish() {
 	if s.stage < 2 {
@@ -873,7 +882,17 @@ func (s *Scan) Result() ScanResult {
 			out.Singular++
 		}
 	}
-	for _, c := range s.cands {
+	cands := s.cands
+	if s.stage < 2 {
+		// Before the rechecks, the brackets so far as Cancel would settle
+		// them: the page cancels by closing the worker, keeping this reply.
+		bs := s.brackets
+		if s.stage == 0 {
+			bs = s.coarseBrackets()
+		}
+		cands = s.found(bs)
+	}
+	for _, c := range cands {
 		for _, r := range []**ScanRecheck{&c.Lattice, &c.Finer} {
 			if *r != nil {
 				copy := **r

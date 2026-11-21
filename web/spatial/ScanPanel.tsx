@@ -225,13 +225,16 @@ export function ScanPanel({
   // A range's own parse error first, then one found before starting, then
   // the engine's, each under its field.
   const typed = Object.values(scalars).find((s) => s.error);
+  const failedLabel =
+    state.status === "failed" ? errorLabel[state.field ?? ""] : undefined;
   const failed =
-    state.status === "failed"
-      ? {
-          label: errorLabel[state.field ?? ""] ?? "Scan from",
-          message: state.message,
-        }
+    state.status === "failed" && failedLabel
+      ? { label: failedLabel, message: state.message }
       : null;
+  // A refusal of the study itself, or of no one field, is shown once
+  // beside Scan: it belongs to none of the scan's fields.
+  const refused =
+    state.status === "failed" && !failedLabel ? state.message : null;
   const shown = typed?.error
     ? { id: typed.control, message: typed.error }
     : (problem ?? failed);
@@ -402,6 +405,11 @@ export function ScanPanel({
               <button type="button" onClick={() => void scan()}>
                 Scan
               </button>
+            )}
+            {refused && (
+              <p className="field-error" role="alert">
+                {refused}
+              </p>
             )}
           </div>
         </FieldErrorContext.Provider>

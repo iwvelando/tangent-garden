@@ -533,7 +533,7 @@ The topology theater's stories are a thin layer over the ordinary implicit study
 - **Transport.** Each scan runs in a disposable `EngineClient` (`ScanSession` in `web/spatial/scan.ts`).
   - `cmd/wasm/scan.go` holds the Go `Scan` in the bridge's closure, as the spatial fit does. `{"start": request}` replaces it, and `{"step": true}` advances it by one call.
   - The page steps the scan until it stops. A reply holds readings only, never geometry, so it is plain JSON (under 18 KiB for the scans in `scripts/scan-timing.mjs`) rather than a typed mesh reply.
-  - **Cancel** terminates the worker at once and keeps the last reply, and a reply for an earlier scan is dropped. The notebook's own engine is never used for scanning, so it goes on drawing.
+  - **Cancel** terminates the worker at once and keeps the last reply, and a reply for an earlier scan is dropped. Before the rechecks, every reply holds the candidates the brackets so far make, unchecked, as `Scan.Cancel` would settle them, so a canceled scan keeps what it found. The notebook's own engine is never used for scanning, so it goes on drawing.
 - **State.** `ScanPanel` (`web/spatial/ScanPanel.tsx`) owns the settings, the session and the previews.
   - **Mounting:** the panel mounts within the notebook's controls, so an example, a link or a journey replaces it, and any scan with it. An example's optional `scan` (`web/spatial/presets.ts`) suggests the axis and range. Otherwise the range is the study's value ± max(0.25, a quarter of it), cleaned by `roundedGenerated`.
   - **Forgetting:** any change to the study except the scanned value forgets the scan, as does a change of axis.
