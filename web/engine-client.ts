@@ -214,6 +214,13 @@ export class EngineClient {
     return (await this.request({ action: "spatial-fit", spatialFit: q }))
       .result;
   }
+  // Issue #406's research scan: one per disposable worker, started and
+  // then stepped one mesher call at a time (engine3/scan.go).
+  async implicitScan(
+    q: import("./spatial/scan").ScanMessage,
+  ): Promise<import("./spatial/scan").ScanResult> {
+    return (await this.request({ action: "implicit-scan", scan: q })).result;
+  }
   async harmonicChains(
     config: SpatialConfig,
   ): Promise<import("./spatial/types").HarmonicChainTrack> {

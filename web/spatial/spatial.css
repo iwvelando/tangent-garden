@@ -547,3 +547,108 @@
     height: 64px;
   }
 }
+
+/* Issue #406's research scan (ScanPanel.tsx): not a public feature. */
+.scan-panel {
+  --scan-complete: #2f6f68;
+  --scan-cut: #b07a1a;
+  --scan-unresolved: #8a8f8c;
+  --scan-spread: #2f6f6833;
+  --scan-box-spread: #b07a1a40;
+}
+.dark .scan-panel {
+  --scan-complete: #7fbcae;
+  --scan-cut: #e0b25a;
+  --scan-unresolved: #74807d;
+  --scan-spread: #7fbcae33;
+  --scan-box-spread: #e0b25a40;
+}
+.scan-panel .check {
+  margin: 6px 0;
+}
+.scan-actions {
+  margin: 10px 0 4px;
+}
+.scan-track {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  margin: 6px 0;
+}
+.scan-axis {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.scan-tick {
+  stroke-width: 1.5;
+}
+.scan-tick.complete {
+  stroke: var(--scan-complete);
+}
+.scan-tick.cut {
+  stroke: var(--scan-cut);
+}
+.scan-tick.unresolved {
+  stroke: var(--scan-unresolved);
+  stroke-dasharray: 2 2;
+}
+.scan-tick.singular {
+  stroke-width: 3;
+}
+.scan-spread {
+  fill: var(--scan-spread);
+}
+.scan-spread.box {
+  fill: var(--scan-box-spread);
+}
+.scan-here {
+  fill: var(--text);
+}
+.scan-candidates {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.scan-candidate {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+}
+.scan-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.scan-stability {
+  font-size: 12px;
+  color: var(--muted);
+}
+.scan-stability.unstable {
+  color: var(--scan-cut);
+}
+.scan-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+.scan-sides figure {
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.scan-sides img,
+.scan-placeholder {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--paper);
+}
+.scan-sides button {
+  font-size: 12px;
+}

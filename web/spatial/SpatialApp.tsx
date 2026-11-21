@@ -184,6 +184,8 @@ import {
   type PreviewSlots,
 } from "./event-previews";
 import { EventStrip } from "./EventStrip";
+import { eventScan, type ScanAxis } from "./scan";
+import { ScanPanel } from "./ScanPanel";
 import {
   harmonicClosureKey,
   harmonicClosureNote,
@@ -1883,6 +1885,23 @@ export default function SpatialApp({
       ...implicitNote(r, { genus: !criticalAt(s, level) }),
     ].join(" ");
   };
+  // Issue #406's research scan: whether the settled frame shows that this
+  // F reads a, and its two ways into the notebook, which wait for pending
+  // evaluations and then change the scanned value as typing it would.
+  const scanUsesA =
+    frame?.config.format === "implicit" &&
+    config.format === "implicit" &&
+    frame.config.implicit.f === config.implicit.f &&
+    !!frame.result.implicit?.usesA;
+  const settleScan = async () => {
+    const token = generation.current;
+    await Promise.allSettled([...jobs.current]);
+    return token === generation.current;
+  };
+  const chooseScan = (axis: ScanAxis, value: number) =>
+    setImplicit((q) =>
+      axis === "level" ? { ...q, level: value } : { ...q, a: value },
+    );
   const implicitControls = (
     <>
       <Field
@@ -1997,6 +2016,25 @@ export default function SpatialApp({
       <p className="note" data-testid="implicit-note">
         {levelSet ? levelNote(levelSet) : "Meshing the level set…"}
       </p>
+      {eventScan && config.format === "implicit" && (
+        <ScanPanel
+          config={config}
+          usesA={scanUsesA}
+          preset={spatialPresets[+preset]?.name ?? ""}
+          settle={settleScan}
+          onChoose={chooseScan}
+          run={(c) => client.current!.spatial(c)}
+          look={{
+            camera: manualCamera.current,
+            layers,
+            dark: theme.dark,
+            scheme: theme.scheme,
+            cut: userCut.spec,
+            sight: userSight.spec,
+          }}
+          held={busy}
+        />
+      )}
       <details {...expressions} className="spatial-details">
         <summary>Expression reference</summary>
         <p>

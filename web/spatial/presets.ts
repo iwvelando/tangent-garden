@@ -1,3 +1,4 @@
+import { eventScan } from "./research";
 import type { SpatialFamilySettings } from "./family";
 import type { Pace, Repeat } from "../timing";
 import type { Cut } from "./cut";
@@ -7064,4 +7065,92 @@ export const spatialPresets: {
     view: { ...initialView, yaw: 0.6, pitch: -1.15 },
     layers: { surface: false, normals: false },
   },
+  // Issue #406's research studies, listed only in its preview.
+  ...(eventScan ? eventScanStudies() : []),
 ];
+
+// Research studies for issue #406, never in the gallery: fields chosen for
+// one difficulty each of scanning for topology changes (engine3/scan.go).
+// ScanPanel.tsx suggests each one's range.
+function eventScanStudies(): (typeof spatialPresets)[number][] {
+  const study = (
+    name: string,
+    detail: string,
+    f: string,
+    level: number,
+    a: number,
+    half: [number, number, number],
+    cells: number,
+  ): (typeof spatialPresets)[number] => ({
+    name,
+    detail,
+    config: {
+      ...base,
+      format: "implicit",
+      implicit: {
+        f,
+        a,
+        level,
+        box: {
+          xMin: -half[0],
+          xMax: half[0],
+          yMin: -half[1],
+          yMax: half[1],
+          zMin: -half[2],
+          zMax: half[2],
+        },
+        cells,
+        refine: 0,
+        sections: { normal: { x: 0, y: 0, z: 1 }, from: 0, to: 0, count: 0 },
+      },
+    },
+    view: { ...initialView, yaw: 0.6, pitch: 0.45 },
+  });
+  return [
+    // F = r² has no critical point in the range: the box cuts the sphere
+    // at c = 1, 2 and 3, by its faces, edges and corners.
+    study(
+      "Research: a sphere grows through its box",
+      "Only the box changes what it shows, at c = 1, 2 and 3",
+      "x^2+y^2+z^2",
+      1.5,
+      1,
+      [1, 1, 1],
+      32,
+    ),
+    // g(x) + y² + z² with a tilted double well g(t) = t⁴ − 2t² + t: a drop
+    // is born at c ≈ −0.0733 and joins the bowl at c ≈ 0.1295, closer than
+    // a coarse scan's step.
+    study(
+      "Research: a drop born beside a bowl",
+      "Two events 0.2 apart cancel; a coarse scan sees neither",
+      "x^4 - 2*x^2 + x + y^2 + z^2",
+      0.03,
+      1,
+      [2.2, 2.2, 2.2],
+      48,
+    ),
+    // (r² + a²)² − 4a²x² at c = 1: the origin's value is a⁴, so one
+    // sphere parts into two drops at a = 1.
+    study(
+      "Research: two drops parted by a",
+      "Scan the shape parameter: the sphere parts at a = 1",
+      "((x-a)^2+y^2+z^2)*((x+a)^2+y^2+z^2)",
+      1,
+      0.8,
+      [2, 1.2, 1.2],
+      40,
+    ),
+    // 1/(r² − 1) changes sign across the unit sphere without crossing any
+    // level: every mesh is incomplete.
+    study(
+      "Research: a pole",
+      "Every level crosses a pole; nothing can be compared",
+      "1/(x^2+y^2+z^2-1)",
+      1,
+      1,
+      [1.5, 1.5, 1.5],
+      25,
+    ),
+  ];
+}
