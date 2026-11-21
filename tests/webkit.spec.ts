@@ -1428,6 +1428,53 @@ test("a Hopf neighborhood opens, edits and moves after click and blur in WebKit"
   await expect(width).toHaveCount(0);
 });
 
+// Carrying a marked point turns on by a tap on its checkbox, its phase
+// commits on blur, and unchecking drops the point, in Safari's engine on a
+// phone layout.
+test("a carried Hopf point turns on, edits and turns off after click and blur in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?study=4d");
+  await choosePreset(page, { label: "A circle over every point" });
+  const stage = page.locator(".tesseract-stage");
+  const settle = () => expect(stage).toHaveAttribute("aria-busy", "false");
+  const config = async () =>
+    JSON.parse((await page.locator("#tesseract-artwork > desc").textContent())!)
+      .config;
+  const carried = page.locator(
+    'svg[data-representation="stereo"] [data-role="marked"]',
+  );
+  await settle();
+  const check = page.getByRole("checkbox", {
+    name: "Carry a marked point",
+    exact: true,
+  });
+  await check.click();
+  await settle();
+  await expect(check).toBeChecked();
+  await expect(carried).toHaveCount(1);
+  const phase = page.getByRole("textbox", {
+    name: "Starting phase φ₀",
+    exact: true,
+  });
+  await phase.click();
+  await phase.fill("pi/2");
+  await phase.blur();
+  await settle();
+  expect((await config()).weave).toMatchObject({
+    transport: true,
+    phase: Math.PI / 2,
+  });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await check.click();
+  await settle();
+  await expect(check).not.toBeChecked();
+  await expect(phase).toHaveCount(0);
+  await expect(carried).toHaveCount(0);
+  expect("transport" in (await config()).weave).toBe(false);
+});
+
 test("the harmonic fit returns focus to its entry by click and by keyboard in WebKit", async ({
   page,
 }) => {

@@ -5,6 +5,7 @@ import {
   exampleTitles,
   openAnimation,
 } from "./helpers";
+import { tesseractPresets } from "../web/tesseract/presets";
 
 const closing = "An open notebook for mathematical beauty.";
 
@@ -1036,4 +1037,54 @@ for (const [width, height, stacked] of [
     });
     expect(m.below).toBe(stacked);
     if (stacked) expect(m.title).toBeGreaterThanOrEqual(m.width - 1);
+  });
+
+// The 4D readouts sit in a grid whose value column is 10ch wide and never
+// wraps, so a label or value longer than its column runs into the next
+// readout. Every example's readouts, and with the comparison open, must
+// keep each label before its value and each value inside its own cell.
+for (const [width, height] of [
+  [1440, 650],
+  [844, 390],
+])
+  test(`every 4D example's readouts fit their columns at ${width}×${height}`, async ({
+    page,
+  }) => {
+    test.slow();
+    await page.setViewportSize({ width, height });
+    await page.goto("/?study=4d");
+    const stage = page.locator(".tesseract-stage");
+    const overruns: string[] = [];
+    for (const { name } of tesseractPresets) {
+      await choosePreset(page, { label: name });
+      await expect(stage).toHaveAttribute("aria-busy", "false");
+      await page
+        .locator("details.comparison-readout:not([open]) > summary")
+        .evaluateAll((ss) => ss.forEach((s) => (s as HTMLElement).click()));
+      for (const overrun of await page
+        .locator(".lift-readout > span")
+        .evaluateAll((spans) =>
+          spans.flatMap((span) => {
+            const value = span.querySelector("b");
+            if (!value || !span.getClientRects().length) return [];
+            const box = (from: Node, to?: Node) => {
+              const r = document.createRange();
+              if (to) {
+                r.setStartBefore(from);
+                r.setEndBefore(to);
+              } else r.selectNodeContents(from);
+              return r.getBoundingClientRect();
+            };
+            const label = box(span.firstChild!, value);
+            const shown = box(value);
+            const cell = span.getBoundingClientRect();
+            return label.right > shown.left + 0.5 ||
+              shown.right > cell.right + 0.5
+              ? [span.textContent!]
+              : [];
+          }),
+        ))
+        overruns.push(`${name}: ${overrun}`);
+    }
+    expect(overruns).toEqual([]);
   });

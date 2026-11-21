@@ -200,11 +200,22 @@ export type ObjectDescriptor = {
     help: Help<string> | ((c: Config) => Help<string>);
     group?: string;
     endpoint?: boolean;
-    // Shown after the count fields, beside a choice placed there.
-    after?: "counts";
+    // Shown after the count fields, beside a choice placed there, or after
+    // the selection, beside a check placed there.
+    after?: "counts" | "selection";
     visible?: (c: Config) => boolean;
     fallback?: number;
     whole?: { min: number; max: number };
+  }[];
+  // Switches saved with the study, shown after the selection with the
+  // numeric fields placed there. Absent means off, as in older links.
+  checks?: {
+    key: keyof Pick<Weave, "transport">;
+    label: string;
+    // The help toggle's topic, as in "Show help for <topic>".
+    topic: string;
+    help: Help<string>;
+    visible: (c: Config) => boolean;
   }[];
   // Whole-number counts; studies without them use one sample count.
   countFields?: (c: Config) => {
@@ -414,6 +425,18 @@ const rational = (n: number) =>
 // Base sphere and fibers sampled over a neighborhood of the moving point.
 const sampledNeighborhood = (c: Config) =>
   c.mode === "paired" && c.weave?.sampling === "neighborhood";
+// Base sphere and fibers carrying a marked point along the moving fiber.
+const carriedPoint = (c: Config) => c.mode === "paired" && !!c.weave?.transport;
+// A path's explanation, with what the carried point shows.
+const transportExplanation = ([
+  title,
+  text,
+  formula,
+]: Explanation): Explanation => [
+  title,
+  `${text} A point carried along the moving fiber never turns about it: its velocity stays orthogonal to the fiber. One turn of the path brings it back to its own fiber turned by the holonomy, half the signed area the path encloses. Where it starts on the fiber is a convention; the turn is not.`,
+  `${formula},   Im⟨q, q′⟩ = 0,   γ ≡ A/2 (mod 2π)`,
+];
 // The path's count: its fibers, or under a neighborhood its selectable
 // points, which the neighborhood centers on.
 const pathCountLabel = (c: Config) =>
@@ -465,6 +488,21 @@ function correspondenceReadouts(c: Correspondence) {
           {
             label: "Moving point side",
             value: `${formatCount((c.side ?? 0) + 1)} of ${formatCount(c.sides)}`,
+          },
+        ]
+      : []),
+    // The carried point: the turn one whole turn of the path gives it,
+    // which no chart choice changes, and whether it is drawn.
+    ...(c.transport
+      ? [
+          {
+            label: "Holonomy per turn",
+            value: formatNumber(withoutResidue(c.transport.holonomy)),
+          },
+          {
+            label: "Carried point",
+            // Short enough for the readouts' value column.
+            value: c.transport.inside ? "in window" : "outside",
           },
         ]
       : []),
@@ -1046,7 +1084,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ? "1: base sphere · 2: fibers · tap a point or fiber to select it · [ and ] step the selection · drag to orbit · shift-drag to pan · each view zooms independently"
           : "Orthographic · drag to orbit · shift-drag or two fingers to pan · scroll or pinch to zoom · keys: arrows, + / −, Home",
     movingLegend: (c) =>
-      c.mode === "paired" ? "Moving point and its fiber" : undefined,
+      carriedPoint(c)
+        ? "Moving point, its fiber and the carried point; the ring marks its start"
+        : c.mode === "paired"
+          ? "Moving point and its fiber"
+          : undefined,
     rotations: true,
     viewLabel: "View operation",
     selectorNote:
@@ -1110,6 +1152,18 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       get: (c) => c.weave!.selected ?? 0,
       set: (c, index) => ({ ...c, weave: { ...c.weave!, selected: index } }),
     },
+    checks: [
+      {
+        key: "transport",
+        label: "Carry a marked point",
+        topic: "carrying a marked point",
+        help: tiered(
+          "Carries a point along the moving fiber without turning it about the fiber.",
+          "It starts on the selected fiber. One turn of the path brings it home turned by the holonomy, half the signed area the path encloses, modulo a whole turn. Its trail is the lift over the last whole turn, so both ends lie on the moving fiber.",
+        ),
+        visible: (c) => c.mode === "paired",
+      },
+    ],
     // A selection beyond a reduced count moves to the last fiber. Choosing
     // the polygon fills in the octant triangle when there are no vertices;
     // any vertices are kept whatever the path.
@@ -1271,6 +1325,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         after: "counts",
       },
       {
+        key: "phase",
+        label: "Starting phase φ₀",
+        fallback: 0,
+        help: tiered(
+          "Radians along the selected fiber where the carried point starts.",
+          "Measured from the fiber's point with z₁ real and positive, or (0, 0, 1, 0) at the south pole; within ±100000. It moves the start, never the holonomy.",
+        ),
+        visible: carriedPoint,
+        after: "selection",
+      },
+      {
         key: "spread",
         label: "Latitude spread",
         help: tiered(
@@ -1353,27 +1418,35 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           ]
         : [],
     colorNote: (c) =>
-      sampledNeighborhood(c)
-        ? `${spherePaths[pathOf(c)].colorNote} A broad wash marks the neighborhood's stretch on the base sphere.`
-        : c.mode === "paired"
-          ? spherePaths[pathOf(c)].colorNote
-          : `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
+      c.mode === "paired"
+        ? [
+            spherePaths[pathOf(c)].colorNote,
+            sampledNeighborhood(c) &&
+              "A broad wash marks the neighborhood's stretch on the base sphere.",
+            carriedPoint(c) &&
+              "The carried point, its dotted trail and a wash along its fiber, the gap between the trail's ends, share the accent color; an open ring marks where it started.",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : `Each numbered latitude has its own color and α in the key${c.weave!.family === "tori" ? "; fixed-u and fixed-v circles share it" : ""}. Thin circles mark the projection window |P| = C, where open ends stop. Screen crossings are not intersections, and a clipped arc does not have the linking of its complete circle.`,
     explanation: (c) =>
-      sampledNeighborhood(c)
-        ? neighborhoodExplanation(spherePaths[pathOf(c)].explanation)
-        : c.mode === "paired"
-          ? spherePaths[pathOf(c)].explanation
-          : c.weave!.family === "tori"
-            ? [
-                "Tori on a sphere",
-                "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or opens into a line when it passes through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
-                "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
-              ]
-            : [
-                "Rings from a sphere",
-                "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections. Each Hopf fiber is a great circle that the Hopf map sends to a single point of S², and any two distinct fibers link once. Fibers over one latitude lie on its torus; at α = 0 or π/2 they coincide and are drawn once. The declared 4D rotation turns the whole sphere before projection. Fibers are circles, not sealed solids.",
-                "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   z₁ = x + iy, z₂ = z + iw",
-              ],
+      c.mode === "paired"
+        ? (carriedPoint(c) ? transportExplanation : (e: Explanation) => e)(
+            sampledNeighborhood(c)
+              ? neighborhoodExplanation(spherePaths[pathOf(c)].explanation)
+              : spherePaths[pathOf(c)].explanation,
+          )
+        : c.weave!.family === "tori"
+          ? [
+              "Tori on a sphere",
+              "Each latitude α of the unit 3-sphere is a torus, with |(x, y)| = cos α and |(z, w)| = sin α. Fixed-u and fixed-v circles expose its two directions. At α = 0 or π/2 the torus collapses to one circle, drawn once. The declared 4D rotation turns the whole sphere; stereographic projection from (0, 0, 0, 1) then opens it into space, where each circle stays a circle, or opens into a line when it passes through the pole. A Clifford torus is a two-dimensional surface, not a solid.",
+              "q(u, v, α) = (cos α cos u, cos α sin u, sin α cos v, sin α sin v),   P(q) = q_xyz / (1 − q_w)",
+            ]
+          : [
+              "Rings from a sphere",
+              "These curves lie on a sphere in four dimensions. Stereographic projection turns them into a weave of circles and open arcs. Open ends mark the drawing's finite window, not broken connections. Each Hopf fiber is a great circle that the Hopf map sends to a single point of S², and any two distinct fibers link once. Fibers over one latitude lie on its torus; at α = 0 or π/2 they coincide and are drawn once. The declared 4D rotation turns the whole sphere before projection. Fibers are circles, not sealed solids.",
+              "H(z₁, z₂) = (2 Re z₁z̄₂, 2 Im z₁z̄₂, |z₁|² − |z₂|²),   z₁ = x + iy, z₂ = z + iw",
+            ],
     title: (c) =>
       c.mode === "paired" || c.mode === "base"
         ? "Tangent Garden — Hopf fibers over a base sphere"
@@ -1403,13 +1476,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
             {
               value: "trace",
               label: spherePaths[pathOf(c)].traceLabel,
-              help: sampledNeighborhood(c)
-                ? withMore(
-                    spherePaths[pathOf(c)].traceHelp,
-                    "The neighborhood travels with the point.",
-                  )
-                : spherePaths[pathOf(c)].traceHelp,
-              loops: true,
+              help: [
+                sampledNeighborhood(c) &&
+                  "The neighborhood travels with the point.",
+                carriedPoint(c) &&
+                  "A carried point comes home turned by the holonomy, so the trace goes back and forth; a phrase of whole turns that add up to a whole turn of phase loops.",
+              ].reduce<Help<string>>(
+                (h, more) => (more ? withMore(h, more) : h),
+                spherePaths[pathOf(c)].traceHelp,
+              ),
+              // One turn returns a carried point turned by the holonomy.
+              loops: !carriedPoint(c),
             },
             ...rotationMotions.map((m) => ({
               ...m,

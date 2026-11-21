@@ -120,6 +120,10 @@ const weave = {
     sampling: { optional: { options: { path: true, neighborhood: true } } },
     width: { optional: "number" },
     nearby: { optional: "number" },
+    // A carried marked point, absent (off) in older links, and its
+    // starting phase, kept while the point is not carried.
+    transport: { optional: "boolean" },
+    phase: { optional: "number" },
   },
 } satisfies SchemaOf<Weave>;
 // The square-root journey. Only playback moves the point, so a link

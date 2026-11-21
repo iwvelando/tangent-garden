@@ -144,7 +144,16 @@ export function weaveAtlasPoints(c: Config): number {
         ? (c.weave!.nearby ?? defaultNearby)
         : 0;
     const fibers = k || n;
+    // A carried point's trail of one turn and gap along its fiber, each
+    // with a window crossing per interval, and two markers (engine4
+    // transportPoints); the polygon's pieces include its corners.
+    const transport = c.weave!.transport
+      ? 2 * (spherePaths[pathOf(c)].transportPieces(c) + 2) +
+        2 * (Math.floor(s / 2) + 2) +
+        2
+      : 0;
     return (
+      transport +
       (fibers + 1) * (s + 2) +
       7 * (s + 1) +
       fibers +

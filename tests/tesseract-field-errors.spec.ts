@@ -337,6 +337,13 @@ const cases: Case[] = [
     },
     "Fibers on the flower",
   ],
+  // A carried point's starting phase.
+  [
+    "weave.phase",
+    (c) => !!c.weave?.transport,
+    (c) => (c.weave!.phase = 1e6),
+    "Starting phase φ₀",
+  ],
   // A neighborhood's width and fiber count, and the path's count, which
   // under a neighborhood names its points.
   [

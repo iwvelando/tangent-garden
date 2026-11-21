@@ -468,6 +468,57 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
+  // Opens the octant triangle, (1, 0, 0) to (0, 1, 0) to (0, 0, 1), with
+  // 24 fibers, eight on each side, and a marked point carried from sample 0
+  // at vertex 1, starting half a turn along its fiber (φ₀ = π), where its
+  // trail is drawn largest. The sphere is unrotated, so the fiber through
+  // the projection's pole lies over the south pole, and every fiber and
+  // trail point over the triangle has q_w ≤ 1/√2, inside the window C =
+  // 2.5 throughout. The triangle encloses π/2, so each lap returns the
+  // point to its fiber turned by π/4; its phrase runs eight laps, a whole
+  // turn of phase, and loops without a seam.
+  {
+    name: "Eight laps, one turn of phase",
+    detail:
+      "Carry a point around a triangle on the sphere, never turning it about its fiber. Each lap brings it home an eighth of a turn further along: half the area enclosed. Eight laps close the loop.",
+    config: {
+      ...objects.weave.defaults(base),
+      mode: "paired",
+      count: 1,
+      curves: 24,
+      samples: 128,
+      clip: 2.5,
+      angles: [0, 0, 0, 0, 0, 0],
+      weave: {
+        family: "fibers",
+        alpha: Math.PI / 4,
+        spread: 0.66,
+        alphaFrom: 0.33,
+        alphaTo: Math.PI / 2 - 0.33,
+        selected: 0,
+        path: "polygon",
+        vertices: [
+          { u: 0, v: 0 },
+          { u: Math.PI / 2, v: 0 },
+          { u: 0, v: Math.PI / 2 },
+        ],
+        transport: true,
+        phase: Math.PI,
+      },
+    },
+    view: { yaw: 0.32, pitch: 0.35, zoom: 1.25, panX: 0, panY: 0 },
+    motion: "phrase",
+    repeat: "loop",
+    phrase: {
+      target: "weave.trace",
+      phases: [1, 2, 3, 4, 5, 6, 7, 8].map((lap) => ({
+        name: `Lap ${lap}`,
+        duration: 3,
+        pace: "steady" as const,
+        key: String(lap),
+      })),
+    },
+  },
   // Opens the woven Lissajous bouquet's path m = (2, 1) sampled over a
   // neighborhood: 25 fibers over w = 0.12 of the path, centered on
   // sample 11 of 32 (selected: 10), where the stretch's fibers fan out

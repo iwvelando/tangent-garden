@@ -27,6 +27,7 @@ import { NotebookMode } from "../NotebookMode";
 import { useTheme } from "../useTheme";
 import { useMediaQuery } from "../useMediaQuery";
 import {
+  CheckSetting,
   Field,
   HelpText,
   HelpToggle,
@@ -832,9 +833,12 @@ export default function TesseractApp({
   const liftFields =
     descriptor.numericFields?.filter((f) => !f.visible || f.visible(config)) ??
     [];
-  const renderNumericFields = (endpoints: boolean, afterCounts = false) => {
+  const renderNumericFields = (
+    endpoints: boolean,
+    after?: "counts" | "selection",
+  ) => {
     const fields = liftFields.filter(
-      (f) => !!f.endpoint === endpoints && !!f.after === afterCounts,
+      (f) => !!f.endpoint === endpoints && f.after === after,
     );
     const rows: (typeof fields)[] = [];
     for (const f of fields) {
@@ -1403,7 +1407,7 @@ export default function TesseractApp({
                       )
                     )}
                     {choiceFields(true)}
-                    {renderNumericFields(false, true)}
+                    {renderNumericFields(false, "counts")}
                     {selection?.visible(config) && (
                       <SelectionField
                         config={config}
@@ -1415,6 +1419,40 @@ export default function TesseractApp({
                         onSelect={select}
                       />
                     )}
+                    {descriptor.checks
+                      ?.filter((check) => check.visible(config))
+                      .map((check) => (
+                        <CheckSetting
+                          key={check.key}
+                          label={check.label}
+                          topic={check.topic}
+                          help={check.help}
+                          checked={
+                            !!(
+                              config[parameterKey] as unknown as Record<
+                                string,
+                                unknown
+                              >
+                            )[check.key]
+                          }
+                          // Unchecking drops the field, as in links made
+                          // before it existed.
+                          onChange={(on) =>
+                            update((c) => {
+                              const { [check.key]: _, ...rest } = c[
+                                parameterKey
+                              ] as unknown as Record<string, unknown>;
+                              return {
+                                ...c,
+                                [parameterKey]: on
+                                  ? { ...rest, [check.key]: true }
+                                  : rest,
+                              };
+                            })
+                          }
+                        />
+                      ))}
+                    {renderNumericFields(false, "selection")}
                     {descriptor.motionEndpointsLabel &&
                       liftFields.some((f) => f.endpoint) && (
                         <details className="subsection">

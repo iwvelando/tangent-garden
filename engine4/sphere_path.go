@@ -26,6 +26,9 @@ type spherePath struct {
 	// them, and dp/dt of the formula. Increasing t is the path's orientation.
 	point      func(t float64) Vec3
 	derivative func(t float64) Vec3
+	// An upper bound of |p′(t)|, which sets the marked point's quadrature
+	// pieces (phase.go) before evaluation.
+	speed float64
 	// Every point is one pole: a collapsed latitude or zero-amplitude flower.
 	constant bool
 	// Samples carry provenance: exact repeated poles share one fiber through
@@ -191,7 +194,7 @@ func polygonPath(w WeaveParameters, samples int) spherePath {
 		return i, false
 	}
 	return spherePath{name: "polygon", noun: "polygon", kind: "polygon", period: at[m], segments: samples,
-		corners: at[1:m],
+		corners: at[1:m], speed: 1,
 		point: func(t float64) Vec3 {
 			i, vertex := locate(t)
 			if vertex {
@@ -251,6 +254,7 @@ func newSpherePath(w WeaveParameters, samples int) spherePath {
 		// counterclockwise about (0, −sin β, cos β).
 		sb, cb := math.Sincos(math.Min(math.Max(w.Tilt, 0), math.Pi))
 		return spherePath{name: w.Path, noun: "great circle", kind: w.Path, period: 2 * math.Pi, segments: samples,
+			speed: 1,
 			point: func(t float64) Vec3 {
 				s, c := math.Sincos(t)
 				return snapPole(Vec3{c, cb * s, sb * s})
@@ -272,6 +276,8 @@ func newSpherePath(w WeaveParameters, samples int) spherePath {
 		f1, f2 := float64(m1), float64(m2)
 		return spherePath{name: w.Path, noun: "Lissajous curve", kind: w.Path, period: 2 * math.Pi / float64(g),
 			segments: max(samples, 16*(m1+m2)/g),
+			// |p′|² = m₂² + m₁² sin²(m₂t).
+			speed: math.Hypot(f1, f2),
 			point: func(t float64) Vec3 {
 				sp, cp := math.Sincos(f2 * t)
 				sa, ca := math.Sincos(f1 * t)
@@ -285,7 +291,7 @@ func newSpherePath(w WeaveParameters, samples int) spherePath {
 			distinct: true, reportPeriod: true}
 	}
 	alpha := weaveLatitudes(w.Alpha, 0, 1)[0]
-	p := spherePath{noun: "latitude", level: alpha, period: 2 * math.Pi, segments: samples,
+	p := spherePath{noun: "latitude", level: alpha, period: 2 * math.Pi, segments: samples, speed: 1,
 		point:      func(t float64) Vec3 { return latitudePoint(alpha, t) },
 		derivative: func(t float64) Vec3 { return latitudeVelocity(alpha, 0, t) },
 		constant:   alpha == 0 || alpha == math.Pi/2}
@@ -300,6 +306,8 @@ func newSpherePath(w WeaveParameters, samples int) spherePath {
 	k := float64(flowerPetals(w))
 	p.kind, p.constant, p.distinct = w.Path, false, true
 	p.segments = max(samples, 16*flowerPetals(w))
+	// |p′|² = 4α′² + sin² 2α, with |α′| ≤ Ak.
+	p.speed = math.Hypot(2*w.Amplitude*k, 1)
 	p.point = func(t float64) Vec3 {
 		return latitudePoint(snapLatitude(w.Alpha+w.Amplitude*math.Cos(k*t)), t)
 	}
