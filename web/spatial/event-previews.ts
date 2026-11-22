@@ -12,7 +12,7 @@ import type { CutSpec } from "./cut";
 import type { Sight } from "./sight";
 import type { View } from "./scene";
 import type { SpatialCamera } from "./link";
-import type { SpatialConfig, SpatialResult } from "./types";
+import type { SpatialConfig, SpatialResult, Vec3 } from "./types";
 import {
   eventStates,
   stateReading,
@@ -160,11 +160,23 @@ export class EventPreviews {
   }
 }
 
+// How a preview is drawn: the drawing's own look, and a story's zoom when
+// it has one.
+export type PreviewLook = Pick<
+  PreviewIntent,
+  "camera" | "layers" | "dark" | "scheme" | "cut" | "sight"
+> & { story?: Pick<Story, "previewZoom"> };
+// A close-up: the view turned about this point instead of the box's
+// center, at this zoom, unpanned.
+export type PreviewFocus = { center: Vec3; zoom: number };
+
 // One preview drawn as the drawing draws, at the story's opening camera
-// about the result's own bounds (the box's, the same at every level).
+// about the result's own bounds (the box's, the same at every level), or
+// close up about a point.
 export async function drawPreview(
   result: SpatialResult,
-  intent: PreviewIntent,
+  intent: PreviewLook,
+  focus?: PreviewFocus,
 ): Promise<Blob> {
   const canvas = document.createElement("canvas"),
     renderer = createRenderer(canvas, intent.scheme);
@@ -175,11 +187,21 @@ export async function drawPreview(
     // Closer than the story's view, which frames the whole box: a preview
     // is small, and the surface is what it compares. A story whose surface
     // fills its box can ask for less.
-    const view: View = {
-      ...result.bounds,
-      ...intent.camera,
-      zoom: intent.camera.zoom * (intent.story.previewZoom ?? previewZoom),
-    };
+    const view: View = focus
+      ? {
+          ...result.bounds,
+          ...intent.camera,
+          center: focus.center,
+          zoom: focus.zoom,
+          panX: 0,
+          panY: 0,
+          targetDepth: 0,
+        }
+      : {
+          ...result.bounds,
+          ...intent.camera,
+          zoom: intent.camera.zoom * (intent.story?.previewZoom ?? previewZoom),
+        };
     renderer.draw(view, intent.layers, intent.dark, previewPage);
     return await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(

@@ -1879,6 +1879,112 @@ Browser tests (`tests/spatial-events.spec.ts`) verify:
 - each bracket, the event shown for every kind of level, the notes word for word (and the one-event stories' unchanged), and the rests' levels, share and ends;
 - in the notebook, the chooser and every state forward and back, changing only the level; a typed level equal to choosing it; previews kept to three images with one calculation in flight as events change; the link, which carries no event; and the tanglecube film's rests, seeks and a decoded MP4.
 
+## Scanning for topology changes
+
+**Scan for changes** looks for the values where an implicit study's mesh changes: along the level `c`, or along the shape parameter `a` when `F` reads it. Unlike a curated event, a result is evidence from finite grids, never a proof that `F` has a critical value there. It is also never a proof that nothing happens where no change is found. The engine is `engine3/scan.go` and `engine3/scan_critical.go`.
+
+**What is scanned.** The scan covers an entered range `[from, to]`, both ends included, each finite within ±100000, with `to > from`. Nothing outside it is meshed. Only the scanned value changes: the box, cells and refinement are the study's, and its sections are ignored.
+
+**Readings.** Each mesh is kept only as its _reading_, which is one of:
+
+- **complete:** closed, two-sided and uncut, perhaps with no surface at all;
+- **cut:** the box cuts it open, and nothing else is wrong;
+- **incomplete,** with its reason, checked in this order:
+  - **poles:** `F` changes sign across a pole or jump;
+  - **open:** cells are left out beside non-finite values, or an edge lies on more than two triangles;
+  - **refinement:** refinement stopped at its budget;
+  - **crossings:** sheets meet that could not be meshed;
+  - **one-sided;**
+- **refused** by the mesher.
+
+A complete or cut reading lists two sets of Euler characteristics, in ascending order: those of the closed pieces, and those of the _cut_ pieces, which have an edge on the box. It also counts the _singular_ vertices, where `∇F` vanishes or is not finite. Two readings are the same class when both are resolved (complete or cut) with equal lists, or when neither is resolved, since an incomplete mesh shows no topology to compare.
+
+**Samples and brackets.** The scan meshes `N` evenly spaced values, 3–65, with both ends exactly as entered.
+
+Every other value is cleaned of floating-point tails before it is meshed, as `roundedGenerated` cleans generated defaults. It becomes the shortest decimal of at most 15 significant digits within `2⁻⁵² max(|v|, |from|, |to|)` of it, or stays as it is when there is none. So nine samples of `[0.6, 1.4]` include exactly 1, never 0.9999999999999999, and a value shown and set is the value meshed.
+
+Neighbors that read differently form a _bracket_. Brackets are bisected round-robin, every bracket once before any goes deeper, to a depth `D` of 0–12. Each midpoint is cleaned the same way, and one that reads like neither end splits its bracket in two.
+
+**Candidates.** Each bracket is a candidate, with two exceptions for a short middle class. Suppose that class lasts only between two brackets, and either it is unresolved or every sample in it has a singular vertex. Then the two brackets are one candidate _through_ its first singular sample (or its first sample). A candidate is of one of four kinds:
+
+- **unresolved:** an end, or the sample it runs through, is unresolved;
+- **singular:** it runs through such a sample and reads alike on both sides;
+- **box:** the cut pieces differ between its ends;
+- **change:** only the closed pieces differ, including a change beside cut pieces that stay the same.
+
+**Rechecks.** Each change or box candidate is looked for again on two other grids, counted along the box's longest side:
+
+- **The lattice grid** has one cell more, which moves the lattice inside the same box (one cell fewer at the mesher's limit).
+- **The finer grid** has the most cells, at most `round(1.5 · cells)`, that fit the mesher's limits and exceed the study's by more than one. When none fits, it has `round(2/3 · cells)`.
+
+The recheck's interval starts at the coarse samples on either side of the candidate. It is clipped by the nearer ends of neighboring change or box candidates; singular and unresolved neighbors do not clip it.
+
+Both ends are read on the recheck's grid, and the outcome is one of these:
+
+- **agrees:** the same change lies between the ends, and the interval is bisected until it is no wider than the candidate's bracket. An end counts as the change's own side when it reads that side, or when it reads neither side and has a singular vertex: coarse samples land on round values, and critical values often are.
+- **below** or **above:** an end reads the far side, so the change lies beyond it. Before this outcome, the end moves outward a coarse step at a time, at most two steps, never past the range or a neighboring change.
+- **differs:** the ends read anything else.
+- **unresolved:** either end is incomplete or refused.
+
+The candidate is then:
+
+- **stable** when both rechecks agree;
+- **unstable** when either recheck settles any other way;
+- **unchecked** when neither settled, because rechecks were off or the work limit came first.
+
+Its _spread_ is the smallest interval holding its bracket on the study's grid and on every grid that agrees. The spread, not the bisected bracket, is the reported uncertainty: after a few bisections, moving the lattice shifts a change by more than the bracket's width.
+
+**Critical points.** Unless it is unresolved, each candidate is searched for critical points.
+
+- **Seeds** come from the study's grid at the candidate's middle value. They are grid points at least two cells inside the box where the sampled `|∇F|²`, from central differences of the grid's values, is no greater than at any of their 26 neighbors. At most 64 are used, those where `F` is nearest the candidate's value first.
+- **Newton's method** solves `∇F = 0` from each seed when scanning the level. Scanning `a`, it solves `∇ₓF = 0` and `F = c` together for the point and `a`.
+  - The gradient comes from fourth-order central differences, at a step of 10⁻³ of the smallest cell. The Hessian comes from differences of gradients.
+  - Each step is at most two cells, and the point must stay in the box. The search stops after 40 iterations.
+  - A point has converged when `|∇F|` is within 10⁻⁸ of the field's scale, its range over the box divided by the box's diagonal, and, scanning `a`, when `F` is within `10⁻¹⁰ max(1, |c|)` of `c`.
+- **The critical value** is `F` at the point, or, scanning `a`, the value of `a` found.
+- **The Morse index** is the number of the Hessian's negative eigenvalues. It is −1 (degenerate) when an eigenvalue is within 10⁻⁶ of the largest in size.
+- **A point is kept** when its value lies within twice the spread's width of the spread. Scanning the level, it may also lie within `½|λ|max (√3 h/2)²` of the spread, where `h` is the grid's widest cell.
+  - A piece is meshed only once it holds a grid point, so a birth is seen late, and a death early, by up to how much `F` grows from the critical point to the farthest a grid point can be from it.
+  - The tanglecube's drops are born at −75/4, and its 32-cell grid sees them about 0.19 late. The search recovers −18.75.
+- **Grouping:** points are grouped by value (within a relative 10⁻⁹) and index, and a point found from several seeds is counted once.
+
+A critical point found this way is numerical evidence, not a certificate. It leads the candidate in the panel. A box candidate with none beside it is likely the box's doing.
+
+**Merged box intervals.** The search can find no critical point beside a run of two or more box candidates, each unstable, each beginning less than one coarse step after the one before ends. Such a run becomes one _box interval_. It reads Before at its first end and After at its last, its spread is theirs together, and it counts the candidates it holds. A face whose cut band is thinner than a cell reads a cascade like this, as in *A double torus*'s thin box near `c = 0.0225`. Without the critical search, nothing merges.
+
+**Limits.** These are enforced, and say nothing of speed or memory.
+
+- **Work:** at most 64,000,000 base grid cells and 1,024 mesher calls a scan, rechecks included. Each call also keeps the mesher's own limits.
+- **Critical search:** not counted in that work. It evaluates `F` once at each grid point and runs at most 64 seeds of 40 Newton steps for each candidate.
+- **Recheck reserve:** bisecting one more time must leave room for the rechecks of every bracket found so far. That is `2 + depth` calls on each recheck grid for each bracket whose ends are resolved. When there is not room, bisection stops early, and the scan says so. Widening a recheck's interval is not reserved.
+- **Stop:** the scan reports why it stopped: complete, the call limit, the cell limit, or canceled. It keeps what it found. A recheck the scan did not reach is skipped, and a canceled scan makes no critical search.
+
+**What a scan cannot see.**
+
+- **Cancelling pairs:** two changes that undo each other between neighboring samples. A tilted double well's birth and merger, 0.2 apart, are missed at a step of 0.4 and found at 0.1. Finding no candidate means only that no two neighbors read differently.
+- **Fields that never resolve:** a field with a pole, or undefined in part of the box, leaves its samples unresolved and claims nothing.
+- **A false pole:** the mesher can report one at an isolated level ([#504](https://github.com/iwvelando/tangent-garden/issues/504)). The scan reads that sample as unresolved, with the same reading on both sides, never as a change.
+
+**Checks.** Native tests (`engine3/scan_test.go`) compare the scan with each field's analysis, written independently. They cover:
+
+- **Known events:** every event of the four curated stories found once between the analysis's classes and stable, and the tanglecube's birth seen late within the bound above. The shape parameter is scanned for two drops parting and a handle opening at `a = 1`.
+- **Box events:** a sphere through its box (pure box events at `c = 1`, 2 and 3), and a change beside a cut piece.
+- **Missed and unresolved fields:** a cancelling pair missed and then found, poles and undefined fields claiming nothing, and a singular sample on a coarse value.
+- **Grids:** a resolution shift held by the spread, and the recheck grids at the mesher's limit.
+- **Requests and limits:** validation field by field, the call and cell limits and cancellation, and the recheck reserve.
+- **Recheck intervals:** widening, and a singular neighbor on either side that does not narrow a recheck.
+- **Sampled values:** cleaned values, and the rule that cleans them.
+- **Critical points:** values and Morse indices exact to 10⁻⁷, and grouping.
+- **Merging:** each rule, and the double torus's cascade.
+
+Browser tests (`tests/spatial-event-scan.spec.ts`) check:
+
+- the panel on every implicit study and no other;
+- the tanglecube's four critical values, close-ups and rechecks, choosing a side as typing it would, and the link without the scan;
+- cancellation, with the notebook drawing meanwhile and every setting disabled;
+- box events, forgetting, and errors under their fields that never hold the study;
+- the shape parameter, a pole, the merged interval, and the phone's return to Controls.
+
 ## Spatial cutaway plane
 
 The cut is a drawing setting, not part of the study: Go computes the whole study as it would without it, and the cut only hides part of the drawing. It is the plane `n̂·p = d`, with `n̂ = n/|n|`, in world coordinates. The entered normal `n` may have any nonzero length, each component finite and within ±10⁵. Only its direction counts. The offset `d` is the plane's signed distance from the origin along `n̂`, within ±10⁵. The normal points to the hidden side: whatever lies where `n̂·p > d` is hidden, and points on the plane are kept. **Flip** negates both `n` and `d`, which describes the same plane with the other side hidden. The plane is fixed in space. Orbiting the camera, or animating parameters that move the study's bounds, does not move it.

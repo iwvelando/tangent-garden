@@ -44,6 +44,8 @@ declare const tangentGardenShorten: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenSpatialProbe: (json: string) => string;
+// Scan for changes (engine3/scan.go): readings only, as plain JSON.
+declare const tangentGardenImplicitScan: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
 // (cmd/wasm/lift); the page puts them back (web/lifted.ts). A refusal is
 // JSON alone.
@@ -106,7 +108,8 @@ self.onmessage = async ({
     | "garden"
     | "lace"
     | "laceFrame"
-    | "shorten";
+    | "shorten"
+    | "implicit-scan";
   loom?: import("./loom/model").LoomRequest;
   garden?: import("./garden/model").GardenRequest;
   lace?: import("./lace/model").LaceRequest;
@@ -119,6 +122,7 @@ self.onmessage = async ({
   count?: number;
   correction?: import("./fourier-fit").FourierCorrection;
   spatialFit?: import("./spatial/harmonic-fit").HarmonicFitRequest;
+  scan?: import("./spatial/scan").ScanMessage;
   close?: boolean;
   tesseract?: import("./tesseract/types").Config;
   spatial?: import("./spatial/types").SpatialConfig;
@@ -333,6 +337,14 @@ self.onmessage = async ({
       if (!allFinite(q)) throw new Error("Every source number must be finite.");
       const start = performance.now();
       postLifted(data.id, tangentGardenSpatialFit(JSON.stringify(q)), start);
+      return;
+    }
+    if (data.action === "implicit-scan") {
+      const q = data.scan;
+      if (!q) throw new Error("Start a scan.");
+      if (!allFinite(q)) throw new Error("Every number must be finite.");
+      const r = JSON.parse(tangentGardenImplicitScan(JSON.stringify(q)));
+      self.postMessage({ id: data.id, ...(r.error ? r : { result: r }) });
       return;
     }
     if (data.action === "harmonic-chains") {

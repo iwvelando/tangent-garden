@@ -279,6 +279,13 @@ const pairSetups: Record<string, (page: Page) => Promise<Setup[]>> = {
         page.getByLabel("Turn window", { exact: true }),
       ).toBeVisible();
     });
+    // Scan for changes pairs its range's ends, and its counts, once open.
+    setups.push(async () => {
+      await page.goto("/?study=3d");
+      await choosePreset(page, { label: "The tanglecube's three events" });
+      await page.getByText("Scan for changes", { exact: true }).click();
+      await expect(page.getByLabel("Scan from", { exact: true })).toBeVisible();
+    });
     return setups;
   },
   "4D": async (page) => {

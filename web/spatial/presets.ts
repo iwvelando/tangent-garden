@@ -321,6 +321,10 @@ export const spatialPresets: {
   // opens with none.
   story?: StoryId;
   family?: SpatialFamilySettings;
+  // The range Scan for changes suggests when the example opens
+  // (ScanPanel.tsx): the value scanned and its ends. One without suggests
+  // a range about the study's own value. Never in a link.
+  scan?: { axis: "level" | "a"; from: number; to: number };
 }[] = [
   {
     name: "Trefoil · (2, 3)",
@@ -1329,6 +1333,7 @@ export const spatialPresets: {
   },
   {
     name: "Two drops meeting",
+    scan: { axis: "a", from: 0.8, to: 1.2 },
     detail:
       "Points whose distances to two foci multiply to a constant: two drops that join through a saddle as the constant grows",
     config: {
@@ -1363,6 +1368,7 @@ export const spatialPresets: {
   },
   {
     name: "A double torus",
+    scan: { axis: "level", from: 0.005, to: 0.1 },
     detail:
       "A thickened figure eight: a closed surface of genus two, cut through its middle to show both holes",
     config: {
@@ -1397,6 +1403,7 @@ export const spatialPresets: {
   },
   {
     name: "The tanglecube",
+    scan: { axis: "level", from: -18, to: 4 },
     detail:
       "x⁴ − 5x² + y⁴ − 5y² + z⁴ − 5z² = −11.8: a closed cage of genus five, cut by planes across its diagonal",
     config: {
@@ -1429,6 +1436,7 @@ export const spatialPresets: {
   },
   {
     name: "A gyroid, cut open",
+    scan: { axis: "level", from: -1.5, to: 1.5 },
     detail:
       "sin x cos y + sin y cos z + sin z cos x = 0 over one period: a surface that divides space into two intertwined labyrinths, cut open by its box and by a diagonal plane",
     config: {
@@ -2222,6 +2230,7 @@ export const spatialPresets: {
   // 1, so the last frame is the first, bit for bit, and the animation loops.
   {
     name: "A Schwarz surface breathing",
+    scan: { axis: "a", from: 0, to: Math.PI },
     detail:
       "cos x + cos y + cos z = −1.6 cos a: corner caps open into Schwarz's labyrinth, close to a drop and return, looping",
     config: {
@@ -6736,6 +6745,7 @@ export const spatialPresets: {
   // by one vertex.
   {
     name: "Two drops become one",
+    scan: { axis: "level", from: 0.64, to: 1.44 },
     detail:
       "Two drops touch at one point at c = 1 and join through a neck above it",
     story: "two-drops",
@@ -6787,6 +6797,7 @@ export const spatialPresets: {
   },
   {
     name: "The instant a handle appears",
+    scan: { axis: "level", from: 0.64, to: 1.44 },
     detail:
       "As c falls through 1, a sphere's two dimples meet at its center and open into a torus",
     story: "handle",
@@ -6847,6 +6858,7 @@ export const spatialPresets: {
   // at the third.
   {
     name: "The tanglecube's three events",
+    scan: { axis: "level", from: -20, to: 4 },
     detail:
       "Eight drops join into a cage of genus five, its six windows close into a hollow shell, and the hollow vanishes",
     story: "tanglecube",
@@ -6910,6 +6922,7 @@ export const spatialPresets: {
   // above the event, cut by z = 0; its film lowers the level through it.
   {
     name: "Two handles open at once",
+    scan: { axis: "level", from: 0.01, to: 0.1 },
     detail:
       "As c falls through 1/16, a flat sphere's two pairs of dimples meet at once and open into a double torus",
     story: "two-handles",

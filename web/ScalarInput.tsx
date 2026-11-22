@@ -45,6 +45,7 @@ export function ScalarInput({
   onChange: (value: number) => void;
   id?: string;
   "aria-describedby"?: string;
+  disabled?: boolean;
 }) {
   const status = useContext(ScalarStatus)!;
   const key = useId();

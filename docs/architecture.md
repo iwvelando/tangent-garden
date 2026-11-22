@@ -525,6 +525,37 @@ The topology theater's stories are a thin layer over the ordinary implicit study
 - **Passage.** `SpatialAnimationPanel` receives the eligible story as `event`. It offers **Rest beside the event** under a level track and stores `animation.holds` with the setup (link-saved, absent when off). At session start `holdPlan` turns the level track's resolved ends into a rest at every side's level the track passes, each taking `min(holdShare, restsAtMost / k)` of the timeline. `frameAt` replaces the level with `heldLevel` after `applyTracks`, so playback, seeks, loops and exports share one sampler and every frame is a full engine request. The session keeps its last parameter frame with the request it answered (`Session.last`), and a frame asking for exactly that again, as every frame of a rest does while the camera flies on, reuses it; the engine's reply depends on its request alone, so the reused frame is the one a new calculation would return. With no eligible story the flag is dormant and frames are linear. A [spatial phrase](#spatial-animation-phrases) moves the level as an ordinary track, without these rests; its own hold phases rest.
 - **Layout.** The strip is a section of the stage after the drawing's frame. While it is present, the desktop drawing gives up its height (`spatial.css`), so the strip shows with the drawing; on phones it follows the drawing's controls. Its previews are geometry only, with every label outside them.
 
+## Scanning implicit studies
+
+**Scan for changes** is a disclosure under every implicit study's fields. It searches for places where the mesh's reading changes, without becoming a separate workspace: the scan's definitions are in [mathematics, Scanning for topology changes](mathematics.md#scanning-for-topology-changes).
+
+- **Engine.** `engine3.NewScan` validates the request field by field: `scan.axis`, `scan.from`, `scan.to`, `scan.samples` and `scan.depth`, then the study's own `implicit.*` fields. It also parses `F` once, to refuse the `a` axis when `F` does not read it. `Scan.Step` makes at most one mesher call, and `Scan.Result` returns the scan as it stands. `RunScan` steps a scan to its end, for tests. The limits are package variables (`maxScanCalls`, `maxScanCells`), so tests can lower them.
+- **Transport.** Each scan runs in a disposable `EngineClient` (`ScanSession` in `web/spatial/scan.ts`).
+  - `cmd/wasm/scan.go` holds the Go `Scan` in the bridge's closure, as the spatial fit does. `{"start": request}` replaces it, and `{"step": true}` advances it by one call.
+  - The page steps the scan until it stops. A reply holds readings only, never geometry, so it is plain JSON (under 18 KiB for the scans in `scripts/scan-timing.mjs`) rather than a typed mesh reply.
+  - **Cancel** terminates the worker at once and keeps the last reply, and a reply for an earlier scan is dropped. Before the rechecks, every reply holds the candidates the brackets so far make, unchecked, as `Scan.Cancel` would settle them, so a canceled scan keeps what it found. The notebook's own engine is never used for scanning, so it goes on drawing.
+- **State.** `ScanPanel` (`web/spatial/ScanPanel.tsx`) owns the settings, the session and the previews.
+  - **Mounting:** the panel mounts within the notebook's controls, so an example, a link or a journey replaces it, and any scan with it. An example's optional `scan` (`web/spatial/presets.ts`) suggests the axis and range. Otherwise the range is the study's value ± max(0.25, a quarter of it), cleaned by `roundedGenerated`.
+  - **Forgetting:** any change to the study except the scanned value forgets the scan, as does a change of axis.
+  - **Starting:** a scan starts only after the notebook's tracked evaluations and the panel's own have settled.
+  - **Range fields:** they resolve through a `ScalarStatus` of the panel's own, as the atlas's ranges do (`web/atlas-dialog.tsx`), so a range being typed never holds or refuses the study.
+  - **Errors:** a range that does not parse, a count that is not whole, and the engine's field errors are shown under their fields through the panel's `FieldErrorContext`.
+  - **While scanning,** every setting is disabled.
+  - **Links:** nothing of a scan enters a link, history or export.
+- **Choosing.** **Before**, **After** and their images are one button each. A choice waits for pending evaluations, sets the scanned value with `setImplicit` as typing it would, and calls `useShowDrawing` (`web/MobileNotebookNav.tsx`). Where the notebook's navigation is shown, that jumps to the drawing as **Drawing** does, recording the reader's place, so **Controls** returns to it. The full mesh is the notebook's own.
+- **Previews.** `ScanPreviews` (`web/spatial/scan-previews.ts`) follows `EventPreviews`. It owns one calculation in flight and the latest intent, which is keyed by the study except its scanned value, the candidates' brackets, layers, theme, scheme, cut and sight. It is held while the notebook computes.
+  - Only the first six change or box candidates get previews, two each, so the panel holds at most twelve images.
+  - `drawPreview` takes an optional focus. With a critical point, a candidate's two previews turn about its leading point at `closeUpZoom`: about eight cells either side, within 2–12 times the box's framing. The panel labels them as close-ups.
+  - Previews are geometry only, and every label is outside them.
+- **Presentation.** `scan.ts` holds the wording:
+  - `candidateTitle`, led by the critical point nearest the spread (`leadingCritical`);
+  - `indexName`;
+  - `candidateNote`, in two tiers: the reading's change and spread, then the bracket, rechecks and other critical points;
+  - `stopText`.
+
+  A live region carries only the scan's one-line summary once it stops. Progress during a scan is ordinary text, and a sample track in SVG beside the candidates shows each sample's reading and each candidate's spread.
+- **Measuring.** `node scripts/scan-timing.mjs` steps a set of scans through the production WASM engine under Node, after `make wasm`. It reports the time per step, the reply's size and the module's memory. It times the engine, not a device.
+
 ## Tesseract notebook
 
 `engine4` defines an independent 4-cube request and result, including projected paths, section faces, diagnostics and a rotation-independent framing sphere. `tangentGardenTesseract` in `cmd/wasm` transports JSON, with its large numeric arrays lifted out beside it (see above); the existing worker validates finite inputs and routes the request. `web/tesseract` provides its own SVG drawing, ordinary 3D camera, coalescing numerical queue, playback and export sampler. It never extends a curve type with a dummy coordinate. The shared header lazily mounts the 2D, 3D and 4D notebooks, preserving each study and camera and stopping hidden playback. The tesseract's transparent vector style makes no opaque visibility claim. See [the study documentation](tesseracts.md) for scope and limits.
