@@ -138,6 +138,9 @@ self.onmessage = async ({
   // With compute, the reply is the study's moving constructions at every
   // sample (engine.Track) in place of the study.
   track?: boolean;
+  // With compute, an implicit curve's level set is classified too (see
+  // engine.LevelTopology).
+  topology?: boolean;
   // Asks Go for a surface patch described at one (u, v), at or between its
   // grid samples (see engine3.SurfaceQuery); with probeOnly, the reply
   // carries that point alone.
@@ -1326,6 +1329,7 @@ self.onmessage = async ({
       ...(data.diagnostics && { diagnostics: true }),
       ...(data.probe && { probe: data.probe }),
       ...(data.view && { view: data.view }),
+      ...(data.topology && { topology: true }),
     });
     if (data.track) {
       const start = performance.now();

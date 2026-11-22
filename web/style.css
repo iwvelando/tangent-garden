@@ -905,6 +905,16 @@ h1 {
   min-height: 420px;
   max-height: 880px;
 }
+/* A planar event's strip follows the drawing (EventStrip.tsx). On a desktop
+   screen the drawing gives up the strip's height, so the strip shows with
+   it, as in the 3D notebook. */
+@media (min-width: 701px) {
+  article:has(> .event-strip) .plot-wrap > #artwork,
+  article:has(> .event-strip) .plot-wrap > .loading {
+    height: calc(100vh - 545px);
+    min-height: 240px;
+  }
+}
 #artwork {
   display: block;
   width: 100%;

@@ -35,6 +35,8 @@ type Implicit struct {
 	Window        Window  `json:"window"`
 	Cells         int     `json:"cells"`
 	StableNormals bool    `json:"stableNormals,omitempty"`
+	// topology asks for the curve's level set classified (Request.Topology).
+	topology bool
 }
 
 // Contour is one connected piece of a level set, running with larger F on
@@ -64,16 +66,18 @@ type Normal struct {
 // Nonfinite counts the grid points where F is not a finite number; neither
 // is drawn through. UsesA reports whether F's text reads the shape
 // parameter a, so a caller can tell an active a from a dormant one.
+// Topology classifies the curve's level set, only when asked for.
 type ContourResult struct {
-	Window          Window     `json:"window"`
-	Columns         int        `json:"columns"`
-	Rows            int        `json:"rows"`
-	Curve           LevelSet   `json:"curve"`
-	Family          []LevelSet `json:"family"`
-	Normals         []Normal   `json:"normals"`
-	Discontinuities []Vec      `json:"discontinuities"`
-	Nonfinite       int        `json:"nonfinite"`
-	UsesA           bool       `json:"usesA"`
+	Window          Window         `json:"window"`
+	Columns         int            `json:"columns"`
+	Rows            int            `json:"rows"`
+	Curve           LevelSet       `json:"curve"`
+	Family          []LevelSet     `json:"family"`
+	Normals         []Normal       `json:"normals"`
+	Discontinuities []Vec          `json:"discontinuities"`
+	Nonfinite       int            `json:"nonfinite"`
+	UsesA           bool           `json:"usesA"`
+	Topology        *LevelTopology `json:"topology,omitempty"`
 }
 
 const (
@@ -88,6 +92,9 @@ const (
 	// in radians, so a small loop stays round. An arc of chord L turns by
 	// about 8d/L, where d is its midpoint's distance from the chord.
 	drawingBend = 3 * math.Pi / 180
+	// A crossing's last residual within this many ULPs of F's magnitude is
+	// rounding, not a pole or a jump (sheet.root).
+	roundingFloor = 64 * 0x1p-52
 )
 
 // Work bounds: grid edges crossed over all levels, points over all contours,
@@ -179,6 +186,8 @@ type sheet struct {
 	entered []bool
 	// Whether F's text reads the shape parameter a.
 	usesA bool
+	// The grid edges rejected at the level traced last.
+	lastRejected int
 }
 
 func (s *sheet) node(i, j int) Vec {
@@ -317,9 +326,14 @@ func (s *sheet) root(e int, c float64) (Vec, bool) {
 		}
 	}
 	// A continuous F changes by at most a million times its mean slope
-	// along the edge over the last bracket.
+	// along the edge over the last bracket. F − c is known only to F's own
+	// rounding, so a residual within a floor of F's magnitude there, as
+	// beside a degenerate saddle at a level far from zero, is a crossing;
+	// a pole's or a jump's residual stays far above it.
 	slope := (math.Abs(ga) + math.Abs(gb)) / b.Sub(a).Norm()
-	if math.Min(math.Abs(glo), math.Abs(ghi)) > 1e6*slope*hi.Sub(lo).Norm() {
+	residual := math.Min(math.Abs(glo), math.Abs(ghi))
+	floor := roundingFloor * math.Max(math.Abs(c), math.Max(math.Abs(glo+c), math.Abs(ghi+c)))
+	if residual > 1e6*slope*hi.Sub(lo).Norm() && residual > floor {
 		return lo, false
 	}
 	return lo, true
@@ -439,6 +453,7 @@ func (s *sheet) level(c float64) (LevelSet, bool) {
 		return set, false
 	}
 	s.crossings += len(crossings) + len(rejected)
+	s.lastRejected = len(rejected)
 	// Every level converges on the same point of a discontinuity.
 	maps.Copy(s.rejected, rejected)
 	// Open contours start at an edge nothing enters; the rest are loops.
@@ -628,6 +643,7 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 	if out.Curve, ok = s.level(v.Level); !ok {
 		warnings = append(warnings, fmt.Sprintf("The curve was not traced: it would cross more than %d grid edges. Use fewer cells.", maxContourCrossings))
 	}
+	curveRejected := s.lastRejected
 	if f := v.Family; f.Enabled {
 		for k := range f.Count {
 			// This form returns both endpoints exactly.
@@ -659,5 +675,8 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 	out.Discontinuities = s.discontinuities()
 	out.Nonfinite = s.nonfinite
 	out.UsesA = s.usesA
+	if v.topology {
+		out.Topology = levelTopology(out.Curve, curveRejected)
+	}
 	return out, warnings, nil
 }

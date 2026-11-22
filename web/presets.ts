@@ -3,6 +3,7 @@ import type { FamilySettings } from "./planar-family";
 import type { Config } from "./types";
 import type { PlanarAnimation } from "./planar-link";
 import type { PlanarProbe } from "./planar-probe";
+import type { PlanarStoryId } from "./planar-story";
 const base: Config = {
   kind: "evolute",
   curve: {
@@ -123,6 +124,9 @@ export const presets: {
   stop?: true;
   family?: FamilySettings;
   layers?: Partial<Layers>;
+  // A planar event (planar-story.ts), whose strip it opens with; one
+  // without it is an ordinary study.
+  story?: PlanarStoryId;
 }[] = [
   {
     title: "Ellipse & its evolute",
@@ -1936,6 +1940,142 @@ export const presets: {
         repeat: "back-and-forth",
         pace: "ease",
         camera: "hold",
+      },
+    },
+  },
+  // The planar events (planar-story.ts): each opens at its first event's
+  // before state, in a window that holds every level its story covers,
+  // among a faint family of levels that avoids the critical ones. Its film
+  // is an ordinary phrase on the level, resting at every state of every
+  // event, the critical levels included.
+  //
+  // Cassini's ovals about (±1, 0): two loops below c = 1, the lemniscate at
+  // it, one loop above.
+  {
+    title: "Two pools become one",
+    note: "Cassini's two loops touch at the lemniscate's crossing, then join",
+    story: "two-pools",
+    layers: { lines: false },
+    config: {
+      ...base,
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        implicit: {
+          f: "((x-1)^2+y^2)*((x+1)^2+y^2)",
+          level: 0.81,
+          family: { enabled: true, from: 0.04, to: 1.96, count: 8 },
+          window: { xMin: -1.7, xMax: 1.7, yMin: -0.85, yMax: 0.85 },
+          cells: 160,
+        },
+      },
+    },
+    animation: {
+      mode: "phrase",
+      camera: "hold",
+      duration: 10.5,
+      tracks: [],
+      repeat: "once",
+      pace: "ease",
+      probeMotion: "stays",
+      phrase: {
+        target: "contourLevel",
+        opening: { base: 1, construction: 1, derived: 1 },
+        phases: [
+          { name: "Two loops", duration: 1.5, pace: "ease" },
+          { name: "Narrow the gap", duration: 3, pace: "ease", key: "1" },
+          { name: "Crossing at the origin", duration: 1.5, pace: "ease" },
+          { name: "Join into one", duration: 3, pace: "ease", key: "1.21" },
+          { name: "One loop", duration: 1.5, pace: "ease" },
+        ],
+      },
+    },
+  },
+  // g(x) + g(y) with g(t) = t⁴ − 4t²: four loops below c = −4, a ring
+  // between −4 and 0, one loop above 0.
+  {
+    title: "Four pools, a moat, a lake",
+    note: "Four loops join into a ring at four crossings, and the ring's hollow closes on its hilltop",
+    story: "four-pools",
+    layers: { lines: false },
+    config: {
+      ...base,
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        implicit: {
+          f: "x^4-4*x^2+y^4-4*y^2",
+          level: -6,
+          family: { enabled: true, from: -7.25, to: 3.25, count: 7 },
+          window: { xMin: -2.6, xMax: 2.6, yMin: -2.6, yMax: 2.6 },
+          cells: 160,
+        },
+      },
+    },
+    animation: {
+      mode: "phrase",
+      camera: "hold",
+      duration: 17,
+      tracks: [],
+      repeat: "once",
+      pace: "ease",
+      probeMotion: "stays",
+      phrase: {
+        target: "contourLevel",
+        opening: { base: 1, construction: 1, derived: 1 },
+        phases: [
+          { name: "Four loops", duration: 1.5, pace: "ease" },
+          { name: "Rise to the saddles", duration: 3, pace: "ease", key: "-4" },
+          { name: "Crossing at four points", duration: 1.5, pace: "ease" },
+          { name: "Open the ring", duration: 2, pace: "ease", key: "-2" },
+          { name: "A ring", duration: 1, pace: "ease" },
+          { name: "Close the hollow", duration: 2.5, pace: "ease", key: "0" },
+          { name: "A point inside", duration: 1.5, pace: "ease" },
+          { name: "One loop", duration: 2.5, pace: "ease", key: "2" },
+          { name: "Hold one loop", duration: 1.5, pace: "ease" },
+        ],
+      },
+    },
+  },
+  // |z³ − 1|²: three loops below c = 1, six arms crossing at a monkey
+  // saddle at it, one loop above.
+  {
+    title: "Three pools meet at once",
+    note: "Three loops meet at a monkey saddle, crossing in six arms, then join",
+    story: "three-pools",
+    layers: { lines: false },
+    config: {
+      ...base,
+      curve: {
+        ...base.curve,
+        format: "implicit",
+        implicit: {
+          f: "(x^3-3*x*y^2-1)^2+(3*x^2*y-y^3)^2",
+          level: 0.64,
+          family: { enabled: true, from: 0.36, to: 2.16, count: 7 },
+          window: { xMin: -1.6, xMax: 1.6, yMin: -1.6, yMax: 1.6 },
+          cells: 160,
+        },
+      },
+    },
+    animation: {
+      mode: "phrase",
+      camera: "hold",
+      duration: 10.5,
+      tracks: [],
+      repeat: "once",
+      pace: "ease",
+      probeMotion: "stays",
+      phrase: {
+        target: "contourLevel",
+        opening: { base: 1, construction: 1, derived: 1 },
+        phases: [
+          { name: "Three loops", duration: 1.5, pace: "ease" },
+          { name: "Narrow the gaps", duration: 3, pace: "ease", key: "1" },
+          { name: "Crossing in six arms", duration: 1.5, pace: "ease" },
+          { name: "Join into one", duration: 3, pace: "ease", key: "1.44" },
+          { name: "One loop", duration: 1.5, pace: "ease" },
+        ],
       },
     },
   },

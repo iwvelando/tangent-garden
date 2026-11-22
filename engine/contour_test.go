@@ -1157,3 +1157,35 @@ func TestContourReportsShapeUse(t *testing.T) {
 		}
 	}
 }
+
+// Near a degenerate saddle at a level far from zero, F − c is resolved
+// only to F's own rounding: about one ULP of |c|. A crossing whose last
+// bracket leaves a residual of that size is a crossing, not a pole. Here
+// F = |z³ − 1|², whose monkey saddle at the origin has F = 1: two edges at
+// y = ±0.08 cross the level 6.8e-6 from their ends, where F's slope along
+// them is about 0.038.
+func TestContourRoundingFloor(t *testing.T) {
+	const petals = "(x^3-3*x*y^2-1)^2+(3*x^2*y-y^3)^2"
+	for _, cells := range []int{96, 160, 161} {
+		res := contours(t, implicitRequest(petals, 1, square(1.6), cells))
+		if len(res.Discontinuities) != 0 {
+			t.Fatalf("%d cells: %d discontinuities at %v", cells, len(res.Discontinuities), res.Discontinuities)
+		}
+		for k, c := range res.Curve.Contours {
+			if !c.Closed {
+				t.Fatalf("%d cells: contour %d is open", cells, k)
+			}
+		}
+	}
+	// A jump far above that floor at the same scale is still a jump: F
+	// steps by 0.001π across x = 0.0501 at a level of 10⁸, where the floor
+	// is about 1.4e-6. atan stays finite even where bisection lands on the
+	// jump exactly, so the floor decides; so is a pole.
+	w := Window{-2, 2, -1, 1}
+	for _, f := range []string{"1e8+.001*atan(1/(x-.0501))", "1e8+1/(x-.0501)"} {
+		res := contours(t, implicitRequest(f, 1e8, w, 20))
+		if len(res.Curve.Contours) != 0 || len(res.Discontinuities) != 11 {
+			t.Fatalf("%s: %d contours, %d discontinuities", f, len(res.Curve.Contours), len(res.Discontinuities))
+		}
+	}
+}

@@ -150,6 +150,25 @@ import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
 import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
 import { endNote, nextSeed } from "./flow";
 import { contourNote } from "./contour";
+import { EventStrip } from "./EventStrip";
+import { eventFor, type EventState } from "./event-story";
+import {
+  atLevel,
+  describeClass,
+  planarBracket,
+  planarStories,
+  planarStoryContext,
+  planarStoryNote,
+  type PlanarStoryId,
+} from "./planar-story";
+import {
+  PlanarEventPreviews,
+  previewPage,
+  type PlanarPreview,
+  type PlanarPreviewIntent,
+  type PlanarPreviewSlots,
+} from "./planar-event-previews";
+import { plotPalette } from "./palette";
 import { attractorNote, mapDefaults, mapFormulas, mapNames } from "./attractor";
 import { pursuerLabels, seedLabels, termLabels } from "./animation";
 import { useDisclosure } from "./useDisclosure";
@@ -263,6 +282,15 @@ const implicitDescription = {
     "Sample F on a grid and mark where it lies above or below the level c. The curve F = c runs between them, through every cell whose corners disagree; each crossing is then found exactly and the pieces refined onto the curve. Where F has a saddle the pieces split or join as c passes it. The gradient of F is normal to the curve, pointing toward larger values.",
   formula: "F(x, y) = c,  ∇F ⟂ curve",
 };
+// The planar event strip's help (EventStrip.tsx).
+const planarEventHelp = tiered(
+  "Each state is the study at one level; choose one to draw it.",
+  "Before and after are regular levels, where the analysis says what the curve is and the trace is compared with it; the event is singular. Previews draw the curve alone, at the study's window, grid and theme. Choosing changes only the level.",
+);
+const planarEventsHelp = tiered(
+  "Choose an event to preview its three states, then a state to draw the study at that level.",
+  "Before and after are regular levels, where the analysis says what the curve is and the trace is compared with it; each event is singular. A level between two events is one's after and the next one's before. Previews draw the curve alone. Choosing changes only the level.",
+);
 // So does an iterated map, whose formula depends on the map.
 const attractorDescription = (map: AttractorMap) => ({
   title: "The visit density of an iterated map",
@@ -365,6 +393,19 @@ function App({
   );
   const [config, setConfig] = useState<Config>(opening.config);
   const [preset, setPreset] = useState("0");
+  // The planar event the study opened as (planar-story.ts), kept until a
+  // whole study replaces it; the event its strip shows, transient view
+  // state never in a link, decided by the level when a study opens; and a
+  // count of states chosen, which ends playback even when the study
+  // already stands at the chosen level.
+  const [story, setStory] = useState<PlanarStoryId | undefined>(opening.story);
+  const [shownEvent, setShownEvent] = useState<number | undefined>(undefined);
+  const [eventSelection, setEventSelection] = useState(0);
+  const storyEvent = useMemo(
+    () => planarStoryContext(config, story, shownEvent),
+    [config, story, shownEvent],
+  );
+  const eventStory = storyEvent?.eligible ? storyEvent.story : null;
   // Remembers the pole construction while another tab is selected.
   const [poleKind, setPoleKind] = useState<PoleKind>(opening.poleKind);
   const [frame, setFrame] = useState<Frame | null>(null);
@@ -498,6 +539,11 @@ function App({
     client.current = engine;
     return () => engine.dispose();
   }, []);
+  // While a story applies, the engine classifies the curve's level set for
+  // the study, its previews and playback's frames, whose notes read it.
+  useEffect(() => {
+    client.current!.levelTopology = !!eventStory;
+  }, [eventStory]);
   useEffect(() => {
     if (excursionActive || family?.enabled) return;
     let canceled = false;
@@ -506,6 +552,7 @@ function App({
         .current!.compute(config, bounds, {
           diagnostics: probing,
           ...(view && { view }),
+          topology: !!eventStory,
         })
         .then((next) => {
           if (canceled) return;
@@ -527,7 +574,15 @@ function App({
       canceled = true;
       clearTimeout(timer);
     };
-  }, [config, bounds, probing, view, excursionActive, family?.enabled]);
+  }, [
+    config,
+    bounds,
+    probing,
+    view,
+    excursionActive,
+    family?.enabled,
+    !!eventStory,
+  ]);
   // Between samples, Go places the probe at its own t over the drawn
   // study, apart from the study itself, so moving it redraws only the
   // probe. A point belongs to the frame and position it was asked for, and
@@ -1093,6 +1148,15 @@ function App({
       curve: { ...c.curve, implicit: { ...c.curve.implicit, ...patch } },
     }));
   const levels = config.curve.implicit.family;
+  // While its story applies, the note reads the displayed frame, as
+  // playback and seeks move the level; otherwise the study's own.
+  const shownFrame = animation?.frame ?? frame;
+  const drawnStory =
+    shownFrame?.config.curve.format === "implicit"
+      ? planarStoryContext(shownFrame.config, story)
+      : null;
+  const storyNoteFrame =
+    drawnStory?.eligible && shownFrame?.result.contours ? shownFrame : null;
   const levelSets =
     frame?.config.curve.format === "implicit"
       ? frame.result.contours
@@ -1194,9 +1258,11 @@ function App({
       <p className="note" data-testid="contour-note">
         {family?.enabled
           ? "Inspect an engraving member below; disable it to inspect the source level."
-          : levelSets
-            ? contourNote(levelSets)
-            : "Tracing…"}
+          : storyNoteFrame
+            ? `${planarStoryNote(drawnStory!.story, storyNoteFrame.config.curve.implicit.level, storyNoteFrame.result.contours!)} ${contourNote(storyNoteFrame.result.contours!)}`
+            : levelSets
+              ? contourNote(levelSets)
+              : "Tracing…"}
       </p>
     </>
   );
@@ -1327,41 +1393,180 @@ function App({
       </p>
     </>
   );
+  // The event strip, while the study has a story: its context now, its
+  // previews, and choosing a state. When the level moves onto another
+  // event's state, the strip follows it there; choosing an event leaves the
+  // level where it is.
+  const eventLevel = implicit ? config.curve.implicit.level : NaN;
+  useEffect(() => {
+    const s = story && planarStories[story];
+    if (!s) return;
+    setShownEvent((shown) => eventFor(s, eventLevel, shown));
+  }, [eventLevel, story]);
+  const previews = useRef<PlanarEventPreviews | null>(null);
+  const [slots, setSlots] = useState<PlanarPreviewSlots | null>(null);
+  useEffect(() => {
+    const p = new PlanarEventPreviews(
+      (c) => client.current!.compute(c, undefined, { topology: true }),
+      (next) => setSlots(next),
+    );
+    previews.current = p;
+    return () => p.dispose();
+  }, []);
+  const eventShown = storyEvent?.eligible ? storyEvent.event : 0;
+  // Everything a preview depends on but the level and the theme, which
+  // previews draw in when shown; a change of level alone asks for nothing.
+  // The family is not traced for them. Their calculations wait for the
+  // study to settle without error, so they never delay its own.
+  const previewIntent: PlanarPreviewIntent | null = eventStory
+    ? (() => {
+        const base: Config = {
+          ...config,
+          curve: {
+            ...config.curve,
+            implicit: {
+              ...config.curve.implicit,
+              family: { ...config.curve.implicit.family, enabled: false },
+            },
+          },
+        };
+        const { levels } = planarBracket(eventStory, eventShown);
+        return {
+          key: JSON.stringify([eventStory.id, eventShown, atLevel(base, 0)]),
+          story: eventStory,
+          event: eventShown,
+          configs: {
+            before: atLevel(base, levels.before),
+            critical: atLevel(base, levels.critical),
+            after: atLevel(base, levels.after),
+          },
+        };
+      })()
+    : null;
+  useEffect(() => {
+    previews.current?.hold(busy || !!error);
+    previews.current?.request(previewIntent);
+  }, [previewIntent?.key ?? "", busy, !!error]);
+  // A state changes only the level, after any evaluation still pending, so
+  // a late one cannot overwrite it; a study chosen meanwhile wins.
+  async function chooseState(state: EventState) {
+    if (!eventStory) return;
+    setEventSelection((n) => n + 1);
+    const token = scalarGeneration.current;
+    await scalarStatus.resolved();
+    if (token !== scalarGeneration.current) return;
+    const level = planarBracket(eventStory, eventShown).levels[state];
+    setConfig((c) => (c.curve.format === "implicit" ? atLevel(c, level) : c));
+  }
+  const palette = plotPalette(dark, scheme);
+  const previewImage = (slot: PlanarPreview) => (
+    <svg
+      viewBox={`0 0 ${previewPage.width} ${previewPage.height}`}
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden="true"
+    >
+      {slot.paths.map((d, k) => (
+        <path
+          key={k}
+          d={d}
+          fill="none"
+          stroke={palette.base}
+          strokeWidth={3}
+          strokeLinejoin="round"
+        />
+      ))}
+    </svg>
+  );
+  const previewReading = (slot: PlanarPreview) => {
+    switch (slot.reading) {
+      case "agrees":
+        return "Trace agrees";
+      case "differs":
+        return `Trace reads ${describeClass(slot.class)}`;
+      case "incomplete":
+        return "Trace incomplete";
+      case "singular":
+        return slot.class
+          ? `Singular · traced ${describeClass(slot.class)}`
+          : "Singular";
+    }
+  };
+  const eventStrip = storyEvent && !family?.enabled && (
+    <EventStrip
+      context={storyEvent}
+      slots={slots}
+      waiting={!!error}
+      onSelect={(state) => void chooseState(state)}
+      onShow={setShownEvent}
+      image={previewImage}
+      read={previewReading}
+      computing="Tracing…"
+      help={{ one: planarEventHelp, several: planarEventsHelp }}
+    />
+  );
   // On phones the controls follow the drawing directly, so the explanation
   // moves after them instead of separating the two.
-  const behind = (
-    <StudyExplanation
-      title="Curves, revealed by construction."
-      formula={info.formula}
-      diagnostics={
-        result &&
-        result.warnings.length > 0 && (
-          <details className="diagnostics" {...diagnostics}>
-            <summary>
-              Numerical notes · {result.invalid} omitted samples
-            </summary>
-            {result.warnings.map((w) => (
-              <p key={w}>{w}</p>
-            ))}
-          </details>
-        )
-      }
-      note={
-        optical
-          ? "A mathematical ray family: every sampled point participates. No occlusion or multiple bounces."
-          : "The connecting lines reveal the geometry of the construction."
-      }
-    >
-      <p>{info.description}</p>
-      {!unparametrized && config.input !== "curve" && (
-        <p data-testid="input-description">
-          Here it acts on the curve&rsquo;s {config.input}, drawn faintly with
-          the curve, which is evaluated from the curve&rsquo;s definition at
-          every t rather than from its drawn points.
-        </p>
-      )}
-    </StudyExplanation>
-  );
+  const behind =
+    eventStory && !family?.enabled ? (
+      <StudyExplanation
+        label="BEHIND THE EVENT"
+        title={eventStory.explanation.title}
+        formula={
+          <>
+            {eventStory.explanation.formula[0]}{" "}
+            <span>{eventStory.explanation.formula[1]}</span>
+          </>
+        }
+        diagnostics={
+          result &&
+          result.warnings.length > 0 && (
+            <details className="diagnostics" {...diagnostics}>
+              <summary>
+                Numerical notes · {result.invalid} omitted samples
+              </summary>
+              {result.warnings.map((w) => (
+                <p key={w}>{w}</p>
+              ))}
+            </details>
+          )
+        }
+        note="The strip's previews are this study at each state's level, drawn alone; the analysis, not the trace, says what the curve is."
+      >
+        <p>{eventStory.explanation.text}</p>
+      </StudyExplanation>
+    ) : (
+      <StudyExplanation
+        title="Curves, revealed by construction."
+        formula={info.formula}
+        diagnostics={
+          result &&
+          result.warnings.length > 0 && (
+            <details className="diagnostics" {...diagnostics}>
+              <summary>
+                Numerical notes · {result.invalid} omitted samples
+              </summary>
+              {result.warnings.map((w) => (
+                <p key={w}>{w}</p>
+              ))}
+            </details>
+          )
+        }
+        note={
+          optical
+            ? "A mathematical ray family: every sampled point participates. No occlusion or multiple bounces."
+            : "The connecting lines reveal the geometry of the construction."
+        }
+      >
+        <p>{info.description}</p>
+        {!unparametrized && config.input !== "curve" && (
+          <p data-testid="input-description">
+            Here it acts on the curve&rsquo;s {config.input}, drawn faintly with
+            the curve, which is evaluated from the curve&rsquo;s definition at
+            every t rather than from its drawn points.
+          </p>
+        )}
+      </StudyExplanation>
+    );
   // An example replaces the whole study, as a link does (planar-link.ts).
   const choosePreset = (index: number) =>
     openStudy(-++presetAnimations.current, presetStudy(index), String(index));
@@ -1400,6 +1605,8 @@ function App({
     setWeight(study.weight);
     setProbe(study.probe);
     setFamily(study.family);
+    setStory(study.story);
+    setShownEvent(undefined);
     camera.current = { ...study.camera };
     setRestoredCamera({ reset: reset + 1, camera: study.camera });
     setReset(reset + 1);
@@ -1490,6 +1697,7 @@ function App({
     probe,
     animation:
       pendingAnimation ?? animationSettings.current ?? defaultAnimation,
+    ...(story && { story }),
     // As an ordinary phrase, a family's phrase is recorded only while it
     // is the chosen motion.
     ...(family && {
@@ -2884,6 +3092,7 @@ function App({
                   atlasWaiting,
                   probing,
                   family?.enabled,
+                  eventSelection,
                 ])}
                 disabled={!!family?.enabled || busy || !!error}
                 onView={setAnimation}
@@ -3131,6 +3340,7 @@ function App({
               </span>
             </div>
           </div>
+          {eventStrip}
           {!narrow && behind}
         </article>
         {narrow && <div className="behind">{behind}</div>}

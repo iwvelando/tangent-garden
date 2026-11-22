@@ -99,7 +99,7 @@ test("three nodal studies carry literal equal-eigenvalue modes and full-period a
     [2, 3],
     [3, 5],
   ];
-  expect(presets).toHaveLength(75);
+  expect(presets).toHaveLength(78);
   for (const [i, title] of nodalTitles.entries()) {
     const p = presets.find((p) => p.title === title);
     expect(p, title).toBeDefined();

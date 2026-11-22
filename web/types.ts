@@ -433,6 +433,7 @@ export type Normal = { point: Vec; gradient: Vec };
 // without reaching the level (a pole or a jump), one per edge; nonfinite
 // counts grid points where F is not a finite number. Neither is drawn
 // through. usesA is whether F's text reads the shape parameter a.
+// topology, present only when asked for, classifies the curve's level set.
 export type ContourResult = {
   window: Window;
   columns: number;
@@ -443,6 +444,19 @@ export type ContourResult = {
   discontinuities: Vec[];
   nonfinite: number;
   usesA: boolean;
+  topology?: LevelTopology;
+};
+// The curve's level set by its loops' nesting (engine.LevelTopology): per
+// contour, the smallest closed one enclosing it (−1 for none) and whether F
+// is higher just inside; open contours are neither nested nor coded. class
+// is the canonical code of the closed loops' forest, "" when unclassified.
+export type Loop = { parent: number; higher: boolean; open?: boolean };
+export type LevelTopology = {
+  loops: Loop[];
+  open: number;
+  rejected: number;
+  class: string;
+  unclassified?: boolean;
 };
 
 // How often the accumulated iterates visit each cell of the window: counts

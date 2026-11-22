@@ -12,6 +12,7 @@ import {
   type PlanarEngravingPhrase,
 } from "./planar-engraving";
 import { laceLimits, laceTiling, type LaceStudy } from "./lace/model";
+import { planarStoryIds, type PlanarStoryId } from "./planar-story";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
   gardenLimits,
@@ -119,6 +120,9 @@ export type PlanarStudy = {
   // Curves that smooth themselves open over this study; absent in older
   // links.
   shorten?: ShortenStudy;
+  // The planar event the study opened as (planar-story.ts), absent from
+  // other studies and from links made before planar events.
+  story?: PlanarStoryId;
 };
 export const defaultAnimation: PlanarAnimation = {
   mode: "reveal",
@@ -147,6 +151,7 @@ export function presetStudy(index: number): PlanarStudy {
     probe: structuredClone(preset.probe ?? defaultProbe),
     animation: structuredClone(preset.animation ?? defaultAnimation),
     ...(preset.family && { family: structuredClone(preset.family) }),
+    ...(preset.story && { story: preset.story }),
   };
 }
 
@@ -535,6 +540,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "garden",
         "lace",
         "shorten",
+        "story",
       ].includes(key)
     )
       throw new LinkError(key, `${key} is not a known field.`);
@@ -828,6 +834,21 @@ export function planarStudy(value: unknown): PlanarStudy {
   const lace = raw.lace === undefined ? undefined : laceStudy(raw.lace);
   const shorten =
     raw.shorten === undefined ? undefined : shortenStudy(raw.shorten);
+  // A story is kept however the study has changed since; it applies only
+  // while the study is its recipe (planar-story.ts's planarStoryContext).
+  const story =
+    raw.story === undefined
+      ? undefined
+      : conform<PlanarStoryId>(
+          raw.story,
+          {
+            options: Object.fromEntries(
+              planarStoryIds.map((id) => [id, true]),
+            ) as Record<PlanarStoryId, true>,
+          },
+          planarStoryIds[0],
+          "story",
+        );
   return {
     ...study,
     animation,
@@ -836,6 +857,7 @@ export function planarStudy(value: unknown): PlanarStudy {
     ...(garden && { garden }),
     ...(lace && { lace }),
     ...(shorten && { shorten }),
+    ...(story && { story }),
   };
 }
 
