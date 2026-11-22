@@ -67,6 +67,7 @@
   "phrase-arrangement.spec.ts": 50,
   "pipelined-playback.spec.ts": 18,
   "planar-adaptive.spec.ts": 35,
+  "planar-events.spec.ts": 38,
   "planar-field-error-labels.spec.ts": 56,
   "planar-field-errors.spec.ts": 11,
   "planar-keyboard.spec.ts": 4,
