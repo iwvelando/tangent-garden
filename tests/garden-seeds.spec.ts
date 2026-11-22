@@ -354,7 +354,14 @@ const raster = (d: Locator) =>
       c.width = 1000;
       c.height = 760;
       c.getContext("2d")!.drawImage(image, 0, 0);
-      return Array.from(c.getContext("2d")!.getImageData(0, 0, 1000, 760).data);
+      // The pixels stay in the page, named by a key: millions of numbers
+      // through the protocol cost seconds on a runner.
+      const w = window as any;
+      w.gardenRasters ??= [];
+      w.gardenRasters.push(
+        c.getContext("2d")!.getImageData(0, 0, 1000, 760).data,
+      );
+      return w.gardenRasters.length - 1;
     } finally {
       URL.revokeObjectURL(url);
     }
@@ -419,9 +426,12 @@ test("six around one's reveal holds its eight seed circles, in the drawing, the 
   await d.getByRole("button", { name: /^Export animated WebP/ }).click();
   const bytes = await readFile((await (await movie).path())!);
   const differences = await page.evaluate(
-    async ({ input, references }) => {
+    async ({ input, references: keys }) => {
+      const references: Uint8ClampedArray[] = keys.map(
+        (k) => (window as any).gardenRasters[k],
+      );
       const decoder = new (window as any).ImageDecoder({
-        data: new Uint8Array(input),
+        data: Uint8Array.from(atob(input), (c) => c.charCodeAt(0)),
         type: "image/webp",
       });
       await decoder.tracks.ready;
@@ -459,7 +469,7 @@ test("six around one's reveal holds its eight seed circles, in the drawing, the 
       decoder.close();
       return out;
     },
-    { input: Array.from(bytes), references: [opening, middle] },
+    { input: bytes.toString("base64"), references: [opening, middle] },
   );
   // Each frame matches its own time's circles, and not the other's.
   console.log("Unmatched ink, frames 0 and 10:", differences);
@@ -953,9 +963,12 @@ test("a movie exported while the split changes keeps the packing it froze, in it
   await ready(d);
   const edited = await raster(d);
   const differences = await page.evaluate(
-    async ({ input, references }) => {
+    async ({ input, references: keys }) => {
+      const references: Uint8ClampedArray[] = keys.map(
+        (k) => (window as any).gardenRasters[k],
+      );
       const decoder = new (window as any).ImageDecoder({
-        data: new Uint8Array(input),
+        data: Uint8Array.from(atob(input), (c) => c.charCodeAt(0)),
         type: "image/webp",
       });
       await decoder.tracks.ready;
@@ -986,7 +999,7 @@ test("a movie exported while the split changes keeps the packing it froze, in it
         return one / either;
       });
     },
-    { input: Array.from(bytes), references: [whole, edited] },
+    { input: bytes.toString("base64"), references: [whole, edited] },
   );
   // The last frame is the frozen 1/4 packing, not the edited 1/3 one.
   console.log("Unmatched ink, last frame against 1/4 and 1/3:", differences);
