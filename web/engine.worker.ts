@@ -183,10 +183,13 @@ self.onmessage = async ({
         for (const k of ["xMin", "xMax", "yMin", "yMax"] as const)
           if (!Number.isFinite(q.window[k]))
             throw fieldError(`window.${k}`, "Enter a finite number.");
-      if (q.keep)
+      if (q.keep) {
         for (const k of ["curvature", "x", "y"] as const)
           if (!Number.isSafeInteger(q.keep[k]))
             throw fieldError(`keep.${k}`, "Enter a whole number.");
+        if (q.keep.root && !q.keep.root.every(Number.isSafeInteger))
+          throw fieldError("keep.root", "Enter whole numbers.");
+      }
       const start = performance.now();
       const raw = tangentGardenGarden(
         JSON.stringify({
@@ -203,7 +206,13 @@ self.onmessage = async ({
             },
           }),
           ...(q.keep && {
-            keep: { curvature: q.keep.curvature, x: q.keep.x, y: q.keep.y },
+            keep: {
+              curvature: q.keep.curvature,
+              x: q.keep.x,
+              y: q.keep.y,
+              // A research seed's √3 coefficients (#385).
+              ...(q.keep.root && { root: [...q.keep.root] }),
+            },
           }),
         }),
       );
