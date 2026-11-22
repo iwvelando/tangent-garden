@@ -16,6 +16,7 @@ import { GardenStill, type GardenDrawingProps } from "./Drawing";
 import {
   gardenPage,
   revealCount,
+  seedCount,
   type GardenReveal,
   type GardenResult,
 } from "./model";
@@ -72,7 +73,11 @@ export async function gardenMovie(o: {
     signal: o.signal,
     lookahead: 1,
     sample: async (time) =>
-      revealCount(total, progressAt(time, o.reveal.repeat, "steady")),
+      revealCount(
+        total,
+        progressAt(time, o.reveal.repeat, "steady"),
+        seedCount(o.drawing.result),
+      ),
     draw: (count, scale) => {
       const svg = gardenSVG({ ...o.drawing, count }, o.metadata);
       svg.setAttribute("width", String(Math.round(gardenPage.width * scale)));

@@ -20,6 +20,7 @@ import {
   type GardenCircle,
   type GardenStudy,
 } from "./garden/model";
+import { gardenSeeds, seedOf, type GardenSeedId } from "./garden/seeds";
 import {
   familyDefaults,
   familyTargets,
@@ -871,13 +872,21 @@ function betweenOnlyWhenSet({ between, ...probe }: PlanarProbe): PlanarProbe {
 // and weight; never generated geometry. Go validates the same limits again.
 function gardenStudy(value: unknown): GardenStudy {
   const identity: SchemaOf<GardenCircle> = {
-    fields: { curvature: "number", x: "number", y: "number" },
+    fields: {
+      curvature: "number",
+      x: "number",
+      y: "number",
+      root: { optional: { tuple: "number", length: 3 } },
+    },
   };
+  const seeds = Object.fromEntries(
+    gardenSeeds.map((s) => [s.id, true]),
+  ) as Record<GardenSeedId, true>;
   const out = conform<GardenStudy>(
     value,
     {
       fields: {
-        seed: { options: { [gardenSeed]: true } },
+        seed: { options: seeds },
         depth: { range: [0, gardenLimits.depth] },
         minRadius: { range: [Number.MIN_VALUE, 1] },
         maxCircles: { range: [4, gardenLimits.circles] },
@@ -912,13 +921,26 @@ function gardenStudy(value: unknown): GardenStudy {
   for (const k of ["depth", "maxCircles"] as const)
     if (!Number.isInteger(out[k]))
       throw new LinkError(`garden.${k}`, `garden.${k} must be a whole number.`);
-  if (out.selected)
+  // Every seed circle is kept: 4, or 8 for six around one.
+  const least = seedOf(out.seed).seeds;
+  if (out.maxCircles < least)
+    throw new LinkError(
+      "garden.maxCircles",
+      `garden.maxCircles must be at least ${least} for this seed.`,
+    );
+  if (out.selected) {
     for (const k of ["curvature", "x", "y"] as const)
       if (!Number.isSafeInteger(out.selected[k]))
         throw new LinkError(
           `garden.selected.${k}`,
           `garden.selected.${k} must be a whole number.`,
         );
+    if (out.selected.root && !out.selected.root.every(Number.isSafeInteger))
+      throw new LinkError(
+        "garden.selected.root",
+        "garden.selected.root must hold whole numbers.",
+      );
+  }
   return out;
 }
 

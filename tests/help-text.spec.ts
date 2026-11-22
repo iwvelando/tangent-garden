@@ -443,63 +443,79 @@ test("phrase pace help explains interpolation within phases rather than retiming
   expect(helpText(phrasePaceHelp)).toContain("within each phase");
 });
 
-test("Apollonian garden help fits both tiers", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Browse notebook examples" }).click();
-  await page.locator("[data-garden-example]").first().click();
-  const d = page.getByRole("dialog", { name: "The Apollonian garden" });
-  await expect(d.locator("#garden-artwork")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
-  const entries = await d.evaluate((root) =>
-    Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
-      const h = document.getElementById(toggle.getAttribute("aria-controls")!)!;
-      const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
-        HTMLElement | undefined;
-      brief?.querySelector(".help-more")?.remove();
-      return {
-        topic: toggle.getAttribute("aria-label"),
-        paired: !!toggle.closest(".pair"),
-        brief: brief?.textContent ?? h.textContent ?? "",
-        more: h.querySelector(".hint-more")?.textContent ?? "",
-      };
-    }),
-  );
-  expect(entries.map((e) => e.topic)).toEqual([
-    "About Circle",
-    "About following the selection",
-    "About Presentation",
-    "About Animation progress",
-    "About Reveal duration",
-    "About Repeat",
-    "About Export resolution",
-    "About Export quality",
-    "About Minimum radius",
-    "About Depth",
-    "About Circle limit",
-    "About zoom detail",
-    "About Line weight",
-  ]);
-  for (const e of entries) {
-    expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
-      e.paired ? pairedBriefWords : 20,
+// The original seed's opening study, and six around one, whose circle
+// limit starts at 8 and whose seed note sits under the seed choice.
+for (const [title, minimum] of [
+  ["A rose window made only of circles", "4–5,000"],
+  ["Six circles around a seventh", "8–5,000"],
+] as const)
+  test(`Apollonian garden help fits both tiers: ${title}`, async ({ page }) => {
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Browse notebook examples" })
+      .click();
+    await page
+      .locator(`[data-garden-example][data-example-title="${title}"]`)
+      .click();
+    const d = page.getByRole("dialog", { name: "The Apollonian garden" });
+    await expect(d.locator("#garden-artwork")).toHaveAttribute(
+      "aria-busy",
+      "false",
     );
-    expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
-  }
-  // The help states the limits the engine enforces.
-  const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
-  for (const limit of [
-    "above 0, at most 1",
-    "0–12",
-    "4–5,000",
-    "20,000",
-    // The reveal's duration, and the zoom past which detail begins.
-    "0.1–3,600",
-    "1.4×",
-  ])
-    expect(text).toContain(limit);
-});
+    const entries = await d.evaluate((root) =>
+      Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+        const h = document.getElementById(
+          toggle.getAttribute("aria-controls")!,
+        )!;
+        const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+          HTMLElement | undefined;
+        brief?.querySelector(".help-more")?.remove();
+        return {
+          topic: toggle.getAttribute("aria-label"),
+          paired: !!toggle.closest(".pair"),
+          brief: brief?.textContent ?? h.textContent ?? "",
+          more: h.querySelector(".hint-more")?.textContent ?? "",
+        };
+      }),
+    );
+    expect(entries.map((e) => e.topic)).toEqual([
+      "About Circle",
+      "About following the selection",
+      "About Presentation",
+      "About Animation progress",
+      "About Reveal duration",
+      "About Repeat",
+      "About Export resolution",
+      "About Export quality",
+      "About Seed",
+      "About Minimum radius",
+      "About Depth",
+      "About Circle limit",
+      "About zoom detail",
+      "About Line weight",
+    ]);
+    for (const e of entries) {
+      expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+        e.paired ? pairedBriefWords : 20,
+      );
+      expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
+    }
+    // The help states the limits the engine enforces.
+    const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
+    for (const limit of [
+      "above 0, at most 1",
+      "0–12",
+      minimum,
+      "20,000",
+      // The reveal's duration, and the zoom past which detail begins.
+      "0.1–3,600",
+      "1.4×",
+    ])
+      expect(text).toContain(limit);
+    // Right for every seed: none names a count of seed circles but the
+    // circle limit's minimum.
+    expect(text).not.toMatch(/four seed|4 seed|eight seed|8 seed/);
+  });
 
 test("hyperbolic lace help fits both tiers and states the engine's limits", async ({
   page,

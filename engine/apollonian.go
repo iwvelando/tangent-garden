@@ -37,6 +37,10 @@ type GardenIdentity struct {
 	Curvature int64 `json:"curvature"`
 	X         int64 `json:"x"`
 	Y         int64 `json:"y"`
+	// Root holds the √3 coefficients of a ℤ[√3] seed's circle:
+	// its curvature is Curvature + Root[0]√3, and its center numerators
+	// X + Root[1]√3 and Y + Root[2]√3. Absent, they are zero.
+	Root []int64 `json:"root,omitempty"`
 }
 
 // GardenOmitted counts unfilled gaps by the cutoff that left them. A gap
@@ -72,6 +76,14 @@ type GardenResult struct {
 	// Processed counts candidate configurations examined, each one gap.
 	Processed  int `json:"processed"`
 	Duplicates int `json:"duplicates"`
+	// Seeds other than the original only, absent for it: each circle's
+	// exact identity as six integers (p and q of b, X and Y, each
+	// p + q√3, with weighted center (X, Y)/Denominator), the number of seed
+	// circles, the center denominator and the radicand (1 or 3).
+	Exact       []float64 `json:"exact,omitempty"`
+	Seeds       int       `json:"seeds,omitempty"`
+	Denominator int       `json:"denominator,omitempty"`
+	Root        int       `json:"root,omitempty"`
 }
 
 const (
@@ -82,18 +94,19 @@ const (
 
 type gardenLimits struct{ configurations int }
 
-// An integer circle: curvature b and curvature-weighted center b·c.
-type gardenCircle struct{ b, x, y int64 }
+// An exact circle: curvature b and curvature-weighted center b·c, times
+// the seed's denominator.
+type gardenCircle struct{ b, x, y qr }
 
 // The seed's circles in index order: enclosing, left, right, top.
-var gardenSeed = [4]gardenCircle{{-1, 0, 0}, {2, -1, 0}, {2, 1, 0}, {3, 0, 2}}
+var gardenSeed = [4]gardenCircle{{z(-1), z(0), z(0)}, {z(2), z(-1), z(0)}, {z(2), z(1), z(0)}, {z(3), z(0), z(2)}}
 
 func ComputeGarden(q GardenRequest) (GardenResult, error) {
 	return computeGarden(q, gardenLimits{GardenMaxConfigurations})
 }
 
-func (q GardenRequest) validate() error {
-	if q.Seed != GardenSeed {
+func (q GardenRequest) validate(s *gardenSpec) error {
+	if s == nil {
 		return fieldErr("seed", "choose the enclosing seed (−1, 2, 2, 3)")
 	}
 	if q.Depth < 0 || q.Depth > GardenMaxDepth {
@@ -102,8 +115,18 @@ func (q GardenRequest) validate() error {
 	if !finite(q.MinRadius) || q.MinRadius <= 0 || q.MinRadius > 1 {
 		return fieldErr("minRadius", "minimum radius must be above 0 and at most 1")
 	}
-	if q.MaxCircles < 4 || q.MaxCircles > GardenMaxCircles {
-		return fieldErr("maxCircles", "circle count must be 4–%d", GardenMaxCircles)
+	if q.MaxCircles < len(s.circles) || q.MaxCircles > GardenMaxCircles {
+		return fieldErr("maxCircles", "circle count must be %d–%d", len(s.circles), GardenMaxCircles)
+	}
+	if k := q.Keep; k != nil && !s.legacy {
+		if k.Root != nil && len(k.Root) != 3 {
+			return fieldErr("keep.root", "a kept circle's root coefficients are three numbers")
+		}
+		for _, v := range append([]int64{k.Curvature, k.X, k.Y}, k.Root...) {
+			if v > 1<<53 || v < -(1<<53) {
+				return fieldErr("keep", "a kept circle's coefficients must be within ±2^53")
+			}
+		}
 	}
 	if w := q.Window; w != nil {
 		for _, c := range []struct {
@@ -147,8 +170,8 @@ func (w *GardenWindow) meets(x, y, r float64) bool {
 // half-radius circles touching on its diameter.
 func dualDisk(a, b, c gardenCircle) (x, y, r float64, ok bool) {
 	touch := func(p, q gardenCircle) (float64, float64) {
-		s := float64(p.b + q.b)
-		return float64(p.x+q.x) / s, float64(p.y+q.y) / s
+		s := float64(p.b.p + q.b.p)
+		return float64(p.x.p+q.x.p) / s, float64(p.y.p+q.y.p) / s
 	}
 	ax, ay := touch(a, b)
 	bx, by := touch(b, c)
@@ -170,39 +193,70 @@ var errGardenRange = errors.New("a circle's curvature exceeds the exact integer 
 // each gap is met once. Pruning a gap prunes its descendants, which lie in
 // that gap and are smaller than the circle that fills it.
 func computeGarden(q GardenRequest, limits gardenLimits) (GardenResult, error) {
-	if err := q.validate(); err != nil {
+	return computeGardenFrom(q, gardenSpecs[q.Seed], limits)
+}
+
+func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (GardenResult, error) {
+	if err := q.validate(s); err != nil {
 		return GardenResult{}, err
 	}
 	type quad struct {
-		id        [4]int
-		last, gen int
+		id              [4]int
+		last, only, gen int
 	}
 	r := GardenResult{Seed: q.Seed}
+	if !s.legacy {
+		r.Seeds, r.Denominator, r.Root = len(s.circles), int(s.denom), s.root
+	}
 	var circles []gardenCircle
+	at := func(id int) gardenCircle {
+		if id < 0 {
+			return s.virtual[-1-id]
+		}
+		return circles[id]
+	}
 	known := map[gardenCircle]bool{}
 	add := func(c gardenCircle, gen int, parents [3]float64, opposite float64) {
-		b := float64(c.b)
+		x, y, radius, b := s.center(c)
 		circles = append(circles, c)
 		known[c] = true
-		// Adding zero turns the enclosing circle's −0 into 0.
-		r.X = append(r.X, float64(c.x)/b+0)
-		r.Y = append(r.Y, float64(c.y)/b+0)
-		r.Radius = append(r.Radius, 1/math.Abs(b))
+		r.X = append(r.X, x)
+		r.Y = append(r.Y, y)
+		r.Radius = append(r.Radius, radius)
 		r.Curvature = append(r.Curvature, b)
-		r.WeightedX = append(r.WeightedX, float64(c.x))
-		r.WeightedY = append(r.WeightedY, float64(c.y))
+		r.WeightedX = append(r.WeightedX, c.x.float()/float64(s.denom))
+		r.WeightedY = append(r.WeightedY, c.y.float()/float64(s.denom))
 		r.Generation = append(r.Generation, float64(gen))
 		r.Parents = append(r.Parents, parents)
 		r.Opposite = append(r.Opposite, opposite)
+		if !s.legacy {
+			for _, v := range []qr{c.b, c.x, c.y} {
+				r.Exact = append(r.Exact, float64(v.p), float64(v.q))
+			}
+		}
 	}
-	for _, c := range gardenSeed {
+	// Another seed's kept circle, by its exact identity.
+	var kept *[2]float64
+	if k := q.Keep; k != nil && !s.legacy {
+		root := [3]int64{}
+		copy(root[:], k.Root)
+		c := gardenCircle{qr{k.Curvature, root[0]}, qr{k.X, root[1]}, qr{k.Y, root[2]}}
+		if c.b.sign() > 0 {
+			x, y, _, _ := s.center(c)
+			kept = &[2]float64{x, y}
+		}
+	}
+	for _, c := range s.circles {
 		add(c, 0, [3]float64{-1, -1, -1}, -1)
 	}
-	queue := []quad{{id: [4]int{0, 1, 2, 3}, last: -1}}
+	var queue []quad
+	for _, st := range s.starts {
+		queue = append(queue, quad{id: st.id, last: -1, only: st.only})
+	}
 	for head := 0; head < len(queue); head++ {
 		p := queue[head]
 		for i := 0; i < 4; i++ {
-			if i == p.last {
+			if i == p.last || (p.only >= 0 && i != p.only) {
 				continue
 			}
 			if r.Processed == limits.configurations {
@@ -217,20 +271,23 @@ func computeGarden(q GardenRequest, limits gardenLimits) (GardenResult, error) {
 					k++
 				}
 			}
-			a, b, c, old := circles[others[0]], circles[others[1]], circles[others[2]], circles[p.id[i]]
-			nb, ok1 := descartes(a.b, b.b, c.b, old.b)
-			nx, ok2 := descartes(a.x, b.x, c.x, old.x)
-			ny, ok3 := descartes(a.y, b.y, c.y, old.y)
+			a, b, c, old := at(others[0]), at(others[1]), at(others[2]), at(p.id[i])
+			nb, ok1 := replaceQR(a.b, b.b, c.b, old.b)
+			nx, ok2 := replaceQR(a.x, b.x, c.x, old.x)
+			ny, ok3 := replaceQR(a.y, b.y, c.y, old.y)
 			if !ok1 || !ok2 || !ok3 {
 				return GardenResult{}, errGardenRange
 			}
 			next := gardenCircle{nb, nx, ny}
 			gen := p.gen + 1
 			switch {
-			case q.Window != nil && !inView(q, a, b, c):
+			case q.Window != nil && s.legacy && !inView(q, a, b, c):
 				r.Omitted.View++
 				continue
-			case 1/float64(nb) < q.MinRadius:
+			case q.Window != nil && !s.legacy && !s.linearView(q, kept, a, b, c, old):
+				r.Omitted.View++
+				continue
+			case s.scale/nb.float() < q.MinRadius:
 				r.Omitted.Radius++
 				continue
 			case gen > q.Depth:
@@ -243,9 +300,13 @@ func computeGarden(q GardenRequest, limits gardenLimits) (GardenResult, error) {
 				r.Stopped, r.Pending = "count", len(queue)-head
 				return r, nil
 			}
-			add(next, gen, [3]float64{float64(others[0]), float64(others[1]), float64(others[2])}, float64(p.id[i]))
+			opposite := float64(p.id[i])
+			if p.id[i] < 0 {
+				opposite = -1
+			}
+			add(next, gen, [3]float64{float64(others[0]), float64(others[1]), float64(others[2])}, opposite)
 			child := p
-			child.id[i], child.last, child.gen = len(circles)-1, i, gen
+			child.id[i], child.last, child.only, child.gen = len(circles)-1, i, -1, gen
 			queue = append(queue, child)
 		}
 	}

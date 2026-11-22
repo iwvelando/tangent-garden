@@ -1095,3 +1095,80 @@ for (const [width, height] of [
     }
     expect(overruns).toEqual([]);
   });
+
+// The garden's circle picker and the lace's tile picker share one
+// arrangement: the number field with Previous, Next and Clear selection
+// beside it. Opening the field's help, and its Show more, extends below
+// them all and moves none of the buttons, on a phone or a desktop.
+for (const [notebook, example, dialog, artwork, label] of [
+  [
+    "garden",
+    '[data-garden-example="0"]',
+    "The Apollonian garden",
+    "#garden-artwork",
+    "Circle",
+  ],
+  [
+    "lace",
+    '[data-lace-example="1"]',
+    "Hyperbolic lace",
+    "#lace-artwork",
+    "Tile",
+  ],
+] as const)
+  test(`the ${notebook}'s ${label} help moves none of the step buttons beside it`, async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page
+      .getByRole("button", { name: "Browse notebook examples" })
+      .click();
+    await page.locator(example).click();
+    const d = page.getByRole("dialog", { name: dialog });
+    await expect(d.locator(artwork)).toHaveAttribute("aria-busy", "false");
+    const picker = d.locator(".garden-picker");
+    const buttons = picker.locator(".garden-step button");
+    await expect(buttons).toHaveCount(3);
+    const boxes = () =>
+      buttons.evaluateAll((all) =>
+        all.map((b) => {
+          const r = b.getBoundingClientRect();
+          return [r.x, r.y, r.width, r.height];
+        }),
+      );
+    for (const size of [
+      { width: 390, height: 844 },
+      { width: 844, height: 390 },
+      { width: 1440, height: 1000 },
+    ]) {
+      await page.setViewportSize(size);
+      const closed = await boxes();
+      const input = (await picker
+        .getByLabel(label, { exact: true })
+        .boundingBox())!;
+      // The buttons sit beside the field's control, and on screen.
+      for (const [x, y, w, h] of closed) {
+        expect(y + h, `${size.width}`).toBeGreaterThan(input.y);
+        expect(x + w, `${size.width}`).toBeLessThanOrEqual(size.width);
+      }
+      const toggle = d.getByRole("button", {
+        name: `About ${label}`,
+        exact: true,
+      });
+      await toggle.click();
+      const hint = picker.locator(".hint");
+      await expect(hint).toBeVisible();
+      expect(await boxes(), `${size.width} open`).toEqual(closed);
+      const help = (await hint.boundingBox())!;
+      // Below the field and its buttons, at least as wide as the field.
+      for (const [, y, , h] of closed)
+        expect(help.y, `${size.width}`).toBeGreaterThanOrEqual(y + h - 0.5);
+      expect(help.width).toBeGreaterThan(input.width);
+      await hint.locator(".help-more").click();
+      await expect(hint.locator(".hint-more")).toBeVisible();
+      expect(await boxes(), `${size.width} more`).toEqual(closed);
+      await toggle.click();
+      await expect(hint).toBeHidden();
+      expect(await boxes(), `${size.width} closed`).toEqual(closed);
+    }
+  });
