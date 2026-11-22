@@ -210,7 +210,7 @@ self.onmessage = async ({
               curvature: q.keep.curvature,
               x: q.keep.x,
               y: q.keep.y,
-              // A research seed's √3 coefficients (#385).
+              // Another seed's √3 coefficients (web/garden/seeds.ts).
               ...(q.keep.root && { root: [...q.keep.root] }),
             },
           }),

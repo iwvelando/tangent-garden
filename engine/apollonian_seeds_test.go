@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Issue #385's research: alternate enclosing seeds. The checks here use the
+// The garden's catalog of enclosing seeds. The checks here use the
 // exact identities the engine returns and recompute everything else in
 // big-integer or 256-bit arithmetic, never through the generator's own
 // recurrence or float conversion.
@@ -141,15 +141,15 @@ func seedGarden(seed string, depth int, minRadius float64, maxCircles int) Garde
 	return GardenRequest{Seed: seed, Depth: depth, MinRadius: minRadius, MaxCircles: maxCircles}
 }
 
-// The research catalog: the original, three more integral root quadruples
-// and two seeds exact in ℤ[√3], the last of eight circles.
-var researchSeeds = []string{GardenSeed, "-2,3,6,7", "-3,5,8,8", "-6,11,14,15", "3-2r3,1,1,1", "-1,3,3,3,3,3,3,3"}
+// The catalog: the original, three more integral root quadruples and two
+// seeds exact in ℤ[√3], the last of eight circles.
+var catalogSeeds = []string{GardenSeed, "-2,3,6,7", "-3,5,8,8", "-6,11,14,15", "3-2r3,1,1,1", "-1,3,3,3,3,3,3,3"}
 
 func TestGardenSeedCatalog(t *testing.T) {
-	if got := GardenSeedIDs(); !reflect.DeepEqual(got, researchSeeds) {
-		t.Fatalf("catalog %v, want %v", got, researchSeeds)
+	if got := GardenSeedIDs(); !reflect.DeepEqual(got, catalogSeeds) {
+		t.Fatalf("catalog %v, want %v", got, catalogSeeds)
 	}
-	for _, id := range researchSeeds[1:] {
+	for _, id := range catalogSeeds[1:] {
 		r, err := ComputeGarden(seedGarden(id, 0, 0.001, 5000))
 		if err != nil {
 			t.Fatalf("%s: %v", id, err)
@@ -325,7 +325,7 @@ func checkSeedPacking(t *testing.T, r GardenResult) packingErrors {
 }
 
 func TestGardenSeedsArePackings(t *testing.T) {
-	for _, id := range researchSeeds[1:] {
+	for _, id := range catalogSeeds[1:] {
 		for _, q := range []GardenRequest{
 			seedGarden(id, 4, 1e-4, 5000),
 			seedGarden(id, 12, 0.002, 5000),
@@ -348,7 +348,7 @@ func TestGardenSeedsArePackings(t *testing.T) {
 }
 
 func TestGardenSeedsAreDeterministic(t *testing.T) {
-	for _, id := range researchSeeds[1:] {
+	for _, id := range catalogSeeds[1:] {
 		q := seedGarden(id, 10, 0.004, 3000)
 		a, b := mustGarden(t, q), mustGarden(t, q)
 		if len(a.Curvature) < 100 || !reflect.DeepEqual(a, b) {
@@ -406,7 +406,7 @@ func TestGardenSeedSymmetry(t *testing.T) {
 		"3-2r3,1,1,1":      {"mirror x", "third turn"},
 		"-1,3,3,3,3,3,3,3": {"mirror x", "mirror y", "half turn", "third turn", "sixth turn"},
 	}
-	for _, id := range researchSeeds {
+	for _, id := range catalogSeeds {
 		r := mustGarden(t, seedGarden(id, 12, 0.015, 5000))
 		if r.Omitted.Depth != 0 || r.Stopped != "" || r.Omitted.Radius == 0 {
 			t.Fatalf("%s: want only the radius cutoff to bind; omitted %+v, stopped %q", id, r.Omitted, r.Stopped)
@@ -454,7 +454,7 @@ func exactKey(b, x, y [2]*big.Int) string {
 // enclosing radius is 1, differ between every pair.
 func TestGardenSeedsAreDistinct(t *testing.T) {
 	spectra := map[string][]float64{}
-	for _, id := range researchSeeds {
+	for _, id := range catalogSeeds {
 		r := mustGarden(t, seedGarden(id, 12, 0.05, 5000))
 		radii := append([]float64(nil), r.Radius[1:]...)
 		sortDescending(radii)
@@ -463,8 +463,8 @@ func TestGardenSeedsAreDistinct(t *testing.T) {
 		}
 		spectra[id] = radii[:12]
 	}
-	for i, a := range researchSeeds {
-		for _, b := range researchSeeds[i+1:] {
+	for i, a := range catalogSeeds {
+		for _, b := range catalogSeeds[i+1:] {
 			same := true
 			for k := range spectra[a] {
 				same = same && math.Abs(spectra[a][k]-spectra[b][k]) < 1e-9
@@ -489,7 +489,7 @@ func sortDescending(v []float64) {
 // undoes: the same circles, in the same order, with the same geometry. By 2
 // the floats are identical; by the unit 2 + √3 they agree to rounding.
 func TestGardenSeedScaleCovariance(t *testing.T) {
-	for _, id := range researchSeeds[1:] {
+	for _, id := range catalogSeeds[1:] {
 		base := gardenSpecs[id]
 		for _, lambda := range []qr{{2, 0}, {2, 1}} {
 			scaled := base.scaled(lambda)
@@ -522,7 +522,7 @@ func TestGardenSeedScaleCovariance(t *testing.T) {
 // original's tests (TestGardenWindowKeepsEveryVisibleCircle), over a grid of
 // small windows and at every seed's cusps.
 func TestGardenSeedWindowsKeepEveryVisibleCircle(t *testing.T) {
-	for _, id := range researchSeeds[1:] {
+	for _, id := range catalogSeeds[1:] {
 		q := seedGarden(id, 12, 0.001, 5000)
 		full := mustGarden(t, q)
 		where := map[[6]float64]int{}
@@ -599,7 +599,7 @@ func TestGardenLinearDualAgreesOnTheOriginal(t *testing.T) {
 // A kept circle outside the window survives with its generators for every
 // seed, as for the original.
 func TestGardenSeedsKeepTheChosenCircle(t *testing.T) {
-	for _, id := range researchSeeds[1:] {
+	for _, id := range catalogSeeds[1:] {
 		q := seedGarden(id, 12, 0.001, 5000)
 		full := mustGarden(t, q)
 		// The smallest circle of generation 5 or more, and a window on the

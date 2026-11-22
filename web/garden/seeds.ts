@@ -1,12 +1,12 @@
 import { readout as formatNumber } from "../number-format";
 
-// The garden's seeds (engine/apollonian_seeds.go). Only the original is
-// public; the rest are issue #385's research catalog, offered only with
-// ?research=385 in the address. Go is the authority on the circles; this
-// describes them for the page: how they are named, how many seed circles
-// they have, and the normalization from their exact curvatures (in units
-// where the enclosing circle has curvature b₀ = −scale) to the drawing's
-// units, where the enclosing radius is 1.
+// The garden's seeds (engine/apollonian_seeds.go, docs/mathematics.md):
+// the original −1, 2, 2, 3, the default, and five more. Go is the
+// authority on the circles; this describes them for the page: how they are
+// named, how many seed circles they have, and the normalization from their
+// exact curvatures (in units where the enclosing circle has curvature
+// b₀ = −scale) to the drawing's units, where the enclosing radius is 1.
+// The choice lists them in this order.
 export type GardenSeedId =
   | "-1,2,2,3"
   | "-2,3,6,7"
@@ -20,13 +20,17 @@ export type GardenSeedDescriptor = {
   // The choice's label, and the heading's eyebrow.
   label: string;
   curvatures: string;
+  // The curvatures as an exported file records them: numbers, or text
+  // for p + q√3.
+  record: readonly (number | string)[];
   symmetry: string;
   // Seed circles, the enclosing circle included.
   seeds: number;
   // |b₀| as p + q√3, and the weighted centers' denominator.
   scale: [number, number];
   denominator: number;
-  research: boolean;
+  // Shown under the choice while the seed is chosen.
+  note?: string;
 };
 
 export const gardenSeeds: readonly GardenSeedDescriptor[] = [
@@ -34,61 +38,62 @@ export const gardenSeeds: readonly GardenSeedDescriptor[] = [
     id: "-1,2,2,3",
     label: "−1, 2, 2, 3 · two mirrors",
     curvatures: "−1, 2, 2, 3",
+    record: [-1, 2, 2, 3],
     symmetry: "two mirrors",
     seeds: 4,
     scale: [1, 0],
     denominator: 1,
-    research: false,
-  },
-  {
-    id: "-2,3,6,7",
-    label: "−2, 3, 6, 7 · one mirror",
-    curvatures: "−2, 3, 6, 7",
-    symmetry: "one mirror",
-    seeds: 4,
-    scale: [2, 0],
-    denominator: 2,
-    research: true,
-  },
-  {
-    id: "-3,5,8,8",
-    label: "−3, 5, 8, 8 · one mirror",
-    curvatures: "−3, 5, 8, 8",
-    symmetry: "one mirror",
-    seeds: 4,
-    scale: [3, 0],
-    denominator: 3,
-    research: true,
-  },
-  {
-    id: "-6,11,14,15",
-    label: "−6, 11, 14, 15 · no symmetry",
-    curvatures: "−6, 11, 14, 15",
-    symmetry: "no symmetry",
-    seeds: 4,
-    scale: [6, 0],
-    denominator: 30,
-    research: true,
-  },
-  {
-    id: "3-2r3,1,1,1",
-    label: "3 − 2√3, 1, 1, 1 · three-fold",
-    curvatures: "3 − 2√3, 1, 1, 1",
-    symmetry: "three turns and three mirrors",
-    seeds: 4,
-    scale: [-3, 2],
-    denominator: 3,
-    research: true,
   },
   {
     id: "-1,3,3,3,3,3,3,3",
     label: "Six around one · six-fold",
     curvatures: "−1 and seven circles of 3",
+    record: [-1, 3, 3, 3, 3, 3, 3, 3],
     symmetry: "six turns and six mirrors",
     seeds: 8,
     scale: [1, 0],
     denominator: 1,
-    research: true,
+    note: "Not a single Descartes seed: each of its twelve first gaps is filled from a virtual opposite, the other circle tangent to its three, which is not drawn.",
+  },
+  {
+    id: "3-2r3,1,1,1",
+    label: "3 − 2√3, 1, 1, 1 · three-fold",
+    curvatures: "3 − 2√3, 1, 1, 1",
+    record: ["3 − 2√3", 1, 1, 1],
+    symmetry: "three turns and three mirrors",
+    seeds: 4,
+    scale: [-3, 2],
+    denominator: 3,
+  },
+  {
+    id: "-2,3,6,7",
+    label: "−2, 3, 6, 7 · one mirror",
+    curvatures: "−2, 3, 6, 7",
+    record: [-2, 3, 6, 7],
+    symmetry: "one mirror",
+    seeds: 4,
+    scale: [2, 0],
+    denominator: 2,
+  },
+  {
+    id: "-3,5,8,8",
+    label: "−3, 5, 8, 8 · one mirror",
+    curvatures: "−3, 5, 8, 8",
+    record: [-3, 5, 8, 8],
+    symmetry: "one mirror",
+    seeds: 4,
+    scale: [3, 0],
+    denominator: 3,
+  },
+  {
+    id: "-6,11,14,15",
+    label: "−6, 11, 14, 15 · no symmetry",
+    curvatures: "−6, 11, 14, 15",
+    record: [-6, 11, 14, 15],
+    symmetry: "no symmetry",
+    seeds: 4,
+    scale: [6, 0],
+    denominator: 30,
   },
 ];
 

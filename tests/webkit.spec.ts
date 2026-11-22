@@ -3218,6 +3218,25 @@ test("Apollonian garden entry, scalar blur, phone controls and return preserve f
   const drawing = (await art.boundingBox())!;
   const circle = (await d.getByLabel("Circle", { exact: true }).boundingBox())!;
   expect(drawing.y + drawing.height).toBeLessThan(circle.y);
+  // The picker's rows, as first painted: its step buttons below the
+  // field, clear of Follow selection, and still when the field's help
+  // opens beneath them.
+  const steps = d.locator(".garden-step button");
+  const places = () =>
+    steps.evaluateAll((all) => all.map((b) => b.getBoundingClientRect().y));
+  const before = await places();
+  for (const y of before) expect(y).toBeGreaterThan(circle.y + circle.height);
+  const follow = (await d
+    .getByRole("checkbox", { name: "Follow selection" })
+    .boundingBox())!;
+  const stepsBottom = await steps
+    .first()
+    .evaluate((b) => b.getBoundingClientRect().bottom);
+  expect(follow.y - stepsBottom).toBeGreaterThanOrEqual(12);
+  await d.getByRole("button", { name: "About Circle", exact: true }).click();
+  await expect(d.locator(".garden-picker .hint")).toBeVisible();
+  expect(await places()).toEqual(before);
+  await d.getByRole("button", { name: "About Circle", exact: true }).click();
   // A constant typed and left resolves through the shared parser.
   const radius = d.getByLabel("Minimum radius", { exact: true });
   await radius.fill("1/400");

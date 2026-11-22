@@ -114,23 +114,47 @@ html.garden-open {
   padding: 0;
   border: 0;
 }
+/* A number field with its step buttons (the garden's circles, the lace's
+   tiles). The field's rows join the picker's grid, as in a .pair, so the
+   buttons take the row after its control and its error and help open below
+   them, across the sidebar: nothing that appears moves a button. The
+   picker owns the clearance around it (docs/contributing.md, Side-by-side
+   fields). */
 .garden-picker {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding-block: 14px;
 }
-.garden-picker .field {
-  width: 120px;
+.garden-picker > .field {
+  display: grid;
+  grid-area: 1 / 1 / span 5;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  margin: 0;
+}
+.garden-picker > .field > .field-label {
+  grid-row: 1;
+}
+.garden-picker > .field > input {
+  grid-row: 2;
+  justify-self: start;
+  max-width: 120px;
+}
+.garden-picker > .field > .field-error {
+  grid-row: 4;
+}
+.garden-picker > .field > .hint {
+  grid-row: 5;
+}
+.garden-step {
+  grid-area: 3 / 1;
+  padding-top: 8px;
 }
 .garden-step,
 .garden-generators {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-.garden-step {
-  padding-bottom: 14px;
 }
 .garden-step button,
 .garden-generators button {

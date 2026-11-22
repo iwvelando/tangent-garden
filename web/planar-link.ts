@@ -20,8 +20,7 @@ import {
   type GardenCircle,
   type GardenStudy,
 } from "./garden/model";
-import { gardenResearch } from "./garden/research";
-import { gardenSeeds, type GardenSeedId } from "./garden/seeds";
+import { gardenSeeds, seedOf, type GardenSeedId } from "./garden/seeds";
 import {
   familyDefaults,
   familyTargets,
@@ -880,11 +879,8 @@ function gardenStudy(value: unknown): GardenStudy {
       root: { optional: { tuple: "number", length: 3 } },
     },
   };
-  // Issue #385's research seeds open only in its preview (?research=385).
   const seeds = Object.fromEntries(
-    gardenSeeds
-      .filter((s) => gardenResearch || !s.research)
-      .map((s) => [s.id, true]),
+    gardenSeeds.map((s) => [s.id, true]),
   ) as Record<GardenSeedId, true>;
   const out = conform<GardenStudy>(
     value,
@@ -925,6 +921,13 @@ function gardenStudy(value: unknown): GardenStudy {
   for (const k of ["depth", "maxCircles"] as const)
     if (!Number.isInteger(out[k]))
       throw new LinkError(`garden.${k}`, `garden.${k} must be a whole number.`);
+  // Every seed circle is kept: 4, or 8 for six around one.
+  const least = seedOf(out.seed).seeds;
+  if (out.maxCircles < least)
+    throw new LinkError(
+      "garden.maxCircles",
+      `garden.maxCircles must be at least ${least} for this seed.`,
+    );
   if (out.selected) {
     for (const k of ["curvature", "x", "y"] as const)
       if (!Number.isSafeInteger(out.selected[k]))

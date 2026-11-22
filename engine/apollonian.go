@@ -37,7 +37,7 @@ type GardenIdentity struct {
 	Curvature int64 `json:"curvature"`
 	X         int64 `json:"x"`
 	Y         int64 `json:"y"`
-	// Root holds the √3 coefficients of a research seed's circle (#385):
+	// Root holds the √3 coefficients of a ℤ[√3] seed's circle:
 	// its curvature is Curvature + Root[0]√3, and its center numerators
 	// X + Root[1]√3 and Y + Root[2]√3. Absent, they are zero.
 	Root []int64 `json:"root,omitempty"`
@@ -76,7 +76,7 @@ type GardenResult struct {
 	// Processed counts candidate configurations examined, each one gap.
 	Processed  int `json:"processed"`
 	Duplicates int `json:"duplicates"`
-	// Research seeds only (#385), absent for the original: each circle's
+	// Seeds other than the original only, absent for it: each circle's
 	// exact identity as six integers (p and q of b, X and Y, each
 	// p + q√3, with weighted center (X, Y)/Denominator), the number of seed
 	// circles, the center denominator and the radicand (1 or 3).
@@ -235,7 +235,7 @@ func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (Gar
 			}
 		}
 	}
-	// A research seed's kept circle, by its exact identity.
+	// Another seed's kept circle, by its exact identity.
 	var kept *[2]float64
 	if k := q.Keep; k != nil && !s.legacy {
 		root := [3]int64{}

@@ -8,11 +8,11 @@ import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
 import type { Repeat } from "../timing";
 import type { Vec } from "../types";
-import { gardenResearch } from "./research";
 import { rootText, rootValue, seedOf, type GardenSeedId } from "./seeds";
 
-// The Apollonian garden: a finite packing grown in Go from one enclosing
-// Descartes configuration (engine/apollonian.go, docs/mathematics.md).
+// The Apollonian garden: a finite packing grown in Go from a seed of
+// tangent circles inside an enclosing one (engine/apollonian.go,
+// web/garden/seeds.ts, docs/mathematics.md).
 export const gardenSeed = "-1,2,2,3" as const;
 export const gardenLimits = {
   depth: 12,
@@ -28,7 +28,7 @@ export type GardenWindow = {
 };
 // A study's generation settings.
 export type GardenCutoffs = {
-  // The original seed, or with ?research=385 one of issue #385's.
+  // The seed the packing grows from (web/garden/seeds.ts).
   seed: GardenSeedId;
   depth: number;
   // In model units: the enclosing circle has radius 1.
@@ -41,8 +41,10 @@ export type GardenRequest = GardenCutoffs & {
   window?: GardenWindow;
   keep?: GardenCircle;
 };
-// Breadth-first parallel arrays; circle 0 encloses, 1–3 are the other
-// seeds. Curvature and weighted center b·(x, y) are exact integers.
+// Breadth-first parallel arrays; circle 0 encloses, and the other seed
+// circles follow it. For the original seed, curvature and weighted center
+// b·(x, y) are exact integers; other seeds give their exact values in
+// exact.
 export type GardenResult = {
   seed: string;
   x: number[];
@@ -60,7 +62,7 @@ export type GardenResult = {
   pending: number;
   processed: number;
   duplicates: number;
-  // Research seeds only (#385): six exact integers per circle, p and q of
+  // Seeds other than the original: six exact integers per circle, p and q of
   // its curvature and of its center numerators X and Y, each p + q√3, with
   // weighted center (X, Y)/denominator; and the number of seed circles.
   exact?: number[];
@@ -69,10 +71,10 @@ export type GardenResult = {
   root?: number;
 };
 // A circle's identity: its integer curvature and weighted center. It is
-// the same circle under any cutoffs, unlike its breadth-first index. A
-// research seed's circle (#385) gives the rational parts here and the √3
-// coefficients in root, when any is nonzero, with the center numerators
-// scaled by the seed's denominator.
+// the same circle under any cutoffs, unlike its breadth-first index. Another
+// seed's circle gives the rational parts here and the √3 coefficients in
+// root, when any is nonzero, with the center numerators scaled by the
+// seed's denominator.
 export type GardenCircle = {
   curvature: number;
   x: number;
@@ -121,8 +123,8 @@ export function gardenRequest(s: GardenStudy): GardenRequest {
     ...(keep && { keep: { ...k } }),
   };
 }
-// A selection's disk in drawing units, from its identity: for the original,
-// x/b, y/b and 1/b, as before research seeds existed.
+// A selection's disk in drawing units, from its identity and its seed's
+// normalization: for the original, exactly x/b, y/b and 1/b.
 function keptDisk(seed: string, k: GardenCircle) {
   const { scale, denominator } = seedOf(seed);
   const [rb, rx, ry] = k.root ?? [0, 0, 0];
@@ -184,7 +186,7 @@ export function detailFor(s: GardenStudy) {
 
 // The reveal (docs/mathematics.md): a frame at motion progress p shows
 // the first revealCount circles in breadth-first order, true circles only.
-// The four seeds hold for the opening, the count then grows exponentially,
+// The seed circles hold for the opening, the count then grows exponentially,
 // so each roughly tripling generation takes about the same time, and the
 // whole packing holds for the end.
 export const revealHold = { start: 0.06, end: 0.14 } as const;
@@ -202,6 +204,9 @@ export function revealCount(total: number, p: number, seedCircles = 4) {
 // show the same circles: a packing of the seeds alone.
 export const revealLoops = (total: number, seeds = 4) =>
   revealCount(total, 0, seeds) === revealCount(total, 1, seeds);
+// The membership rule an exported reveal records, for n₀ seed circles.
+export const revealMembership = (n0: number) =>
+  `the first n circles in breadth-first order; n = ${n0} for progress p ≤ 0.06, n = floor(${n0}·(N/${n0})^s) with s = (p − 0.06)/0.8, n = N for p ≥ 0.86`;
 export function identity(r: GardenResult, i: number): GardenCircle {
   const e = r.exact;
   if (!e)
@@ -237,7 +242,12 @@ export const defaultGarden: GardenStudy = {
 };
 // The authored gardens, in the 2D examples gallery. Each opens the garden
 // over the notebook's study without replacing it, and takes nothing from it.
-const publicPresets = [
+// The original seed's come first, then the other seeds'.
+export const gardenPresets: readonly {
+  title: string;
+  note: string;
+  study: GardenStudy;
+}[] = [
   {
     title: "A rose window made only of circles",
     note: "Every gap between three tangent circles holds one more, down to a finite cutoff",
@@ -269,45 +279,37 @@ const publicPresets = [
       view: { x: -2688, y: 4074, zoom: 24 },
     },
   },
-] as const satisfies readonly {
-  title: string;
-  note: string;
-  study: GardenStudy;
-}[];
-// Issue #385's research studies, listed after the public ones only with
-// ?research=385, so no public preset's index changes.
-const researchPresets: readonly {
-  title: string;
-  note: string;
-  study: GardenStudy;
-}[] = [
+  // The other seeds open with the original's cutoffs, under which each
+  // stops at the minimum radius and depth together (docs/mathematics.md).
   {
-    title: "A three-fold rose window (research)",
+    title: "Six circles around a seventh",
+    note: "Seven equal circles inside an eighth: a six-fold window grown from twelve gaps",
+    study: { ...defaultGarden, seed: "-1,3,3,3,3,3,3,3", weight: "fine" },
+  },
+  {
+    title: "A three-fold rose window",
     note: "Three equal circles in a circle: every curvature is exact as p + q√3",
     study: { ...defaultGarden, seed: "3-2r3,1,1,1", weight: "fine" },
   },
   {
-    title: "Six circles around a seventh (research)",
-    note: "A six-fold window: twelve gaps, each filled from a virtual opposite circle",
-    study: { ...defaultGarden, seed: "-1,3,3,3,3,3,3,3", weight: "fine" },
-  },
-  {
-    title: "A window with one mirror (research)",
+    title: "A window with one mirror",
     note: "Curvatures −2, 3, 6, 7: three seed circles share one diameter",
     study: { ...defaultGarden, seed: "-2,3,6,7", weight: "fine" },
   },
   {
-    title: "A window with no symmetry (research)",
-    note: "Curvatures −6, 11, 14, 15: every curvature an integer, no two sides alike",
-    study: { ...defaultGarden, seed: "-6,11,14,15", weight: "fine" },
-  },
-  {
-    title: "A five and two eights (research)",
+    title: "A five and two eights",
     note: "Curvatures −3, 5, 8, 8: one mirror, through the five",
     study: { ...defaultGarden, seed: "-3,5,8,8", weight: "fine" },
   },
   {
-    title: "Finer circles in a three-fold gap (research)",
+    title: "A window with no symmetry",
+    note: "Curvatures −6, 11, 14, 15: every curvature an integer, no two sides alike",
+    study: { ...defaultGarden, seed: "-6,11,14,15", weight: "fine" },
+  },
+  // Zoomed 24× onto (0, 0.0718), where the top seed circle touches the
+  // central one, curvature 3 + 2√3 and radius 0.0718 at the origin.
+  {
+    title: "Finer circles in a three-fold gap",
     note: "Zoom detail on the three-fold seed, where the top circle touches the central one",
     study: {
       ...defaultGarden,
@@ -318,11 +320,6 @@ const researchPresets: readonly {
     },
   },
 ];
-export const gardenPresets: readonly {
-  title: string;
-  note: string;
-  study: GardenStudy;
-}[] = [...publicPresets, ...(gardenResearch ? researchPresets : [])];
 export const presetGarden = (index: number): GardenStudy =>
   structuredClone(gardenPresets[index].study) as GardenStudy;
 
@@ -454,7 +451,7 @@ export function explain(r: GardenResult, i: number) {
   };
 }
 
-// A research seed's explanation (#385): curvatures exactly, as p + q√3,
+// Another seed's explanation: curvatures exactly, as p + q√3,
 // in units where the enclosing circle's is the seed's; the arithmetic is
 // in BigInt, since 2(a + b + c) can pass 2^53. A ring's first circles fill
 // a gap whose other side holds no packing circle: the opposite circle is
@@ -494,7 +491,7 @@ function explainExact(r: GardenResult, i: number) {
   const other =
     o >= 0
       ? `from ${circleName(o)} on the gap's other side`
-      : "from the other circle tangent to all three, which lies across them and is not part of the packing";
+      : "from a virtual opposite, the other circle tangent to all three, which is not part of the packing (six around one is not a single Descartes seed)";
   return {
     facts,
     text: `It fills the gap between ${circleName(j)}, ${circleName(k)} and ${circleName(l)}, tangent to all three. Descartes' theorem gives its curvature from theirs and ${other}: 2 × (${ps.map(wrapped).join(" + ")}) − ${wrapped(old)} = ${value}.`,
@@ -547,15 +544,21 @@ export function cutoffSummary(r: GardenResult, q: GardenRequest, zoom = 1) {
 export const gardenHelp = {
   minRadius: tiered(
     "Smallest circle generated, in enclosing radii: above 0, at most 1.",
-    "A gap whose circle is smaller is left unfilled, with every circle inside it, since a gap's first circle is its largest. The four seed circles always remain. Unless Finer circles is on, zooming in enlarges the same circles.",
+    "A gap whose circle is smaller is left unfilled, with every circle inside it, since a gap's first circle is its largest. The seed circles always remain. Unless Finer circles is on, zooming in enlarges the same circles.",
   ),
   depth: tiered(
-    `Generations after the four seed circles: 0–${gardenLimits.depth}.`,
+    `Generations after the seed circles: 0–${gardenLimits.depth}.`,
     "Each generation fills the gaps the previous one made. Near points of tangency, chains of circles shrink slowly, so depth can stop them before the minimum radius does.",
   ),
-  maxCircles: tiered(
-    `Most circles kept, seeds included: 4–${formatCount(gardenLimits.circles)}.`,
-    `Circles are generated breadth-first. Reaching this count stops generation, leaving the last generation incomplete; the summary says so. Generation also stops after examining ${formatCount(gardenLimits.configurations)} gaps.`,
+  // From the seed's own circle count: 4, or 8 for six around one.
+  maxCircles: (seeds: number) =>
+    tiered(
+      `Most circles kept, seeds included: ${formatCount(seeds)}–${formatCount(gardenLimits.circles)}.`,
+      `Circles are generated breadth-first. Reaching this count stops generation, leaving the last generation incomplete; the summary says so. Generation also stops after examining ${formatCount(gardenLimits.configurations)} gaps.`,
+    ),
+  seed: tiered(
+    "The tangent circles the packing grows from, inside its enclosing circle.",
+    "Curvatures are in each seed's own units, which make every circle's exact: an integer, or p + q√3. The drawing scales the enclosing radius to 1. A new seed clears the selection and keeps the cutoffs, raising the circle limit to its seed circles.",
   ),
   presentation:
     "Show the whole packing, or only the selected circle and the three that generated it.",
@@ -571,11 +574,11 @@ export const gardenHelp = {
     "Seek the reveal by its time; the same time always shows the same circles.",
   duration: tiered(
     "Seconds for the whole reveal: 0.1–3,600.",
-    "The reveal holds the four seed circles for its first 6%, adds circles in breadth-first order, and holds the whole packing for its last 14%. Export makes at most 7,200 frames.",
+    "The reveal holds the seed circles for its first 6%, adds circles in breadth-first order, and holds the whole packing for its last 14%. Export makes at most 7,200 frames.",
   ),
   repeat: tiered(
     "Once, or back and forth; Loop needs matching ends.",
-    "Loop joins the end to the start, which only a packing of the four seeds alone does seamlessly. Back and forth reveals the circles, then removes them in reverse, within the duration. Repeating playback continues until paused; a repeating export leaves out its last frame, which is its first.",
+    "Loop joins the end to the start, which only a packing of the seed circles alone does seamlessly. Back and forth reveals the circles, then removes them in reverse, within the duration. Repeating playback continues until paused; a repeating export leaves out its last frame, which is its first.",
   ),
   circle: tiered(
     "Choose a circle by its breadth-first number.",

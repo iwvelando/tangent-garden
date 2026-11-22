@@ -54,6 +54,7 @@ import {
   detailFor,
   revealCount,
   revealLoops,
+  revealMembership,
   seedCount,
   describeCircle,
   explain,
@@ -70,7 +71,6 @@ import {
   type GardenResult,
   type GardenStudy,
 } from "./model";
-import { gardenResearch } from "./research";
 import { gardenSeeds, seedOf } from "./seeds";
 import "./garden.css";
 
@@ -151,7 +151,7 @@ export function GardenPreview({
   const result = film?.result ?? shown?.result;
   const reveal = study.reveal ?? defaultReveal;
   const total = result?.curvature.length ?? 0;
-  // The seed's description; with ?research=385, one of issue #385's.
+  // The seed's description (web/garden/seeds.ts).
   const seed = seedOf(study.seed);
   const seedCircles = result ? seedCount(result) : seed.seeds;
   const count = film
@@ -362,7 +362,7 @@ export function GardenPreview({
   const metadata = () => ({
     kind: "apollonian-garden",
     seed: study.seed,
-    curvatures: seed.research ? seed.curvatures : [-1, 2, 2, 3],
+    curvatures: seed.record,
     depth: study.depth,
     minRadius: study.minRadius,
     units: "enclosing radius = 1",
@@ -419,8 +419,7 @@ export function GardenPreview({
     duration: reveal.duration,
     repeat: reveal.repeat,
     total,
-    membership:
-      "the first n circles in breadth-first order; n = 4 for progress p ≤ 0.06, n = floor(4·(N/4)^s) with s = (p − 0.06)/0.8, n = N for p ≥ 0.86",
+    membership: revealMembership(seedCircles),
   });
   async function still(format: string, settings: Still) {
     const props = drawing();
@@ -526,7 +525,14 @@ export function GardenPreview({
     min: number,
     max: number,
   ) => (
-    <Field label={label} help={gardenHelp[k]}>
+    <Field
+      label={label}
+      help={
+        k === "maxCircles"
+          ? gardenHelp.maxCircles(seed.seeds)
+          : gardenHelp.depth
+      }
+    >
       <input
         type="number"
         min={min}
@@ -979,33 +985,31 @@ export function GardenPreview({
                     {progressPercent(exportProgress)}
                   </p>
                 )}
-                <h3 className="garden-section">Cutoffs</h3>
-                {gardenResearch && (
-                  <Field
-                    label="Seed (research)"
-                    help="Issue #385's research catalog: the tangent circles the packing grows from. Not a public feature."
+                <h3 className="garden-section">Seed and cutoffs</h3>
+                <Field label="Seed" help={gardenHelp.seed}>
+                  <select
+                    value={study.seed}
+                    onChange={(e) => {
+                      const next = seedOf(e.currentTarget.value);
+                      setCircleDraft(undefined);
+                      // Another packing: the selection's identity names
+                      // a circle of this one only.
+                      edit(({ selected: _, ...s }) => ({
+                        ...s,
+                        seed: next.id,
+                        maxCircles: Math.max(s.maxCircles, next.seeds),
+                      }));
+                    }}
                   >
-                    <select
-                      value={study.seed}
-                      onChange={(e) => {
-                        const next = seedOf(e.currentTarget.value);
-                        setCircleDraft(undefined);
-                        // Another packing: the selection's identity names
-                        // a circle of this one only.
-                        edit(({ selected: _, ...s }) => ({
-                          ...s,
-                          seed: next.id,
-                          maxCircles: Math.max(s.maxCircles, next.seeds),
-                        }));
-                      }}
-                    >
-                      {gardenSeeds.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+                    {gardenSeeds.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {seed.note && (
+                  <p className="note garden-seed-note">{seed.note}</p>
                 )}
                 {experiment}
                 <div className="pair">

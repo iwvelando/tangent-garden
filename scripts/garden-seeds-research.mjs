@@ -1,5 +1,6 @@
-// Issue #385's research measurements: each seed's packings through the
-// production WASM engine under Node, as the page's worker calls it, with
+// The garden seeds' measurements, first gathered for issue #385: each
+// seed's packings through the production WASM engine under Node, as the
+// page's worker calls it, with
 // the median engine time, the reply's JSON and lifted-buffer sizes, and the
 // module's memory. Engine time on this machine only, not a device frame
 // rate. With --compare <site or directory>, also checks that the original

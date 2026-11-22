@@ -5,8 +5,8 @@ import (
 	"math/bits"
 )
 
-// Issue #385's research catalog of enclosing seeds. Not yet a public
-// contract: see the issue for the evidence and the proposed definitions.
+// The garden's catalog of enclosing seeds (docs/mathematics.md, Apollonian
+// garden; web/garden/seeds.ts describes them for the page).
 //
 // Every value is exact in ℤ[√3]: p + q√3 with integer p and q. Integral
 // seeds keep q = 0. A circle stores its signed curvature b and the
@@ -170,7 +170,7 @@ func (s *gardenSpec) scaled(l qr) *gardenSpec {
 	return &t
 }
 
-// The catalog, in the order offered. Each places the enclosing circle at the
+// The catalog. Each places the enclosing circle at the
 // origin; a seed with a mirror has it across the vertical axis. Centers,
 // worked by hand from the tangencies, are listed in units where the
 // enclosing circle has curvature b₀.
@@ -253,7 +253,7 @@ var gardenSpecs = func() map[string]*gardenSpec {
 	return m
 }()
 
-// GardenSeedIDs lists the catalog in the order offered.
+// GardenSeedIDs lists the catalog; web/garden/seeds.ts orders the choice.
 func GardenSeedIDs() []string {
 	ids := make([]string, len(gardenCatalog))
 	for i, s := range gardenCatalog {

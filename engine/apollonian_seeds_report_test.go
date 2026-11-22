@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Issue #385's evidence: GARDEN_REPORT=1 go test ./engine -run GardenSeedReport -v
+// The catalog's evidence, first gathered for issue #385: GARDEN_REPORT=1 go test ./engine -run GardenSeedReport -v
 //
 // For each seed it reports the default and largest packings' counts, work
 // (examined gaps, including those pruned out of view or below the cutoffs)
@@ -59,7 +59,7 @@ func floatRecurrence(s *gardenSpec, r GardenResult) (b, x, y, radius []float64) 
 
 func TestGardenSeedReport(t *testing.T) {
 	if os.Getenv("GARDEN_REPORT") == "" {
-		t.Skip("set GARDEN_REPORT=1 for the research report")
+		t.Skip("set GARDEN_REPORT=1 for the seed report")
 	}
 	var out strings.Builder
 	p := func(format string, a ...any) { fmt.Fprintf(&out, format+"\n", a...) }
