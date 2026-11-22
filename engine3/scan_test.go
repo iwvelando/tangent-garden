@@ -16,6 +16,12 @@ import (
 // fields chosen for one difficulty each) and compare what it returns with
 // the analysis. The expectations are derived here, never read from the
 // mesher.
+//
+// The slower tests run in parallel: under the race detector these tests
+// took nearly nine minutes one after another. Go starts parallel tests
+// only once the package's serial tests have finished, so the tests that
+// lower the work limits (TestScanBudgets, TestScanRecheckReserve) stay
+// serial and never overlap them.
 
 // scanStudy is an implicit study with no sections, as the scanner meshes.
 func scanStudy(f string, level, a float64, b Box, cells int) ImplicitRequest {
@@ -101,6 +107,7 @@ func brief(r ScanResult) []string {
 // found once, between the analysis's classes, and every bracket lies
 // within a quarter of the coarse step of the exact critical level.
 func TestScanStories(t *testing.T) {
+	t.Parallel()
 	presets := spatialPresets(t)
 	cases := []struct {
 		preset   string
@@ -169,6 +176,7 @@ func TestScanBirth(t *testing.T) {
 // two drops once a⁴ > 1. And a handle of radius √a, F = (ρ² − a)² + z² at
 // c = 1, whose origin has F = a²: a sphere while a < 1, a torus above.
 func TestScanShapeParameter(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		f     string
@@ -203,6 +211,7 @@ func TestScanShapeParameter(t *testing.T) {
 // six disks (χ = −4, cut), then eight corner patches (χ = 1 each, cut), then
 // nothing. Every candidate involves the box, and none is a change.
 func TestScanBoxEvents(t *testing.T) {
+	t.Parallel()
 	r := runScan(t, ScanRequest{Implicit: scanStudy("x^2+y^2+z^2", 0.5, 1, cube(1), 32), Axis: "level", From: 0.5, To: 3.5, Samples: 13, Depth: 8, Recheck: true})
 	checkEvents(t, r, []knownEvent{
 		{at: 1, below: []int{2}, above: []int{-4}, aboveCut: true, kind: "box", allowUnstable: true},
@@ -218,6 +227,7 @@ func TestScanBoxEvents(t *testing.T) {
 // hollow still vanishes at c = 0 inside the cut shell, a change beside a
 // cut piece that does not change.
 func TestScanChangeBesideCut(t *testing.T) {
+	t.Parallel()
 	reach := (math.Pow(2*2.6*2.6-5, 2) - 75) / 4
 	q := scanStudy("x^4 - 5*x^2 + y^4 - 5*y^2 + z^4 - 5*z^2", 0, 1, cube(2.6), 48)
 	r := runScan(t, ScanRequest{Implicit: q, Axis: "level", From: -3, To: 2, Samples: 11, Depth: 6, Recheck: true})
@@ -241,6 +251,7 @@ func TestScanChangeBesideCut(t *testing.T) {
 // A coarse step wider than that gap can miss both events, whose readings
 // cancel; a finer one finds them as two candidates.
 func TestScanCancellingPair(t *testing.T) {
+	t.Parallel()
 	const b = 1.0
 	birth, merge := tiltedWell(b)
 	if !(merge-birth > 0.15 && merge-birth < 0.25) {
@@ -301,6 +312,7 @@ func TestScanUnresolved(t *testing.T) {
 // grid point, and the two drops share it (χ = 3). The two brackets either
 // side of it are reported as one candidate through that singular sample.
 func TestScanSingularSample(t *testing.T) {
+	t.Parallel()
 	q := spatialPresets(t)["Two drops become one"].Implicit
 	r := runScan(t, ScanRequest{Implicit: q, Axis: "level", From: 0.5, To: 1.5, Samples: 3, Depth: 6, Recheck: false})
 	k := slices.IndexFunc(r.Samples, func(s ScanSample) bool { return s.Value == 1 })
@@ -338,6 +350,7 @@ func TestScanSingularSample(t *testing.T) {
 // across the three grids holds the event, wide; on the example's own grid
 // it is narrow.
 func TestScanResolutionShift(t *testing.T) {
+	t.Parallel()
 	q := spatialPresets(t)["The instant a handle appears"].Implicit
 	req := ScanRequest{Implicit: q, Axis: "level", From: 0.64, To: 1.44, Samples: 17, Depth: 8, Recheck: true}
 	req.Implicit.Cells = 29
@@ -440,6 +453,7 @@ func TestScanBudgets(t *testing.T) {
 // put them between the fourth and fifth, ninth and tenth, and thirteenth
 // and fourteenth.
 func TestScanResultBeforeRechecks(t *testing.T) {
+	t.Parallel()
 	q := spatialPresets(t)["The tanglecube's three events"].Implicit
 	req := ScanRequest{Implicit: q, Axis: "level", From: -18, To: 4, Samples: 16, Depth: 5, Recheck: true}
 	for _, steps := range []int{1, 8, 16, 16 + 4, 16 + 3*5} {
@@ -542,6 +556,7 @@ func fmtI(v []int) string {
 // ∇ₓF = 0 on F = c). On the controls it returns the exact critical values
 // and Morse indices; a box event, where F has no critical point, gets none.
 func TestScanCritical(t *testing.T) {
+	t.Parallel()
 	p := spatialPresets(t)
 	// points, when not 0, is how many distinct points share the value.
 	type want struct {
@@ -600,6 +615,7 @@ func TestScanCritical(t *testing.T) {
 // mesh is singular; that blip is not a change, and does not narrow the
 // recheck of the change before it.
 func TestScanRecheckReach(t *testing.T) {
+	t.Parallel()
 	drops := runScan(t, ScanRequest{Implicit: scanStudy("((x-a)^2+y^2+z^2)*((x+a)^2+y^2+z^2)", 1, 1, Box{-2, 2, -1.2, 1.2, -1.2, 1.2}, 40),
 		Axis: "a", From: 0.6, To: 1.3986, Samples: 7, Depth: 8, Recheck: true})
 	if len(drops.Candidates) != 1 {
@@ -652,6 +668,7 @@ func TestScanRecheckReach(t *testing.T) {
 // −12.5, and eight with z = ±√(5/2) at −6.25 − 0.97 · 6.25 = −12.3125,
 // all of index 1. Both lie beside the change where the drops join.
 func TestScanCriticalGroups(t *testing.T) {
+	t.Parallel()
 	q := scanStudy("x^4 - 5*x^2 + y^4 - 5*y^2 + 0.97*(z^4 - 5*z^2)", 0, 1, cube(3), 32)
 	r := runScan(t, ScanRequest{Implicit: q, Axis: "level", From: -14, To: -11, Samples: 5, Depth: 5, Recheck: true, Critical: true})
 	if len(r.Candidates) == 0 {
@@ -846,6 +863,7 @@ func TestScanRecheckReserve(t *testing.T) {
 // pieces. The holes closing at 1/16, which the critical search finds, and
 // the stable box event above stay apart.
 func TestScanMergedBox(t *testing.T) {
+	t.Parallel()
 	q := spatialPresets(t)["A double torus"].Implicit
 	r := runScan(t, ScanRequest{Implicit: q, Axis: "level", From: 0.005, To: 0.1, Samples: 17, Depth: 5, Recheck: true, Critical: true})
 	if len(r.Candidates) != 3 {
