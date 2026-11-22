@@ -558,9 +558,15 @@ test("a story travels in its link; older links and other studies have none", asy
   await expect(other.getByTestId("contour-note")).not.toContainText(
     "critical level",
   );
-  // An unknown story is refused by name.
+  // An unknown story is refused by name, never replaced by a known one.
   await other.goto(`/#s=${token({ ...study, story: "five-pools" })}`);
-  await expect(other.getByText(/story/).first()).toBeVisible();
+  await expect(
+    other.getByText(
+      "story must be one of two-pools, four-pools, three-pools.",
+      { exact: false },
+    ),
+  ).toBeVisible();
+  await expect(other.locator(".event-strip")).toHaveCount(0);
   await other.close();
   // Every other example opens without a story.
   for (let i = 0; i < presets.length; i++)
