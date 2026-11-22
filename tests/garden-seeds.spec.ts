@@ -753,10 +753,12 @@ test("a new split clears the selection and ends a reveal; the same fraction keep
     "0.5",
   );
   await splitField(d).fill("1/3");
-  await ready(d);
+  // A paused reveal never marks the drawing busy, so readiness means
+  // nothing until the split has resolved and ended it.
   await expect(d.locator(".garden-view")).not.toHaveAttribute(
     "data-reveal-time",
   );
+  await ready(d);
   await expect(d.getByText("No circle selected.")).toBeVisible();
   const last = await page.evaluate(() => (window as any).gardenPosts.at(-1));
   expect(last).toEqual([1, 3]);
