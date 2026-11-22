@@ -52,7 +52,7 @@ The review report records:
 - Checks personally run, the failing cases reproduced, mutation survivors when tested, and author-reported checks clearly identified as such.
 - Unresolved questions, deferred checks and the stage owning final verification; state when that stage is unassigned.
 
-Apply [AGENTS.md's final verification requirements and exceptions](../AGENTS.md#verification), including [Verification-only follow-ups](contributing.md#verification-only-follow-ups) after a successful full run. Resource scheduling and test quality are separate: honor an authorized targeted-only phase, then have the designated integration or review stage complete final verification in a quiet slot. A review verdict and completion of final verification are separate statements.
+Apply [AGENTS.md's final verification requirements and exceptions](../AGENTS.md#verification), including [Verification-only follow-ups](contributing.md#verification-only-follow-ups) and [Test-only follow-ups](contributing.md#test-only-follow-ups) after a successful full run. A coverage gap fixed by tightening a test does not need another full run. Resource scheduling and test quality are separate: honor an authorized targeted-only phase, then have the designated integration or review stage complete final verification in a quiet slot. A review verdict and completion of final verification are separate statements.
 
 ## Communication and completion
 
