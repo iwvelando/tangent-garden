@@ -3824,6 +3824,7 @@ test("garden links conform settings, selection and view without geometry, and ol
         "weight",
         ...(garden.selected ? ["selected"] : []),
         ...("detail" in garden ? ["detail"] : []),
+        ...("split" in garden ? ["split"] : []),
       ].sort(),
     );
   }

@@ -190,6 +190,16 @@ self.onmessage = async ({
         if (q.keep.root && !q.keep.root.every(Number.isSafeInteger))
           throw fieldError("keep.root", "Enter whole numbers.");
       }
+      // The split diameter's member, a fraction of whole numbers.
+      if (
+        q.split !== undefined &&
+        !(
+          Array.isArray(q.split) &&
+          q.split.length === 2 &&
+          q.split.every(Number.isSafeInteger)
+        )
+      )
+        throw fieldError("split", "Enter a finite number.");
       const start = performance.now();
       const raw = tangentGardenGarden(
         JSON.stringify({
@@ -197,6 +207,7 @@ self.onmessage = async ({
           depth: q.depth,
           minRadius: q.minRadius,
           maxCircles: q.maxCircles,
+          ...(q.split && { split: [q.split[0], q.split[1]] }),
           ...(q.window && {
             window: {
               xMin: q.window.xMin,

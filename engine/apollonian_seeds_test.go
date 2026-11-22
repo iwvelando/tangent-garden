@@ -2,10 +2,12 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -137,13 +139,25 @@ func exactTangent(c1, c2 exactCircle, d int64) bool {
 	return zEq(left, zMul(zMul(s, s), zInt(d*d)))
 }
 
+// seedGarden's seed is a catalog id, or "split m/n" for a member of the
+// split-diameter family (apollonian_split_test.go).
 func seedGarden(seed string, depth int, minRadius float64, maxCircles int) GardenRequest {
-	return GardenRequest{Seed: seed, Depth: depth, MinRadius: minRadius, MaxCircles: maxCircles}
+	q := GardenRequest{Seed: seed, Depth: depth, MinRadius: minRadius, MaxCircles: maxCircles}
+	var m, n int64
+	if _, err := fmt.Sscanf(seed, "split %d/%d", &m, &n); err == nil {
+		q.Seed, q.Split = GardenSplitSeed, []int64{m, n}
+	}
+	return q
 }
 
 // The catalog: the original, three more integral root quadruples and two
 // seeds exact in ℤ[√3], the last of eight circles.
 var catalogSeeds = []string{GardenSeed, "-2,3,6,7", "-3,5,8,8", "-6,11,14,15", "3-2r3,1,1,1", "-1,3,3,3,3,3,3,3"}
+
+// Every seed but the original, with the split family's two ends and
+// members inside it; the checks shared by the catalog and the family run
+// over these.
+var alternateSeeds = append(append([]string{}, catalogSeeds[1:]...), "split 1/20", "split 19/20", "split 1/5", "split 37/97")
 
 func TestGardenSeedCatalog(t *testing.T) {
 	if got := GardenSeedIDs(); !reflect.DeepEqual(got, catalogSeeds) {
@@ -325,7 +339,7 @@ func checkSeedPacking(t *testing.T, r GardenResult) packingErrors {
 }
 
 func TestGardenSeedsArePackings(t *testing.T) {
-	for _, id := range catalogSeeds[1:] {
+	for _, id := range alternateSeeds {
 		for _, q := range []GardenRequest{
 			seedGarden(id, 4, 1e-4, 5000),
 			seedGarden(id, 12, 0.002, 5000),
@@ -348,7 +362,7 @@ func TestGardenSeedsArePackings(t *testing.T) {
 }
 
 func TestGardenSeedsAreDeterministic(t *testing.T) {
-	for _, id := range catalogSeeds[1:] {
+	for _, id := range alternateSeeds {
 		q := seedGarden(id, 10, 0.004, 3000)
 		a, b := mustGarden(t, q), mustGarden(t, q)
 		if len(a.Curvature) < 100 || !reflect.DeepEqual(a, b) {
@@ -522,7 +536,7 @@ func TestGardenSeedScaleCovariance(t *testing.T) {
 // original's tests (TestGardenWindowKeepsEveryVisibleCircle), over a grid of
 // small windows and at every seed's cusps.
 func TestGardenSeedWindowsKeepEveryVisibleCircle(t *testing.T) {
-	for _, id := range catalogSeeds[1:] {
+	for _, id := range alternateSeeds {
 		q := seedGarden(id, 12, 0.001, 5000)
 		full := mustGarden(t, q)
 		where := map[[6]float64]int{}
@@ -564,7 +578,12 @@ func TestGardenSeedWindowsKeepEveryVisibleCircle(t *testing.T) {
 				}
 			}
 		}
-		if checked < 2000 {
+		// The split family's thin crescents hold fewer circles.
+		need := 2000
+		if strings.HasPrefix(id, "split") {
+			need = 1000
+		}
+		if checked < need {
 			t.Fatalf("%s: only %d visible circles checked", id, checked)
 		}
 		t.Logf("%s: %d visible circles kept over 400 windows, %d circles generated", id, checked, kept)
@@ -599,7 +618,7 @@ func TestGardenLinearDualAgreesOnTheOriginal(t *testing.T) {
 // A kept circle outside the window survives with its generators for every
 // seed, as for the original.
 func TestGardenSeedsKeepTheChosenCircle(t *testing.T) {
-	for _, id := range catalogSeeds[1:] {
+	for _, id := range alternateSeeds {
 		q := seedGarden(id, 12, 0.001, 5000)
 		full := mustGarden(t, q)
 		// The smallest circle of generation 5 or more, and a window on the
