@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
-import { choosePreset, holdFrames, open as openDetails } from "./helpers";
+import { choosePreset, open as openDetails, playAndPause } from "./helpers";
 import { decodeVideo, frameDifference, probe } from "./video";
 import { presetStudy } from "../web/spatial/link";
 import { spatialPresets } from "../web/spatial/presets";
@@ -530,18 +530,6 @@ async function openStudy(page: Page, study: unknown) {
   );
   await settled(page);
   await openPanel(page);
-}
-// Pauses before the phrase draws a frame, so the session the callers seek
-// in is paused however slowly frames draw (see holdFrames).
-async function playAndPause(page: Page) {
-  const release = await holdFrames(page);
-  try {
-    await button(page, "Play animation").click();
-    await button(page, "Pause").click({ timeout: 60000 });
-    await expect(button(page, "Resume")).toBeVisible();
-  } finally {
-    await release();
-  }
 }
 // The timeline snaps to steps of 0.001.
 async function seek(page: Page, to: number) {

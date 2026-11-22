@@ -563,7 +563,7 @@ for (const colorScheme of ["light", "dark"] as const)
             expect(box.x + box.width, at).toBeLessThanOrEqual(viewport.width);
             expect(box.y, at).toBeGreaterThanOrEqual(0);
             expect(box.y + box.height, at).toBeLessThanOrEqual(viewport.height);
-          }).toPass({ timeout: 15_000 });
+          }).toPass();
         // Keyboard operation of each experiment.
         if (step === 0) {
           await selectedFiber(dialog).focus();

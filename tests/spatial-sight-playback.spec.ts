@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
 import { probe, decodeVideo, frameDifference } from "./video";
-import { choosePreset } from "./helpers";
+import { choosePreset, playAndPause } from "./helpers";
 import { spatialPresets } from "../web/spatial/presets";
 import { defaultLayers } from "../web/spatial/renderer";
 import { defaultSight, type Sight } from "../web/spatial/sight";
@@ -68,16 +68,15 @@ async function still(page: Page) {
 }
 const through = { sheets: "through", opacity: 0.35, hidden: "dashed" } as const;
 
-test("playback draws the entered sight in every mode, and Stop leaves it", async ({
-  page,
-}) => {
-  await open(page, study(through, "reveal"));
-  const mode = page.getByLabel("Animate", { exact: true });
-  for (const m of ["reveal", "parameters", "orbit"]) {
-    await mode.selectOption(m);
-    await button(page, "Play animation").click();
+// One test a mode: together they ran close to one test's time limit (#515).
+for (const m of ["reveal", "parameters", "orbit"])
+  test(`playback draws the entered sight in ${m} mode, and Stop leaves it`, async ({
+    page,
+  }) => {
+    await open(page, study(through, "reveal"));
+    await page.getByLabel("Animate", { exact: true }).selectOption(m);
+    await playAndPause(page);
     await expect(stage(page)).toHaveAttribute("data-mode", m);
-    await button(page, "Pause").click();
     await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");
     await expect(stage(page)).toHaveAttribute("data-progress", "0.5");
     expect(await drawnSight(page)).toEqual(through);
@@ -94,8 +93,7 @@ test("playback draws the entered sight in every mode, and Stop leaves it", async
     await button(page, "Stop").click();
     await expect(stage(page)).not.toHaveAttribute("data-progress");
     expect(await drawnSight(page)).toEqual(through);
-  }
-});
+  });
 
 test("an orbit's export draws the sight it began with and ends on the still", async ({
   page,

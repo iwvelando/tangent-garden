@@ -14,7 +14,7 @@ import type {
   Vec3,
 } from "../web/spatial/types";
 import { test, expect, type Page } from "@playwright/test";
-import { chooseColorScheme, choosePreset } from "./helpers";
+import { chooseColorScheme, choosePreset, playAndPause } from "./helpers";
 import { readFile } from "node:fs/promises";
 import { probe, decodeVideo } from "./video";
 import { curveMesh } from "./curve-mesh";
@@ -274,10 +274,7 @@ for (const camera of ["hold", "current", "follow", "fit"])
     await page.getByLabel("Duration (seconds)").fill("5");
     await page.locator("#spatial-artwork").focus();
     await page.keyboard.press("+");
-    await page
-      .getByRole("button", { name: "Play animation", exact: true })
-      .click();
-    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await playAndPause(page);
     const slider = page.getByRole("slider", { name: "Animation progress" });
     const framing = async () =>
       JSON.parse((await stage(page).getAttribute("data-camera"))!);

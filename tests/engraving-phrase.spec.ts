@@ -3,10 +3,10 @@ import { deflateRawSync } from "node:zlib";
 import { readFile } from "node:fs/promises";
 import {
   choosePreset,
-  holdFrames,
   open,
   openAnimation,
   openExportSettings,
+  playAndPause,
 } from "./helpers";
 import { decodePng } from "./png";
 import { pngStill } from "./spatial-family-helpers";
@@ -584,22 +584,6 @@ async function seek3d(page: Page, to: number) {
     timeout: 60000,
   });
 }
-// Pause before frames can advance the phrase: its callers then seek a
-// stable session even when headless WebGL delays pointer input.
-async function playAndPause3d(page: Page) {
-  const release = await holdFrames(page);
-  try {
-    await page
-      .getByRole("button", { name: "Play animation", exact: true })
-      .click();
-    await page.getByRole("button", { name: "Pause", exact: true }).click();
-    await page
-      .getByRole("button", { name: "Resume", exact: true })
-      .waitFor({ state: "visible" });
-  } finally {
-    await release();
-  }
-}
 async function openKnot(page: Page, study: unknown) {
   await page.addInitScript(() => {
     (window as any).requests = 0;
@@ -634,7 +618,7 @@ test("a 3D engraving phrase shows spans, layers and a turning camera from the fr
   );
   await expect(page.getByLabel("Animation camera")).toHaveCount(0);
   const before = await page.evaluate(() => (window as any).requests);
-  await playAndPause3d(page);
+  await playAndPause(page);
   const entry = await camera3d(page);
   // Phases of 1, 2 and 1 seconds, the outer two eased.
   const ease = (u: number) => (1 - Math.cos(Math.PI * u)) / 2;
@@ -742,7 +726,7 @@ test("the knot's film withdraws into one member, shows its construction and keep
   const all = range(0, 15);
   expect((await record3d(page)).visible).toEqual(all);
   const before = await page.evaluate(() => (window as any).requests);
-  await playAndPause3d(page);
+  await playAndPause(page);
   // The paused frame as a still: its metadata records the layers it was
   // drawn with and the family slots shown.
   const still3d = async () => {
@@ -1072,7 +1056,7 @@ for (const [width, height] of [
     const turns = page.getByLabel("Phase 3 turns", { exact: true });
     await turns.scrollIntoViewIfNeeded();
     await expect(turns).toBeInViewport();
-    await playAndPause3d(page);
+    await playAndPause(page);
     await scrubSteadily(page, "#spatial-animation-section");
     const stop3d = page.getByRole("button", { name: "Stop", exact: true });
     await stop3d.scrollIntoViewIfNeeded();

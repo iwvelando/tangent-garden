@@ -13,6 +13,8 @@ const usesPole = (kind: string) => Object.hasOwn(poleKinds, kind);
 declare const Go: new () => {
   importObject: WebAssembly.Imports;
   run(instance: WebAssembly.Instance): Promise<void>;
+  exited: boolean;
+  _makeFuncWrapper(id: number): (...args: unknown[]) => unknown;
 };
 declare const tangentGardenCompute: (json: string) => string;
 declare const tangentGardenTrack: (
@@ -80,6 +82,18 @@ async function init(base: string) {
   // Classic worker keeps Go's runtime unmodified and works on ordinary static hosts.
   importScripts(`${base}wasm_exec.js`);
   const go = new Go();
+  // When the runtime exits during a call (a panic, or a fault in the
+  // browser's own engine), wasm_exec.js returns undefined from it, which
+  // would surface as a JSON parse error. Report it as the next call would.
+  const wrap = go._makeFuncWrapper.bind(go);
+  go._makeFuncWrapper = (id) => {
+    const call = wrap(id);
+    return function (this: unknown, ...args: unknown[]) {
+      const result = call.apply(this, args);
+      if (go.exited) throw new Error("Go program has already exited");
+      return result;
+    };
+  };
   const response = await fetch(`${base}engine.wasm`);
   if (!response.ok)
     throw new Error(`Engine download failed (${response.status})`);
