@@ -8,7 +8,14 @@ import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
 import type { Repeat } from "../timing";
 import type { Vec } from "../types";
-import { rootText, rootValue, seedOf, type GardenSeedId } from "./seeds";
+import {
+  rootText,
+  rootValue,
+  seedValues,
+  splitOf,
+  type GardenSeedId,
+  type GardenSplit,
+} from "./seeds";
 
 // The Apollonian garden: a finite packing grown in Go from a seed of
 // tangent circles inside an enclosing one (engine/apollonian.go,
@@ -34,8 +41,13 @@ export type GardenCutoffs = {
   // In model units: the enclosing circle has radius 1.
   minRadius: number;
   maxCircles: number;
+  // The split diameter's split as entered, the left seed circle's radius;
+  // present exactly while that seed is chosen (web/garden/seeds.ts).
+  split?: number;
 };
-export type GardenRequest = GardenCutoffs & {
+export type GardenRequest = Omit<GardenCutoffs, "split"> & {
+  // The split diameter's member, the entered split's nearest fraction.
+  split?: GardenSplit;
   // Detail for a view: only gaps reaching into the window are filled, and
   // those holding the kept circle (see detailFor).
   window?: GardenWindow;
@@ -105,16 +117,18 @@ export const defaultReveal: GardenReveal = { duration: 8, repeat: "once" };
 // The request a study's drawing needs: its cutoffs, and with detail at a
 // zoom past the whole packing, the finer cutoff and window for its view.
 export function gardenRequest(s: GardenStudy): GardenRequest {
+  const split = splitOf(s);
   const q: GardenRequest = {
     seed: s.seed,
     depth: s.depth,
     minRadius: s.minRadius,
     maxCircles: s.maxCircles,
+    ...(split && { split }),
   };
   const d = detailFor(s);
   if (!d) return q;
   const k = s.selected;
-  const disk = k && keptDisk(s.seed, k);
+  const disk = k && keptDisk(s, k);
   const keep = disk && disk.b > 0 && !diskMeets(disk, d.window);
   return {
     ...q,
@@ -125,8 +139,10 @@ export function gardenRequest(s: GardenStudy): GardenRequest {
 }
 // A selection's disk in drawing units, from its identity and its seed's
 // normalization: for the original, exactly x/b, y/b and 1/b.
-function keptDisk(seed: string, k: GardenCircle) {
-  const { scale, denominator } = seedOf(seed);
+function keptDisk(seed: { seed: string; split?: number }, k: GardenCircle) {
+  const values = seedValues(seed);
+  if (!values) return undefined;
+  const { scale, denominator } = values;
   const [rb, rx, ry] = k.root ?? [0, 0, 0];
   const b = rootValue(k.curvature, rb),
     s = rootValue(...scale);
@@ -318,6 +334,14 @@ export const gardenPresets: readonly {
       detail: true,
       view: { x: 0, y: 603, zoom: 24 },
     },
+  },
+  // The split diameter at its opening split, 1/4: seed circles of radii
+  // 1/4 and 3/4 on the horizontal diameter, and a chain of circles around
+  // the larger one, which depth 12 leaves just short of the far cusp.
+  {
+    title: "Pearls in a crescent",
+    note: "Split the diameter unevenly and the gaps become a crescent of pearls",
+    study: { ...defaultGarden, seed: "split", split: 0.25, weight: "fine" },
   },
 ];
 export const presetGarden = (index: number): GardenStudy =>

@@ -71,7 +71,13 @@ import {
   type GardenResult,
   type GardenStudy,
 } from "./model";
-import { gardenSeeds, seedOf } from "./seeds";
+import {
+  fractionText,
+  gardenSeeds,
+  seedOf,
+  seedValues,
+  splitOf,
+} from "./seeds";
 import "./garden.css";
 
 const labels: Record<string, string> = {
@@ -79,6 +85,7 @@ const labels: Record<string, string> = {
   minRadius: "Minimum radius",
   maxCircles: "Circle limit",
   seed: "Seed",
+  split: "Split",
 };
 // A frozen reveal: the packing it shows, the request that made it, and
 // where its timeline stands, from 0 to 1.
@@ -153,6 +160,17 @@ export function GardenPreview({
   const total = result?.curvature.length ?? 0;
   // The seed's description (web/garden/seeds.ts).
   const seed = seedOf(study.seed);
+  // Its exact values, absent while the split is not a number.
+  const values = seedValues(study);
+  const split = splitOf(study);
+  // The split last entered, for choosing the split diameter again, and
+  // the seed now chosen, so a split that resolves after another seed was
+  // chosen is dropped.
+  const lastSplit = useRef(study.split),
+    seedNow = useRef(study.seed);
+  seedNow.current = study.seed;
+  if (study.split !== undefined && Number.isFinite(study.split))
+    lastSplit.current = study.split;
   const seedCircles = result ? seedCount(result) : seed.seeds;
   const count = film
     ? revealCount(
@@ -178,7 +196,9 @@ export function GardenPreview({
     ? { field: "depth", message: "Enter a whole number." }
     : !Number.isInteger(study.maxCircles)
       ? { field: "maxCircles", message: "Enter a whole number." }
-      : undefined;
+      : seed.family && !split
+        ? { field: "split", message: "Enter a finite number." }
+        : undefined;
   const scalarError = Object.values(scalars).find((s) => s.error);
   const scalarPending = Object.values(scalars).some((s) => s.pending);
   const activeError =
@@ -188,6 +208,9 @@ export function GardenPreview({
       : undefined);
   const valid = !activeError && !scalarError && !scalarPending;
   const ready = valid && current;
+  const splitFailed =
+    activeError?.field === "split" ||
+    (!!seed.family && scalarError?.name === seed.family.label);
   const selected = result ? indexOf(result, study.selected) : -1;
   const scalarStatus = useMemo(
     () => ({
@@ -359,10 +382,13 @@ export function GardenPreview({
       weight: study.weight,
       count,
     };
+  // Exports wait for the study's packing, and an edit ends a reveal, so
+  // the study's settings are the drawn packing's.
   const metadata = () => ({
     kind: "apollonian-garden",
     seed: study.seed,
-    curvatures: seed.record,
+    ...(split && { split: fractionText(split) }),
+    curvatures: values?.record,
     depth: study.depth,
     minRadius: study.minRadius,
     units: "enclosing radius = 1",
@@ -718,7 +744,10 @@ export function GardenPreview({
       <div className="garden-content">
         <div className="garden-heading">
           <p className="eyebrow">
-            Apollonian packing · curvatures {seed.curvatures}
+            Apollonian packing ·{" "}
+            {values
+              ? `curvatures ${values.curvatures}`
+              : seed.label.split(" · ")[0].toLowerCase()}
           </p>
           <h2 id="garden-title">The Apollonian garden</h2>
           <p>
@@ -993,11 +1022,16 @@ export function GardenPreview({
                       const next = seedOf(e.currentTarget.value);
                       setCircleDraft(undefined);
                       // Another packing: the selection's identity names
-                      // a circle of this one only.
-                      edit(({ selected: _, ...s }) => ({
+                      // a circle of this one only. A seed with a
+                      // parameter takes the one last entered here, or its
+                      // initial value.
+                      edit(({ selected: _, split: __, ...s }) => ({
                         ...s,
                         seed: next.id,
                         maxCircles: Math.max(s.maxCircles, next.seeds),
+                        ...(next.family && {
+                          split: lastSplit.current ?? next.family.initial,
+                        }),
                       }));
                     }}
                   >
@@ -1010,6 +1044,41 @@ export function GardenPreview({
                 </Field>
                 {seed.note && (
                   <p className="note garden-seed-note">{seed.note}</p>
+                )}
+                {seed.family && (
+                  <>
+                    <Field label={seed.family.label} help={seed.family.help}>
+                      <ScalarInput
+                        name={seed.family.label}
+                        value={study.split ?? seed.family.initial}
+                        onChange={(v) =>
+                          // Another member is another packing; the same
+                          // fraction keeps the selection.
+                          seedOf(seedNow.current).family &&
+                          edit(({ selected, ...s }) => {
+                            const was = splitOf(s),
+                              now = splitOf({ ...s, split: v });
+                            const same =
+                              !!was &&
+                              !!now &&
+                              was[0] === now[0] &&
+                              was[1] === now[1];
+                            return {
+                              ...s,
+                              ...(same && selected && { selected }),
+                              split: v,
+                            };
+                          })
+                        }
+                      />
+                    </Field>
+                    {split && values && !splitFailed && (
+                      <p className="note garden-seed-note">
+                        Exactly {fractionText(split)} · curvatures{" "}
+                        {values.curvatures}
+                      </p>
+                    )}
+                  </>
                 )}
                 {experiment}
                 <div className="pair">

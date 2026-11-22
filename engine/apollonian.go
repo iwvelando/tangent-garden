@@ -5,8 +5,10 @@ import (
 	"math"
 )
 
-// GardenSeed names the one enclosing Descartes configuration: signed
-// curvatures (−1, 2, 2, 3). See docs/mathematics.md, Apollonian garden.
+// GardenSeed names the original seed, the default: the enclosing
+// Descartes configuration of signed curvatures (−1, 2, 2, 3). The catalog
+// (apollonian_seeds.go) and the split family (apollonian_split.go) hold the
+// others. See docs/mathematics.md, Apollonian garden.
 const GardenSeed = "-1,2,2,3"
 
 // GardenRequest asks for the finite Apollonian packing grown from a seed.
@@ -21,6 +23,10 @@ type GardenRequest struct {
 	// even outside it. See docs/mathematics.md, Detail for a view.
 	Window *GardenWindow   `json:"window,omitempty"`
 	Keep   *GardenIdentity `json:"keep,omitempty"`
+	// Split is the split-diameter seed's member, the fraction [m, n]:
+	// required for that seed and refused for the others
+	// (apollonian_split.go).
+	Split []int64 `json:"split,omitempty"`
 }
 
 // GardenWindow is a rectangle in model units, its sides parallel to the axes.
@@ -31,8 +37,8 @@ type GardenWindow struct {
 	YMax float64 `json:"yMax"`
 }
 
-// GardenIdentity is a circle's identity: its integer curvature and
-// curvature-weighted center.
+// GardenIdentity is a circle's identity: its exact curvature and the
+// numerators of its curvature-weighted center, integers in the seed's units.
 type GardenIdentity struct {
 	Curvature int64 `json:"curvature"`
 	X         int64 `json:"x"`
@@ -107,7 +113,7 @@ func ComputeGarden(q GardenRequest) (GardenResult, error) {
 
 func (q GardenRequest) validate(s *gardenSpec) error {
 	if s == nil {
-		return fieldErr("seed", "choose the enclosing seed (−1, 2, 2, 3)")
+		return fieldErr("seed", "choose one of the garden's seeds")
 	}
 	if q.Depth < 0 || q.Depth > GardenMaxDepth {
 		return fieldErr("depth", "depth must be 0–%d generations", GardenMaxDepth)
@@ -193,7 +199,36 @@ var errGardenRange = errors.New("a circle's curvature exceeds the exact integer 
 // each gap is met once. Pruning a gap prunes its descendants, which lie in
 // that gap and are smaller than the circle that fills it.
 func computeGarden(q GardenRequest, limits gardenLimits) (GardenResult, error) {
-	return computeGardenFrom(q, gardenSpecs[q.Seed], limits)
+	s, err := q.spec()
+	if err != nil {
+		return GardenResult{}, err
+	}
+	return computeGardenFrom(q, s, limits)
+}
+
+// spec is the request's seed: a catalog entry, nil for an unknown id, or
+// the split family's member.
+func (q GardenRequest) spec() (*gardenSpec, error) {
+	if q.Seed != GardenSplitSeed {
+		if q.Split != nil {
+			return nil, fieldErr("split", "only the split diameter takes a split")
+		}
+		return gardenSpecs[q.Seed], nil
+	}
+	if len(q.Split) != 2 {
+		return nil, fieldErr("split", "the split diameter needs its split, a fraction [m, n]")
+	}
+	m, n := q.Split[0], q.Split[1]
+	if n < 2 || n > GardenMaxSplitDenominator || m < 1 || m >= n || gcd64(m, n) != 1 {
+		if m < 1 || (n > 0 && m >= n) {
+			return nil, fieldErr("split", "split must be 0.05–0.95")
+		}
+		return nil, fieldErr("split", "the split must be a fraction in lowest terms with a denominator of 2–%d", GardenMaxSplitDenominator)
+	}
+	if !validSplit(m, n) {
+		return nil, fieldErr("split", "split must be 0.05–0.95")
+	}
+	return splitSpec(m, n), nil
 }
 
 func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (GardenResult, error) {

@@ -20,7 +20,13 @@ import {
   type GardenCircle,
   type GardenStudy,
 } from "./garden/model";
-import { gardenSeeds, seedOf, type GardenSeedId } from "./garden/seeds";
+import {
+  admittedSplit,
+  gardenSeeds,
+  seedOf,
+  splitOf,
+  type GardenSeedId,
+} from "./garden/seeds";
 import {
   familyDefaults,
   familyTargets,
@@ -889,6 +895,7 @@ function gardenStudy(value: unknown): GardenStudy {
         seed: { options: seeds },
         depth: { range: [0, gardenLimits.depth] },
         minRadius: { range: [Number.MIN_VALUE, 1] },
+        split: { optional: { range: [0, 1] } },
         maxCircles: { range: [4, gardenLimits.circles] },
         selected: { optional: identity },
         presentation: { options: { complete: true, selected: true } },
@@ -921,6 +928,18 @@ function gardenStudy(value: unknown): GardenStudy {
   for (const k of ["depth", "maxCircles"] as const)
     if (!Number.isInteger(out[k]))
       throw new LinkError(`garden.${k}`, `garden.${k} must be a whole number.`);
+  // The split diameter's split, whose nearest fraction the engine admits;
+  // the other seeds have none.
+  const family = seedOf(out.seed).family;
+  if (!family) delete out.split;
+  else {
+    const split = splitOf(out);
+    if (!split || !admittedSplit(family, split))
+      throw new LinkError(
+        "garden.split",
+        `garden.split must be ${family.range[0]}–${family.range[1]}.`,
+      );
+  }
   // Every seed circle is kept: 4, or 8 for six around one.
   const least = seedOf(out.seed).seeds;
   if (out.maxCircles < least)
