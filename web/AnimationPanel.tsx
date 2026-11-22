@@ -1092,6 +1092,10 @@ export function AnimationPanel({
     const computes = calculates(s);
     if (computes && !helper.current && playbackEngineCount() > 1)
       helper.current = new EngineClient();
+    // The helper classifies level sets as the app's engine does, so every
+    // frame's note reads alike (planar-story.ts).
+    if (helper.current)
+      helper.current.levelTopology = client.current!.levelTopology;
     const engines =
       computes && helper.current
         ? [client.current!, helper.current]
@@ -1408,8 +1412,10 @@ export function AnimationPanel({
           !save &&
           calculates({ mode, tracks: numeric, original: frame, between }) &&
           playbackEngineCount() > 1
-        )
+        ) {
           helper.current = new EngineClient();
+          helper.current.levelTopology = client.current.levelTopology;
+        }
         const results = await Promise.all([
           client.current
             .compute(

@@ -48,6 +48,9 @@ type Request struct {
 	// between samples (see ProbePoint); it changes nothing else in the
 	// result.
 	Probe *ProbeQuery `json:"probe,omitempty"`
+	// Topology classifies an implicit curve's level set (see
+	// LevelTopology); it changes nothing else in the result.
+	Topology bool `json:"topology,omitempty"`
 	// View is the rectangle the page shows, when the drawing is zoomed in
 	// and refined to it (see engine/adaptive.go); it changes nothing but
 	// the refined curves.
@@ -170,7 +173,9 @@ func Compute(q Request) (Result, error) {
 	if q.Curve.Format == "implicit" {
 		// A level set has no parameter to build a construction on: its
 		// contours are the drawing, with the gradient as construction.
-		res, warnings, err := q.Curve.Implicit.contours(q.Curve.A, q.Lines)
+		implicit := q.Curve.Implicit
+		implicit.topology = q.Topology
+		res, warnings, err := implicit.contours(q.Curve.A, q.Lines)
 		if err != nil {
 			return out, within("curve.implicit", err)
 		}

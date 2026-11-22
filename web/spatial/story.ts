@@ -7,10 +7,31 @@
 import type { NumericTrack } from "./animation";
 import type { ImplicitResult, SpatialConfig, Vec3 } from "./types";
 import { readout } from "../number-format";
+import {
+  bracket as storyBracket,
+  criticalAt,
+  eventFor,
+  eventOrder,
+  eventStates,
+  shownEvent,
+  sideAt,
+  stateAt,
+  type Bracket as StoryBracket,
+  type EventState,
+  type StoryContextOf,
+} from "../event-story";
 
+// The navigation every story shares (event-story.ts).
+export {
+  criticalAt,
+  eventFor,
+  eventOrder,
+  eventStates,
+  sideAt,
+  stateAt,
+  type EventState,
+};
 export type StoryId = "two-drops" | "handle" | "tanglecube" | "two-handles";
-export type EventState = "before" | "critical" | "after";
-export const eventStates: EventState[] = ["before", "critical", "after"];
 // What narrows toward an event, as a subject: "the gap between them", or
 // "its necks", which takes "are".
 type Feature = { what: string; are?: true };
@@ -292,67 +313,12 @@ export const stories: Record<StoryId, Story> = {
 };
 export const storyIds = Object.keys(stories) as StoryId[];
 
-// The events in the order the story reaches them.
-export const eventOrder = (story: Story): number[] => {
-  const order = story.events.map((_, i) => i);
-  return story.order === "up" ? order : order.reverse();
-};
-// An event's three states: the side it is reached from, its critical
-// level and the side it leads to, in the story's order.
-export type Bracket = {
-  critical: number;
-  levels: Record<EventState, number>;
-  names: Record<EventState, string>;
-  sides: Record<"before" | "after", Side>;
-};
-export function bracket(story: Story, event: number): Bracket {
-  const e = story.events[event],
-    below = story.sides[event],
-    above = story.sides[event + 1];
-  const [before, after] =
-    story.order === "up" ? [below, above] : [above, below];
-  return {
-    critical: e.critical,
-    levels: { before: before.level, critical: e.critical, after: after.level },
-    names: { before: before.title, critical: e.title, after: after.title },
-    sides: { before, after },
-  };
-}
-export const stateAt = (story: Story, event: number, level: number) => {
-  const { levels } = bracket(story, event);
-  return eventStates.find((s) => levels[s] === level) ?? null;
-};
+// An event's three states (event-story.ts).
+export type Bracket = StoryBracket<Side>;
+export const bracket = (story: Story, event: number): Bracket =>
+  storyBracket(story, event);
 
-// The event the strip shows once the level moves to a new value: the one
-// shown already when the level is one of its states or none's; otherwise
-// the event whose state the level is, a side between two leading to the
-// next in the story's order. With none shown, a level on no state opens at
-// the nearest event.
-export function eventFor(story: Story, level: number, shown?: number): number {
-  const known =
-    shown !== undefined && shown >= 0 && shown < story.events.length;
-  if (known && stateAt(story, shown, level)) return shown;
-  const order = eventOrder(story);
-  const holding = order.filter((i) => stateAt(story, i, level));
-  // A side's level is "before" one event and "after" the previous one.
-  const leads = holding.find((i) => stateAt(story, i, level) !== "after");
-  if (leads !== undefined) return leads;
-  if (holding.length) return holding[0];
-  if (known) return shown;
-  if (!Number.isFinite(level)) return order[0];
-  let nearest = order[0];
-  for (const i of order)
-    if (
-      Math.abs(story.events[i].critical - level) <
-      Math.abs(story.events[nearest].critical - level)
-    )
-      nearest = i;
-  return nearest;
-}
-
-export type StoryContext =
-  | { story: Story; eligible: true; event: number; state: EventState | null }
-  | { story: Story; eligible: false; reason: string };
+export type StoryContext = StoryContextOf<Story>;
 
 // Whether a study is its story's recipe in a box that holds every level
 // the story covers, which event the strip shows (the one shown, or with
@@ -393,10 +359,7 @@ export function storyContext(
       eligible: false,
       reason: `The box no longer holds the surface at every level up to ${readout(story.range[1])}, so it could cut the surface open.`,
     };
-  const event =
-    shown !== undefined && shown >= 0 && shown < story.events.length
-      ? shown
-      : eventFor(story, q.level);
+  const event = shownEvent(story, q.level, shown);
   return {
     story,
     eligible: true,
@@ -404,12 +367,6 @@ export function storyContext(
     state: stateAt(story, event, q.level),
   };
 }
-// The critical level a level is, if any.
-export const criticalAt = (story: Story, level: number) =>
-  story.events.find((e) => e.critical === level) ?? null;
-// The side a regular level lies on.
-export const sideAt = (story: Story, level: number) =>
-  story.events.filter((e) => e.critical < level).length;
 
 // What the mesh shows, when it is whole enough to compare: the Euler
 // characteristics of its pieces, ascending; otherwise why not, as a

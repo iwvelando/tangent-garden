@@ -144,16 +144,17 @@ for (const width of [1440, 390]) {
 test("each 3D example names itself above a shared construction title", async ({
   page,
 }) => {
-  // It opens every 3D example in turn, about 90 ms each locally but several
-  // times that on CI, and its last step waits for the engine to work
-  // through every example's study first: 100 examples outgrew the slowed
-  // 90 s on CI's slower runners, and took 45 s locally with the CPU
-  // throttled four times.
+  // It opens every 3D example in turn, about 90 ms each locally but up to
+  // 1.4 s on CI beside the heaviest 3D specs, and its last step waits for
+  // the engine to work through every example's study first. A fixed cap
+  // erodes as examples are added: 240 s, set for about 100, ran out at
+  // 166 (#509). So the budget is a minute plus 2.5 s an example.
   test.setTimeout(240_000);
   await page.goto("/?study=3d");
   const heading = page.locator(".app:visible .plot-heading");
   const titles = await exampleTitles(page);
   expect(titles).toHaveLength(166);
+  test.setTimeout(60_000 + 2_500 * titles.length);
   // The construction, not the example, titles the drawing.
   const involutes = [
     "A staircase's shadow, unwinding",

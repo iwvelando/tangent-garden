@@ -45,6 +45,10 @@ export class EngineClient {
   private worker = new Worker(new URL("./engine.worker.ts", import.meta.url));
   private next = 0;
   private closed = false;
+  // Whether compute classifies an implicit curve's level set unless told
+  // otherwise: set while a planar story applies, so playback's frames are
+  // read as the study is (planar-story.ts).
+  levelTopology = false;
   private pending = new Map<
     number,
     {
@@ -97,7 +101,8 @@ export class EngineClient {
   // A 2D study, with the base curve's diagnostics for the probe when asked
   // (see engine.Diagnostics), the probe at one parameter (see
   // engine.ProbePoint), and its refined curves refined to a view (see
-  // engine.View).
+  // engine.View). An implicit curve's level set is classified (see
+  // engine.LevelTopology) when asked, or while levelTopology is set.
   async compute(
     config: Config,
     bounds?: Bounds,
@@ -105,8 +110,12 @@ export class EngineClient {
       diagnostics?: boolean;
       probe?: ProbeQuery;
       view?: ViewRect;
+      topology?: boolean;
     } = {},
   ): Promise<Frame> {
+    const topology =
+      (options.topology ?? this.levelTopology) &&
+      config.curve.format === "implicit";
     const { result, config: resolved } = await this.request({
       action: "compute",
       config,
@@ -114,6 +123,7 @@ export class EngineClient {
       ...(options.diagnostics ? { diagnostics: true } : {}),
       ...(options.probe ? { probe: options.probe } : {}),
       ...(options.view ? { view: options.view } : {}),
+      ...(topology ? { topology: true } : {}),
     });
     return { result, config: resolved };
   }
