@@ -488,9 +488,10 @@ export const drawnShare = (r: LaceResult, i: number) =>
   reach(r, i) / r.vertexRadius;
 
 // Frozen ranges for a moving tile's facts. Disk coordinates lie within
-// the rim. Hyperbolic distances stay below 10: a supported patch's tiles lie
-// within 5 of the center tile, and the isometry adds at most 2 artanh 0.8 ≈
-// 2.2. Drawn sizes are shares of a tile's size at the disk's center.
+// the rim. Hyperbolic distances stay below 10: a supported patch's tile
+// centers lie within 7.5 of the center tile ({4,5}'s farthest, at 1,000
+// tiles, is 7.43 away), and the isometry adds at most 2 artanh 0.8 ≈ 2.2.
+// Drawn sizes are shares of a tile's size at the disk's center.
 const liveRanges = {
   disk: [-1, 1],
   distance: [0, 10],
