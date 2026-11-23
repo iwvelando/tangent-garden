@@ -72,12 +72,7 @@ import {
   type LaceStudy,
   type LaceStudyMotion,
 } from "./model";
-import {
-  laceResearch,
-  offeredTilings,
-  tilingOf,
-  type LaceTilingId,
-} from "./tilings";
+import { laceTilings, tilingOf, type LaceTilingId } from "./tilings";
 import "../garden/garden.css";
 import "./lace.css";
 
@@ -1206,35 +1201,33 @@ export function LacePreview({
                 <h3 className="garden-section">Motif</h3>
                 {experiment}
                 <h3 className="garden-section">Cutoffs</h3>
-                {laceResearch && (
-                  <Field label="Tiling (research)" help={laceHelp.tiling}>
-                    <select
-                      value={study.tiling}
-                      onChange={(e) => {
-                        const next = tilingOf(
-                          e.currentTarget.value as LaceTilingId,
-                        );
-                        setTileDraft(undefined);
-                        // Another tiling: an address names a tile of this
-                        // one only, and its rings fill the tile limit at
-                        // another depth.
-                        edit(({ selected: _, ...s }) => ({
-                          ...s,
-                          tiling: next.id,
-                          depth: next.depth,
-                        }));
-                      }}
-                    >
-                      {offeredTilings().map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                )}
+                <Field label="Tiling" help={laceHelp.tiling}>
+                  <select
+                    value={study.tiling}
+                    onChange={(e) => {
+                      const next = tilingOf(
+                        e.currentTarget.value as LaceTilingId,
+                      );
+                      setTileDraft(undefined);
+                      // Another tiling: an address names a tile of this
+                      // one only, and its rings fill the tile limit at
+                      // another depth.
+                      edit(({ selected: _, ...s }) => ({
+                        ...s,
+                        tiling: next.id,
+                        depth: next.depth,
+                      }));
+                    }}
+                  >
+                    {laceTilings.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
                 <div className="pair">
-                  {whole("depth", "Depth", 0, laceLimits.depth)}
+                  {whole("depth", "Depth", 0, tiling.maxDepth)}
                   {whole("maxTiles", "Tile limit", 1, laceLimits.tiles)}
                 </div>
                 <p

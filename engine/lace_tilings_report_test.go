@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Issue #389's evidence report, printed with
+// The tiling catalog's evidence report (issues #389 and #390), printed with
 //
 //	LACE_REPORT=1 go test ./engine -run LaceTilingReport -v
 //
@@ -29,11 +29,11 @@ func TestLaceTilingReport(t *testing.T) {
 	}
 
 	out("\n## Supported patches (tile limit 1,000)")
-	out("| tiling | rings 0–8 | deepest complete ring | tiles there | depth 8 at 1,000: stops at | outermost 1 − |z|² | complete to radius (hyperbolic) |")
+	out("| tiling | rings to the deepest depth | deepest complete ring | tiles there | deepest depth at 1,000: stops at | outermost 1 − |z|² | complete to radius (hyperbolic) |")
 	for _, id := range researchTilings {
 		p, q := tilingPQ(t, id)
-		x := exactGenerate(p, q, 8, 1<<20, 1<<22)
-		ring := make([]int, 9)
+		x := exactGenerate(p, q, deepest[id], 1<<20, 1<<22)
+		ring := make([]int, deepest[id]+1)
 		for _, d := range x.depth {
 			ring[d]++
 		}
@@ -45,7 +45,7 @@ func TestLaceTilingReport(t *testing.T) {
 			total += n
 			complete = d
 		}
-		r := mustLace(t, tiling(id, 8, 1000, 0.3))
+		r := mustLace(t, tiling(id, deepest[id], 1000, 0.3))
 		gap := 1.0
 		for _, v := range r.Vertex {
 			gap = math.Min(gap, rimGap(cz(v)))
@@ -54,9 +54,28 @@ func TestLaceTilingReport(t *testing.T) {
 		if r.Stopped != "" {
 			stop = fmt.Sprintf("%d tiles, depth %d partial", len(r.Center), int(r.Depth[len(r.Depth)-1]))
 		} else {
-			stop = fmt.Sprintf("%d tiles, depth 8 complete", len(r.Center))
+			stop = fmt.Sprintf("%d tiles, depth %d complete", len(r.Center), deepest[id])
 		}
 		out("| {%s} | %v | %d | %d | %s | %.2e | %.3f (%.2f) |", id, ring, complete, total, stop, gap, r.Coverage.Radius, r.Coverage.Distance)
+	}
+
+	out("\n## Moved to the farthest offset")
+	out("The largest patch under offset 0.8 in each tile-center and corner direction: its outermost corner.")
+	out("| tiling | smallest 1 − |z|² in place | under offset 0.8 | ratio |")
+	for _, id := range researchTilings {
+		r := mustLace(t, tiling(id, deepest[id], 1000, 0.3))
+		rest, moved := 1.0, 1.0
+		for _, v := range r.Vertex {
+			rest = math.Min(rest, rimGap(cz(v)))
+		}
+		for k := range 64 {
+			iso := LaceIsometry{Offset: LaceMaxOffset, Direction: 2 * math.Pi * float64(k) / 64}
+			m := mustLace(t, LaceRequest{Tiling: id, Depth: deepest[id], MaxTiles: 1000, StarPoint: 0.3, Isometry: &iso})
+			for _, v := range m.Vertex {
+				moved = math.Min(moved, rimGap(cz(v)))
+			}
+		}
+		out("| {%s} | %.2e | %.2e | %.1f |", id, rest, moved, rest/moved)
 	}
 
 	out("\n## Near the rim: float disagreement against 1 − |z|²")
@@ -84,26 +103,26 @@ func TestLaceTilingReport(t *testing.T) {
 	}
 
 	out("\n## Exact generator: cost and coefficients")
-	out("| tiling | 1,000-tile patch, float generator (median of 7) | exact generator | largest exact coefficient at 1,000 tiles | at depth 8 unlimited |")
+	out("| tiling | 1,000-tile patch, float generator (median of 7) | exact generator | largest exact coefficient at 1,000 tiles | at the deepest depth unlimited |")
 	for _, id := range researchTilings {
 		p, q := tilingPQ(t, id)
 		var fl, ex []time.Duration
 		var x *exactLace
 		for range 7 {
 			start := time.Now()
-			if _, err := ComputeLace(tiling(id, 8, 1000, 0.3)); err != nil {
+			if _, err := ComputeLace(tiling(id, deepest[id], 1000, 0.3)); err != nil {
 				t.Fatal(err)
 			}
 			fl = append(fl, time.Since(start))
 			start = time.Now()
-			x = exactGenerate(p, q, 8, 1000, LaceMaxCandidates)
+			x = exactGenerate(p, q, deepest[id], 1000, LaceMaxCandidates)
 			ex = append(ex, time.Since(start))
 		}
 		med := func(d []time.Duration) time.Duration {
 			sort.Slice(d, func(i, j int) bool { return d[i] < d[j] })
 			return d[len(d)/2]
 		}
-		deepX := exactGenerate(p, q, 8, 1<<20, 1<<22)
+		deepX := exactGenerate(p, q, deepest[id], 1<<20, 1<<22)
 		out("| {%s} | %v | %v | %d | %d |", id, med(fl).Round(time.Microsecond), med(ex).Round(time.Microsecond), x.maxCoef, deepX.maxCoef)
 	}
 }

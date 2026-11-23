@@ -11,20 +11,19 @@ import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
 import type { Vec } from "../types";
 import {
-  laceResearch,
   sidesOf,
   tilingOf,
   type LaceTilingId,
   type LaceTilingInfo,
 } from "./tilings";
 
-// Hyperbolic lace: a finite patch of the {7,3} tiling of the Poincaré disk,
-// grown in Go by reflection from one centered heptagon, with a motif
-// reflected into every tile (engine/lace.go, docs/mathematics.md). With
-// ?research=389, issue #389's other tilings too (./tilings).
+// Hyperbolic lace: a finite patch of a regular tiling {p,q} of the
+// Poincaré disk, {7,3} by default, grown in Go by reflection from one
+// centered tile, with a motif reflected into every tile (engine/lace.go,
+// docs/mathematics.md). The tilings' descriptors are in ./tilings, with
+// each one's depth bound.
 export const laceTiling = "7,3" as const;
 export const laceLimits = {
-  depth: 8,
   tiles: 1000,
   candidates: 10000,
   // The isometry's offset |a|, its angles in radians, and the motion's
@@ -92,7 +91,7 @@ export type LaceResult = {
   via: number[];
   reversed: boolean[];
   transform: [number, number, number, number][];
-  // p vertex and p edge indices per tile (seven for {7,3}).
+  // p vertex and p edge indices per tile, p the tiling's sides.
   corners: number[];
   sides: number[];
   vertex: Vec[];
@@ -188,7 +187,13 @@ export const defaultLace: LaceStudy = {
 };
 // The authored studies, in the 2D examples gallery. Each opens the lace
 // over the notebook's study without replacing it, and takes nothing from it.
-const publicPresets = [
+// The {7,3} studies come first, so their places in the gallery and in
+// journeys are unchanged.
+export const lacePresets: readonly {
+  title: string;
+  note: string;
+  study: LaceStudy;
+}[] = [
   {
     title: "Seven-pointed stars receding to the rim",
     note: "A heptagon reflected across its sides fills a disk whose rim is infinitely far away",
@@ -226,20 +231,9 @@ const publicPresets = [
       },
     },
   },
-] as const satisfies readonly {
-  title: string;
-  note: string;
-  study: LaceStudy;
-}[];
-// Issue #389's research studies, listed after the public ones only with
-// ?research=389, so no public preset's index changes.
-const researchPresets: readonly {
-  title: string;
-  note: string;
-  study: LaceStudy;
-}[] = [
+  // The catalog's signature still: {5,4} at its deepest complete ring.
   {
-    title: "Pentagonal flowers, four at every corner (research)",
+    title: "Pentagonal flowers, four at every corner",
     note: "Right-angled pentagons, impossible on a flat plane, reflected out to the rim",
     study: { ...defaultLace, tiling: "5,4", depth: 5 },
   },
@@ -247,7 +241,7 @@ const researchPresets: readonly {
   // its top corner, on that corner's mirror at Euclidean radius
   // 0.68712149944502521 (tanh R): the glide carries it to the center.
   {
-    title: "A pentagon glides to the center and back (research)",
+    title: "A pentagon glides to the center and back",
     note: "The pentagon across the top corner drawn in to the middle along a mirror line",
     study: {
       ...defaultLace,
@@ -265,14 +259,14 @@ const researchPresets: readonly {
     },
   },
   {
-    title: "Square stars, five at every corner (research)",
+    title: "Square stars, five at every corner",
     note: "Squares with 72° corners: the dual of the pentagons, each corner a pentagon's center",
     study: { ...defaultLace, tiling: "4,5", depth: 6 },
   },
   // Tile 6 (address 0, 2) lies two squares out through side midpoints, at
   // Euclidean radius 0.7861513777574235 (tanh 2h) in direction 3π/4.
   {
-    title: "A square glides to the center and back (research)",
+    title: "A square glides to the center and back",
     note: "Two squares out through their sides' midpoints, drawn in along a mirror line",
     study: {
       ...defaultLace,
@@ -289,22 +283,20 @@ const researchPresets: readonly {
       },
     },
   },
+  // Duality: at star point 0 every strand runs from a tile's center to a
+  // side's midpoint, so the strands are the dual tiling's sides.
   {
-    title: "Pentagons whose strands draw the squares (research)",
+    title: "Pentagons whose strands draw the squares",
     note: "At star point 0 each pentagon's strands run to its sides' midpoints and trace the dual {4,5} tiling",
     study: { ...defaultLace, tiling: "5,4", depth: 5, starPoint: 0 },
   },
+  // {3,7} at depth 10, its deepest complete ring: 742 tiles.
   {
-    title: "Triangles, seven at every corner (research)",
-    note: "The dual of the heptagons; slow rings keep even depth 8 inside the tile limit",
-    study: { ...defaultLace, tiling: "3,7", depth: 8 },
+    title: "Triangles, seven at every corner",
+    note: "The dual of the heptagons: slender triangles whose slow rings reach ten deep",
+    study: { ...defaultLace, tiling: "3,7", depth: 10 },
   },
 ];
-export const lacePresets: readonly {
-  title: string;
-  note: string;
-  study: LaceStudy;
-}[] = [...publicPresets, ...(laceResearch ? researchPresets : [])];
 export const presetLace = (index: number): LaceStudy =>
   structuredClone(lacePresets[index].study) as LaceStudy;
 
@@ -587,42 +579,28 @@ export function cutoffSummary(r: LaceResult, q: LaceRequest) {
   return { text: parts.join(" "), stopped };
 }
 
-// Help that names a tiling's own rings and star: {7,3}'s is laceHelp's.
+// Help that names a tiling's own depth bound, rings and star.
 export function tilingHelp(t: LaceTilingInfo) {
-  if (!t.research)
-    return { depth: laceHelp.depth, starPoint: laceHelp.starPoint };
   const held = t.rings.slice(0, t.depth + 1).reduce((a, b) => a + b, 0);
   return {
     depth: tiered(
-      `Reflections from the center tile: 0–${laceLimits.depth}.`,
-      `Each depth reflects the previous ring of tiles across their outer sides. Depth ${t.depth} holds ${formatCount(held)} tiles; ${
-        t.depth < laceLimits.depth
-          ? "deeper rings exceed the tile limit, which then stops the last ring partway."
-          : "every depth fits within the tile limit."
-      }`,
+      `Reflections from the center tile: 0–${t.maxDepth}.`,
+      `Each depth reflects the previous ring of tiles across their outer sides. Depth ${t.depth} holds ${formatCount(held)} tiles; deeper rings exceed the tile limit, which then stops the last ring partway.`,
     ),
     starPoint: tiered(
       "Where each strand turns, from tile center (0) to corner (1).",
-      `Measured in the disk's hyperbolic distance. At 0 the strands meet at the center and draw the dual {${t.q},${t.p}} tiling; small values give ${t.sides}-pointed stars, larger ones strapwork that hugs the tile's sides.`,
+      `Measured in the disk's hyperbolic distance. At 0 the strands meet at the center and draw the dual ${t.dual}; small values give ${t.sides}-pointed stars, larger ones strapwork that hugs the tile's sides.`,
     ),
   };
 }
 export const laceHelp = {
-  depth: tiered(
-    `Reflections from the center tile: 0–${laceLimits.depth}.`,
-    `Each depth reflects the previous ring of tiles across their outer sides. Depth 5 holds 617 tiles; deeper rings exceed the tile limit, which then stops the last ring partway.`,
-  ),
   maxTiles: tiered(
     `Most tiles kept: 1–${formatCount(laceLimits.tiles)}.`,
     `Tiles are added ring by ring. Reaching this count stops generation, leaving the last ring incomplete; the summary says so. Generation also stops after examining ${formatCount(laceLimits.candidates)} candidate tiles.`,
   ),
-  starPoint: tiered(
-    "Where each strand turns, from tile center (0) to corner (1).",
-    "Measured in the disk's hyperbolic distance. At 0 the strands meet at the center and draw the dual triangles; small values give seven-pointed stars, larger ones strapwork that hugs the tile's sides.",
-  ),
   tiling: tiered(
-    "Research: which regular tiling, p-sided tiles meeting q at a corner.",
-    "Issue #389's research catalog, not a public feature. Changing it clears the selection and opens the tiling at its deepest complete ring within the tile limit.",
+    "Which regular tiling {p,q}: p-sided tiles meeting q at each corner.",
+    "Pentagons and squares are each other's duals, as are heptagons and triangles: the centers of one are the corners of the other. Changing the tiling clears the selection and opens at the deepest ring the tile limit completes.",
   ),
   edges: "Show the tiles' sides, each drawn once where two tiles share it.",
   motif: "Show the motif, the same strands reflected into every tile.",

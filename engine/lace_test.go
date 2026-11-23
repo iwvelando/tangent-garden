@@ -23,8 +23,11 @@ func lace(depth, maxTiles int, starPoint float64) LaceRequest {
 }
 
 // laceID is the tiling lace requests; eachTiling runs a check under every
-// tiling of issue #389's research catalog in turn, with its p and q.
+// tiling of the catalog in turn, with its p and q.
 var laceID = LaceTiling
+
+// top is laceID's deepest supported depth, where its largest patches lie.
+func top() int { return deepest[laceID] }
 
 func eachTiling(t *testing.T, check func(t *testing.T, p, q int)) {
 	t.Helper()
@@ -181,7 +184,7 @@ func TestLaceSeedPolygon(t *testing.T) {
 // hyperbolic sides and angles measured from the returned edge geodesics.
 func TestLaceTilesAreRegular(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
-		for _, req := range []LaceRequest{lace(5, 1000, 0.3), lace(8, 1000, 0.3)} {
+		for _, req := range []LaceRequest{lace(5, 1000, 0.3), lace(top(), 1000, 0.3)} {
 			r := mustLace(t, req)
 			s := r.SideLength
 			worstSide, worstAngle := 0.0, 0.0
@@ -213,7 +216,7 @@ func TestLaceTilesAreRegular(t *testing.T) {
 // carries an edge: none is straight.
 func TestLaceEdgesAreGeodesics(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
-		r := mustLace(t, lace(8, 1000, 0.3))
+		r := mustLace(t, lace(top(), 1000, 0.3))
 		straight := map[int]bool{}
 		for e := range r.EdgeA {
 			if r.EdgeStraight[e] {
@@ -265,7 +268,7 @@ func TestLaceEdgesAreGeodesics(t *testing.T) {
 // interior pairs.
 func TestLaceReflectionsAndAdjacency(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
-		r := mustLace(t, lace(8, 1000, 0.3))
+		r := mustLace(t, lace(top(), 1000, 0.3))
 		for i := 1; i < len(r.Center); i++ {
 			p, j := int(r.Parent[i]), int(r.Via[i])
 			if r.Depth[i] != r.Depth[p]+1 || r.Reversed[i] == r.Reversed[p] {
@@ -417,7 +420,7 @@ func TestLaceVertexCompleteness(t *testing.T) {
 // least a side apart, hyperbolically; each edge joins a distinct pair.
 func TestLaceNoDuplicates(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
-		r := mustLace(t, lace(8, 1000, 0.3))
+		r := mustLace(t, lace(top(), 1000, 0.3))
 		for i := range r.Center {
 			for j := range i {
 				if d := dist(cz(r.Center[i]), cz(r.Center[j])); d < 2*r.Apothem-laceBudget {
@@ -712,7 +715,7 @@ func TestLaceCeilings(t *testing.T) {
 // are stable across cutoffs.
 func TestLaceDeterministicPrefix(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
-		a, b := mustLace(t, lace(8, 1000, 0.3)), mustLace(t, lace(8, 1000, 0.3))
+		a, b := mustLace(t, lace(top(), 1000, 0.3)), mustLace(t, lace(top(), 1000, 0.3))
 		if !reflect.DeepEqual(a, b) {
 			t.Fatal("two identical requests differ")
 		}
@@ -720,11 +723,11 @@ func TestLaceDeterministicPrefix(t *testing.T) {
 			small := mustLace(t, lace(d, 1000, 0.3))
 			n := len(small.Center)
 			if !reflect.DeepEqual(small.Center, a.Center[:n]) || !reflect.DeepEqual(small.Parent, a.Parent[:n]) || !reflect.DeepEqual(small.Via, a.Via[:n]) {
-				t.Errorf("depth %d is not a prefix of depth 8", d)
+				t.Errorf("depth %d is not a prefix of depth %d", d, top())
 			}
 		}
 		// The star point changes only the motif.
-		other := mustLace(t, lace(8, 1000, 0.6))
+		other := mustLace(t, lace(top(), 1000, 0.6))
 		if !reflect.DeepEqual(other.Center, a.Center) || !reflect.DeepEqual(other.Vertex, a.Vertex) || reflect.DeepEqual(other.ArcStart, a.ArcStart) {
 			t.Error("the star point changed the tiles, or left the motif unchanged")
 		}
@@ -737,7 +740,7 @@ func TestLaceDeterministicPrefix(t *testing.T) {
 // largest patch's deepest corners lie well inside the floor.
 func TestLacePrecisionNearTheAdmittedRim(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
-		r := mustLace(t, lace(8, 1000, 0.3))
+		r := mustLace(t, lace(top(), 1000, 0.3))
 		seed := newLaceSeed(laceID, 0.3)
 		worst, gap := 0.0, 1.0
 		for i, m := range r.Transform {
@@ -837,6 +840,9 @@ func TestLaceRefusals(t *testing.T) {
 		{"tiling", LaceRequest{Tiling: "8,3", Depth: 2, MaxTiles: 10}},
 		{"depth", lace(-1, 10, 0.3)},
 		{"depth", lace(9, 10, 0.3)},
+		{"depth", tiling("5,4", 9, 10, 0.3)},
+		{"depth", tiling("4,5", 9, 10, 0.3)},
+		{"depth", tiling("3,7", 12, 10, 0.3)},
 		{"maxTiles", lace(2, 0, 0.3)},
 		{"maxTiles", lace(2, 1001, 0.3)},
 		{"starPoint", lace(2, 10, -0.01)},
@@ -850,9 +856,16 @@ func TestLaceRefusals(t *testing.T) {
 			t.Errorf("%+v: got %v, want a %s error", c.q, err, c.field)
 		}
 	}
-	for _, q := range []LaceRequest{lace(0, 1, 0), lace(8, 1000, 1)} {
+	for _, q := range []LaceRequest{lace(0, 1, 0), lace(8, 1000, 1), tiling("5,4", 8, 1000, 1), tiling("4,5", 8, 1000, 1), tiling("3,7", 11, 1000, 1)} {
 		if _, err := ComputeLace(q); err != nil {
 			t.Errorf("%+v refused: %v", q, err)
+		}
+	}
+	// The refusal names each tiling's own bound.
+	for id, want := range map[string]string{"7,3": "depth must be 0–8 reflections", "3,7": "depth must be 0–11 reflections"} {
+		_, err := ComputeLace(tiling(id, 12, 10, 0.3))
+		if err == nil || err.Error() != want {
+			t.Errorf("%s depth 12: got %v, want %q", id, err, want)
 		}
 	}
 }

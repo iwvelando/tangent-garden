@@ -5,33 +5,41 @@ import (
 	"math/cmplx"
 )
 
-// LaceTiling names the shipped regular tiling: Schläfli symbol {7,3},
-// seven-sided tiles meeting three at each vertex. See docs/mathematics.md,
-// Hyperbolic lace.
+// LaceTiling names the default regular tiling: Schläfli symbol {7,3},
+// seven-sided tiles meeting three at each vertex. LaceRequest.Tiling names
+// one of laceTilings; see docs/mathematics.md, Hyperbolic lace.
 const LaceTiling = "7,3"
 
 // laceTiling is a regular tiling {p,q}: p-sided tiles meeting q at each
 // vertex, hyperbolic when (p − 2)(q − 2) > 4. The angles π/p and π/q are
 // constants folded exactly by the compiler, as the {7,3} seed always used
-// them, so its tiles are unchanged to the last bit.
+// them, so its tiles are unchanged to the last bit. maxDepth is the
+// deepest patch a request may ask for.
 type laceTiling struct {
 	p, q             int
 	piOverP, piOverQ float64
+	maxDepth         int
 }
 
-// laceTilings are the tilings generated: the shipped {7,3}, and issue
-// #389's research catalog, which no public entry offers.
+// laceTilings is the catalog: {7,3}, {5,4}, and their duals {3,7} and
+// {4,5}. Arbitrary {p,q} stays closed though the generator would accept
+// it. {3,7}'s rings grow so slowly that depth 8 stops it at 298 tiles, so
+// it has its own bound: at depth 11 the tile limit, not the depth, ends
+// its patch, as it does for the others by depth 8.
 var laceTilings = map[string]laceTiling{
-	"7,3": {7, 3, math.Pi / 7, math.Pi / 3},
-	"5,4": {5, 4, math.Pi / 5, math.Pi / 4},
-	"4,5": {4, 5, math.Pi / 4, math.Pi / 5},
-	"3,7": {3, 7, math.Pi / 3, math.Pi / 7},
+	"7,3": {7, 3, math.Pi / 7, math.Pi / 3, LaceMaxDepth},
+	"5,4": {5, 4, math.Pi / 5, math.Pi / 4, LaceMaxDepth},
+	"4,5": {4, 5, math.Pi / 4, math.Pi / 5, LaceMaxDepth},
+	"3,7": {3, 7, math.Pi / 3, math.Pi / 7, LaceMaxDepthTriangles},
 }
 
 const (
-	LaceMaxDepth      = 8
-	LaceMaxTiles      = 1000
-	LaceMaxCandidates = 10000
+	// LaceMaxDepth bounds every tiling's depth but {3,7}'s, which
+	// LaceMaxDepthTriangles bounds.
+	LaceMaxDepth          = 8
+	LaceMaxDepthTriangles = 11
+	LaceMaxTiles          = 1000
+	LaceMaxCandidates     = 10000
 	// LaceStrokes is the motif's geodesic segments in each {7,3} tile;
 	// a {p,q} tile has 2p.
 	LaceStrokes = 14
@@ -108,8 +116,8 @@ type LaceOmitted struct {
 // corners k and k + 1.
 //
 // Each vertex and edge is stored once. VertexTiles and EdgeTiles count the
-// patch's tiles around them: three and two in the interior, fewer on the
-// patch's boundary (q and two in the interior of a {p,q} tiling). An edge
+// patch's tiles around them: q and two in the interior of a {p,q} tiling,
+// fewer on the patch's boundary. An edge
 // lies on the circle orthogonal to the rim with EdgeCenter and EdgeRadius,
 // or on a diameter when EdgeStraight (center and radius zero). Motif arcs
 // are geodesic segments, 2p per tile in tile order, stored the same way between ArcStart and ArcEnd; on a circle
@@ -187,11 +195,12 @@ func ComputeLace(q LaceRequest) (LaceResult, error) {
 }
 
 func (q LaceRequest) validate() error {
-	if _, ok := laceTilings[q.Tiling]; !ok {
+	tl, ok := laceTilings[q.Tiling]
+	if !ok {
 		return fieldErr("tiling", "choose the {7,3}, {5,4}, {4,5} or {3,7} tiling")
 	}
-	if q.Depth < 0 || q.Depth > LaceMaxDepth {
-		return fieldErr("depth", "depth must be 0–%d reflections", LaceMaxDepth)
+	if q.Depth < 0 || q.Depth > tl.maxDepth {
+		return fieldErr("depth", "depth must be 0–%d reflections", tl.maxDepth)
 	}
 	if q.MaxTiles < 1 || q.MaxTiles > LaceMaxTiles {
 		return fieldErr("maxTiles", "tile count must be 1–%d", LaceMaxTiles)

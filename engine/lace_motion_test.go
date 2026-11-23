@@ -133,7 +133,7 @@ func TestLaceIsometryMap(t *testing.T) {
 // one exactly.
 func TestLaceMovedPatchIsTheImage(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, _ int) {
-		q := lace(8, 1000, 0.3)
+		q := lace(top(), 1000, 0.3)
 		src := mustLace(t, q)
 		ident := moved(t, q, LaceIsometry{})
 		if !reflect.DeepEqual(ident, src) {
@@ -255,7 +255,7 @@ func TestLaceRotationSymmetry(t *testing.T) {
 // patch's set and order never change with the isometry.
 func TestLaceMovedNearTheRim(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, _ int) {
-		q := lace(8, 1000, 0.3)
+		q := lace(top(), 1000, 0.3)
 		src := mustLace(t, q)
 		srcGap := math.Inf(1)
 		for _, v := range src.Vertex {
@@ -325,9 +325,9 @@ func TestLaceCoverage(t *testing.T) {
 		}{
 			{lace(5, 1000, 0.3), LaceIsometry{}},
 			{lace(5, 1000, 0.3), LaceIsometry{Offset: 0.8, Direction: 1}},
-			{lace(8, 1000, 0.3), LaceIsometry{Offset: 0.6, Direction: -2}},
+			{lace(top(), 1000, 0.3), LaceIsometry{Offset: 0.6, Direction: -2}},
 			{lace(2, 1000, 0.3), LaceIsometry{Offset: 0.4}},
-			{lace(8, 40, 0.3), LaceIsometry{Offset: 0.2, Direction: 0.5}},
+			{lace(top(), 40, 0.3), LaceIsometry{Offset: 0.2, Direction: 0.5}},
 			// A lone tile's boundary comes nearest at its sides' midpoints.
 			{lace(0, 1, 0.3), LaceIsometry{}},
 			{lace(0, 1, 0.3), LaceIsometry{Offset: 0.1, Direction: 0.3}},
@@ -388,7 +388,7 @@ func TestLaceCoverage(t *testing.T) {
 		// Placement refuses, rather than clamps, a vertex beyond the precision
 		// floor. Validation keeps every supported offset far from it, so the
 		// check bypasses validation with an offset of 1 − 10⁻⁹.
-		src, err := NewLaceSource(lace(8, 1000, 0.3))
+		src, err := NewLaceSource(lace(top(), 1000, 0.3))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -604,7 +604,7 @@ func TestLaceFrameWorkIsGenerationIndependent(t *testing.T) {
 		return frame, generate
 	}
 	smallFrame, smallGenerate := allocs(lace(2, 1000, 0.3))
-	largeFrame, largeGenerate := allocs(lace(8, 1000, 0.3))
+	largeFrame, largeGenerate := allocs(lace(top(), 1000, 0.3))
 	if smallFrame != largeFrame {
 		t.Errorf("a frame allocates %v times for 29 tiles and %v for 1,000", smallFrame, largeFrame)
 	}

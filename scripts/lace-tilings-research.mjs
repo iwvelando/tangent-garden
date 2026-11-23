@@ -1,4 +1,4 @@
-// Issue #389's research measurements: each tiling's patches and motion
+// The lace tiling catalog's measurements (#389, #390): each tiling's patches and motion
 // frames through the production WASM engine under Node, as the page's
 // worker calls it, with the median engine time, the reply's JSON and
 // lifted-buffer sizes, and the module's memory. Engine time on this machine
@@ -130,7 +130,8 @@ if (args[0] === "--child") {
     if (parsed.error) throw new Error(`${JSON.stringify(q)}: ${parsed.error}`);
     return { ms: times[times.length >> 1], r, parsed };
   };
-  const opening = { "7,3": 5, "5,4": 5, "4,5": 6, "3,7": 8 };
+  const opening = { "7,3": 5, "5,4": 5, "4,5": 6, "3,7": 10 };
+  const deepest = { "7,3": 8, "5,4": 8, "4,5": 8, "3,7": 11 };
   console.log(
     "| Tiling | Request | Candidates examined | Generation median ms | Frame median ms | JSON KB | Lifted KB |",
   );
@@ -138,7 +139,7 @@ if (args[0] === "--child") {
   for (const tiling of ["7,3", "5,4", "4,5", "3,7"]) {
     for (const [name, depth] of [
       [`opening (depth ${opening[tiling]})`, opening[tiling]],
-      ["largest (depth 8, 1,000 tiles)", 8],
+      [`largest (depth ${deepest[tiling]}, 1,000 tiles)`, deepest[tiling]],
     ]) {
       const q = { tiling, depth, maxTiles: 1000, starPoint: 0.3 };
       const g = time("tangentGardenLace", q);

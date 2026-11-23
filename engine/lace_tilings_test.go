@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"math/cmplx"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +13,12 @@ import (
 // the shipped generator with the exact one in lace_exact_test.go.
 
 var researchTilings = []string{"7,3", "5,4", "4,5", "3,7"}
+
+// deepest is the depth limit the tiling's patches admit: 8, or 11 for
+// {3,7}, whose rings grow so slowly that only depth 11 lets the tile
+// limit, not the depth, end its patch. Written out here, independent of
+// the generator's table.
+var deepest = map[string]int{"7,3": 8, "5,4": 8, "4,5": 8, "3,7": 11}
 
 func tilingPQ(t testing.TB, id string) (int, int) {
 	t.Helper()
@@ -39,7 +46,11 @@ func tiling(id string, depth, maxTiles int, starPoint float64) LaceRequest {
 func TestLaceAgreesWithExactGenerator(t *testing.T) {
 	for _, id := range researchTilings {
 		p, q := tilingPQ(t, id)
-		for _, cut := range [][2]int{{0, 1}, {1, 1000}, {2, 3}, {3, 50}, {4, 1000}, {5, 400}, {6, 1000}, {8, 1000}, {8, 777}} {
+		cuts := [][2]int{{0, 1}, {1, 1000}, {2, 3}, {3, 50}, {4, 1000}, {5, 400}, {6, 1000}, {8, 1000}, {8, 777}}
+		if d := deepest[id]; d > 8 {
+			cuts = append(cuts, [2]int{d - 1, 1000}, [2]int{d, 1000}, [2]int{d, 999})
+		}
+		for _, cut := range cuts {
 			r := mustLace(t, tiling(id, cut[0], cut[1], 0.3))
 			x := exactGenerate(p, q, cut[0], cut[1], LaceMaxCandidates)
 			name := id + " depth " + strconv.Itoa(cut[0]) + " limit " + strconv.Itoa(cut[1])
@@ -120,8 +131,8 @@ func TestLaceTilingRings(t *testing.T) {
 	}
 	for _, id := range researchTilings {
 		p, q := tilingPQ(t, id)
-		x := exactGenerate(p, q, 9, 1<<20, 1<<22)
-		ring := make([]int, 10)
+		x := exactGenerate(p, q, deepest[id]+1, 1<<20, 1<<22)
+		ring := make([]int, deepest[id]+2)
 		for _, d := range x.depth {
 			ring[d]++
 		}
@@ -132,7 +143,7 @@ func TestLaceTilingRings(t *testing.T) {
 				}
 			}
 		}
-		for d := 0; d <= 8; d++ {
+		for d := 0; d <= deepest[id]; d++ {
 			r := computeLace(tiling(id, d, 1<<20, 0.3), laceLimits{d, 1 << 22, lacePolicy})
 			count := make([]int, d+1)
 			for _, v := range r.Depth {
@@ -147,6 +158,18 @@ func TestLaceTilingRings(t *testing.T) {
 				t.Errorf("%s depth %d omits %+v, stopped %q; want %d beyond depth", id, d, r.Omitted, r.Stopped, ring[d+1])
 			}
 		}
+		// The deepest supported depth is the first at which the tile limit
+		// ends the patch, or deeper.
+		total := 0
+		for n := 0; n < deepest[id]; n++ {
+			total += ring[n]
+		}
+		if total+ring[deepest[id]] <= LaceMaxTiles {
+			t.Errorf("%s: depth %d holds every tile within the %d-tile limit", id, deepest[id], LaceMaxTiles)
+		}
+		if id == "3,7" && total > LaceMaxTiles {
+			t.Errorf("%s: depth %d already exceeds the tile limit, so the bound is deeper than needed", id, deepest[id]-1)
+		}
 		t.Logf("%s rings %v", id, ring)
 	}
 }
@@ -157,12 +180,12 @@ func TestLaceTilingRings(t *testing.T) {
 func TestLaceTilingLimitPrefix(t *testing.T) {
 	for _, id := range researchTilings {
 		p, _ := tilingPQ(t, id)
-		full := mustLace(t, tiling(id, 8, 1000, 0.3))
+		full := mustLace(t, tiling(id, deepest[id], 1000, 0.3))
 		for _, n := range []int{1, 2, 9, 100, 333} {
 			if n > len(full.Center) {
 				continue
 			}
-			r := mustLace(t, tiling(id, 8, n, 0.3))
+			r := mustLace(t, tiling(id, deepest[id], n, 0.3))
 			if len(r.Center) != n || !reflectEqual(r.Center, full.Center[:n]) || !reflectEqual(r.Parent, full.Parent[:n]) ||
 				!reflectEqual(r.Via, full.Via[:n]) || !reflectEqual(r.ArcStart, full.ArcStart[:2*p*n]) {
 				t.Errorf("%s: limit %d is not the breadth-first prefix", id, n)
@@ -177,13 +200,14 @@ func TestLaceTilingLimitPrefix(t *testing.T) {
 // With the production policy, an unlimited patch to the deepest supported
 // depth is resolved without any omission for precision, and is the exact
 // generator's patch.
-func TestLaceTilingPrecisionAtDepth8(t *testing.T) {
+func TestLaceTilingPrecisionAtDeepest(t *testing.T) {
 	for _, id := range researchTilings {
 		p, q := tilingPQ(t, id)
-		r := computeLace(tiling(id, 8, 1<<20, 0.3), laceLimits{8, 1 << 22, lacePolicy})
-		x := exactGenerate(p, q, 8, 1<<20, 1<<22)
+		d := deepest[id]
+		r := computeLace(tiling(id, d, 1<<20, 0.3), laceLimits{d, 1 << 22, lacePolicy})
+		x := exactGenerate(p, q, d, 1<<20, 1<<22)
 		if r.Omitted.Precision != 0 || len(r.Center) != len(x.center) {
-			t.Errorf("%s depth 8 unlimited: %d tiles (exact %d), %d left out for precision", id, len(r.Center), len(x.center), r.Omitted.Precision)
+			t.Errorf("%s depth %d unlimited: %d tiles (exact %d), %d left out for precision", id, d, len(r.Center), len(x.center), r.Omitted.Precision)
 		}
 	}
 }
@@ -243,4 +267,104 @@ func reflectEqual[T comparable](a, b []T) bool {
 		}
 	}
 	return true
+}
+
+// Identity: a tile reached by two paths of reflections is placed by two
+// transformations that differ by a symmetry of the seed, relabeling its
+// corners. Reflecting each tile's corners across each of its sides gives
+// the corners its neighbor there would have through that path, and
+// comparing them with the neighbor's stored corners reads off the
+// relabeling. Each is a symmetry of the p-gon, and together they generate
+// the seed symmetries the side reflections contain, the kernel of setting
+// the side reflection to 1 in the (p, q, 2) triangle group. For odd q,
+// (corner mirror · side reflection)^q = 1 then forces the corner mirror
+// to 1, so the kernel holds the corner mirrors and the rotations they
+// generate: all 2p when p is odd too ({7,3}, {3,7}), and for {4,5} the
+// identity, the half turn and the two diagonals. For even q nothing is
+// forced: {5,4}'s holds the identity alone.
+func TestLaceTileRelabelings(t *testing.T) {
+	want := map[string]int{"7,3": 14, "5,4": 1, "4,5": 4, "3,7": 6}
+	for _, id := range researchTilings {
+		p, _ := tilingPQ(t, id)
+		r := mustLace(t, tiling(id, deepest[id], 1000, 0.3))
+		byEdge := map[int][]int{}
+		for i := range r.Center {
+			for k := range p {
+				e := int(r.Sides[p*i+k])
+				byEdge[e] = append(byEdge[e], i)
+			}
+		}
+		seen := map[[8]int]bool{}
+		for i := range r.Center {
+			for j := range p {
+				e := int(r.Sides[p*i+j])
+				n := -1
+				for _, x := range byEdge[e] {
+					if x != i {
+						n = x
+					}
+				}
+				if n < 0 {
+					continue
+				}
+				var perm [8]int
+				for k := range p {
+					w := reflectAcross(r, e, corner(r, i, k))
+					perm[k] = -1
+					for m := range p {
+						if dist(w, corner(r, n, m)) < 1e-9 {
+							perm[k] = m
+						}
+					}
+				}
+				// A symmetry of the p-gon: k ↦ a + k or a − k, mod p.
+				shift, flip := true, true
+				for k := range p {
+					shift = shift && perm[k] == (perm[0]+k)%p
+					flip = flip && perm[k] == ((perm[0]-k)%p+p)%p
+				}
+				if !shift && !flip {
+					t.Fatalf("%s: tile %d's side %d relabels its neighbor's corners by %v", id, i, j, perm[:p])
+				}
+				seen[perm] = true
+			}
+		}
+		// The group the relabelings generate.
+		group := map[[8]int]bool{}
+		for g := range seen {
+			group[g] = true
+		}
+		for grown := true; grown; {
+			grown = false
+			for a := range group {
+				for b := range seen {
+					var c [8]int
+					for k := range p {
+						c[k] = b[a[k]]
+					}
+					if !group[c] {
+						group[c], grown = true, true
+					}
+				}
+			}
+		}
+		if len(group) != want[id] {
+			t.Errorf("%s: the relabelings generate %d symmetries, want %d", id, len(group), want[id])
+		}
+	}
+}
+
+// reflectAcross reflects z in edge e's geodesic: inversion in its circle,
+// or reflection in its diameter.
+func reflectAcross(r LaceResult, e int, z complex128) complex128 {
+	if r.EdgeStraight[e] {
+		a := cz(r.Vertex[int(r.EdgeA[e])])
+		if cmplx.Abs(a) < 1e-9 {
+			a = cz(r.Vertex[int(r.EdgeB[e])])
+		}
+		u := a / complex(cmplx.Abs(a), 0)
+		return u * u * cmplx.Conj(z)
+	}
+	c, rho := cz(r.EdgeCenter[e]), r.EdgeRadius[e]
+	return c + complex(rho*rho, 0)/cmplx.Conj(z-c)
 }
