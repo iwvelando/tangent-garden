@@ -3825,6 +3825,11 @@ test("garden links conform settings, selection and view without geometry, and ol
         ...(garden.selected ? ["selected"] : []),
         ...("detail" in garden ? ["detail"] : []),
         ...("split" in garden ? ["split"] : []),
+        // The view, the glide's far pole, the motion and its timing,
+        // written once set.
+        ...["inversion", "glide", "motion", "reveal"].filter(
+          (k) => k in garden,
+        ),
       ].sort(),
     );
   }

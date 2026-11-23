@@ -40,18 +40,29 @@ import { ProgressSlider } from "../ProgressSlider";
 import { revealDrawing } from "../revealDrawing";
 import { play } from "../playback";
 import { cycles, progressAt, repeatChoices, type Repeat } from "../timing";
-import { loopLead } from "../loop-check";
+import { loopLead, markupRefusal } from "../loop-check";
 import type { GardenEntry } from "./Context";
 import { LatestSession } from "../latest-session";
 import { useCameraMove } from "../camera-move";
 import { GardenDrawing, type GardenDrawingProps } from "./Drawing";
-import { gardenMovie, gardenStill } from "./export";
+import {
+  gardenGlideMovie,
+  gardenMovie,
+  gardenSVG,
+  gardenStill,
+} from "./export";
 import {
   circleName,
   cutoffSummary,
   defaultGarden,
+  defaultGlide,
+  defaultInversion,
   defaultReveal,
   detailFor,
+  framed,
+  gardenView,
+  gliding,
+  viewFacts,
   revealCount,
   revealLoops,
   revealMembership,
@@ -66,6 +77,10 @@ import {
   gardenRequest,
   identity,
   indexOf,
+  type GardenFrame,
+  type GardenFrameRequest,
+  type GardenInversion,
+  type GardenPoint,
   type GardenPresentation,
   type GardenRequest,
   type GardenResult,
@@ -86,10 +101,22 @@ const labels: Record<string, string> = {
   maxCircles: "Circle limit",
   seed: "Seed",
   split: "Split",
+  "inversion.x": "Pole x",
+  "inversion.y": "Pole y",
+  "inversion.radius": "Inversion radius",
+  "glide.x": "Far pole x",
+  "glide.y": "Far pole y",
 };
-// A frozen reveal: the packing it shows, the request that made it, and
-// where its timeline stands, from 0 to 1.
-type Film = { result: GardenResult; key: string; time: number };
+// A frozen motion: the packing it shows, the request that made it, and
+// where its timeline stands, from 0 to 1. A glide also holds the frame
+// drawn, the packing inverted about that time's pole, and its time.
+type Film = {
+  result: GardenResult;
+  key: string;
+  time: number;
+  frame?: GardenResult;
+  frameTime?: number;
+};
 
 export function GardenPreview({
   entry,
@@ -126,7 +153,8 @@ export function GardenPreview({
   }>({ message: "" });
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
   const followHelp = useHelp(),
-    detailHelp = useHelp();
+    detailHelp = useHelp(),
+    inversionHelp = useHelp();
   // The circle number as typed, while it is being typed.
   const [circleDraft, setCircleDraft] = useState<string>();
   // Asking again after a failure that names no field, such as a timeout.
@@ -135,6 +163,11 @@ export function GardenPreview({
     generation = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
   const session = useRef<LatestSession<GardenRequest, GardenResult> | null>(
+    null,
+  );
+  // A glide's frames: one request at a time and one replaceable intent, on
+  // a worker that keeps the one frozen packing it inverts.
+  const frames = useRef<LatestSession<GardenFrameRequest, GardenFrame> | null>(
     null,
   );
   const exportGeneration = useRef(0);
@@ -155,8 +188,11 @@ export function GardenPreview({
   const exportSection = useDisclosure("garden-export");
   const view = useRef<HTMLDivElement>(null),
     playback = useRef<HTMLDivElement>(null);
-  const result = film?.result ?? shown?.result;
+  // A glide's frame is drawn once it arrives, its frozen packing until then.
+  const result = film ? (film.frame ?? film.result) : shown?.result;
   const reveal = study.reveal ?? defaultReveal;
+  const glide = gliding(study);
+  const motionName = glide ? "Glide" : "Reveal";
   const total = result?.curvature.length ?? 0;
   // The seed's description (web/garden/seeds.ts).
   const seed = seedOf(study.seed);
@@ -172,21 +208,31 @@ export function GardenPreview({
   if (study.split !== undefined && Number.isFinite(study.split))
     lastSplit.current = study.split;
   const seedCircles = result ? seedCount(result) : seed.seeds;
-  const count = film
-    ? revealCount(
-        total,
-        progressAt(film.time, reveal.repeat, "steady"),
-        seedCircles,
-      )
-    : undefined;
+  // The view and motion last chosen, for turning the view on again.
+  const lastInversion = useRef(study.inversion),
+    lastMotion = useRef(study.motion === "glide");
+  if (study.inversion) lastInversion.current = study.inversion;
+  const farPole =
+    study.inversion && (study.glide ?? defaultGlide(study.inversion));
+  const count =
+    film && !glide
+      ? revealCount(
+          total,
+          progressAt(film.time, reveal.repeat, "steady"),
+          seedCircles,
+        )
+      : undefined;
   const durationError =
     !Number.isFinite(reveal.duration) ||
     reveal.duration < 0.1 ||
     reveal.duration > 3600
-      ? "Reveal duration must be 0.1–3,600 seconds."
+      ? `${motionName} duration must be 0.1–3,600 seconds.`
       : "";
   const loopError =
-    reveal.repeat === "loop" && result && !revealLoops(total, seedCircles)
+    !glide &&
+    reveal.repeat === "loop" &&
+    result &&
+    !revealLoops(total, seedCircles)
       ? `${loopLead} the reveal starts with the ${formatCount(seedCircles)} seed circles and ends with all ${formatCount(total)}. Back and forth returns smoothly.`
       : "";
   const revealError = durationError || loopError;
@@ -212,6 +258,21 @@ export function GardenPreview({
     activeError?.field === "split" ||
     (!!seed.family && scalarError?.name === seed.family.label);
   const selected = result ? indexOf(result, study.selected) : -1;
+  // Inverting in the selected circle: its source center as the pole and
+  // its radius as the inversion's, when both are admitted.
+  const invertIn =
+    result &&
+    selected >= 0 &&
+    result.radius[selected] >= gardenView.radius[0] &&
+    result.radius[selected] <= gardenView.radius[1] &&
+    Math.abs(result.x[selected]) <= gardenView.pole &&
+    Math.abs(result.y[selected]) <= gardenView.pole
+      ? {
+          x: result.x[selected],
+          y: result.y[selected],
+          radius: result.radius[selected],
+        }
+      : undefined;
   const scalarStatus = useMemo(
     () => ({
       client: scalarClient,
@@ -235,6 +296,10 @@ export function GardenPreview({
       () => new EngineClient(),
       (client, q: GardenRequest) => client.garden(q),
     );
+    frames.current = new LatestSession(
+      () => new EngineClient(),
+      (client, f: GardenFrameRequest) => client.gardenFrame(f),
+    );
     scalarClient.current = new EngineClient();
     return () => {
       exportGeneration.current++;
@@ -242,6 +307,7 @@ export function GardenPreview({
       exportAbort.current?.abort();
       stopClock.current();
       session.current?.cancel();
+      frames.current?.cancel();
       scalarClient.current?.dispose();
       generation.current++;
     };
@@ -297,13 +363,58 @@ export function GardenPreview({
   };
   const endFilm = () => {
     pause();
+    frames.current?.invalidate();
     setFilm(undefined);
     setFinished(false);
+  };
+  const fail = (e: unknown) => {
+    endFilm();
+    setError({
+      message: (e as Error).message,
+      field: e instanceof EngineError ? e.field : undefined,
+      key,
+    });
+  };
+  // A glide's frame at a time on the timeline. It starts and ends at the
+  // static view exactly (Go returns the pole at progress 0 and 1), so
+  // those times need no request.
+  const frameAt = (f: Film, time: number, repeat = reveal.repeat) => {
+    const progress = progressAt(time, repeat, "steady");
+    if (progress === 0 || progress === 1) return Promise.resolve(f.result);
+    return new Promise<GardenResult>((resolve, reject) =>
+      frames.current!.update(
+        { garden: JSON.parse(f.key) as GardenRequest, progress },
+        (frame) => resolve(framed(f.result, frame)),
+        reject,
+      ),
+    );
   };
   // The packing a reveal freezes: the playing one, or the current result.
   const source = film ?? (ready && shown ? { ...shown, time: 0 } : undefined);
   const canReveal = !!source && !revealError && !exporting;
-  const start = () => {
+  // A glide's loop is offered only when its last frame, drawn with the
+  // frozen packing, camera and appearance, is its first.
+  const loopRefusal = async (f: Film) => {
+    if (!glide || reveal.repeat !== "loop") return null;
+    const props = drawing(f.result)!;
+    const end = await new Promise<GardenResult>((resolve, reject) =>
+      frames.current!.update(
+        { garden: JSON.parse(f.key) as GardenRequest, progress: 1 },
+        (frame) => resolve(framed(f.result, frame)),
+        reject,
+      ),
+    );
+    const markup = (r: GardenResult) =>
+      new XMLSerializer().serializeToString(
+        gardenSVG({ ...props, result: r }, {}),
+      );
+    return markupRefusal(
+      markup(f.result),
+      markup(end),
+      " Back and forth returns smoothly.",
+    );
+  };
+  const start = async () => {
     if (!canReveal || !source) return;
     const from = finished || source.time >= 1 ? 0 : source.time;
     const frozen = { ...source, time: from };
@@ -312,6 +423,36 @@ export function GardenPreview({
     setFinished(false);
     setPlaying(true);
     revealDrawing(view.current, playback.current);
+    if (glide) {
+      let refusal: string | null;
+      try {
+        refusal = await loopRefusal(frozen);
+      } catch (e) {
+        fail(e);
+        return;
+      }
+      if (refusal) {
+        endFilm();
+        setError({ message: refusal, field: "repeat", key });
+        return;
+      }
+      stopClock.current = play<GardenResult>({
+        from,
+        duration: duration * 1000,
+        repeat: cycles(repeat),
+        lanes: [(t) => frameAt(frozen, t, repeat)],
+        show: (frame, t) =>
+          setFilm((f) => f && { ...f, time: t, frame, frameTime: t }),
+        end: () => {
+          stopClock.current = () => {};
+          setPlaying(false);
+          setFilm(undefined);
+          setFinished(true);
+        },
+        fail,
+      });
+      return;
+    }
     stopClock.current = play<number>({
       from,
       duration: duration * 1000,
@@ -332,7 +473,18 @@ export function GardenPreview({
     if (!source || exporting) return;
     pause();
     setFinished(false);
-    setFilm({ ...source, time });
+    const frozen = { ...source, time };
+    setFilm(frozen);
+    if (glide)
+      void frameAt(frozen, time).then(
+        (frame) =>
+          setFilm((f) =>
+            f && f.time === time ? { ...f, frame, frameTime: time } : f,
+          ),
+        // A newer seek or Stop replaces this one without settling it; any
+        // other failure ends the glide.
+        fail,
+      );
   };
   // Generation settings end a reveal before they change.
   const edit = (change: (s: GardenStudy) => GardenStudy) => {
@@ -346,6 +498,21 @@ export function GardenPreview({
       reveal: { ...(s.reveal ?? defaultReveal), ...change },
     }));
   };
+  // The view and glide are generation settings: an edit ends a motion.
+  // Their last values are remembered for turning them on again.
+  const setInversion = (change: Partial<GardenInversion>) =>
+    edit((s) =>
+      s.inversion ? { ...s, inversion: { ...s.inversion, ...change } } : s,
+    );
+  const setGlide = (change: Partial<GardenPoint>) =>
+    edit((s) =>
+      s.inversion
+        ? {
+            ...s,
+            glide: { ...(s.glide ?? defaultGlide(s.inversion)), ...change },
+          }
+        : s,
+    );
   const select = (i: number, typed = false) => {
     if (!result) return;
     if (!typed) setCircleDraft(undefined);
@@ -371,9 +538,9 @@ export function GardenPreview({
     halt();
     setStudy((s) => ({ ...s, view }));
   };
-  const drawing = (): GardenDrawingProps | undefined =>
-    result && {
-      result,
+  const drawing = (drawn = result): GardenDrawingProps | undefined =>
+    drawn && {
+      result: drawn,
       presentation: study.presentation,
       selected,
       camera: study.view,
@@ -394,6 +561,7 @@ export function GardenPreview({
     units: "enclosing radius = 1",
     maxCircles: study.maxCircles,
     ...detailRecord(),
+    ...viewRecord(),
     circles: result?.curvature.length,
     omitted: result?.omitted,
     stopped: result?.stopped || undefined,
@@ -416,13 +584,38 @@ export function GardenPreview({
     theme: theme.dark ? "dark" : "light",
     scheme: theme.scheme,
     weight: study.weight,
-    ...(film && {
-      reveal: {
-        ...revealRecord(),
-        time: film.time,
-        shown: count,
-      },
-    }),
+    ...(film &&
+      !glide && {
+        reveal: {
+          ...revealRecord(),
+          time: film.time,
+          shown: count,
+        },
+      }),
+    ...(film &&
+      glide && {
+        glide: { ...glideRecord(), time: film.frameTime ?? film.time },
+      }),
+  });
+  // The view: the inversion, in model units, and how it is generated.
+  const viewRecord = () =>
+    study.inversion
+      ? {
+          inversion: {
+            ...study.inversion,
+            map: "w = P + ρ²(z − P)/|z − P|², P the pole (x, y) and ρ the radius",
+            generated:
+              "for the image: the minimum radius in drawn units, gaps reaching the window",
+          },
+        }
+      : {};
+  // The glide: its path and timing; a frame adds its time and pole.
+  const glideRecord = () => ({
+    from: study.inversion && { x: study.inversion.x, y: study.inversion.y },
+    to: study.glide ?? (study.inversion && defaultGlide(study.inversion)),
+    path: "P(p) = (1 − s)P₀ + sP₁, s = (1 − cos 2πp)/2",
+    duration: reveal.duration,
+    repeat: reveal.repeat,
   });
   // The detail policy and request behind the drawn packing, when detail
   // changed them; a reveal records its frozen request.
@@ -470,6 +663,7 @@ export function GardenPreview({
   }, [
     key,
     count,
+    film?.frameTime,
     selected,
     study.presentation,
     study.view,
@@ -489,24 +683,47 @@ export function GardenPreview({
     const controller = new AbortController();
     exportAbort.current = controller;
     try {
-      await gardenMovie({
-        drawing: { ...props, result: source.result, count: undefined },
-        metadata: {
-          ...metadata(),
-          circles: source.result.curvature.length,
-          reveal: revealRecord(),
-        },
-        reveal: { ...reveal },
-        options: {
-          format: exportState.chosen,
-          fps: exportState.fps,
-          settings: { scale: exportState.scale, quality: exportState.quality },
-          loop: exportState.loop,
-        },
-        signal: controller.signal,
-        current: () => id === movieGeneration.current,
-        progress: setExportProgress,
-      });
+      if (glide)
+        await gardenGlideMovie({
+          drawing: { ...props, result: source.result, count: undefined },
+          request: JSON.parse(source.key) as GardenRequest,
+          metadata: { ...metadata(), glide: glideRecord() },
+          timing: { ...reveal },
+          options: {
+            format: exportState.chosen,
+            fps: exportState.fps,
+            settings: {
+              scale: exportState.scale,
+              quality: exportState.quality,
+            },
+            loop: exportState.loop,
+          },
+          signal: controller.signal,
+          current: () => id === movieGeneration.current,
+          progress: setExportProgress,
+        });
+      else
+        await gardenMovie({
+          drawing: { ...props, result: source.result, count: undefined },
+          metadata: {
+            ...metadata(),
+            circles: source.result.curvature.length,
+            reveal: revealRecord(),
+          },
+          reveal: { ...reveal },
+          options: {
+            format: exportState.chosen,
+            fps: exportState.fps,
+            settings: {
+              scale: exportState.scale,
+              quality: exportState.quality,
+            },
+            loop: exportState.loop,
+          },
+          signal: controller.signal,
+          current: () => id === movieGeneration.current,
+          progress: setExportProgress,
+        });
     } catch (e) {
       if (id === movieGeneration.current && !controller.signal.aborted)
         setError({ message: (e as Error).message, key });
@@ -529,7 +746,7 @@ export function GardenPreview({
         ? labels[activeError.field]
         : undefined
       : durationError
-        ? "Reveal duration"
+        ? `${motionName} duration`
         : loopError
           ? "Repeat"
           : undefined);
@@ -541,9 +758,19 @@ export function GardenPreview({
   );
   const props = drawing();
   const summary = film
-    ? cutoffSummary(film.result, JSON.parse(film.key), study.view.zoom)
+    ? cutoffSummary(
+        film.frame ?? film.result,
+        JSON.parse(film.key),
+        study.view.zoom,
+        !!study.detail,
+      )
     : shown &&
-      cutoffSummary(shown.result, JSON.parse(shown.key), study.view.zoom);
+      cutoffSummary(
+        shown.result,
+        JSON.parse(shown.key),
+        study.view.zoom,
+        !!study.detail,
+      );
   const about = result && selected >= 0 ? explain(result, selected) : undefined;
   const whole = (
     k: "depth" | "maxCircles",
@@ -598,7 +825,7 @@ export function GardenPreview({
       id="garden-playback"
       className={`playback ${film || playing || exporting ? "active" : ""}`}
       role="group"
-      aria-label="Reveal playback"
+      aria-label={`${motionName} playback`}
     >
       <div className="animation-buttons">
         <button
@@ -606,22 +833,22 @@ export function GardenPreview({
           onClick={() => (playing ? pause() : start())}
         >
           {playing
-            ? "Pause reveal"
+            ? `Pause ${motionName.toLowerCase()}`
             : film && film.time < 1
-              ? "Resume reveal"
-              : "Play reveal"}
+              ? `Resume ${motionName.toLowerCase()}`
+              : `Play ${motionName.toLowerCase()}`}
         </button>
         <button
           disabled={!film && !playing && !exporting && !finished}
           onClick={() => (exporting ? cancelExport() : endFilm())}
         >
-          {exporting ? "Cancel export" : "Stop reveal"}
+          {exporting ? "Cancel export" : `Stop ${motionName.toLowerCase()}`}
         </button>
       </div>
       <div className="timeline">
         <Field
           label="Animation progress"
-          help={gardenHelp.progress}
+          help={glide ? gardenHelp.glideProgress : gardenHelp.progress}
           helpBeforeControl
         >
           <ProgressSlider
@@ -637,8 +864,8 @@ export function GardenPreview({
                 (film?.time ?? (finished ? 1 : 0)) * reveal.duration,
                 reveal.duration,
               )}
-          {film && result
-            ? ` · ${formatCount(count!)} of ${formatCount(total)} circles`
+          {film && result && count !== undefined
+            ? ` · ${formatCount(count)} of ${formatCount(total)} circles`
             : ""}
           {film && !playing && film.time < 1 ? " · Paused" : ""}
         </p>
@@ -729,6 +956,7 @@ export function GardenPreview({
           revision={JSON.stringify([
             key,
             count,
+            film?.frameTime,
             selected,
             study.presentation,
             study.view,
@@ -765,9 +993,11 @@ export function GardenPreview({
                   or pinch to zoom
                   {study.detail
                     ? film
-                      ? ", which only enlarges the reveal's circles until it stops"
+                      ? `, which only enlarges the ${motionName.toLowerCase()}'s circles until it stops`
                       : ", which grows finer circles for the view"
-                    : ", which enlarges these circles without adding any"}
+                    : study.inversion
+                      ? ", which enlarges these circles; panning fills in more of the inverted view"
+                      : ", which enlarges these circles without adding any"}
                   . Keys: arrows, + / −, Home.{" "}
                   <button
                     type="button"
@@ -903,6 +1133,11 @@ export function GardenPreview({
                         <div className="garden-about">
                           <h3>{circleName(selected)}</h3>
                           <p className="garden-facts">{about.facts}</p>
+                          {viewFacts(result, selected) && (
+                            <p className="garden-facts">
+                              {viewFacts(result, selected)}
+                            </p>
+                          )}
                           <p>{about.text}</p>
                           {result.generation[selected] > 0 && (
                             <div
@@ -953,11 +1188,128 @@ export function GardenPreview({
                     then only the enclosing circle is drawn.
                   </p>
                 )}
-                <h3 className="garden-section">Reveal</h3>
+                <h3 className="garden-section">View</h3>
+                <div className="garden-follow">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={!!study.inversion}
+                      disabled={exporting}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        edit(({ inversion: _, motion: __, ...s }) =>
+                          on
+                            ? {
+                                ...s,
+                                inversion: {
+                                  ...(lastInversion.current ??
+                                    defaultInversion),
+                                },
+                                ...(lastMotion.current && { motion: "glide" }),
+                              }
+                            : s,
+                        );
+                      }}
+                    />
+                    Invert in a circle
+                  </label>
+                  <HelpToggle topic="the inversion" help={inversionHelp} />
+                </div>
+                <HelpText help={inversionHelp}>{gardenHelp.invert}</HelpText>
+                {study.inversion && (
+                  <fieldset disabled={exporting} className="garden-inversion">
+                    <div className="pair">
+                      <Field label="Pole x" help={gardenHelp.poleX}>
+                        <ScalarInput
+                          name="Pole x"
+                          value={study.inversion.x}
+                          onChange={(x) => setInversion({ x })}
+                        />
+                      </Field>
+                      <Field label="Pole y" help={gardenHelp.poleY}>
+                        <ScalarInput
+                          name="Pole y"
+                          value={study.inversion.y}
+                          onChange={(y) => setInversion({ y })}
+                        />
+                      </Field>
+                    </div>
+                    <Field
+                      label="Inversion radius"
+                      help={gardenHelp.inversionRadius}
+                    >
+                      <ScalarInput
+                        name="Inversion radius"
+                        value={study.inversion.radius}
+                        onChange={(radius) => setInversion({ radius })}
+                      />
+                    </Field>
+                    <button
+                      type="button"
+                      disabled={!invertIn}
+                      onClick={() => invertIn && setInversion(invertIn)}
+                    >
+                      Invert in the selected circle
+                    </button>
+                    <p className="note garden-invert-note">
+                      {gardenHelp.invertIn}
+                    </p>
+                  </fieldset>
+                )}
+                <h3 className="garden-section">Motion</h3>
+                <Field label="Motion" help={gardenHelp.motion}>
+                  <select
+                    value={glide ? "glide" : "reveal"}
+                    disabled={exporting}
+                    onChange={(e) => {
+                      const next = e.currentTarget.value === "glide";
+                      lastMotion.current = next;
+                      edit(({ motion: _, ...s }) =>
+                        next
+                          ? {
+                              ...s,
+                              motion: "glide",
+                              glide: s.glide ?? defaultGlide(s.inversion!),
+                            }
+                          : s,
+                      );
+                    }}
+                  >
+                    <option value="reveal">Reveal the circles</option>
+                    <option value="glide" disabled={!study.inversion}>
+                      Glide the pole
+                    </option>
+                  </select>
+                </Field>
+                {glide && (
+                  <fieldset disabled={exporting} className="garden-glide">
+                    <div className="pair">
+                      <Field label="Far pole x" help={gardenHelp.farX}>
+                        <ScalarInput
+                          name="Far pole x"
+                          value={farPole!.x}
+                          onChange={(x) => setGlide({ x })}
+                        />
+                      </Field>
+                      <Field label="Far pole y" help={gardenHelp.farY}>
+                        <ScalarInput
+                          name="Far pole y"
+                          value={farPole!.y}
+                          onChange={(y) => setGlide({ y })}
+                        />
+                      </Field>
+                    </div>
+                  </fieldset>
+                )}
                 {playbackControls}
                 <fieldset disabled={exporting} className="garden-reveal">
                   <div className="pair">
-                    <Field label="Reveal duration" help={gardenHelp.duration}>
+                    <Field
+                      label={`${motionName} duration`}
+                      help={
+                        glide ? gardenHelp.glideDuration : gardenHelp.duration
+                      }
+                    >
                       <input
                         type="number"
                         min={0.1}
@@ -973,7 +1325,10 @@ export function GardenPreview({
                         }
                       />
                     </Field>
-                    <Field label="Repeat" help={gardenHelp.repeat}>
+                    <Field
+                      label="Repeat"
+                      help={glide ? gardenHelp.glideRepeat : gardenHelp.repeat}
+                    >
                       <select
                         value={reveal.repeat}
                         onChange={(e) =>

@@ -10,8 +10,11 @@ import {
   gardenZoom,
   hitCircle,
   revealed,
+  shapeOf,
+  toModel,
   type GardenPresentation,
   type GardenResult,
+  type GardenShape,
 } from "./model";
 
 export type GardenDrawingProps = {
@@ -34,6 +37,46 @@ export const zoomRange = gardenZoom;
 const ring = (rpx: number, cap: number, floor: number) =>
   Math.min(cap, Math.max(floor, 0.25 * rpx));
 
+// Circles drawn larger than this, in page units, and lines are drawn as
+// their stretch across the visible page instead of as SVG circles, whose
+// rasterizers lose precision far from the origin.
+export const bigCircle = 2e4;
+
+// A line, or a circle too large to draw as a circle, as one quadratic
+// Bézier across the visible page, in page units before the pan. Near the
+// point of the circle nearest the view's center, its foot p₀ found exactly
+// along the gradient of Φ, with unit normal
+// n̂ (the gradient of Φ = b|w|² − 2z·w + b̄) and tangent t, the circle is
+// p₀ + st − n̂·bs²/2 to within b³s⁴/8, under 0.003 page units here; a
+// parabola is exactly a quadratic Bézier, and a line (b = 0) a straight
+// one. Null when it misses the page.
+export function stretch(c: GardenShape, camera: PlotCamera): string | null {
+  const k = gardenScale * camera.zoom;
+  const q = toModel({ x: 500, y: 380 }, camera);
+  // Half the page's diagonal, with a margin, in model units.
+  const span = (1.3 * Math.hypot(500, 380)) / k;
+  const phi =
+    c.b * (q.x * q.x + q.y * q.y) - 2 * (c.zx * q.x + c.zy * q.y) + c.co;
+  // The gradient of Φ is 2(bq − z), along the line through the center;
+  // the circle lies d = Φ/(|bq − z| + 1) back along it, exactly (a line
+  // has |z| = 1, so d = Φ/2).
+  const gx = c.b * q.x - c.zx,
+    gy = c.b * q.y - c.zy;
+  const g = Math.hypot(gx, gy);
+  const nx = gx / g,
+    ny = gy / g;
+  const d = phi / (g + 1);
+  if (!(Math.abs(d) <= span)) return null;
+  const fx = q.x - d * nx,
+    fy = q.y - d * ny;
+  const bow = (c.b * span * span) / 2;
+  const page = (x: number, y: number) => `${500 + x * k} ${380 - y * k}`;
+  const a = page(fx - span * -ny - bow * nx, fy - span * nx - bow * ny);
+  const b = page(fx + span * -ny - bow * nx, fy + span * nx - bow * ny);
+  const control = page(fx + bow * nx, fy + bow * ny);
+  return `M${a}Q${control} ${b}`;
+}
+
 // The circles of one presentation, in page units at the camera's zoom; the
 // pan is the enclosing group's translation. Only geometry: no text, no hit
 // targets.
@@ -46,6 +89,17 @@ function Circles(p: GardenDrawingProps) {
   // it, so they are revealed with it.
   const selected = p.selected < count ? p.selected : -1;
   const zoom = p.camera.zoom;
+  // Lines and very large circles follow the pan too; the rest only zoom.
+  const big = useMemo(() => {
+    const out = new Set<number>();
+    if (r.image)
+      for (let i = 0; i < r.curvature.length; i++) {
+        const b = r.image[4 * i];
+        if (b === 0 || gardenScale * zoom > bigCircle * Math.abs(b)) out.add(i);
+      }
+    return out;
+  }, [r, zoom]);
+  const pan = big.size ? `${p.camera.x},${p.camera.y}` : "";
   return useMemo(() => {
     const k = gardenScale * zoom;
     const shown = revealed(r, presentation, selected, count);
@@ -59,24 +113,41 @@ function Circles(p: GardenDrawingProps) {
     // the enclosing circle, when not a generator, is a faint frame.
     const recede = selected >= 0;
     const circle = (i: number, role: "base" | "selected" | "generator") => {
-      const rpx = r.radius[i] * k;
+      const c = shapeOf(r, i);
+      const rpx = (c.r ?? Infinity) * k;
       const width =
         role === "selected"
           ? ring(rpx, 2.4, 0.9)
           : role === "generator"
             ? ring(rpx, 2, 0.7)
             : ring(rpx, 1.25, 0.12);
+      const stroked = {
+        stroke: role === "selected" ? palette.derived : palette.base,
+        opacity: role === "base" && recede ? 0.4 : undefined,
+        ...stroke(width),
+      };
+      if (big.has(i)) {
+        const d = stretch(c, p.camera);
+        return d ? (
+          <path
+            key={`${role}-${i}`}
+            data-circle={i}
+            data-role={role}
+            data-shape={c.r ? "arc" : "line"}
+            d={d}
+            {...stroked}
+          />
+        ) : null;
+      }
       return (
         <circle
           key={`${role}-${i}`}
           data-circle={i}
           data-role={role}
-          cx={500 + r.x[i] * k}
-          cy={380 - r.y[i] * k}
+          cx={500 + c.x! * k}
+          cy={380 - c.y! * k}
           r={rpx}
-          stroke={role === "selected" ? palette.derived : palette.base}
-          opacity={role === "base" && recede ? 0.4 : undefined}
-          {...stroke(width)}
+          {...stroked}
         />
       );
     };
@@ -92,6 +163,8 @@ function Circles(p: GardenDrawingProps) {
     selected,
     count,
     zoom,
+    big,
+    pan,
     p.weight,
     palette.base,
     palette.derived,

@@ -77,6 +77,8 @@ test("the garden offers every seed in its gallery and its seed choice, and keeps
     ...studies.map(([title]) => title),
     "Finer circles in a three-fold gap",
     "Pearls in a crescent",
+    "A rose window unrolled into a strip",
+    "A window inside its left circle",
   ]);
   for (const p of gardenPresets) expect(p.title).not.toContain("research");
   // Every seed's link opens; one beyond the catalog does not.

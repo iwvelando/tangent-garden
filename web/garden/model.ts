@@ -33,6 +33,10 @@ export type GardenWindow = {
   yMin: number;
   yMax: number;
 };
+// The inversive view's circle, its pole and radius, and the glide's far
+// pole, in model units (engine/apollonian_inversion.go).
+export type GardenInversion = { x: number; y: number; radius: number };
+export type GardenPoint = { x: number; y: number };
 // A study's generation settings.
 export type GardenCutoffs = {
   // The seed the packing grows from (web/garden/seeds.ts).
@@ -44,6 +48,12 @@ export type GardenCutoffs = {
   // The split diameter's split as entered, the left seed circle's radius;
   // present exactly while that seed is chosen (web/garden/seeds.ts).
   split?: number;
+  // The inversive view, present while it is on; the image is generated
+  // for the view, and the minimum radius applies to drawn circles.
+  inversion?: GardenInversion;
+  // The glide's far pole, kept once edited; it moves the pole only while
+  // the glide is the study's motion.
+  glide?: GardenPoint;
 };
 export type GardenRequest = Omit<GardenCutoffs, "split"> & {
   // The split diameter's member, the entered split's nearest fraction.
@@ -52,6 +62,16 @@ export type GardenRequest = Omit<GardenCutoffs, "split"> & {
   // those holding the kept circle (see detailFor).
   window?: GardenWindow;
   keep?: GardenCircle;
+};
+// One time of a glide over the frozen inverted packing: the request it was
+// generated from and the progress, 0–1 (engine.GardenFrameRequest).
+export type GardenFrameRequest = { garden: GardenRequest; progress: number };
+// A glide frame's image coordinates, four per circle as GardenResult.image,
+// and the pole they are inverted about (engine.GardenFrame).
+export type GardenFrame = {
+  progress: number;
+  pole: [number, number];
+  image: number[];
 };
 // Breadth-first parallel arrays; circle 0 encloses, and the other seed
 // circles follow it. For the original seed, curvature and weighted center
@@ -81,6 +101,10 @@ export type GardenResult = {
   seeds?: number;
   denominator?: number;
   root?: number;
+  // With an inversion: each circle's image as four values, its curvature
+  // b', weighted center z' and co-curvature b̄', in drawing units. A line
+  // has b' = 0, unit normal z' and b̄'/2 its distance from the origin.
+  image?: number[];
 };
 // A circle's identity: its integer curvature and weighted center. It is
 // the same circle under any cutoffs, unlike its breadth-first index. Another
@@ -108,27 +132,58 @@ export type GardenStudy = GardenCutoffs & {
   // Finer circles when zoomed in (detailFor); absent or false, zoom only
   // enlarges. Saved only while on.
   detail?: boolean;
-  // The reveal's duration and repeat; absent, defaultReveal.
+  // The reveal's duration and repeat; absent, defaultReveal. They time a
+  // glide too.
   reveal?: GardenReveal;
+  // The motion: absent, the reveal; "glide", the inversion's pole gliding
+  // to the far pole and back.
+  motion?: "glide";
 };
 export type GardenReveal = { duration: number; repeat: Repeat };
 export const defaultReveal: GardenReveal = { duration: 8, repeat: "once" };
+
+// The view's limits and openings (engine/apollonian_inversion.go). Turned
+// on, the view inverts about the top of the enclosing circle with radius 1,
+// where the original's enclosing and top circles touch: the window unrolls
+// into a strip.
+export const gardenView = {
+  pole: 2,
+  radius: [0.05, 2] as [number, number],
+  // The largest window side, in model units (engine GardenMaxWindow).
+  window: 1000,
+};
+export const defaultInversion: GardenInversion = { x: 0, y: 1, radius: 1 };
+// A glide's far pole until one is entered: 0.4 above the pole, or below
+// it when that leaves the range.
+export const defaultGlide = (v: GardenInversion): GardenPoint => ({
+  x: v.x,
+  y: v.y + 0.4 <= gardenView.pole ? v.y + 0.4 : v.y - 0.4,
+});
+// Whether the study's motion is a glide, which needs a view.
+export const gliding = (s: Pick<GardenStudy, "motion" | "inversion">) =>
+  s.motion === "glide" && !!s.inversion;
 
 // The request a study's drawing needs: its cutoffs, and with detail at a
 // zoom past the whole packing, the finer cutoff and window for its view.
 export function gardenRequest(s: GardenStudy): GardenRequest {
   const split = splitOf(s);
+  const v = s.inversion;
   const q: GardenRequest = {
     seed: s.seed,
     depth: s.depth,
     minRadius: s.minRadius,
     maxCircles: s.maxCircles,
     ...(split && { split }),
+    ...(v && { inversion: { x: v.x, y: v.y, radius: v.radius } }),
+    ...(gliding(s) && { glide: { ...(s.glide ?? defaultGlide(v!)) } }),
   };
   const d = detailFor(s);
   if (!d) return q;
   const k = s.selected;
-  const disk = k && keptDisk(s, k);
+  const source = k && keptDisk(s, k);
+  // Under a view the window is the image's, so the selection's image
+  // decides: a circle around or through the pole always reaches it.
+  const disk = source && (v ? imageDisk(source, v) : source);
   const keep = disk && disk.b > 0 && !diskMeets(disk, d.window);
   return {
     ...q,
@@ -153,6 +208,19 @@ function keptDisk(seed: { seed: string; split?: number }, k: GardenCircle) {
     r: s / b,
   };
 }
+// A source disk's image under the inversion, by its closed form, for the
+// kept-selection decision alone; b ≤ 0 when the pole lies in or on it.
+function imageDisk(
+  c: { b: number; x: number; y: number; r: number },
+  v: GardenInversion,
+) {
+  const dx = c.x - v.x,
+    dy = c.y - v.y;
+  const delta = dx * dx + dy * dy - c.r * c.r;
+  if (!(delta > 0)) return { b: 0, x: 0, y: 0, r: 0 };
+  const k = (v.radius * v.radius) / delta;
+  return { b: 1, x: v.x + k * dx, y: v.y + k * dy, r: k * c.r };
+}
 const diskMeets = (c: { x: number; y: number; r: number }, w: GardenWindow) =>
   Math.hypot(
     c.x - Math.max(w.xMin, Math.min(w.xMax, c.x)),
@@ -168,17 +236,25 @@ const diskMeets = (c: { x: number; y: number; r: number }, w: GardenWindow) =>
 // below √2, or with detail off, there is none: the static request.
 export const detailLevel = (zoom: number) =>
   Math.max(0, Math.floor(2 * Math.log2(zoom)));
+//
+// Under a view the image is unbounded, so the window always follows the
+// camera, at level 0 when detail is off or zoom is below √2, and it is
+// clamped only to the engine's window limit.
 export function detailFor(s: GardenStudy) {
-  if (!s.detail) return undefined;
-  const level = detailLevel(s.view.zoom);
-  if (level === 0) return undefined;
+  const inverted = !!s.inversion;
+  if (!s.detail && !inverted) return undefined;
+  const level = s.detail ? detailLevel(s.view.zoom) : 0;
+  if (level === 0 && !inverted) return undefined;
   const factor = 2 ** (level / 2);
   const cell = gardenPage.width / (gardenScale * factor) / 4;
   const k = gardenScale * s.view.zoom,
     v = s.view;
   // Cells covering the enclosing circle, and one more on each side; a
   // view beyond them keeps a one-cell window there, outside the packing.
-  const reach = Math.ceil(1 / cell) + 1;
+  // An inverted view reaches as far as the engine's window limit allows.
+  const reach = inverted
+    ? Math.floor(gardenView.window / cell) - 1
+    : Math.ceil(1 / cell) + 1;
   const index = (value: number, round: (v: number) => number, by: number) =>
     Math.max(-reach, Math.min(reach, round(value / cell) + by));
   const span = (lo: number, hi: number) => {
@@ -343,26 +419,123 @@ export const gardenPresets: readonly {
     note: "Split the diameter unevenly and the gaps become a crescent of pearls",
     study: { ...defaultGarden, seed: "split", split: 0.25, weight: "fine" },
   },
+  // The original inverted about (0, 1), where the enclosing circle touches
+  // the top seed circle, with radius 1: both become the lines y = ±1/2,
+  // and the window unrolls into a strip, with the half-radius circles,
+  // orthogonal to the inversion circle, left in place. The glide takes the
+  // pole up to (0, 1.4), outside the packing, where the strip curls into a
+  // whole window around the old enclosing circle, and back, looping.
+  {
+    title: "A rose window unrolled into a strip",
+    note: "Invert about the point where two circles touch: both become lines, and the window unrolls",
+    study: {
+      ...defaultGarden,
+      weight: "fine",
+      inversion: { x: 0, y: 1, radius: 1 },
+      motion: "glide",
+      glide: { x: 0, y: 1.4 },
+      reveal: { duration: 12, repeat: "loop" },
+    },
+  },
+  // The original inverted in its own left seed circle, radius 1/2 at
+  // (−1/2, 0): that circle stays put, and the rest of the packing, the old
+  // enclosing circle included, goes inside it. Zoomed 2× onto it.
+  {
+    title: "A window inside its left circle",
+    note: "Invert in one circle: it stays, and the whole packing turns inside it",
+    study: {
+      ...defaultGarden,
+      weight: "fine",
+      inversion: { x: -0.5, y: 0, radius: 0.5 },
+      view: { x: 350, y: 0, zoom: 2 },
+    },
+  },
 ];
 export const presetGarden = (index: number): GardenStudy =>
   structuredClone(gardenPresets[index].study) as GardenStudy;
+
+// A circle as drawn: its augmented coordinates in drawing units (curvature
+// b, weighted center z = b·c and co-curvature b̄, so that the circle is
+// b|w|² − 2z·w + b̄ = 0 and its oriented interior where that is negative),
+// with its center and radius when it is not a line. Without a view, the
+// source circle; with one, its image (GardenResult.image). A negative b
+// is a circle whose interior is its outside, like the enclosing circle.
+export type GardenShape = {
+  b: number;
+  zx: number;
+  zy: number;
+  co: number;
+  // Absent for a line (b = 0).
+  x?: number;
+  y?: number;
+  r?: number;
+};
+export function shapeOf(r: GardenResult, i: number): GardenShape {
+  const m = r.image;
+  if (!m) {
+    const b = (r.curvature[i] < 0 ? -1 : 1) / r.radius[i];
+    const x = r.x[i],
+      y = r.y[i];
+    return {
+      b,
+      zx: b * x,
+      zy: b * y,
+      co: b * (x * x + y * y) - 1 / b,
+      x,
+      y,
+      r: r.radius[i],
+    };
+  }
+  const [b, zx, zy, co] = m.slice(4 * i, 4 * i + 4);
+  return b === 0
+    ? { b, zx, zy, co }
+    : { b, zx, zy, co, x: zx / b, y: zy / b, r: 1 / Math.abs(b) };
+}
+// A glide frame laid over its frozen packing: the same circles, numbers and
+// identities, inverted about the frame's pole.
+export const framed = (r: GardenResult, f: GardenFrame): GardenResult => ({
+  ...r,
+  image: f.image,
+});
+// Φ(p) = b|p|² − 2z·p + b̄, negative inside the oriented interior, and the
+// distance from p to the circle: |Φ|/(|bp − z| + 1), exactly, which stays
+// accurate for a line and a very large circle, where a center and radius
+// lose precision.
+export function shapeDistance(c: GardenShape, p: Vec) {
+  const phi =
+    c.b * (p.x * p.x + p.y * p.y) - 2 * (c.zx * p.x + c.zy * p.y) + c.co;
+  if (c.r !== undefined && c.r < 1e3)
+    return { phi, gap: Math.abs(Math.hypot(p.x - c.x!, p.y - c.y!) - c.r) };
+  const g = Math.hypot(c.b * p.x - c.zx, c.b * p.y - c.zy);
+  return { phi, gap: Math.abs(phi) / (g + 1) };
+}
 
 // The zoom range of the manual camera.
 export const gardenZoom: [number, number] = [0.1, 100];
 // The view that frames circle i: centered, with its radius an eighth of the
 // page's height (its diameter a quarter), never zoomed out past the whole
 // packing nor in past the zoom limit.
-export function followView(
-  r: Pick<GardenResult, "x" | "y" | "radius">,
-  i: number,
-): PlotCamera {
+//
+// A circle is framed where it is drawn. A line, or a circle larger than
+// the page at 1×, is framed at 1× about its point nearest the origin.
+export function followView(r: GardenResult, i: number): PlotCamera {
+  const c = shapeOf(r, i);
+  let x: number, y: number, radius: number;
+  if (c.r === undefined || c.r > 1e3) {
+    // The point of the circle nearest the origin: along the line through
+    // the center, z/|z|, at b̄/(|z| + 1) (shapeDistance).
+    const n = Math.hypot(c.zx, c.zy);
+    x = (c.co / (n + 1)) * (c.zx / n);
+    y = (c.co / (n + 1)) * (c.zy / n);
+    radius = Infinity;
+  } else [x, y, radius] = [c.x!, c.y!, c.r];
   const zoom = Math.min(
     gardenZoom[1],
-    Math.max(1, gardenPage.height / 8 / (r.radius[i] * gardenScale)),
+    Math.max(1, gardenPage.height / 8 / (radius * gardenScale)),
   );
   const k = gardenScale * zoom;
   // Adding zero keeps a centered view's pan free of negative zeros.
-  return { x: -r.x[i] * k + 0, y: r.y[i] * k + 0, zoom };
+  return { x: -x * k + 0, y: y * k + 0, zoom };
 }
 
 // Every drawing frames the enclosing circle the same way: the model's unit
@@ -416,6 +589,10 @@ export const revealed = (
 // the nearest drawn boundary within tolerance page units, the smaller
 // circle on a tie; the enclosing circle only by its boundary. Otherwise −1.
 // The test is arithmetic, so no hit geometry enters the drawing or exports.
+//
+// Under a view the same rule reads the image: inside a bounded circle or a
+// line's half-plane chooses it, and a circle whose interior is its outside
+// is chosen only by its boundary, as the enclosing circle is.
 export function hitCircle(
   r: GardenResult,
   among: number[],
@@ -426,17 +603,21 @@ export function hitCircle(
   const p = toModel(at, camera),
     scale = gardenScale * camera.zoom;
   let best = -1,
-    bestGap = Infinity;
+    bestGap = Infinity,
+    bestRadius = Infinity;
   for (const i of among) {
-    const d = Math.hypot(p.x - r.x[i], p.y - r.y[i]);
-    if (r.curvature[i] > 0 && d < r.radius[i]) return i;
-    const gap = Math.abs(d - r.radius[i]) * scale;
+    const c = shapeOf(r, i);
+    const { phi, gap: g } = shapeDistance(c, p);
+    if (c.b >= 0 && phi < 0) return i;
+    const gap = g * scale,
+      radius = c.r ?? Infinity;
     if (
       gap <= tolerance &&
-      (gap < bestGap || (gap === bestGap && r.radius[i] < r.radius[best]))
+      (gap < bestGap || (gap === bestGap && radius < bestRadius))
     ) {
       best = i;
       bestGap = gap;
+      bestRadius = radius;
     }
   }
   return best;
@@ -451,6 +632,17 @@ const signed = (v: number) =>
 // One line describing a circle, for lists and buttons.
 export const describeCircle = (r: GardenResult, i: number) =>
   `${circleName(i)} · curvature ${formatNumber(r.curvature[i])}`;
+// Where a circle is drawn under a view: a line, a circle around the rest,
+// or its radius and center. Empty without a view.
+export function viewFacts(r: GardenResult, i: number) {
+  if (!r.image) return "";
+  const c = shapeOf(r, i);
+  if (c.r === undefined) return "In this view: a line, through the pole.";
+  const where = `radius ${formatNumber(c.r)} · center (${formatNumber(c.x!)}, ${formatNumber(c.y!)})`;
+  return c.b < 0
+    ? `In this view: ${where}, enclosing the rest, since its disk holds the pole.`
+    : `In this view: ${where}.`;
+}
 // The explanation shown beside the drawing for the selected circle.
 export function explain(r: GardenResult, i: number) {
   if (r.exact) return explainExact(r, i);
@@ -527,13 +719,41 @@ function explainExact(r: GardenResult, i: number) {
 // With detail, it also gives the view's cutoff and its size on screen at
 // this zoom, the gaps left outside the view, and whether depth, rather
 // than the view, limits what zooming further can add.
-export function cutoffSummary(r: GardenResult, q: GardenRequest, zoom = 1) {
+//
+// Under a view, radii are the drawn circles', and it says how many circles
+// are lines through the pole, and how many are kept outside the view or
+// below its radius as ancestors of drawn circles; under a glide, that the
+// circles serve every pole on it.
+export function cutoffSummary(
+  r: GardenResult,
+  q: GardenRequest,
+  zoom = 1,
+  // Whether zoom detail chose the window; an inverted view always has one.
+  detail = !!q.window && !q.inversion,
+) {
   const n = r.curvature.length;
   const deepest = n ? Math.max(...r.generation) : 0;
-  let smallest = Infinity;
-  for (const v of r.radius) smallest = Math.min(smallest, v);
+  let smallest = Infinity,
+    lines = 0,
+    hidden = 0;
+  for (let i = 0; i < n; i++) {
+    if (!r.image) {
+      smallest = Math.min(smallest, r.radius[i]);
+      continue;
+    }
+    const c = shapeOf(r, i);
+    if (c.r === undefined) lines++;
+    else if (c.b > 0) {
+      smallest = Math.min(smallest, c.r);
+      if (
+        c.r < q.minRadius ||
+        (q.window && !diskMeets({ x: c.x!, y: c.y!, r: c.r }, q.window))
+      )
+        hidden++;
+    }
+  }
   const parts = [
-    `${formatCount(n)} circles in generations 0–${deepest}; smallest radius ${formatNumber(smallest)}.`,
+    `${formatCount(n)} circles in generations 0–${deepest}; smallest ${r.image ? "drawn " : ""}radius ${formatNumber(smallest)}.`,
   ];
   const gaps = (n: number) => plural(n, "gap");
   const cut = [
@@ -545,7 +765,7 @@ export function cutoffSummary(r: GardenResult, q: GardenRequest, zoom = 1) {
     r.omitted.view && `${gaps(r.omitted.view)} outside the view`,
   ].filter(Boolean);
   if (cut.length) parts.push(`Left unfilled: ${cut.join("; ")}.`);
-  if (q.window) {
+  if (q.window && detail) {
     // The smallest circles' radius on screen, in drawing units.
     const screen = q.minRadius * gardenScale * zoom;
     parts.push(
@@ -554,6 +774,21 @@ export function cutoffSummary(r: GardenResult, q: GardenRequest, zoom = 1) {
     if (r.omitted.depth)
       parts.push(
         `Zooming further adds nothing beyond depth ${q.depth}${q.depth < gardenLimits.depth ? "" : ", the most allowed"}.`,
+      );
+  }
+  if (r.image) {
+    const kept =
+      hidden &&
+      `${plural(hidden, "circle")} outside the view or below its radius ${hidden === 1 ? "is" : "are"} kept as ancestors of drawn circles`;
+    const through =
+      lines &&
+      `${plural(lines, "circle")} through the pole ${lines === 1 ? "is a line" : "are lines"}`;
+    const view = [through, kept].filter(Boolean);
+    if (view.length)
+      parts.push(`${view.join("; ")}.`.replace(/^./, (c) => c.toUpperCase()));
+    if (q.glide)
+      parts.push(
+        "The circles serve every pole of the glide and stay fixed while it plays.",
       );
   }
   const stopped =
@@ -596,6 +831,16 @@ export const gardenHelp = {
   ),
   progress:
     "Seek the reveal by its time; the same time always shows the same circles.",
+  glideProgress:
+    "Seek the glide by its time; the same time always shows the same drawing.",
+  glideDuration: tiered(
+    "Seconds for the whole glide: 0.1–3,600.",
+    "The pole eases away from its place, reaches the far pole halfway and eases back, resting at both ends. Export makes at most 7,200 frames.",
+  ),
+  glideRepeat: tiered(
+    "Once, a seamless loop, or back and forth.",
+    "A glide ends where it starts, so a loop joins seamlessly. Back and forth plays it, then plays it in reverse, within the duration. Repeating playback continues until paused; a repeating export leaves out its last frame, which is its first.",
+  ),
   duration: tiered(
     "Seconds for the whole reveal: 0.1–3,600.",
     "The reveal holds the seed circles for its first 6%, adds circles in breadth-first order, and holds the whole packing for its last 14%. Export makes at most 7,200 frames.",
@@ -604,6 +849,27 @@ export const gardenHelp = {
     "Once, or back and forth; Loop needs matching ends.",
     "Loop joins the end to the start, which only a packing of the seed circles alone does seamlessly. Back and forth reveals the circles, then removes them in reverse, within the duration. Repeating playback continues until paused; a repeating export leaves out its last frame, which is its first.",
   ),
+  invert: tiered(
+    "Invert the packing in a circle: tangencies stay, and circles through its center become lines.",
+    "A circle around the pole becomes the one enclosing the rest. The image is generated for the view: the minimum radius applies to drawn circles, and panning fills in more. Inversion mirrors the drawing, so an asymmetric seed appears reversed.",
+  ),
+  poleX: tiered(
+    "Inversion center's x, in enclosing radii: within ±2.",
+    "The pole: circles through it become lines, and points near it go far away.",
+  ),
+  poleY: "Inversion center's y, in enclosing radii: within ±2.",
+  inversionRadius: tiered(
+    "The inversion circle's radius: 0.05–2. Points on it stay put.",
+    "Points inside it and outside it trade places. Doubling it draws the image four times as large about the pole.",
+  ),
+  invertIn:
+    "Pole at the selected circle's center, radius its own: it stays, and the rest moves inside it.",
+  motion: tiered(
+    "Reveal the circles in order, or glide the pole to the far pole and back.",
+    "A glide's circles are generated for every pole on its path, so each frame keeps its detail, and they stay fixed while it plays. It starts and ends at the pole, so it loops seamlessly. A glide needs the inversion.",
+  ),
+  farX: "The pole the glide reaches halfway, x: within ±2.",
+  farY: "The pole the glide reaches halfway, y: within ±2.",
   circle: tiered(
     "Choose a circle by its breadth-first number.",
     "Or click or tap near a circle in the drawing. Numbers follow generation order and change when the cutoffs change; the selection follows the circle itself.",

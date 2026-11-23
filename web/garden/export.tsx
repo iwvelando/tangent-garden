@@ -12,11 +12,14 @@ import { loomMetadata } from "../loom/metadata";
 import { exportSvgAnimation } from "../export-animation";
 import type { MotionExport } from "../MotionExportSettings";
 import { cycles, progressAt } from "../timing";
+import { EngineClient } from "../engine-client";
 import { GardenStill, type GardenDrawingProps } from "./Drawing";
 import {
   gardenPage,
+  framed,
   revealCount,
   seedCount,
+  type GardenRequest,
   type GardenReveal,
   type GardenResult,
 } from "./model";
@@ -89,4 +92,57 @@ export async function gardenMovie(o: {
   const annotated = await loomMetadata(blob, o.options.format, o.metadata);
   if (o.current())
     saveFile(annotated, `apollonian-garden-reveal.${o.options.format}`);
+}
+
+// The glide as MP4 or animated WebP. Each frame is the frozen packing
+// inverted by Go about that frame's pole, drawn as vector SVG at the
+// encoding's size. The export's own worker freezes the packing again, from
+// the same request, and is ended when the export finishes or is canceled.
+export async function gardenGlideMovie(o: {
+  drawing: GardenDrawingProps & { result: GardenResult };
+  request: GardenRequest;
+  metadata: object;
+  timing: GardenReveal;
+  options: MotionExport;
+  signal: AbortSignal;
+  current: () => boolean;
+  progress: (p: number) => void;
+}) {
+  const client = new EngineClient();
+  const end = () => client.dispose();
+  o.signal.addEventListener("abort", end);
+  const { duration, repeat } = o.timing;
+  try {
+    const blob = await exportSvgAnimation({
+      ...o.options,
+      duration,
+      cyclic: cycles(repeat),
+      signal: o.signal,
+      lookahead: 1,
+      sample: async (time): Promise<GardenResult> => {
+        const progress = progressAt(time, repeat, "steady");
+        if (progress === 0 || progress === 1) return o.drawing.result;
+        return framed(
+          o.drawing.result,
+          await client.gardenFrame({ garden: o.request, progress }),
+        );
+      },
+      draw: (result, scale) => {
+        const svg = gardenSVG({ ...o.drawing, result }, o.metadata);
+        svg.setAttribute("width", String(Math.round(gardenPage.width * scale)));
+        svg.setAttribute(
+          "height",
+          String(Math.round(gardenPage.height * scale)),
+        );
+        return new XMLSerializer().serializeToString(svg);
+      },
+      onProgress: (n, of) => o.progress(n / of),
+    });
+    const annotated = await loomMetadata(blob, o.options.format, o.metadata);
+    if (o.current())
+      saveFile(annotated, `apollonian-garden-glide.${o.options.format}`);
+  } finally {
+    o.signal.removeEventListener("abort", end);
+    end();
+  }
 }
