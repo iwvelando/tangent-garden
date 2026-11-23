@@ -5,11 +5,11 @@ import { usePageGestures } from "../page-gestures";
 import { plotPalette } from "../palette";
 import type { PlotCamera } from "../planar-link";
 import type { Vec } from "../types";
+import { sidesOf } from "./tilings";
 import {
   hitTile,
   lacePage,
   laceScale,
-  laceStrokes,
   laceZoom,
   presented,
   type LacePresentation,
@@ -83,6 +83,7 @@ function Geometry(p: LaceDrawingProps) {
   const zoom = p.camera.zoom;
   return useMemo(() => {
     const k = laceScale * zoom;
+    const p = sidesOf(r);
     const shown = presented(r, presentation, selected);
     const path = new Set<number>();
     if (selected >= 0)
@@ -112,8 +113,8 @@ function Geometry(p: LaceDrawingProps) {
         selectedEdge: 2,
       } as Record<Role, number>;
       for (const t of shown)
-        for (let s = 0; s < 7; s++) {
-          const e = r.sides[7 * t + s];
+        for (let s = 0; s < p; s++) {
+          const e = r.sides[p * t + s];
           const want = tileRole(t, "edge", "pathEdge", "selectedEdge");
           if (!edges && want !== "selectedEdge") continue;
           const had = role.get(e);
@@ -141,16 +142,16 @@ function Geometry(p: LaceDrawingProps) {
       for (const t of shownTiles) {
         const which = tileRole(t, "motif", "pathMotif", "selectedMotif");
         let out = 0;
-        for (let c = 0; c < 7; c++) {
-          const v = r.vertex[r.corners[7 * t + c]];
+        for (let c = 0; c < p; c++) {
+          const v = r.vertex[r.corners[p * t + c]];
           out = Math.max(
             out,
             Math.hypot(v.x - r.center[t].x, v.y - r.center[t].y),
           );
         }
         const level = levelOf(out * k, reachRef);
-        for (let s = 0; s < laceStrokes; s++) {
-          const a = laceStrokes * t + s;
+        for (let s = 0; s < 2 * p; s++) {
+          const a = 2 * p * t + s;
           add(
             which,
             level,

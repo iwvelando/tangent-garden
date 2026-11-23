@@ -2,6 +2,7 @@ import {
   readout as formatNumber,
   count as formatCount,
   percent as formatPercent,
+  liveReadout,
   withoutResidue,
 } from "../number-format";
 import { tiered } from "../help";
@@ -9,13 +10,20 @@ import type { Repeat } from "../timing";
 import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
 import type { Vec } from "../types";
+import {
+  sidesOf,
+  tilingOf,
+  type LaceTilingId,
+  type LaceTilingInfo,
+} from "./tilings";
 
-// Hyperbolic lace: a finite patch of the {7,3} tiling of the Poincaré disk,
-// grown in Go by reflection from one centered heptagon, with a motif
-// reflected into every tile (engine/lace.go, docs/mathematics.md).
+// Hyperbolic lace: a finite patch of a regular tiling {p,q} of the
+// Poincaré disk, {7,3} by default, grown in Go by reflection from one
+// centered tile, with a motif reflected into every tile (engine/lace.go,
+// docs/mathematics.md). The tilings' descriptors are in ./tilings, with
+// each one's depth bound.
 export const laceTiling = "7,3" as const;
 export const laceLimits = {
-  depth: 8,
   tiles: 1000,
   candidates: 10000,
   // The isometry's offset |a|, its angles in radians, and the motion's
@@ -24,10 +32,8 @@ export const laceLimits = {
   angle: 100,
   turns: 3,
 } as const;
-export const laceStrokes = 14;
-
 export type LaceRequest = {
-  tiling: typeof laceTiling;
+  tiling: LaceTilingId;
   depth: number;
   maxTiles: number;
   // Where the motif's strands turn, as a fraction of the hyperbolic
@@ -85,7 +91,7 @@ export type LaceResult = {
   via: number[];
   reversed: boolean[];
   transform: [number, number, number, number][];
-  // Seven vertex and seven edge indices per tile.
+  // p vertex and p edge indices per tile, p the tiling's sides.
   corners: number[];
   sides: number[];
   vertex: Vec[];
@@ -96,7 +102,7 @@ export type LaceResult = {
   edgeCenter: Vec[];
   edgeRadius: number[];
   edgeStraight: boolean[];
-  // laceStrokes geodesic arcs per tile, in tile order.
+  // 2p geodesic arcs per tile, in tile order.
   arcStart: Vec[];
   arcEnd: Vec[];
   arcCenter: Vec[];
@@ -118,10 +124,9 @@ export type LaceResult = {
 };
 export type LacePresentation = "complete" | "selected";
 // A tile's address: the sides crossed from the center tile, each numbered
-// 0–6 in the tile crossed. It names the same tile under any cutoffs.
+// 0 to p − 1 in the tile crossed. It names the same tile under any cutoffs.
 export type LaceAddress = number[];
-export type LaceStudy = Omit<LaceRequest, "tiling"> & {
-  tiling: typeof laceTiling;
+export type LaceStudy = LaceRequest & {
   edges: boolean;
   motif: boolean;
   selected?: LaceAddress;
@@ -182,7 +187,13 @@ export const defaultLace: LaceStudy = {
 };
 // The authored studies, in the 2D examples gallery. Each opens the lace
 // over the notebook's study without replacing it, and takes nothing from it.
-export const lacePresets = [
+// The {7,3} studies come first, so their places in the gallery and in
+// journeys are unchanged.
+export const lacePresets: readonly {
+  title: string;
+  note: string;
+  study: LaceStudy;
+}[] = [
   {
     title: "Seven-pointed stars receding to the rim",
     note: "A heptagon reflected across its sides fills a disk whose rim is infinitely far away",
@@ -220,11 +231,72 @@ export const lacePresets = [
       },
     },
   },
-] as const satisfies readonly {
-  title: string;
-  note: string;
-  study: LaceStudy;
-}[];
+  // The catalog's signature still: {5,4} at its deepest complete ring.
+  {
+    title: "Pentagonal flowers, four at every corner",
+    note: "Right-angled pentagons, impossible on a flat plane, reflected out to the rim",
+    study: { ...defaultLace, tiling: "5,4", depth: 5 },
+  },
+  // Tile 9 (address 0, 4) is the pentagon opposite the center tile across
+  // its top corner, on that corner's mirror at Euclidean radius
+  // 0.68712149944502521 (tanh R): the glide carries it to the center.
+  {
+    title: "A pentagon glides to the center and back",
+    note: "The pentagon across the top corner drawn in to the middle along a mirror line",
+    study: {
+      ...defaultLace,
+      tiling: "5,4",
+      depth: 5,
+      selected: [0, 4],
+      isometry: { offset: 0, direction: Math.PI / 2, rotation: 0 },
+      motion: {
+        offset: 0.68712149944502521,
+        orbits: 0,
+        turns: 0,
+        duration: 10,
+        repeat: "loop",
+      },
+    },
+  },
+  {
+    title: "Square stars, five at every corner",
+    note: "Squares with 72° corners: the dual of the pentagons, each corner a pentagon's center",
+    study: { ...defaultLace, tiling: "4,5", depth: 6 },
+  },
+  // Tile 6 (address 0, 2) lies two squares out through side midpoints, at
+  // Euclidean radius 0.7861513777574235 (tanh 2h) in direction 3π/4.
+  {
+    title: "A square glides to the center and back",
+    note: "Two squares out through their sides' midpoints, drawn in along a mirror line",
+    study: {
+      ...defaultLace,
+      tiling: "4,5",
+      depth: 6,
+      selected: [0, 2],
+      isometry: { offset: 0, direction: (3 * Math.PI) / 4, rotation: 0 },
+      motion: {
+        offset: 0.7861513777574235,
+        orbits: 0,
+        turns: 0,
+        duration: 10,
+        repeat: "loop",
+      },
+    },
+  },
+  // Duality: at star point 0 every strand runs from a tile's center to a
+  // side's midpoint, so the strands are the dual tiling's sides.
+  {
+    title: "Pentagons whose strands draw the squares",
+    note: "At star point 0 each pentagon's strands run to its sides' midpoints and trace the dual {4,5} tiling",
+    study: { ...defaultLace, tiling: "5,4", depth: 5, starPoint: 0 },
+  },
+  // {3,7} at depth 10, its deepest complete ring: 742 tiles.
+  {
+    title: "Triangles, seven at every corner",
+    note: "The dual of the heptagons: slender triangles whose slow rings reach ten deep",
+    study: { ...defaultLace, tiling: "3,7", depth: 10 },
+  },
+];
 export const presetLace = (index: number): LaceStudy =>
   structuredClone(lacePresets[index].study) as LaceStudy;
 
@@ -246,15 +318,16 @@ export function toModel(p: Vec, camera: PlotCamera) {
 // of the page's height, never zoomed out past the whole disk nor in past
 // the zoom limit. A tile's sides bow only slightly beyond its corners.
 export function followView(
-  r: Pick<LaceResult, "vertex" | "corners">,
+  r: Pick<LaceResult, "vertex" | "corners" | "tiling">,
   i: number,
 ): PlotCamera {
   let x0 = Infinity,
     x1 = -Infinity,
     y0 = Infinity,
     y1 = -Infinity;
-  for (let k = 0; k < 7; k++) {
-    const v = r.vertex[r.corners[7 * i + k]];
+  const p = sidesOf(r);
+  for (let k = 0; k < p; k++) {
+    const v = r.vertex[r.corners[p * i + k]];
     x0 = Math.min(x0, v.x);
     x1 = Math.max(x1, v.x);
     y0 = Math.min(y0, v.y);
@@ -285,15 +358,17 @@ function childOf(r: LaceResult, tile: number, side: number) {
   if (!map) {
     map = new Map();
     for (let i = 1; i < r.parent.length; i++)
-      map.set(7 * r.parent[i] + r.via[i], i);
+      map.set(sidesOf(r) * r.parent[i] + r.via[i], i);
     children.set(r, map);
   }
-  return map.get(7 * tile + side) ?? -1;
+  return map.get(sidesOf(r) * tile + side) ?? -1;
 }
 export function indexOf(r: LaceResult, address: LaceAddress | undefined) {
   if (!address || r.center.length === 0) return -1;
   let t = 0;
   for (const side of address) {
+    // A side another tiling's tile has, but this one's does not.
+    if (side >= sidesOf(r)) return -1;
     t = childOf(r, t, side);
     if (t < 0) return -1;
   }
@@ -302,15 +377,16 @@ export function indexOf(r: LaceResult, address: LaceAddress | undefined) {
 // The tile across each side of tile i, or −1 beyond the patch.
 const adjacency = new WeakMap<LaceResult, number[][]>();
 export function neighbors(r: LaceResult, i: number): number[] {
+  const p = sidesOf(r);
   let byEdge = adjacency.get(r);
   if (!byEdge) {
     byEdge = r.edgeA.map(() => []);
     for (let t = 0; t < r.center.length; t++)
-      for (let k = 0; k < 7; k++) byEdge[r.sides[7 * t + k]].push(t);
+      for (let k = 0; k < p; k++) byEdge[r.sides[p * t + k]].push(t);
     adjacency.set(r, byEdge);
   }
-  return Array.from({ length: 7 }, (_, k) => {
-    const tiles = byEdge[r.sides[7 * i + k]];
+  return Array.from({ length: p }, (_, k) => {
+    const tiles = byEdge[r.sides[p * i + k]];
     return tiles.find((t) => t !== i) ?? -1;
   });
 }
@@ -333,7 +409,7 @@ export function presented(
 // inside the geodesic's circle or not, or for a diameter, the same side
 // of the line through the origin.
 function sameSide(r: LaceResult, tile: number, k: number, p: Vec) {
-  const e = r.sides[7 * tile + k];
+  const e = r.sides[sidesOf(r) * tile + k];
   const c = r.center[tile];
   if (r.edgeStraight[e]) {
     const a = r.vertex[r.edgeA[e]].x !== 0 || r.vertex[r.edgeA[e]].y !== 0;
@@ -347,14 +423,16 @@ function sameSide(r: LaceResult, tile: number, k: number, p: Vec) {
   return inside(p) === inside(c);
 }
 export function contains(r: LaceResult, tile: number, p: Vec) {
-  for (let k = 0; k < 7; k++) if (!sameSide(r, tile, k, p)) return false;
+  const n = sidesOf(r);
+  for (let k = 0; k < n; k++) if (!sameSide(r, tile, k, p)) return false;
   return true;
 }
 // A tile's Euclidean reach from its center to its farthest corner.
 function reach(r: LaceResult, i: number) {
   let m = 0;
-  for (let k = 0; k < 7; k++) {
-    const v = r.vertex[r.corners[7 * i + k]];
+  const p = sidesOf(r);
+  for (let k = 0; k < p; k++) {
+    const v = r.vertex[r.corners[p * i + k]];
     m = Math.max(m, Math.hypot(v.x - r.center[i].x, v.y - r.center[i].y));
   }
   return m;
@@ -391,7 +469,7 @@ export function hitTile(
 
 // A tile's number in the reader's terms: one-based breadth-first order.
 export const tileName = (i: number) => `Tile ${formatCount(i + 1)}`;
-// Sides are numbered 1–7 for the reader, 0–6 in addresses.
+// Sides are numbered 1 to p for the reader, 0 to p − 1 in addresses.
 export const sideName = (k: number) => `side ${k + 1}`;
 export const addressText = (a: LaceAddress) =>
   a.length ? a.map((k) => k + 1).join(" → ") : "none";
@@ -409,10 +487,26 @@ export const between = (z: Vec, w: Vec) =>
 export const drawnShare = (r: LaceResult, i: number) =>
   reach(r, i) / r.vertexRadius;
 
-// The explanation beside the drawing for the selected tile.
-export function explain(r: LaceResult, i: number) {
+// Frozen ranges for a moving tile's facts. Disk coordinates lie within
+// the rim. Hyperbolic distances stay below 10: a supported patch's tile
+// centers lie within 7.5 of the center tile ({4,5}'s farthest, at 1,000
+// tiles, is 7.43 away), and the isometry adds at most 2 artanh 0.8 ≈ 2.2.
+// Drawn sizes are shares of a tile's size at the disk's center.
+const liveRanges = {
+  disk: [-1, 1],
+  distance: [0, 10],
+  share: [0, 100],
+} as const;
+
+// The explanation beside the drawing for the selected tile. While a motion
+// plays, is paused or seeks, its numbers change with every frame: they keep
+// the moved wording and one width throughout (liveReadout), so the text
+// wraps alike and the controls below it hold still.
+export function explain(r: LaceResult, i: number, moving = false) {
   const d = r.depth[i];
   const side = formatNumber(r.sideLength);
+  const t = tilingOf(r.tiling);
+  const angle = formatNumber(360 / t.q);
   // Disk coordinates have unit scale: a tile carried to the disk's center
   // reads 0 there, not its rounding error near 1e-16.
   const disk = (v: number) => formatNumber(withoutResidue(v));
@@ -420,13 +514,21 @@ export function explain(r: LaceResult, i: number) {
   // Moved, the center tile no longer lies at the disk's center, so the
   // distance from it, which the isometry keeps, is named apart from the
   // distance from the disk's center, which it changes.
-  const facts = isIdentity(r.isometry)
-    ? `Depth ${d} · center ${at} · hyperbolic distance ${disk(fromCenter(r.center[i]))} from the center · drawn ${formatPercent(drawnShare(r, i))} of the center tile's size`
-    : `Depth ${d} · drawn at ${at} · hyperbolic distance ${formatNumber(between(r.center[0], r.center[i]))} from the center tile and ${disk(fromCenter(r.center[i]))} from the disk's center · drawn ${formatPercent(drawnShare(r, i))} of a tile's size at the disk's center`;
+  const live = (v: number, range: readonly [number, number]) =>
+    liveReadout(withoutResidue(v), range);
+  const motion = `Depth ${d} · drawn at (${live(r.center[i].x, liveRanges.disk)}, ${live(r.center[i].y, liveRanges.disk)}) · hyperbolic distance ${live(between(r.center[0], r.center[i]), liveRanges.distance)} from the center tile and ${live(fromCenter(r.center[i]), liveRanges.distance)} from the disk's center · drawn ${live(100 * drawnShare(r, i), liveRanges.share)}% of a tile's size at the disk's center`;
+  const facts = moving
+    ? motion
+    : isIdentity(r.isometry)
+      ? `Depth ${d} · center ${at} · hyperbolic distance ${disk(fromCenter(r.center[i]))} from the center · drawn ${formatPercent(drawnShare(r, i))} of the center tile's size`
+      : `Depth ${d} · drawn at ${at} · hyperbolic distance ${formatNumber(between(r.center[0], r.center[i]))} from the center tile and ${disk(fromCenter(r.center[i]))} from the disk's center · drawn ${formatPercent(drawnShare(r, i))} of a tile's size at the disk's center`;
   if (i === 0)
     return {
       facts,
-      text: `The center tile: a regular heptagon whose seven sides are each ${side} long in the disk's hyperbolic measure, meeting at 120°. Every other tile is a copy of it made by reflection, and so is its motif.`,
+      // The moving wording, whose height the page reserves at rest so
+      // that starting a motion moves nothing below it.
+      reserve: motion,
+      text: `The center tile: a regular ${t.polygon} whose ${t.sides} sides are each ${side} long in the disk's hyperbolic measure, meeting at ${angle}°. Every other tile is a copy of it made by reflection, and so is its motif.`,
     };
   const a = addressOf(r, i);
   const steps = a.map((k, n) =>
@@ -434,11 +536,12 @@ export function explain(r: LaceResult, i: number) {
   );
   return {
     facts,
-    text: `Reflecting the center tile across its ${steps.join(", ")} gives this tile. Each reflection preserves hyperbolic distance, so its sides are still ${side} long and its angles 120°, though the disk draws it smaller near the rim. ${
+    reserve: motion,
+    text: `Reflecting the center tile across its ${steps.join(", ")} gives this tile. Each reflection preserves hyperbolic distance, so its sides are still ${side} long and its angles ${angle}°, though the disk draws it smaller near the rim. ${
       d % 2
         ? "After an odd number of reflections its corners and its motif run clockwise; "
         : "After an even number of reflections its corners and its motif run counterclockwise again; "
-    }the motif has all seven of the heptagon's mirror symmetries, so its copy is the same however the tile is reached.`,
+    }the motif has all ${t.sides} of the ${t.polygon}'s mirror symmetries, so its copy is the same however the tile is reached.`,
   };
 }
 
@@ -477,18 +580,28 @@ export function cutoffSummary(r: LaceResult, q: LaceRequest) {
   return { text: parts.join(" "), stopped };
 }
 
+// Help that names a tiling's own depth bound, rings and star.
+export function tilingHelp(t: LaceTilingInfo) {
+  const held = t.rings.slice(0, t.depth + 1).reduce((a, b) => a + b, 0);
+  return {
+    depth: tiered(
+      `Reflections from the center tile: 0–${t.maxDepth}.`,
+      `Each depth reflects the previous ring of tiles across their outer sides. Depth ${t.depth} holds ${formatCount(held)} tiles; deeper rings exceed the tile limit, which then stops the last ring partway.`,
+    ),
+    starPoint: tiered(
+      "Where each strand turns, from tile center (0) to corner (1).",
+      `Measured in the disk's hyperbolic distance. At 0 the strands meet at the center and draw the dual ${t.dual}; small values give ${t.sides}-pointed stars, larger ones strapwork that hugs the tile's sides.`,
+    ),
+  };
+}
 export const laceHelp = {
-  depth: tiered(
-    `Reflections from the center tile: 0–${laceLimits.depth}.`,
-    `Each depth reflects the previous ring of tiles across their outer sides. Depth 5 holds 617 tiles; deeper rings exceed the tile limit, which then stops the last ring partway.`,
-  ),
   maxTiles: tiered(
     `Most tiles kept: 1–${formatCount(laceLimits.tiles)}.`,
     `Tiles are added ring by ring. Reaching this count stops generation, leaving the last ring incomplete; the summary says so. Generation also stops after examining ${formatCount(laceLimits.candidates)} candidate tiles.`,
   ),
-  starPoint: tiered(
-    "Where each strand turns, from tile center (0) to corner (1).",
-    "Measured in the disk's hyperbolic distance. At 0 the strands meet at the center and draw the dual triangles; small values give seven-pointed stars, larger ones strapwork that hugs the tile's sides.",
+  tiling: tiered(
+    "Which regular tiling {p,q}: p-sided tiles meeting q at each corner.",
+    "Pentagons and squares are each other's duals, as are heptagons and triangles: the centers of one are the corners of the other. Changing the tiling clears the selection and opens at the deepest ring the tile limit completes.",
   ),
   edges: "Show the tiles' sides, each drawn once where two tiles share it.",
   motif: "Show the motif, the same strands reflected into every tile.",

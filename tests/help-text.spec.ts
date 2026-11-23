@@ -543,20 +543,24 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     "aria-busy",
     "false",
   );
-  const entries = await d.evaluate((root) =>
-    Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
-      const h = document.getElementById(toggle.getAttribute("aria-controls")!)!;
-      const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
-        HTMLElement | undefined;
-      brief?.querySelector(".help-more")?.remove();
-      return {
-        topic: toggle.getAttribute("aria-label"),
-        paired: !!toggle.closest(".pair"),
-        brief: brief?.textContent ?? h.textContent ?? "",
-        more: h.querySelector(".hint-more")?.textContent ?? "",
-      };
-    }),
-  );
+  const read = () =>
+    d.evaluate((root) =>
+      Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+        const h = document.getElementById(
+          toggle.getAttribute("aria-controls")!,
+        )!;
+        const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+          HTMLElement | undefined;
+        brief?.querySelector(".help-more")?.remove();
+        return {
+          topic: toggle.getAttribute("aria-label"),
+          paired: !!toggle.closest(".pair"),
+          brief: brief?.textContent ?? h.textContent ?? "",
+          more: h.querySelector(".hint-more")?.textContent ?? "",
+        };
+      }),
+    );
+  const entries = await read();
   expect(entries.map((e) => e.topic)).toEqual([
     "About Tile",
     "About following the selection",
@@ -575,6 +579,7 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     "About Direction",
     "About Rotation",
     "About Star point",
+    "About Tiling",
     "About Depth",
     "About Tile limit",
     "About Line weight",
@@ -602,6 +607,30 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     "7,200 frames",
   ])
     expect(text).toContain(limit);
+  // Each tiling's help fits too, and names its own depth bound and the
+  // tiles its opening depth holds (engine.laceTilings; {3,7} reaches 11).
+  for (const [tiling, limits] of [
+    ["5,4", ["0–8", "Depth 5 holds 441", "five-pointed", "dual squares"]],
+    ["4,5", ["0–8", "Depth 6 holds 597", "four-pointed", "dual pentagons"]],
+    ["3,7", ["0–11", "Depth 10 holds 742", "three-pointed", "dual heptagons"]],
+  ] as const) {
+    await d.getByLabel("Tiling", { exact: true }).selectOption(tiling);
+    await expect(d.locator("#lace-artwork")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    const each = await read();
+    for (const e of each) {
+      expect(words(e.brief), `${tiling} ${e.topic}`).toBeLessThanOrEqual(
+        e.paired ? pairedBriefWords : 20,
+      );
+      expect(words(e.more), `${tiling} ${e.topic}`).toBeLessThanOrEqual(
+        moreWords,
+      );
+    }
+    const all = each.map((e) => `${e.brief} ${e.more}`).join(" ");
+    for (const limit of limits) expect(all, tiling).toContain(limit);
+  }
 });
 
 test("complex loom help fits both tiers in every source family", async ({

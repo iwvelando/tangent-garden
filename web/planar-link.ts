@@ -11,7 +11,14 @@ import {
   planarEngravingError,
   type PlanarEngravingPhrase,
 } from "./planar-engraving";
-import { laceLimits, laceTiling, type LaceStudy } from "./lace/model";
+import { laceLimits, type LaceStudy } from "./lace/model";
+import {
+  deepestDepth,
+  laceTilings,
+  sidesOf,
+  tilingOf,
+  type LaceTilingId,
+} from "./lace/tilings";
 import { planarStoryIds, type PlanarStoryId } from "./planar-story";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
@@ -989,18 +996,22 @@ function gardenStudy(value: unknown): GardenStudy {
 // presentation, view and weight; never generated geometry. Go validates
 // the same limits again.
 function laceStudy(value: unknown): LaceStudy {
+  const tilings = Object.fromEntries(
+    laceTilings.map((t) => [t.id, true]),
+  ) as Record<LaceTilingId, true>;
   const out = conform<LaceStudy>(
     value,
     {
       fields: {
-        tiling: { options: { [laceTiling]: true } },
-        depth: { range: [0, laceLimits.depth] },
+        tiling: { options: tilings },
+        // Each tiling's own bound is checked below.
+        depth: { range: [0, deepestDepth] },
         maxTiles: { range: [1, laceLimits.tiles] },
         starPoint: { range: [0, 1] },
         edges: "boolean",
         motif: "boolean",
         selected: {
-          optional: { list: { range: [0, 6] }, max: laceLimits.depth },
+          optional: { list: { range: [0, 6] }, max: deepestDepth },
         },
         presentation: { options: { complete: true, selected: true } },
         view: {
@@ -1044,6 +1055,16 @@ function laceStudy(value: unknown): LaceStudy {
   for (const k of ["depth", "maxTiles"] as const)
     if (!Number.isInteger(out[k]))
       throw new LinkError(`lace.${k}`, `lace.${k} must be a whole number.`);
+  // {3,7} reaches depth 11; the other tilings 8. An address crosses at
+  // most that many sides.
+  const { maxDepth } = tilingOf(out.tiling);
+  if (out.depth > maxDepth)
+    throw new LinkError("lace.depth", `lace.depth must be 0–${maxDepth}.`);
+  if (out.selected && out.selected.length > maxDepth)
+    throw new LinkError(
+      "lace.selected",
+      `lace.selected must hold at most ${maxDepth} sides.`,
+    );
   for (const k of ["orbits", "turns"] as const)
     if (out.motion && !Number.isInteger(out.motion[k]))
       throw new LinkError(
@@ -1055,6 +1076,12 @@ function laceStudy(value: unknown): LaceStudy {
       throw new LinkError(
         `lace.selected[${i}]`,
         `lace.selected[${i}] must be a whole number.`,
+      );
+    // A tile has p sides: 0 to p − 1 (all of 0–6 for {7,3}).
+    if (side >= sidesOf(out))
+      throw new LinkError(
+        `lace.selected[${i}]`,
+        `lace.selected[${i}] must be 0–${sidesOf(out) - 1}.`,
       );
   });
   return out;

@@ -3983,8 +3983,9 @@ test("lace links conform settings, selection and view without geometry, and olde
     repeat: "loop",
   };
   for (const [patch, field] of [
-    [{ tiling: "5,4" }, "lace.tiling"],
+    [{ tiling: "8,3" }, "lace.tiling"],
     [{ depth: 9 }, "lace.depth"],
+    [{ tiling: "3,7", depth: 12 }, "lace.depth"],
     [{ depth: 2.5 }, "lace.depth"],
     [{ maxTiles: 0 }, "lace.maxTiles"],
     [{ maxTiles: 1001 }, "lace.maxTiles"],

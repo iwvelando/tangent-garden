@@ -17,3 +17,18 @@
 .lace-layers {
   margin: 14px 0 0;
 }
+/* A selected tile's facts at rest share a cell with an invisible copy of
+   their wording during a motion (data-reserve), so starting, pausing or
+   stopping the motion never changes their height. A pseudo-element adds
+   no text to the page or to assistive technology. */
+.lace-facts {
+  display: grid;
+}
+.lace-facts > span,
+.lace-facts::after {
+  grid-area: 1 / 1;
+}
+.lace-facts::after {
+  content: attr(data-reserve);
+  visibility: hidden;
+}

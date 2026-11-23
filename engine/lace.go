@@ -5,15 +5,43 @@ import (
 	"math/cmplx"
 )
 
-// LaceTiling names the one regular tiling: Schläfli symbol {7,3}, seven-sided
-// tiles meeting three at each vertex. See docs/mathematics.md, Hyperbolic lace.
+// LaceTiling names the default regular tiling: Schläfli symbol {7,3},
+// seven-sided tiles meeting three at each vertex. LaceRequest.Tiling names
+// one of laceTilings; see docs/mathematics.md, Hyperbolic lace.
 const LaceTiling = "7,3"
 
+// laceTiling is a regular tiling {p,q}: p-sided tiles meeting q at each
+// vertex, hyperbolic when (p − 2)(q − 2) > 4. The angles π/p and π/q are
+// constants folded exactly by the compiler, as the {7,3} seed always used
+// them, so its tiles are unchanged to the last bit. maxDepth is the
+// deepest patch a request may ask for.
+type laceTiling struct {
+	p, q             int
+	piOverP, piOverQ float64
+	maxDepth         int
+}
+
+// laceTilings is the catalog: {7,3}, {5,4}, and their duals {3,7} and
+// {4,5}. Arbitrary {p,q} stays closed though the generator would accept
+// it. {3,7}'s rings grow so slowly that depth 8 stops it at 298 tiles, so
+// it has its own bound: at depth 11 the tile limit, not the depth, ends
+// its patch, as it does for the others by depth 8.
+var laceTilings = map[string]laceTiling{
+	"7,3": {7, 3, math.Pi / 7, math.Pi / 3, LaceMaxDepth},
+	"5,4": {5, 4, math.Pi / 5, math.Pi / 4, LaceMaxDepth},
+	"4,5": {4, 5, math.Pi / 4, math.Pi / 5, LaceMaxDepth},
+	"3,7": {3, 7, math.Pi / 3, math.Pi / 7, LaceMaxDepthTriangles},
+}
+
 const (
-	LaceMaxDepth      = 8
-	LaceMaxTiles      = 1000
-	LaceMaxCandidates = 10000
-	// LaceStrokes is the motif's geodesic segments in each tile.
+	// LaceMaxDepth bounds every tiling's depth but {3,7}'s, which
+	// LaceMaxDepthTriangles bounds.
+	LaceMaxDepth          = 8
+	LaceMaxDepthTriangles = 11
+	LaceMaxTiles          = 1000
+	LaceMaxCandidates     = 10000
+	// LaceStrokes is the motif's geodesic segments in each {7,3} tile;
+	// a {p,q} tile has 2p.
 	LaceStrokes = 14
 	// LaceMaxOffset bounds the isometry's |a|, the Euclidean distance from
 	// the disk's center of the point it brings there; LaceMaxAngle bounds
@@ -24,7 +52,7 @@ const (
 	LaceMaxTurns  = 3
 )
 
-// LaceRequest asks for a finite patch of the {7,3} tiling of the Poincaré
+// LaceRequest asks for a finite patch of a regular tiling of the Poincaré
 // disk, grown from the centered tile by reflection across its edges.
 // StarPoint places the motif's turning points, as a fraction of the
 // hyperbolic distance from a tile's center to its corners.
@@ -84,15 +112,15 @@ type LaceOmitted struct {
 // it that was crossed, −1 for the seed; following them back to the seed
 // gives the tile's address. Corner k of a tile is the image of the seed's
 // vertex k, so a reversed tile's corners run clockwise; Corners and Sides
-// hold seven vertex and edge indices per tile, side k joining corners k and
-// k + 1.
+// hold p vertex and edge indices per tile (seven for {7,3}), side k joining
+// corners k and k + 1.
 //
 // Each vertex and edge is stored once. VertexTiles and EdgeTiles count the
-// patch's tiles around them: three and two in the interior, fewer on the
-// patch's boundary. An edge lies on the circle orthogonal to the rim with
-// EdgeCenter and EdgeRadius, or on a diameter when EdgeStraight (center and
-// radius zero). Motif arcs are geodesic segments, LaceStrokes per tile in
-// tile order, stored the same way between ArcStart and ArcEnd; on a circle
+// patch's tiles around them: q and two in the interior of a {p,q} tiling,
+// fewer on the patch's boundary. An edge
+// lies on the circle orthogonal to the rim with EdgeCenter and EdgeRadius,
+// or on a diameter when EdgeStraight (center and radius zero). Motif arcs
+// are geodesic segments, 2p per tile in tile order, stored the same way between ArcStart and ArcEnd; on a circle
 // each is its minor arc.
 type LaceResult struct {
 	Tiling       string       `json:"tiling"`
@@ -167,11 +195,12 @@ func ComputeLace(q LaceRequest) (LaceResult, error) {
 }
 
 func (q LaceRequest) validate() error {
-	if q.Tiling != LaceTiling {
-		return fieldErr("tiling", "choose the {7,3} tiling")
+	tl, ok := laceTilings[q.Tiling]
+	if !ok {
+		return fieldErr("tiling", "choose the {7,3}, {5,4}, {4,5} or {3,7} tiling")
 	}
-	if q.Depth < 0 || q.Depth > LaceMaxDepth {
-		return fieldErr("depth", "depth must be 0–%d reflections", LaceMaxDepth)
+	if q.Depth < 0 || q.Depth > tl.maxDepth {
+		return fieldErr("depth", "depth must be 0–%d reflections", tl.maxDepth)
 	}
 	if q.MaxTiles < 1 || q.MaxTiles > LaceMaxTiles {
 		return fieldErr("maxTiles", "tile count must be 1–%d", LaceMaxTiles)
@@ -255,49 +284,57 @@ func inversion(c complex128) mobius {
 	return mobius{a: complex(0, 1/rho) * c, b: complex(0, -1/rho), odd: true}
 }
 
-// The seed tile: the regular heptagon centered at the origin with interior
-// angles 2π/3, a corner straight up and corners counterclockwise.
+// The seed tile: the regular p-gon centered at the origin with interior
+// angles 2π/q, a corner straight up and corners counterclockwise.
 type laceSeed struct {
-	vertex  [7]complex128
-	reflect [7]mobius
+	p, q    int
+	vertex  []complex128
+	reflect []mobius
 	// Edge midpoints and the motif's turning points, and the reflection in
-	// each motif stroke's geodesic.
-	mid, star                     [7]complex128
-	strokes                       [LaceStrokes]mobius
+	// each motif stroke's geodesic, two per side.
+	mid, star                     []complex128
+	strokes                       []mobius
 	vertexRadius                  float64
 	circumradius, apothem, length float64
 }
 
-// newLaceSeed derives the heptagon from its right triangle (center, edge
-// midpoint, corner), with angles π/7 at the center and π/3 at the corner:
-// cosh R = cot(π/7)·cot(π/3) for the circumradius, cosh h =
-// cos(π/3)/sin(π/7) for the apothem and cosh(s/2) = cos(π/7)/sin(π/3) for
+// newLaceSeed derives the p-gon from its right triangle (center, edge
+// midpoint, corner), with angles π/p at the center and π/q at the corner:
+// cosh R = cot(π/p)·cot(π/q) for the circumradius, cosh h =
+// cos(π/q)/sin(π/p) for the apothem and cosh(s/2) = cos(π/p)/sin(π/q) for
 // the side. A point at hyperbolic distance d from the origin lies at
 // Euclidean radius tanh(d/2) in the metric 4|dz|²/(1 − |z|²)².
-func newLaceSeed(starPoint float64) laceSeed {
-	const p, q = 7.0, 3.0
-	var s laceSeed
-	s.circumradius = math.Acosh(1 / (math.Tan(math.Pi/p) * math.Tan(math.Pi/q)))
-	s.apothem = math.Acosh(math.Cos(math.Pi/q) / math.Sin(math.Pi/p))
-	s.length = 2 * math.Acosh(math.Cos(math.Pi/p)/math.Sin(math.Pi/q))
+func newLaceSeed(id string, starPoint float64) laceSeed {
+	tl := laceTilings[id]
+	n := tl.p
+	p := float64(tl.p)
+	s := laceSeed{
+		p: tl.p, q: tl.q,
+		vertex: make([]complex128, n), reflect: make([]mobius, n),
+		mid: make([]complex128, n), star: make([]complex128, n),
+		strokes: make([]mobius, 2*n),
+	}
+	s.circumradius = math.Acosh(1 / (math.Tan(tl.piOverP) * math.Tan(tl.piOverQ)))
+	s.apothem = math.Acosh(math.Cos(tl.piOverQ) / math.Sin(tl.piOverP))
+	s.length = 2 * math.Acosh(math.Cos(tl.piOverP)/math.Sin(tl.piOverQ))
 	s.vertexRadius = math.Tanh(s.circumradius / 2)
 	m := math.Tanh(s.apothem / 2)
 	t := math.Tanh(starPoint * s.circumradius / 2)
-	for k := range 7 {
+	for k := range n {
 		angle := math.Pi/2 + 2*math.Pi*float64(k)/p
 		s.vertex[k] = cmplx.Rect(s.vertexRadius, angle)
-		s.mid[k] = cmplx.Rect(m, angle+math.Pi/p)
+		s.mid[k] = cmplx.Rect(m, angle+tl.piOverP)
 		// Side k's turning point lies toward corner k + 1.
-		s.star[k] = cmplx.Rect(t, angle+2*math.Pi/p)
+		s.star[k] = cmplx.Rect(t, angle+2*tl.piOverP)
 		// Side k's geodesic, orthogonal to the rim through corners k and
 		// k + 1, has its center on the bisector at D with D² = 1 + ρ² and
-		// |D − corner|² = ρ²: D = (1 + r²)/(2r·cos(π/7)).
+		// |D − corner|² = ρ²: D = (1 + r²)/(2r·cos(π/p)).
 		r := s.vertexRadius
-		s.reflect[k] = inversion(cmplx.Rect((1+r*r)/(2*r*math.Cos(math.Pi/p)), angle+math.Pi/p))
+		s.reflect[k] = inversion(cmplx.Rect((1+r*r)/(2*r*math.Cos(tl.piOverP)), angle+tl.piOverP))
 	}
-	for k := range 7 {
+	for k := range n {
 		s.strokes[2*k] = mirror(s.mid[k], s.star[k])
-		s.strokes[2*k+1] = mirror(s.star[k], s.mid[(k+1)%7])
+		s.strokes[2*k+1] = mirror(s.star[k], s.mid[(k+1)%n])
 	}
 	return s
 }
@@ -423,7 +460,8 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 // their incidence and the transformations that place them; place then
 // computes every position from those transformations.
 func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
-	seed := newLaceSeed(q.StarPoint)
+	seed := newLaceSeed(q.Tiling, q.StarPoint)
+	n := seed.p
 	q.Isometry = nil
 	src := &LaceSource{q: q, seed: seed}
 	r := &src.topology
@@ -436,7 +474,7 @@ func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
 	}
 	type tile struct {
 		g       mobius
-		corners [7]int
+		corners []int
 		depth   int
 		via     int
 	}
@@ -454,7 +492,7 @@ func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
 	// a point within half of that is the same one.
 	sameTile, sameVertex := seed.apothem, seed.length/2
 	edges := map[[2]int]int{}
-	admit := func(g mobius, corners [7]int, depth, parent, via int) {
+	admit := func(g mobius, corners []int, depth, parent, via int) {
 		i := len(tiles)
 		tiles = append(tiles, tile{g, corners, depth, via})
 		src.place = append(src.place, g)
@@ -465,18 +503,18 @@ func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
 		r.Parent = append(r.Parent, float64(parent))
 		r.Via = append(r.Via, float64(via))
 		r.Reversed = append(r.Reversed, g.odd)
-		for k := range 7 {
+		for k := range n {
 			v := corners[k]
 			r.Corners = append(r.Corners, float64(v))
 			r.VertexTiles[v]++
-			a, b := v, corners[(k+1)%7]
+			a, b := v, corners[(k+1)%n]
 			key := [2]int{min(a, b), max(a, b)}
 			e, ok := edges[key]
 			if !ok {
 				// The tile that first has an edge places it, as side k.
 				e = len(r.EdgeA)
 				edges[key] = e
-				src.edgeOwner = append(src.edgeOwner, 7*i+k)
+				src.edgeOwner = append(src.edgeOwner, n*i+k)
 				r.EdgeA = append(r.EdgeA, float64(a))
 				r.EdgeB = append(r.EdgeB, float64(b))
 				r.EdgeTiles = append(r.EdgeTiles, 0)
@@ -493,8 +531,8 @@ func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
 		return i, i < 0 || d <= limits.precision.agreement
 	}
 	identity := mobius{a: 1}
-	var seedCorners [7]int
-	for k := range 7 {
+	seedCorners := make([]int, n)
+	for k := range n {
 		seedCorners[k] = len(vertices)
 		vertexGrid.add(seed.vertex[k], len(vertices))
 		vertices = append(vertices, seed.vertex[k])
@@ -507,7 +545,7 @@ func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
 grow:
 	for head := 0; head < len(tiles); head++ {
 		t := tiles[head]
-		for j := range 7 {
+		for j := range n {
 			if j == t.via {
 				continue
 			}
@@ -535,10 +573,10 @@ grow:
 				}
 				continue
 			}
-			var corners [7]int
-			var placed [7]complex128
+			corners := make([]int, n)
+			placed := make([]complex128, n)
 			resolved := true
-			for k := range 7 {
+			for k := range n {
 				placed[k] = g.apply(seed.vertex[k])
 				var ok bool
 				corners[k], ok = vertex(placed[k])
@@ -548,7 +586,7 @@ grow:
 				}
 			}
 			// The two corners on the crossed side are the parent's.
-			if resolved && (corners[j] != t.corners[j] || corners[(j+1)%7] != t.corners[(j+1)%7]) {
+			if resolved && (corners[j] != t.corners[j] || corners[(j+1)%n] != t.corners[(j+1)%n]) {
 				resolved = false
 			}
 			if !resolved {
@@ -568,7 +606,7 @@ grow:
 					corners[k] = len(vertices)
 					vertexGrid.add(placed[k], len(vertices))
 					vertices = append(vertices, placed[k])
-					src.vertexOwner = append(src.vertexOwner, 7*len(tiles)+k)
+					src.vertexOwner = append(src.vertexOwner, n*len(tiles)+k)
 					r.VertexTiles = append(r.VertexTiles, 0)
 				}
 			}
@@ -581,8 +619,8 @@ grow:
 // sameCorners reports whether g's corners are, as a set, the stored corners
 // of a tile, each within agreement: a duplicate reached by another
 // transformation, which may label its corners differently.
-func sameCorners(g mobius, seed laceSeed, corners [7]int, vertices []complex128, agreement float64) bool {
-	for k := range 7 {
+func sameCorners(g mobius, seed laceSeed, corners []int, vertices []complex128, agreement float64) bool {
+	for k := range seed.p {
 		z := g.apply(seed.vertex[k])
 		found := false
 		for _, v := range corners {

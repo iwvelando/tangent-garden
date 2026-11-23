@@ -743,14 +743,27 @@ checkFourierFit();
   }
   for (const [field, request] of [
     ["depth", { ...q, depth: 9 }],
+    ["depth", { ...q, tiling: "3,7", depth: 12 }],
     ["maxTiles", { ...q, maxTiles: 1001 }],
     ["starPoint", { ...q, starPoint: 2 }],
-    ["tiling", { ...q, tiling: "5,4" }],
+    ["tiling", { ...q, tiling: "8,3" }],
   ])
     assert.equal(
       JSON.parse(globalThis.tangentGardenLace(JSON.stringify(request))).field,
       field,
     );
+  // {3,7}'s own depth bound: at depth 11 the tile limit ends its patch,
+  // three corners and six strokes per triangle.
+  const triangles = lifted(
+    globalThis.tangentGardenLace(
+      JSON.stringify({ ...q, tiling: "3,7", depth: 11, maxTiles: 1000 }),
+    ),
+  );
+  assert.equal(triangles.tiling, "3,7");
+  assert.equal(triangles.center.length, 1000);
+  assert.equal(triangles.stopped, "count");
+  assert.equal(triangles.corners.length, 3000);
+  assert.equal(triangles.arcStart.length, 6000);
   // A moved patch and the frames of a motion cross the same transport. The
   // frame at a motion's start is the static moved patch exactly, the frame
   // reply carries geometry alone, and its isometry is the path's.

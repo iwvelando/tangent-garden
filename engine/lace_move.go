@@ -21,8 +21,8 @@ type LaceSource struct {
 	seed     laceSeed
 	topology LaceResult
 	place    []mobius
-	// 7·tile + k for the tile that first has a vertex as corner k, or an
-	// edge as side k.
+	// p·tile + k for the tile that first has a vertex as corner k, or an
+	// edge as side k, with p the tiles' sides.
 	vertexOwner, edgeOwner []int
 }
 
@@ -171,6 +171,7 @@ func (s *LaceSource) geometry(iso LaceIsometry) (LaceResult, error) {
 			g[i] = m.then(p)
 		}
 	}
+	strokes := 2 * s.seed.p
 	r := LaceResult{
 		Center:       make([]Vec, n),
 		Transform:    make([][4]float64, n),
@@ -178,16 +179,17 @@ func (s *LaceSource) geometry(iso LaceIsometry) (LaceResult, error) {
 		EdgeCenter:   make([]Vec, ne),
 		EdgeRadius:   make([]float64, ne),
 		EdgeStraight: make([]bool, ne),
-		ArcStart:     make([]Vec, 0, n*LaceStrokes),
-		ArcEnd:       make([]Vec, 0, n*LaceStrokes),
-		ArcCenter:    make([]Vec, 0, n*LaceStrokes),
-		ArcRadius:    make([]float64, 0, n*LaceStrokes),
-		ArcStraight:  make([]bool, 0, n*LaceStrokes),
+		ArcStart:     make([]Vec, 0, n*strokes),
+		ArcEnd:       make([]Vec, 0, n*strokes),
+		ArcCenter:    make([]Vec, 0, n*strokes),
+		ArcRadius:    make([]float64, 0, n*strokes),
+		ArcStraight:  make([]bool, 0, n*strokes),
 	}
 	seed := &s.seed
+	p := seed.p
 	vertices := make([]complex128, nv)
 	for v, o := range s.vertexOwner {
-		z := g[o/7].apply(seed.vertex[o%7])
+		z := g[o/p].apply(seed.vertex[o%p])
 		if rimGap(z) < lacePolicy.floor {
 			return LaceResult{}, errors.New("the moved patch comes too near the rim to place reliably")
 		}
@@ -195,21 +197,21 @@ func (s *LaceSource) geometry(iso LaceIsometry) (LaceResult, error) {
 		r.Vertex[v] = Vec{real(z), imag(z)}
 	}
 	for e, o := range s.edgeOwner {
-		i, k := o/7, o%7
-		a, b := int(t.Corners[7*i+k]), int(t.Corners[7*i+(k+1)%7])
+		i, k := o/p, o%p
+		a, b := int(t.Corners[p*i+k]), int(t.Corners[p*i+(k+1)%p])
 		c, radius, straight := line(g[i], seed.reflect[k], vertices[a], vertices[b])
 		r.EdgeCenter[e] = Vec{real(c), imag(c)}
 		r.EdgeRadius[e] = radius
 		r.EdgeStraight[e] = straight
 	}
-	for i, p := range g {
-		c := p.apply(0)
+	for i, tr := range g {
+		c := tr.apply(0)
 		r.Center[i] = Vec{real(c), imag(c)}
-		r.Transform[i] = [4]float64{real(p.a), imag(p.a), real(p.b), imag(p.b)}
-		for k := range 7 {
-			m, st, next := p.apply(seed.mid[k]), p.apply(seed.star[k]), p.apply(seed.mid[(k+1)%7])
+		r.Transform[i] = [4]float64{real(tr.a), imag(tr.a), real(tr.b), imag(tr.b)}
+		for k := range p {
+			m, st, next := tr.apply(seed.mid[k]), tr.apply(seed.star[k]), tr.apply(seed.mid[(k+1)%p])
 			for half, ends := range [2][2]complex128{{m, st}, {st, next}} {
-				c, radius, straight := line(p, seed.strokes[2*k+half], ends[0], ends[1])
+				c, radius, straight := line(tr, seed.strokes[2*k+half], ends[0], ends[1])
 				r.ArcStart = append(r.ArcStart, Vec{real(ends[0]), imag(ends[0])})
 				r.ArcEnd = append(r.ArcEnd, Vec{real(ends[1]), imag(ends[1])})
 				r.ArcCenter = append(r.ArcCenter, Vec{real(c), imag(c)})
@@ -224,7 +226,7 @@ func (s *LaceSource) geometry(iso LaceIsometry) (LaceResult, error) {
 
 // coverage is the largest disk about the center inside the moved patch.
 // The center lies in a tile when it is on the tile's side of each of its
-// seven geodesics: outside every geodesic circle (|c|² = 1 + ρ² > ρ²), so
+// sides' geodesics: outside every geodesic circle (|c|² = 1 + ρ² > ρ²), so
 // the tile's center must be too, and on any diameter. If it lies in the
 // patch, nothing nearer than the patch's boundary, its edges with one
 // tile, is missing, so the radius is the nearest point of those edges. A
@@ -237,8 +239,8 @@ func (s *LaceSource) coverage(r *LaceResult, vertices []complex128) LaceCoverage
 	for i := range r.Center {
 		center := complex(r.Center[i].X, r.Center[i].Y)
 		ok := true
-		for k := range 7 {
-			e := int(t.Sides[7*i+k])
+		for k := range s.seed.p {
+			e := int(t.Sides[s.seed.p*i+k])
 			if r.EdgeStraight[e] {
 				continue
 			}
