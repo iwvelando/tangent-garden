@@ -113,9 +113,7 @@ test("a reveal frames only the reach it has reached", () => {
 
 const art = (page: Page) => page.locator("#artwork");
 const ready = (page: Page) =>
-  expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false");
 const frameCheck = (page: Page) =>
   page.getByRole("checkbox", { name: "Frame the points between samples" });
 const vertices = (d: string | null) =>

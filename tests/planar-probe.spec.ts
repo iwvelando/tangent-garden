@@ -265,7 +265,7 @@ test("the probe moves along the curve as an animation, and its link reopens it",
     .getByRole("spinbutton", { name: "Duration (seconds)" })
     .fill("0.5");
   await button(page, "Play animation").click();
-  await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Replay")).toBeVisible();
   await expect(drawn(page, "probe")).toHaveAttribute("data-sample", String(n));
   await expect(page.locator(".animation-values")).toHaveText(
     `Probe at t = ${Number((2 * Math.PI).toPrecision(6))}`,
@@ -342,7 +342,7 @@ for (const [motion, label, sample, t] of [
       .getByRole("spinbutton", { name: "Duration (seconds)" })
       .fill("0.5");
     await button(page, "Play animation").click();
-    await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+    await expect(button(page, "Replay")).toBeVisible();
     await expect(drawn(page, "probe")).toHaveAttribute(
       "data-sample",
       String(sample(n)),

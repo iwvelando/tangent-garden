@@ -628,7 +628,7 @@ test("the loop presets bring their repeat, pace and camera, and pass the closure
       page.getByLabel("Animation camera", { exact: true }),
     ).toHaveValue(expected[3]);
     await button(page, "Play animation").click();
-    await expect(button(page, "Pause")).toBeVisible({ timeout: 20000 });
+    await expect(button(page, "Pause")).toBeVisible();
     await expect(error(page)).toHaveCount(0);
     await button(page, "Pause").click();
     // Its time and progress at the turn of the timeline.

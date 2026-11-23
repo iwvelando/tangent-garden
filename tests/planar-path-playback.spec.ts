@@ -18,9 +18,7 @@ const W = 1000,
 
 const art = (page: Page) => page.locator("#artwork");
 const ready = (page: Page) =>
-  expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false");
 const button = (page: Page, name: string) =>
   page.getByRole("button", { name, exact: true });
 const innermost = (page: Page) =>

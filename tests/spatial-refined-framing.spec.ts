@@ -256,9 +256,7 @@ test("a whole reveal frames each construction's reach as Go does", () => {
 const stage = (page: Page) => page.locator(".spatial-stage");
 const canvas = (page: Page) => page.locator("#spatial-artwork");
 const settled = (page: Page) =>
-  expect(stage(page)).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(stage(page)).toHaveAttribute("aria-busy", "false");
 const frameCheck = (page: Page) =>
   page.getByRole("checkbox", { name: "Frame the points between samples" });
 async function shown(page: Page): Promise<View> {

@@ -46,7 +46,7 @@ test("2D parameter playback shares frames with a second engine for its duration"
   const before = (await engines(page)).length;
   await lightTrack(page, "3");
   await button(page, "Play animation").click();
-  await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Replay")).toBeVisible();
   expect(await planarProgress(page)).toBe("1");
   expect((await planarDefinition(page)).source.position.x).toBe(0.75);
   let all = await engines(page);
@@ -99,7 +99,7 @@ test("2D playback stays on one engine without spare cores or calculation", async
   const before = (await engines(page)).length;
   await lightTrack(page, "0.5");
   await button(page, "Play animation").click();
-  await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Replay")).toBeVisible();
   expect((await planarDefinition(page)).source.position.x).toBe(0.75);
   expect(await engines(page)).toHaveLength(before);
 });
@@ -118,7 +118,7 @@ test("2D reveal needs no helper engine even with spare cores", async ({
     .getByRole("spinbutton", { name: "Duration (seconds)" })
     .fill("0.5");
   await button(page, "Play animation").click();
-  await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Replay")).toBeVisible();
   expect(await engines(page)).toHaveLength(before);
 });
 
@@ -137,7 +137,7 @@ test("4D motion playback shares frames with a second engine for its duration", a
   const before = (await engines(page)).length;
   await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("3");
   await button(page, "Play animation").click();
-  await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Replay")).toBeVisible();
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   let all = await engines(page);
   expect(all).toHaveLength(before + 1);
@@ -174,7 +174,7 @@ test("4D playback stays on one engine without spare cores", async ({
     .getByRole("spinbutton", { name: "Duration (seconds)" })
     .fill("0.5");
   await button(page, "Play animation").click();
-  await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Replay")).toBeVisible();
   await expect(stage(page)).toHaveAttribute("data-progress", "1");
   expect(await engines(page)).toHaveLength(before);
 });

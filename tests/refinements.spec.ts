@@ -60,9 +60,7 @@ test("counts are exact whole numbers from the start, reaching 32,768 samples and
   await page
     .getByRole("spinbutton", { name: "Construction lines", exact: true })
     .fill("2048");
-  await expect(imageButton(page)).toBeEnabled({
-    timeout: 15000,
-  });
+  await expect(imageButton(page)).toBeEnabled();
   expect((await definition(page)).samples).toBe(32768);
   expect((await definition(page)).lines).toBe(2048);
   expect(await page.locator("#artwork line").count()).toBe(2048);

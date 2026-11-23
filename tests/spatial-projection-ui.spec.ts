@@ -441,7 +441,7 @@ test("the perspective presets open in their own projection and view, and fly in 
   await expect(projection(page)).toHaveValue("wide");
   await expect(page.getByLabel("Repeat", { exact: true })).toHaveValue("loop");
   await button(page, "Play animation").click();
-  await expect(button(page, "Pause")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Pause")).toBeVisible();
   await expect(page.locator(".animation-error")).toHaveCount(0);
   await button(page, "Pause").click();
   await progress.fill("0.5");
@@ -665,7 +665,7 @@ test("the tunnel opens through its own chosen angle with the eye inside the tube
   await expect(page.getByLabel("Animate", { exact: true })).toHaveValue("path");
   await expect(page.getByLabel("Repeat", { exact: true })).toHaveValue("loop");
   await button(page, "Play animation").click();
-  await expect(button(page, "Pause")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Pause")).toBeVisible();
   await expect(page.locator(".animation-error")).toHaveCount(0);
   await button(page, "Pause").click();
   await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");

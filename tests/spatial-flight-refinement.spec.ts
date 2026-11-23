@@ -15,9 +15,7 @@ const wheels = { label: "Wheels within wheels" };
 const stage = (page: Page) => page.locator(".spatial-stage");
 const canvas = (page: Page) => page.locator("#spatial-artwork");
 const settled = (page: Page) =>
-  expect(stage(page)).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(stage(page)).toHaveAttribute("aria-busy", "false");
 async function section(page: Page, selector: string) {
   const details = page.locator(selector);
   if ((await details.getAttribute("open")) === null)
@@ -35,9 +33,7 @@ async function shown(page: Page): Promise<View> {
 }
 async function seek(page: Page, p: string) {
   await page.getByRole("slider", { name: "Animation progress" }).fill(p);
-  await expect(stage(page)).toHaveAttribute("data-progress", p, {
-    timeout: 20_000,
-  });
+  await expect(stage(page)).toHaveAttribute("data-progress", p);
 }
 
 // The preset's curve: four circles, turning 1, 6, 36 and 216 times, each a
