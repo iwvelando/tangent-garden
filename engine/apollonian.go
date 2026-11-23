@@ -396,10 +396,10 @@ func computeGardenWith(q GardenRequest, s *gardenSpec, limits gardenLimits, onAd
 			}
 			viewReach, viewLarge := true, true
 			if view != nil {
-				viewReach, viewLarge = view.admits(dual, first)
+				viewReach, viewLarge = view.admits(dual, first, keptIn(kept, dual))
 			}
 			switch {
-			case view != nil && !viewReach && !keptIn(kept, dual):
+			case view != nil && !viewReach:
 				r.Omitted.View++
 				continue
 			case view != nil && !viewLarge:

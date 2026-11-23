@@ -424,13 +424,18 @@ export function GardenPreview({
     setPlaying(true);
     revealDrawing(view.current, playback.current);
     if (glide) {
+      // Pause, a seek, Stop or an edit while the loop is checked replaces
+      // this placeholder, and the glide then does not start.
+      const checking = () => {};
+      stopClock.current = checking;
       let refusal: string | null;
       try {
         refusal = await loopRefusal(frozen);
       } catch (e) {
-        fail(e);
+        if (stopClock.current === checking) fail(e);
         return;
       }
+      if (stopClock.current !== checking) return;
       if (refusal) {
         endFilm();
         setError({ message: refusal, field: "repeat", key });

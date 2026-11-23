@@ -182,14 +182,17 @@ export function gardenRequest(s: GardenStudy): GardenRequest {
   const k = s.selected;
   const source = k && keptDisk(s, k);
   // Under a view the window is the image's, so the selection's image
-  // decides: a circle around or through the pole always reaches it.
-  const disk = source && (v ? imageDisk(source, v) : source);
-  const keep = disk && disk.b > 0 && !diskMeets(disk, d.window);
+  // decides. A circle around or through the pole becomes a line or the
+  // circle enclosing the rest, whose inside a window can lie in, away from
+  // it, so it is always kept.
+  const disk =
+    source && source.b > 0 ? (v ? imageDisk(source, v) : source) : undefined;
+  const keep = disk && !(disk.b > 0 && diskMeets(disk, d.window));
   return {
     ...q,
     minRadius: d.minRadius,
     window: d.window,
-    ...(keep && { keep: { ...k } }),
+    ...(k && keep && { keep: { ...k } }),
   };
 }
 // A selection's disk in drawing units, from its identity and its seed's
@@ -779,7 +782,7 @@ export function cutoffSummary(
   if (r.image) {
     const kept =
       hidden &&
-      `${plural(hidden, "circle")} outside the view or below its radius ${hidden === 1 ? "is" : "are"} kept as ancestors of drawn circles`;
+      `${plural(hidden, "circle")} outside the view or below its radius ${hidden === 1 ? "is" : "are"} kept as ancestors of drawn circles${q.glide ? " or for other poles of the glide" : ""}`;
     const through =
       lines &&
       `${plural(lines, "circle")} through the pole ${lines === 1 ? "is a line" : "are lines"}`;
@@ -863,7 +866,7 @@ export const gardenHelp = {
     "Points inside it and outside it trade places. Doubling it draws the image four times as large about the pole.",
   ),
   invertIn:
-    "Pole at the selected circle's center, radius its own: it stays, and the rest moves inside it.",
+    "Pole at the selected circle's center, radius its own: it stays, and its inside and outside trade places.",
   motion: tiered(
     "Reveal the circles in order, or glide the pole to the far pole and back.",
     "A glide's circles are generated for every pole on its path, so each frame keeps its detail, and they stay fixed while it plays. It starts and ends at the pole, so it loops seamlessly. A glide needs the inversion.",

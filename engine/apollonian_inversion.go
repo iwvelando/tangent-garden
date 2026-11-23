@@ -192,15 +192,15 @@ const gardenGlideLevels = 7
 // in it is below the minimum radius. Without a glide both are exact. With
 // one, the path is bisected while a piece may do both, and a piece passes
 // when its bounds allow, so a glide admits at least what each of its poles
-// would.
-func (v *gardenView) admits(d, c acc) (reach, large bool) {
+// would. A gap that holds the kept circle reaches everywhere.
+func (v *gardenView) admits(d, c acc, held bool) (reach, large bool) {
 	t := v.gapTerms(d, c)
 	if v.dx == 0 && v.dy == 0 {
-		return t.reaches(0, 0), t.large(0, 0)
+		return held || t.reaches(0, 0), t.large(0, 0)
 	}
 	var walk func(lo, hi float64, level int) bool
 	walk = func(lo, hi float64, level int) bool {
-		if !t.reaches(lo, hi) {
+		if !held && !t.reaches(lo, hi) {
 			return false
 		}
 		reach = true
@@ -324,9 +324,15 @@ func (w acc) image(x, y, rho2 float64) [4]float64 {
 }
 
 // keptIn reports whether the kept circle's center, in the source, lies in
-// the gap's dual disk d, so that the gap holds it.
+// the oriented interior of the gap's dual circle d, Φ_d < 0, so that the
+// gap holds it. The dual is a line for a gap with collinear contacts, as
+// below the original's diameter.
 func keptIn(kept *[2]float64, d acc) bool {
-	return kept != nil && d.b > 0 && math.Hypot(kept[0]-d.x/d.b, kept[1]-d.y/d.b) < 1/d.b
+	if kept == nil {
+		return false
+	}
+	x, y := kept[0], kept[1]
+	return d.b*(x*x+y*y)-2*(d.x*x+d.y*y)+d.co < 0
 }
 
 func (w acc) half() acc { return acc{w.b / 2, w.x / 2, w.y / 2, w.co / 2} }

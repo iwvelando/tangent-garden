@@ -647,3 +647,51 @@ func TestGardenInversionKeepsTheChosenCircle(t *testing.T) {
 		t.Fatalf("keeping added %d circles", len(with.Curvature)-len(without.Curvature))
 	}
 }
+
+// A kept selection survives every view that leaves it out, under a glide
+// too: below the original's diameter, where the first gap's dual is the
+// line y = 0, and with the pole inside the circle, where a window inside
+// its image's disk would otherwise prune its gap.
+func TestGardenInversionKeepsTheChosenCircleEverywhere(t *testing.T) {
+	strip := func(w GardenWindow) GardenRequest { return inverted(garden(12, 0.002, 5000), 0, 1, 1, w) }
+	along := GardenWindow{XMin: 2, XMax: 3, YMin: -0.5, YMax: 0.5}
+	gliding := strip(GardenWindow{XMin: -1.4, XMax: -1.2, YMin: -0.1, YMax: 0.1})
+	gliding.Glide = &GardenPoint{X: 0.05, Y: 1}
+	// The pole inside circle 23 at (8/23, 12/23), radius 1/23; the window
+	// lies inside the image of its outside, away from the circle's image.
+	around := inverted(garden(12, 0.002, 5000), 8.0/23+0.01, 12.0/23, 0.05, GardenWindow{})
+	for _, c := range []struct {
+		name string
+		q    GardenRequest
+		k    identityKey
+	}{
+		{"below the diameter", strip(along), identityKey{3, 0, -2}},
+		{"below the diameter, deeper", strip(along), identityKey{23, 8, -12}},
+		{"under a glide", gliding, identityKey{23, 8, 12}},
+		{"around the pole", around, identityKey{23, 8, 12}},
+	} {
+		q := c.q
+		if c.name == "around the pole" {
+			// The window around the image of a far source point, (0, −0.9),
+			// which lies inside every one of the circle's ancestors' images.
+			x, y := invertPoint(q.Inversion.X, q.Inversion.Y, 0.05, 0, -0.9)
+			q.Window = &GardenWindow{XMin: x - 1e-3, XMax: x + 1e-3, YMin: y - 1e-3, YMax: y + 1e-3}
+			without := mustImage(t, q)
+			if _, ok := indexByIdentity(without)[c.k]; ok {
+				t.Fatalf("%s: the window already holds the circle", c.name)
+			}
+		}
+		q.Keep = &GardenIdentity{Curvature: int64(c.k[0]), X: int64(c.k[1]), Y: int64(c.k[2])}
+		r := mustImage(t, q)
+		at, ok := indexByIdentity(r)[c.k]
+		if !ok {
+			t.Errorf("%s: the kept circle %v is missing", c.name, c.k)
+			continue
+		}
+		for _, p := range r.Parents[at] {
+			if p < 0 || int(p) >= at {
+				t.Errorf("%s: generator %v of the kept circle %d", c.name, p, at)
+			}
+		}
+	}
+}

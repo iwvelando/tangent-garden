@@ -1361,8 +1361,6 @@ self.onmessage = async ({
 };
 
 // An error about one field of a study, named by its configuration path.
-// A lace request's known fields, checked before JSON could turn NaN or
-// infinity into null, which Go reads as zero.
 // A garden request's known fields, checked: JSON would turn NaN or
 // infinity into null, which Go reads as zero.
 function gardenSettings(q: import("./garden/model").GardenRequest) {
@@ -1434,6 +1432,8 @@ function gardenSettings(q: import("./garden/model").GardenRequest) {
   };
 }
 
+// A lace request's known fields, checked before JSON could turn NaN or
+// infinity into null, which Go reads as zero.
 function laceSettings(q: import("./lace/model").LaceRequest) {
   if (typeof q.starPoint !== "number" || !Number.isFinite(q.starPoint))
     throw fieldError("starPoint", "Enter a finite number.");

@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import { deflateRawSync } from "node:zlib";
 import { wireStudy } from "./study-link-wire";
 import { decodeVideo, frameDifference, probe } from "./video";
 
@@ -350,6 +351,11 @@ test("the glide draws the frozen packing inverted about each time's pole, seekin
   const d = await openExample(page, strip);
   await expect(motion(d)).toHaveValue("glide");
   const still = await shapes(d);
+  // Circles the first pole's view leaves out are there for the glide's
+  // other poles, and the summary says so.
+  await expect(d.locator(".garden-summary")).toContainText(
+    "kept as ancestors of drawn circles or for other poles of the glide",
+  );
   const count = (await d.locator(".garden-summary").textContent())!.match(
     /^[\d,]+/,
   )![0];
@@ -581,7 +587,9 @@ test("the SVG still records the view, and decoded glide frames match the drawing
   ] as const) {
     const same = frameDifference(path, 500, 380, frame, references.get(t)!);
     if (!same) continue;
-    expect(same.meanDifference).toBeLessThan(2);
+    // The encoder's noise: a frame at its own time differs by 1.1–1.7
+    // locally and 2.0 on CI, one at another time by 4.4–5.0.
+    expect(same.meanDifference).toBeLessThan(3);
     expect(same.unmatchedInk).toBeLessThan(0.02);
   }
   const own = frameDifference(path, 500, 380, 5, references.get(0.25)!);
@@ -589,4 +597,70 @@ test("the SVG still records the view, and decoded glide frames match the drawing
     expect(
       frameDifference(path, 500, 380, 5, references.get(0.3)!)!.unmatchedInk,
     ).toBeGreaterThan(own.unmatchedInk + 0.02);
+});
+
+test("a selection around the pole stays selected when the view zooms inside its image", async ({
+  page,
+}) => {
+  const { gardenRequest, presetGarden } = await import("../web/garden/model");
+  const { presetStudy } = await import("../web/planar-link");
+  // The lower curvature-3 circle, at (0, −2/3), inverted in itself. The
+  // half-plane below the diameter, which holds it, becomes the outside of
+  // a disk of diameter 1/6 touching the pole, and a view zoomed 50× into
+  // that disk, with detail, shows the upper half inverted, away from the
+  // circle.
+  const lower = { curvature: 3, x: 0, y: -2 };
+  const study = {
+    ...presetGarden(0),
+    inversion: { x: 0, y: -2 / 3, radius: 1 / 3 },
+    selected: lower,
+    detail: true,
+    view: { x: 0, y: (-2 / 3 + 1 / 12) * 350 * 50, zoom: 50 },
+  };
+  expect(gardenRequest(study).keep).toEqual(lower);
+  // A circle away from the pole whose image the window meets is not sent:
+  // curvature 15 at (0, 4/15), with the whole packing in view.
+  const away = { ...study, view: { x: 0, y: 0, zoom: 1 } };
+  expect(
+    gardenRequest({ ...away, selected: { curvature: 15, x: 0, y: 4 } }).keep,
+  ).toBeUndefined();
+  // Around the pole, it is kept whatever the view.
+  expect(gardenRequest(away).keep).toEqual(lower);
+  const token = deflateRawSync(
+    JSON.stringify({
+      v: 1,
+      notebook: "2d",
+      study: { ...presetStudy(0), garden: study },
+    }),
+  ).toString("base64url");
+  await page.goto(`/#s=${token}`);
+  const d = garden(page);
+  await ready(d);
+  await expect(art(d)).not.toHaveAttribute("data-selected", "-1");
+  await expect(d.locator(".garden-about .garden-facts").first()).toContainText(
+    "Curvature 3 ·",
+  );
+});
+
+test("pausing a glide while its loop is being checked keeps it paused", async ({
+  page,
+}) => {
+  const d = await openExample(page, strip);
+  const view = d.locator(".garden-view");
+  const play = d.getByRole("button", { name: "Play glide", exact: true });
+  // Pause at once, while the worker freezes the packing and draws the
+  // loop's last frame, before the clock starts.
+  await play.evaluate(async (b) => {
+    (b as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    (b as HTMLButtonElement).click();
+  });
+  await expect(view).not.toHaveAttribute("data-playing", "true");
+  await expect(
+    d.getByRole("button", { name: "Resume glide", exact: true }),
+  ).toBeVisible();
+  const paused = await view.getAttribute("data-reveal-time");
+  await page.waitForTimeout(800);
+  await expect(view).not.toHaveAttribute("data-playing", "true");
+  expect(await view.getAttribute("data-reveal-time")).toBe(paused);
 });

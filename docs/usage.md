@@ -408,7 +408,7 @@ Drag to pan, scroll or pinch to zoom about the pointer or the point between your
 - Every point moves to the other side of the inversion circle along its ray from the pole, and points on the circle stay put.
 - Tangencies are kept, so it is still an Apollonian packing, with the same circles, numbers and generators.
 - A circle through the pole becomes a straight line, and a circle around the pole becomes the one enclosing the rest.
-- **Invert in the selected circle** keeps the selected circle exactly where it is and turns the whole packing inside it.
+- **Invert in the selected circle** keeps the selected circle exactly where it is and trades its inside and outside: in a seed circle, the whole packing turns inside it.
 - Inversion mirrors the drawing, so **−6, 11, 14, 15** appears reversed.
 
 The view's circles are generated for what it shows: the minimum radius is the size of the smallest drawn circle, and panning fills in more of the view. Circles outside the view or below that size are still kept when they generated circles you can see, and the summary counts them and the lines. The explanation adds where the selected circle is drawn.

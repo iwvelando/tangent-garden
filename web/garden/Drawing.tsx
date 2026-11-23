@@ -47,7 +47,7 @@ export const bigCircle = 2e4;
 // point of the circle nearest the view's center, its foot p₀ found exactly
 // along the gradient of Φ, with unit normal
 // n̂ (the gradient of Φ = b|w|² − 2z·w + b̄) and tangent t, the circle is
-// p₀ + st − n̂·bs²/2 to within b³s⁴/8, under 0.003 page units here; a
+// p₀ + st − n̂·bs²/2 to within b³s⁴/8, about 0.007 page units here; a
 // parabola is exactly a quadratic Bézier, and a line (b = 0) a straight
 // one. Null when it misses the page.
 export function stretch(c: GardenShape, camera: PlotCamera): string | null {
