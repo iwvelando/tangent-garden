@@ -31,6 +31,9 @@ declare const tangentGardenGarden: (
 declare const tangentGardenLace: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
+declare const tangentGardenGardenFrame: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenLaceFrame: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
@@ -120,12 +123,14 @@ self.onmessage = async ({
     | "harmonic-chains"
     | "loom"
     | "garden"
+    | "gardenFrame"
     | "lace"
     | "laceFrame"
     | "shorten"
     | "implicit-scan";
   loom?: import("./loom/model").LoomRequest;
   garden?: import("./garden/model").GardenRequest;
+  gardenFrame?: import("./garden/model").GardenFrameRequest;
   lace?: import("./lace/model").LaceRequest;
   laceFrame?: import("./lace/model").LaceFrameRequest;
   shorten?: import("./shorten/model").ShortenRequest;
@@ -187,59 +192,20 @@ self.onmessage = async ({
     if (data.action === "garden") {
       const q = data.garden;
       if (!q) throw new Error("Enter garden settings.");
-      // JSON would turn NaN or infinity into null, which Go reads as zero.
-      if (typeof q.minRadius !== "number" || !Number.isFinite(q.minRadius))
-        throw fieldError("minRadius", "Enter a finite number.");
-      for (const path of ["depth", "maxCircles"] as const)
-        if (!Number.isInteger(q[path]))
-          throw fieldError(path, "Enter a whole number.");
-      if (q.window)
-        for (const k of ["xMin", "xMax", "yMin", "yMax"] as const)
-          if (!Number.isFinite(q.window[k]))
-            throw fieldError(`window.${k}`, "Enter a finite number.");
-      if (q.keep) {
-        for (const k of ["curvature", "x", "y"] as const)
-          if (!Number.isSafeInteger(q.keep[k]))
-            throw fieldError(`keep.${k}`, "Enter a whole number.");
-        if (q.keep.root && !q.keep.root.every(Number.isSafeInteger))
-          throw fieldError("keep.root", "Enter whole numbers.");
-      }
-      // The split diameter's member, a fraction of whole numbers.
-      if (
-        q.split !== undefined &&
-        !(
-          Array.isArray(q.split) &&
-          q.split.length === 2 &&
-          q.split.every(Number.isSafeInteger)
-        )
-      )
-        throw fieldError("split", "Enter a finite number.");
       const start = performance.now();
-      const raw = tangentGardenGarden(
-        JSON.stringify({
-          seed: q.seed,
-          depth: q.depth,
-          minRadius: q.minRadius,
-          maxCircles: q.maxCircles,
-          ...(q.split && { split: [q.split[0], q.split[1]] }),
-          ...(q.window && {
-            window: {
-              xMin: q.window.xMin,
-              xMax: q.window.xMax,
-              yMin: q.window.yMin,
-              yMax: q.window.yMax,
-            },
-          }),
-          ...(q.keep && {
-            keep: {
-              curvature: q.keep.curvature,
-              x: q.keep.x,
-              y: q.keep.y,
-              // Another seed's √3 coefficients (web/garden/seeds.ts).
-              ...(q.keep.root && { root: [...q.keep.root] }),
-            },
-          }),
-        }),
+      const raw = tangentGardenGarden(JSON.stringify(gardenSettings(q)));
+      postLifted(data.id, raw, start);
+      return;
+    }
+    if (data.action === "gardenFrame") {
+      const f = data.gardenFrame;
+      if (!f) throw new Error("Enter garden settings.");
+      const garden = gardenSettings(f.garden);
+      if (!Number.isFinite(f.progress))
+        throw fieldError("progress", "Enter a finite number.");
+      const start = performance.now();
+      const raw = tangentGardenGardenFrame(
+        JSON.stringify({ garden, progress: f.progress }),
       );
       postLifted(data.id, raw, start);
       return;
@@ -1395,6 +1361,77 @@ self.onmessage = async ({
 };
 
 // An error about one field of a study, named by its configuration path.
+// A garden request's known fields, checked: JSON would turn NaN or
+// infinity into null, which Go reads as zero.
+function gardenSettings(q: import("./garden/model").GardenRequest) {
+  if (typeof q.minRadius !== "number" || !Number.isFinite(q.minRadius))
+    throw fieldError("minRadius", "Enter a finite number.");
+  for (const path of ["depth", "maxCircles"] as const)
+    if (!Number.isInteger(q[path]))
+      throw fieldError(path, "Enter a whole number.");
+  if (q.window)
+    for (const k of ["xMin", "xMax", "yMin", "yMax"] as const)
+      if (!Number.isFinite(q.window[k]))
+        throw fieldError(`window.${k}`, "Enter a finite number.");
+  if (q.keep) {
+    for (const k of ["curvature", "x", "y"] as const)
+      if (!Number.isSafeInteger(q.keep[k]))
+        throw fieldError(`keep.${k}`, "Enter a whole number.");
+    if (q.keep.root && !q.keep.root.every(Number.isSafeInteger))
+      throw fieldError("keep.root", "Enter whole numbers.");
+  }
+  // The split diameter's member, a fraction of whole numbers.
+  if (
+    q.split !== undefined &&
+    !(
+      Array.isArray(q.split) &&
+      q.split.length === 2 &&
+      q.split.every(Number.isSafeInteger)
+    )
+  )
+    throw fieldError("split", "Enter a finite number.");
+  if (q.inversion)
+    for (const k of ["x", "y", "radius"] as const)
+      if (!Number.isFinite(q.inversion[k]))
+        throw fieldError(`inversion.${k}`, "Enter a finite number.");
+  if (q.glide)
+    for (const k of ["x", "y"] as const)
+      if (!Number.isFinite(q.glide[k]))
+        throw fieldError(`glide.${k}`, "Enter a finite number.");
+  return {
+    seed: q.seed,
+    depth: q.depth,
+    minRadius: q.minRadius,
+    maxCircles: q.maxCircles,
+    ...(q.split && { split: [q.split[0], q.split[1]] }),
+    ...(q.window && {
+      window: {
+        xMin: q.window.xMin,
+        xMax: q.window.xMax,
+        yMin: q.window.yMin,
+        yMax: q.window.yMax,
+      },
+    }),
+    ...(q.keep && {
+      keep: {
+        curvature: q.keep.curvature,
+        x: q.keep.x,
+        y: q.keep.y,
+        // Another seed's √3 coefficients (web/garden/seeds.ts).
+        ...(q.keep.root && { root: [...q.keep.root] }),
+      },
+    }),
+    ...(q.inversion && {
+      inversion: {
+        x: q.inversion.x,
+        y: q.inversion.y,
+        radius: q.inversion.radius,
+      },
+    }),
+    ...(q.glide && { glide: { x: q.glide.x, y: q.glide.y } }),
+  };
+}
+
 // A lace request's known fields, checked before JSON could turn NaN or
 // infinity into null, which Go reads as zero.
 function laceSettings(q: import("./lace/model").LaceRequest) {

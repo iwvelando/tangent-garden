@@ -148,6 +148,15 @@ export class EngineClient {
   ): Promise<import("./garden/model").GardenResult> {
     return (await this.request({ action: "garden", garden: q })).result;
   }
+  // A frozen inverted packing at one time of its glide: its image
+  // coordinates alone (engine.GardenFrame). The worker keeps one packing,
+  // the latest frame's.
+  async gardenFrame(
+    f: import("./garden/model").GardenFrameRequest,
+  ): Promise<import("./garden/model").GardenFrame> {
+    return (await this.request({ action: "gardenFrame", gardenFrame: f }))
+      .result;
+  }
   // A finite patch of the {7,3} hyperbolic tiling (see engine.LaceResult).
   async lace(
     q: import("./lace/model").LaceRequest,

@@ -524,7 +524,7 @@ enclosing, left, right and top, a primitive integral quadruple. Over the denomin
 
 *Identity.* The same fraction always gives the same seed and the same identities; another fraction is another packing, whose identities are in other units.
 
-*Relation to views.* Every packing in the unit disk is the image of the original under a Möbius map preserving the disk. The split diameter is the one-parameter family of hyperbolic translations along the original's diameter, regenerated under the cutoffs rather than transformed.
+*Relation to views.* Every packing in the unit disk is the image of the original under a Möbius map preserving the disk. The split diameter is the one-parameter family of hyperbolic translations along the original's diameter, regenerated under the cutoffs rather than transformed. The [inversive view](#the-inversive-view) transforms any seed's packing instead.
 
 **Identity.** A circle's identity is its integer triple `(b, X, Y)`, its curvature and weighted center's numerators, which determines its center and radius exactly; for the original seed `X = bx` and `Y = by`. For a ℤ[√3] seed the triple holds the rational parts, and `root: [b, X, Y]` the √3 coefficients when any is nonzero. It is the same circle under any cutoffs, unlike its position in the generation order. Rounded positions are never used to identify circles. Replacements are computed in checked 64-bit integer arithmetic and refused beyond ±2⁵³, so they reach the page exactly as float64 values. With depth at most 12, the largest curvature is far below that range: each replacement is at most seven times the largest of its four inputs.
 
@@ -565,6 +565,68 @@ They also check:
 - the refusals.
 
 In the browser, the rounding is checked against fractions worked by hand from continued fractions, and the drawn seed circles against the closed forms. The note, refusals, restoration, selection, pending input, links and the still's record are checked too.
+
+### The inversive view
+
+**The map.** A view inverts the packing in a circle, its **pole** `P` and **radius** `ρ`, in model units:
+
+`w = P + ρ²(z − P)/|z − P|²`.
+
+The map is an involution. It fixes the inversion circle pointwise and maps circles and lines to circles and lines. It keeps tangency and the points of contact, so every Descartes configuration of the packing stays one, and identities, numbers and parentage are the source's. Specifically:
+- A circle through `P` becomes a line.
+- A circle whose disk holds `P` becomes a circle whose outside is the image of that disk, so it encloses the rest, as the enclosing circle does.
+- The enclosing circle becomes an ordinary circle when `P` lies inside it.
+
+Inversion reverses orientation, so an asymmetric seed is drawn as its mirror image. The pole's coordinates are admitted within ±2 and the radius within 0.05–2. Beyond them, a view is nearly a similarity of the whole packing, which zoom already gives.
+
+**Coordinates.** Generation carries each circle's augmented curvature-center coordinates (Lagarias, Mallows and Wilks, *Beyond the Descartes circle theorem*, 2002): `W = (b, z, b̄)`, with curvature `b`, weighted center `z = b·c` and co-curvature `b̄ = b|c|² − 1/b`. Together they satisfy `|z|² − b b̄ = 1`, and the circle is the set where `Φ_W(w) = b|w|² − 2z·w + b̄` vanishes; `Φ_W < 0` on its oriented interior. A line is `b = 0`, with unit normal `z` and `b̄/2` its distance from the origin.
+- **Exactness.** `b̄` obeys the Descartes replacement too, so it is carried exactly beside `b`, `X` and `Y`: as `k(X² + Y² − D²)/b` in the seed's units, under the checked ±2⁵³ replacement. The scale `k` makes every seed circle's value exact; it is 1, or 3 for six around one, whose central circle has `b̄ = −1/3`.
+- **The inversion on coordinates.** Inversion is linear in these coordinates: `W' = W − 2⟨W, K⟩K`. Here `K` is the inversion circle's coordinates and `⟨W₁, W₂⟩ = z₁·z₂ − (b₁b̄₂ + b̄₁b₂)/2`. The image curvature is `b' = Φ_W(P)/ρ² = b(|P − c|² − r²)/ρ²`, positive, zero or negative as `P` lies outside, on or inside the circle's oriented interior.
+- **Exact lines.** For the integral seeds and a pole of short binary fractions the arithmetic is exact, so a circle through the pole has `b' = 0` exactly. The signature is the original inverted about `(0, 1)`, where the enclosing circle touches the top seed circle, with radius 1. The enclosing and top circles become the lines `y = ±1/2`, and the half-radius circles, orthogonal to the inversion circle, stay where they are: the rose window unrolls into an Apollonian strip.
+
+Products are rounded explicitly, so the compiler fuses no multiply-add: arm64 and amd64, and a glide's frame and the static view, agree bit for bit.
+
+**Generation for a view.** The image is unbounded, so a view needs a window, a rectangle in the image's coordinates, and the minimum radius applies to drawn circles. Breadth-first order, identities, depth and the circle and gap limits are unchanged; the source's minimum radius plays no part. A gap's dual circle `D = (W_j + W_k + W_l − W_o)/2`, summed exactly, holds every circle that will fill it, and its image holds their images. Each candidate gap is tested in this order:
+
+1. **View.** The gap is filled only when the image of its dual region meets the window's circumscribed disk `B`, of radius `R`, or when it holds the kept selection: its source center lies where `Φ_D < 0`, the dual's oriented interior, which below the original's diameter is the lower half-plane. Under a glide such a gap reaches the view everywhere on the path. For oriented regions, `f = ⟨R_K D, B⟩ = ⟨D, B⟩ − g·h/(2ρ²)`, with `g = ρ²b_B − Φ_B(P)` and `h = ρ²b_D − Φ_D(P)`. Below −1, two regions are disjoint, or one of two disks holds the other. When the pole lies inside the dual disk, the image is the outside of a disk of radius `ρ²/|Φ_D(P)|`, which misses `B` only when it is the larger. So the image misses `B` exactly when `f < −1` and `Φ_D(P) > −ρ²/R`. Otherwise the gap is counted as outside the view. Near a pole inside a gap, the chain of gaps around it ends where that disk covers the window.
+2. **Radius, in the image.** When the pole lies strictly outside the gap's closed dual disk, `Φ_D(P) > 0`, the gap's first circle `d` has the largest image of any circle that fills the gap. The proof: write `b'` for image curvatures, which obey the same replacement. A sub-gap of `d` bounded by `d, x, y`, with `z` the gap's third circle and `o` its opposite, has first circle `e` with `b'_e − b'_d = 4(b'_x + b'_y) + b'_z − b'_o = 3(b'_x + b'_y) + 2b'_D > 0`. This holds because two tangent circles with disjoint oriented interiors have `b'_x + b'_y ≥ 0`, and `2b'_D = 2Φ_D(P)/ρ² > 0`. Sub-gaps' dual disks lie inside the gap's, so the same holds at every depth. The gap is then left out when `d`'s image radius `ρ²/Φ_d(P)` is below the minimum radius. When the pole lies on or inside the dual disk, the gap's image may be unbounded, or its first circle not its largest, and only the view and depth bound it.
+3. Depth and the circle limit, as before.
+
+A gap that passes the view test is filled even when its first circle is outside the window or below the minimum radius, since circles inside it may not be. Such circles are kept and drawn as **retained ancestry**, and the summary counts them. Each gap costs a bounded number of operations; the circle and gap limits bound the work and storage of every view, retained ancestry included.
+
+**The glide.** The pole moves along a segment from the view's pole `P₀` to the **far pole** `P₁` (within ±2) and back:
+
+`P(p) = (1 − s)P₀ + sP₁`, with `s = (1 − cos 2π·rem(p))/2` and `rem(x) = x − round(x)`.
+
+It rests at both ends: `p = 0` and `p = 1` give `P₀` exactly and `p = ½` gives `P₁` exactly, so a loop is seamless. Time maps to progress by the shared repeat, and the glide shares the reveal's duration and repeat. Its packing is generated once, for every pole on the segment, and frozen. A gap is admitted when, on some piece of the segment, both tests above may pass:
+- `Φ` along the segment is a quadratic, minimized exactly on each piece;
+- `f` is a quartic, bounded above by its Bernstein coefficients on each piece.
+
+Pieces are bisected while a gap may both reach the window and be large there, to at most 2⁷ pieces: at most 255 piece tests per gap. Both bounds are conservative. So, unless a limit stops generation, the glide holds every circle that any one of its poles' own views would generate, and nothing is generated or discarded while it plays. Each frame inverts the frozen circles about its own pole, a fixed number of operations per circle, at most the circle limit per frame. The static drawing is the glide's first frame. At the default cutoffs, the signature glide's packing has 2,800–4,000 circles, depending on the window.
+
+**Drawing.** A circle drawn larger than 2·10⁴ page units, and a line, is drawn as its stretch across the visible page: one quadratic Bézier through the point of the circle nearest the view's center, with the circle's normal and curvature there. A parabola is exactly a quadratic Bézier. It stays within `b³s⁴/8` of the circle, about 0.007 page units at the page's corners. A pointer inside a bounded image circle or a line's half-plane chooses that circle; a circle whose interior is its outside is chosen by its boundary, as the enclosing circle is. **Follow selection** frames a line, or a circle larger than the page, at 1× about its point nearest the origin.
+
+The tests check, on the returned image coordinates and independently of the linear map:
+- **The map and its inverse.** Every image against the source circle's points inverted one by one, and the image's points inverted back onto the source circle. This covers four seeds and eight poles: inside a seed circle, in a gap, on a circle, at two tangencies, at a seed circle's center, outside the packing and near the rim.
+- **Image curvature** against its closed form, and `|z|² − b b̄ = 1`, for every catalog seed and two splits.
+- **Exact co-curvature** for every catalog seed and three splits, in big integers.
+- **The signature's exact lines**, the half-radius circles fixed, and every circle inside the strip.
+- **Tangency** of each image to its generators, circle, line or two parallel lines, and Descartes' relation on image curvatures.
+- **Pruning against brute force.** Every circle of the unpruned packing to depth 6 whose image meets the window and reaches the minimum radius is present, in breadth-first order, over four seeds, eight poles, three windows and two radii (8,886 visible circles).
+- **The first-circle property** on every gap of an unpruned packing, for every pole outside the gap's dual disk.
+- **Glides.** Exact ends and middle; frames that are the frozen circles inverted about the frame's pole; and the union holding each sampled frame's own view, for glides that stay outside the packing, cross a tangency, and use a ℤ[√3] seed.
+- **The rest.** The Bernstein bound; the limits; refusals under every field; and identical replies without a view.
+
+In the browser they check:
+- the strip's drawn lines and fixed circles;
+- curvature 15's drawn image against the inversion computed in the test;
+- views inside a circle, at its center, and in the selected circle;
+- restoration and the kept selection;
+- refusals and links;
+- glide frames at sought times against the pole's formula;
+- steady buttons while scrubbing;
+- the reveal under a view;
+- the still's record, and decoded MP4 frames against seeks at their times.
 
 ## Hyperbolic lace
 

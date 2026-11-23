@@ -17,6 +17,7 @@ import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
   gardenLimits,
   gardenSeed,
+  gardenView,
   type GardenCircle,
   type GardenStudy,
 } from "./garden/model";
@@ -920,11 +921,32 @@ function gardenStudy(value: unknown): GardenStudy {
             },
           },
         },
+        // Absent in older links, which open without a view.
+        inversion: {
+          optional: {
+            fields: {
+              x: { range: [-gardenView.pole, gardenView.pole] },
+              y: { range: [-gardenView.pole, gardenView.pole] },
+              radius: { range: gardenView.radius },
+            },
+          },
+        },
+        glide: {
+          optional: {
+            fields: {
+              x: { range: [-gardenView.pole, gardenView.pole] },
+              y: { range: [-gardenView.pole, gardenView.pole] },
+            },
+          },
+        },
+        motion: { optional: { options: { glide: true } } },
       },
     },
     undefined,
     "garden",
   );
+  // A glide needs the view; without one the link opens with the reveal.
+  if (!out.inversion) delete out.motion;
   for (const k of ["depth", "maxCircles"] as const)
     if (!Number.isInteger(out[k]))
       throw new LinkError(`garden.${k}`, `garden.${k} must be a whole number.`);

@@ -27,6 +27,12 @@ type GardenRequest struct {
 	// required for that seed and refused for the others
 	// (apollonian_split.go).
 	Split []int64 `json:"split,omitempty"`
+	// Inversion, when present, is the inversive view: the packing inverted
+	// in this circle and generated for the image, which then needs a
+	// window in the image's coordinates; Glide moves its pole to a far
+	// pole and back (apollonian_inversion.go).
+	Inversion *GardenInversion `json:"inversion,omitempty"`
+	Glide     *GardenPoint     `json:"glide,omitempty"`
 }
 
 // GardenWindow is a rectangle in model units, its sides parallel to the axes.
@@ -90,6 +96,11 @@ type GardenResult struct {
 	Seeds       int       `json:"seeds,omitempty"`
 	Denominator int       `json:"denominator,omitempty"`
 	Root        int       `json:"root,omitempty"`
+	// With an inversion only: each circle's image as four values, its
+	// curvature b', weighted center z' and co-curvature b̄' in drawing
+	// units, at the view's pole. A line has b' = 0, unit normal z' and
+	// b̄'/2 its distance from the origin. X, Y and Radius stay the source.
+	Image []float64 `json:"image,omitempty"`
 }
 
 const (
@@ -133,6 +144,9 @@ func (q GardenRequest) validate(s *gardenSpec) error {
 				return fieldErr("keep", "a kept circle's coefficients must be within ±2^53")
 			}
 		}
+	}
+	if err := q.validateView(); err != nil {
+		return err
 	}
 	if w := q.Window; w != nil {
 		for _, c := range []struct {
@@ -232,6 +246,12 @@ func (q GardenRequest) spec() (*gardenSpec, error) {
 }
 
 func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (GardenResult, error) {
+	return computeGardenWith(q, s, limits, nil)
+}
+
+// computeGardenWith also hands each admitted circle, with its exact
+// co-curvature under a view, to onAdd.
+func computeGardenWith(q GardenRequest, s *gardenSpec, limits gardenLimits, onAdd func(gardenCircle, qr)) (GardenResult, error) {
 	if err := q.validate(s); err != nil {
 		return GardenResult{}, err
 	}
@@ -250,8 +270,36 @@ func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (Gar
 		}
 		return circles[id]
 	}
+	// Under a view, or for onAdd, each circle's exact co-curvature, which
+	// follows the same replacement; virtual circles' are computed.
+	view := newView(q)
+	withCo := view != nil || onAdd != nil
+	var cos, virtualCo []qr
+	var coK int64
+	if withCo {
+		if coK = s.coScale(); coK == 0 {
+			return GardenResult{}, errGardenRange
+		}
+		for _, c := range s.virtual {
+			co, ok := s.coOf(c, coK)
+			if !ok {
+				return GardenResult{}, errGardenRange
+			}
+			virtualCo = append(virtualCo, co)
+		}
+	}
+	coAt := func(id int) qr {
+		if id < 0 {
+			return virtualCo[-1-id]
+		}
+		return cos[id]
+	}
+	var pole [2]float64
+	if view != nil {
+		pole[0], pole[1] = q.poleAt(0)
+	}
 	known := map[gardenCircle]bool{}
-	add := func(c gardenCircle, gen int, parents [3]float64, opposite float64) {
+	add := func(c gardenCircle, co qr, gen int, parents [3]float64, opposite float64) {
 		x, y, radius, b := s.center(c)
 		circles = append(circles, c)
 		known[c] = true
@@ -269,10 +317,20 @@ func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (Gar
 				r.Exact = append(r.Exact, float64(v.p), float64(v.q))
 			}
 		}
+		if withCo {
+			cos = append(cos, co)
+		}
+		if view != nil {
+			im := s.toACC(c, co, coK).image(pole[0], pole[1], view.rho2)
+			r.Image = append(r.Image, im[:]...)
+		}
+		if onAdd != nil {
+			onAdd(c, co)
+		}
 	}
 	// Another seed's kept circle, by its exact identity.
 	var kept *[2]float64
-	if k := q.Keep; k != nil && !s.legacy {
+	if k := q.Keep; k != nil && (!s.legacy || view != nil) {
 		root := [3]int64{}
 		copy(root[:], k.Root)
 		c := gardenCircle{qr{k.Curvature, root[0]}, qr{k.X, root[1]}, qr{k.Y, root[2]}}
@@ -282,7 +340,14 @@ func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (Gar
 		}
 	}
 	for _, c := range s.circles {
-		add(c, 0, [3]float64{-1, -1, -1}, -1)
+		var co qr
+		if withCo {
+			var ok bool
+			if co, ok = s.coOf(c, coK); !ok {
+				return GardenResult{}, errGardenRange
+			}
+		}
+		add(c, co, 0, [3]float64{-1, -1, -1}, -1)
 	}
 	var queue []quad
 	for _, st := range s.starts {
@@ -315,14 +380,38 @@ func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (Gar
 			}
 			next := gardenCircle{nb, nx, ny}
 			gen := p.gen + 1
+			var nco qr
+			var dual, first acc
+			if withCo {
+				ca, cb, cc, cold := coAt(others[0]), coAt(others[1]), coAt(others[2]), coAt(p.id[i])
+				var ok bool
+				if nco, ok = replaceQR(ca, cb, cc, cold); !ok {
+					return GardenResult{}, errGardenRange
+				}
+				// The gap's dual circle, (W_j + W_k + W_l − W_o)/2, exactly
+				// summed before conversion.
+				sum := func(u, v, w, o qr) qr { return u.add(v).add(w).sub(o) }
+				dual = s.toACC(gardenCircle{sum(a.b, b.b, c.b, old.b), sum(a.x, b.x, c.x, old.x), sum(a.y, b.y, c.y, old.y)}, sum(ca, cb, cc, cold), coK).half()
+				first = s.toACC(next, nco, coK)
+			}
+			viewReach, viewLarge := true, true
+			if view != nil {
+				viewReach, viewLarge = view.admits(dual, first, keptIn(kept, dual))
+			}
 			switch {
-			case q.Window != nil && s.legacy && !inView(q, a, b, c):
+			case view != nil && !viewReach:
 				r.Omitted.View++
 				continue
-			case q.Window != nil && !s.legacy && !s.linearView(q, kept, a, b, c, old):
+			case view != nil && !viewLarge:
+				r.Omitted.Radius++
+				continue
+			case view == nil && q.Window != nil && s.legacy && !inView(q, a, b, c):
 				r.Omitted.View++
 				continue
-			case s.scale/nb.float() < q.MinRadius:
+			case view == nil && q.Window != nil && !s.legacy && !s.linearView(q, kept, a, b, c, old):
+				r.Omitted.View++
+				continue
+			case view == nil && s.scale/nb.float() < q.MinRadius:
 				r.Omitted.Radius++
 				continue
 			case gen > q.Depth:
@@ -339,7 +428,7 @@ func computeGardenFrom(q GardenRequest, s *gardenSpec, limits gardenLimits) (Gar
 			if p.id[i] < 0 {
 				opposite = -1
 			}
-			add(next, gen, [3]float64{float64(others[0]), float64(others[1]), float64(others[2])}, opposite)
+			add(next, nco, gen, [3]float64{float64(others[0]), float64(others[1]), float64(others[2])}, opposite)
 			child := p
 			child.id[i], child.last, child.only, child.gen = len(circles)-1, i, -1, gen
 			queue = append(queue, child)
