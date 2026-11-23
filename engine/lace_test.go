@@ -318,7 +318,7 @@ func TestLaceReflectionsAndAdjacency(t *testing.T) {
 // seed's center to its neighbor's center at twice the apothem.
 func TestLaceGeneratorReflections(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
-		seed := newLaceSeed(laceID, 0.3)
+		seed := newLaceSeed(LaceRequest{Tiling: laceID, StarPoint: 0.3})
 		for k, s := range seed.reflect {
 			id := s.then(s)
 			if id.odd || cmplx.Abs(id.b) > 1e-14 || math.Abs(cmplx.Abs(id.a)-1) > 1e-14 {
@@ -741,7 +741,7 @@ func TestLaceDeterministicPrefix(t *testing.T) {
 func TestLacePrecisionNearTheAdmittedRim(t *testing.T) {
 	eachTiling(t, func(t *testing.T, p, q int) {
 		r := mustLace(t, lace(top(), 1000, 0.3))
-		seed := newLaceSeed(laceID, 0.3)
+		seed := newLaceSeed(LaceRequest{Tiling: laceID, StarPoint: 0.3})
 		worst, gap := 0.0, 1.0
 		for i, m := range r.Transform {
 			g := mobius{a: complex(m[0], m[1]), b: complex(m[2], m[3]), odd: r.Reversed[i]}

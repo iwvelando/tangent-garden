@@ -54,13 +54,17 @@ const (
 
 // LaceRequest asks for a finite patch of a regular tiling of the Poincaré
 // disk, grown from the centered tile by reflection across its edges.
-// StarPoint places the motif's turning points, as a fraction of the
-// hyperbolic distance from a tile's center to its corners.
+// Motif names one of laceMotifs, the star when empty. StarPoint places
+// the star's turning points, as a fraction of the hyperbolic distance
+// from a tile's center to its corners; Size is the other motifs' size,
+// which the star ignores.
 type LaceRequest struct {
 	Tiling    string  `json:"tiling"`
 	Depth     int     `json:"depth"`
 	MaxTiles  int     `json:"maxTiles"`
 	StarPoint float64 `json:"starPoint"`
+	Motif     string  `json:"motif,omitempty"`
+	Size      float64 `json:"size,omitempty"`
 	// Isometry moves the generated patch; absent, it stays in place.
 	Isometry *LaceIsometry `json:"isometry,omitempty"`
 }
@@ -194,6 +198,30 @@ func ComputeLace(q LaceRequest) (LaceResult, error) {
 	return src.result(iso)
 }
 
+// The motifs (docs/mathematics.md, Hyperbolic lace, Motifs): each is one
+// stroke in the seed's fundamental triangle, and its size, here the
+// least size admitted and the size's name in refusals; the most is 1.
+// The star's size is the star point.
+const LaceStar = "star"
+
+var laceMotifs = map[string]struct {
+	least float64
+	name  string
+}{
+	LaceStar: {0, "star point"},
+	"petals": {0, "fullness"},
+	"leaves": {0, "fullness"},
+	"rings":  {0.1, "ring radius"},
+}
+
+// motif is the request's motif, the star when it names none.
+func (q LaceRequest) motif() string {
+	if q.Motif == "" {
+		return LaceStar
+	}
+	return q.Motif
+}
+
 func (q LaceRequest) validate() error {
 	tl, ok := laceTilings[q.Tiling]
 	if !ok {
@@ -207,6 +235,13 @@ func (q LaceRequest) validate() error {
 	}
 	if !finite(q.StarPoint) || q.StarPoint < 0 || q.StarPoint > 1 {
 		return fieldErr("starPoint", "star point must be 0–1")
+	}
+	m, ok := laceMotifs[q.motif()]
+	if !ok {
+		return fieldErr("motif", "choose the star, petals, leaves or rings motif")
+	}
+	if q.motif() != LaceStar && (!finite(q.Size) || q.Size < m.least || q.Size > 1) {
+		return fieldErr("size", "%s must be %v–1", m.name, m.least)
 	}
 	if q.Isometry != nil {
 		return q.Isometry.validate()
@@ -290,12 +325,78 @@ type laceSeed struct {
 	p, q    int
 	vertex  []complex128
 	reflect []mobius
-	// Edge midpoints and the motif's turning points, and the reflection in
-	// each motif stroke's geodesic, two per side.
+	// Edge midpoints and the star's turning points, and the reflection in
+	// each star stroke's geodesic, two per side.
 	mid, star                     []complex128
 	strokes                       []mobius
 	vertexRadius                  float64
 	circumradius, apothem, length float64
+	// The other motifs: each stroke's ends in the seed and the inversion
+	// in its circle, 2p of each; empty for the star.
+	from, to []complex128
+	circles  []laceCircle
+}
+
+// laceCircle is the inversion in a circle, or reflection in a line,
+// z ↦ (u·z̄ + w)/(k·z̄ − ū), normalized to determinant −|u|² − wk = −1.
+// For the circle with center c and radius ρ, u = c/ρ, k = 1/ρ and
+// w = (ρ² − |c|²)/ρ; a line through the origin has k = w = 0 and u a unit
+// normal to it.
+type laceCircle struct {
+	u    complex128
+	k, w float64
+}
+
+// turned is the circle turned by e about the origin, |e| = 1.
+func (s laceCircle) turned(e complex128) laceCircle {
+	return laceCircle{u: e * s.u, k: s.k, w: s.w}
+}
+
+// mirrored is the circle reflected in the line through the origin at
+// angle φ, e = e^{2iφ}: its center c becomes e·c̄.
+func (s laceCircle) mirrored(e complex128) laceCircle {
+	return laceCircle{u: e * cmplx.Conj(s.u), k: s.k, w: s.w}
+}
+
+// through is the circle through the origin and z making angle α with the
+// segment between them at both ends, on the side of the line through
+// them where toward lies: center c = z/2 − n·(|z|/2)·cot α with n the unit
+// normal toward that side, radius |z|/(2 sin α), so c/ρ = ẑ·sin α − n·cos α.
+// At α = 0 it is the line through them.
+func through(z, toward complex128, alpha float64) laceCircle {
+	l := cmplx.Abs(z)
+	dir := z / complex(l, 0)
+	n := dir * complex(0, 1)
+	if real(toward*cmplx.Conj(n)) < 0 {
+		n = -n
+	}
+	sin, cos := math.Sincos(alpha)
+	return laceCircle{u: dir*complex(sin, 0) - n*complex(cos, 0), k: 2 * sin / l}
+}
+
+// circleLine is the circle of g∘s∘g⁻¹, the image under g of the circle s
+// inverts in, drawn between z and w. With G g's matrix, it is
+// H = G·S·conj(G⁻¹) applied to z̄, S conjugated first when g reverses
+// orientation; conj(G⁻¹) = [[a, −b̄], [−b, ā]]. H has S's determinant, −1,
+// so its circle has center H₁₁/H₂₁ and radius 1/|H₂₁|, read off the
+// transformations as line reads a geodesic. It is straight when the circle
+// would differ from the chord by less than 10⁻¹², its sagitta
+// |z − w|²·|H₂₁|/8.
+func circleLine(g mobius, s laceCircle, z, w complex128) (c complex128, radius float64, straight bool) {
+	u, ub := s.u, cmplx.Conj(s.u)
+	if g.odd {
+		u, ub = ub, u
+	}
+	a, b := g.a, g.b
+	k, wv := complex(s.k, 0), complex(s.w, 0)
+	h11 := a*a*u + a*b*(k-wv) + b*b*ub
+	h21 := a*cmplx.Conj(b)*u + complex(real(a)*real(a)+imag(a)*imag(a), 0)*k -
+		complex(real(b)*real(b)+imag(b)*imag(b), 0)*wv + cmplx.Conj(a)*b*ub
+	chord := cmplx.Abs(z - w)
+	if chord*chord*cmplx.Abs(h21) <= 8e-12 {
+		return 0, 0, true
+	}
+	return h11 / h21, 1 / cmplx.Abs(h21), false
 }
 
 // newLaceSeed derives the p-gon from its right triangle (center, edge
@@ -304,8 +405,9 @@ type laceSeed struct {
 // cos(π/q)/sin(π/p) for the apothem and cosh(s/2) = cos(π/p)/sin(π/q) for
 // the side. A point at hyperbolic distance d from the origin lies at
 // Euclidean radius tanh(d/2) in the metric 4|dz|²/(1 − |z|²)².
-func newLaceSeed(id string, starPoint float64) laceSeed {
-	tl := laceTilings[id]
+func newLaceSeed(q LaceRequest) laceSeed {
+	starPoint := q.StarPoint
+	tl := laceTilings[q.Tiling]
 	n := tl.p
 	p := float64(tl.p)
 	s := laceSeed{
@@ -332,11 +434,64 @@ func newLaceSeed(id string, starPoint float64) laceSeed {
 		r := s.vertexRadius
 		s.reflect[k] = inversion(cmplx.Rect((1+r*r)/(2*r*math.Cos(tl.piOverP)), angle+tl.piOverP))
 	}
-	for k := range n {
-		s.strokes[2*k] = mirror(s.mid[k], s.star[k])
-		s.strokes[2*k+1] = mirror(s.star[k], s.mid[(k+1)%n])
+	if q.motif() == LaceStar {
+		for k := range n {
+			s.strokes[2*k] = mirror(s.mid[k], s.star[k])
+			s.strokes[2*k+1] = mirror(s.star[k], s.mid[(k+1)%n])
+		}
+		return s
 	}
+	s.motif(q.motif(), q.Size, tl)
 	return s
+}
+
+// motif builds the strokes of a motif other than the star from its stroke
+// in the fundamental triangle (O, M_0, V_1) of the center O, side 0's
+// midpoint and corner 1. Stroke 2k is that stroke turned by 2πk/p; stroke
+// 2k + 1 is stroke 2k mirrored in the line O V_{k+1} and reversed, so it
+// starts where stroke 2k ends, on that line. Named points take their
+// seed values, so strokes that meet share their ends exactly.
+func (s *laceSeed) motif(motif string, u float64, tl laceTiling) {
+	n := s.p
+	s.from, s.to = make([]complex128, 2*n), make([]complex128, 2*n)
+	s.circles = make([]laceCircle, 2*n)
+	var first laceCircle
+	switch motif {
+	case "petals":
+		// From O to V_1, at α = u·min(π/p, π/q) to O V_1 toward M_0.
+		first = through(s.vertex[1], s.mid[0], u*math.Min(tl.piOverP, tl.piOverQ))
+	case "leaves":
+		// From M_0 to O, at α = u·π/p to O M_0 toward V_1.
+		first = through(s.mid[0], s.vertex[1], u*tl.piOverP)
+	case "rings":
+		// The circle about O of hyperbolic radius u·h: Euclidean radius
+		// t = tanh(u·h/2), so u = 0, k = 1/t and w = t.
+		t := math.Tanh(u * s.apothem / 2)
+		first = laceCircle{k: 1 / t, w: t}
+	}
+	for k := range n {
+		v := s.vertex[(k+1)%n]
+		turn := cmplx.Rect(1, 2*math.Pi*float64(k)/float64(n))
+		line := v / complex(cmplx.Abs(v), 0)
+		s.circles[2*k] = first.turned(turn)
+		s.circles[2*k+1] = s.circles[2*k].mirrored(line * line)
+		switch motif {
+		case "petals":
+			s.from[2*k], s.to[2*k] = 0, v
+		case "leaves":
+			s.from[2*k], s.to[2*k] = s.mid[k], 0
+			s.to[2*k+1] = s.mid[(k+1)%n]
+		case "rings":
+			t := math.Tanh(u * s.apothem / 2)
+			s.from[2*k] = cmplx.Rect(t, cmplx.Phase(s.mid[k]))
+			s.to[2*k] = cmplx.Rect(t, cmplx.Phase(v))
+			s.to[2*k+1] = cmplx.Rect(t, cmplx.Phase(s.mid[(k+1)%n]))
+		}
+		s.from[2*k+1] = s.to[2*k]
+		if motif == "petals" {
+			s.to[2*k+1] = 0
+		}
+	}
 }
 
 // mirror is the reflection in the geodesic through two points of the seed
@@ -460,7 +615,7 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 // their incidence and the transformations that place them; place then
 // computes every position from those transformations.
 func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
-	seed := newLaceSeed(q.Tiling, q.StarPoint)
+	seed := newLaceSeed(q)
 	n := seed.p
 	q.Isometry = nil
 	src := &LaceSource{q: q, seed: seed}

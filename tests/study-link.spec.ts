@@ -3930,6 +3930,9 @@ test("lace links conform settings, selection and view without geometry, and olde
         ...(lace.selected ? ["selected"] : []),
         ...(lace.isometry ? ["isometry"] : []),
         ...(lace.motion ? ["motion"] : []),
+        ...(
+          ["motifKind", "petalFullness", "leafFullness", "ringRadius"] as const
+        ).filter((k) => k in lace),
       ].sort(),
     );
     // A link and a garden link are separate modes on the same study.
@@ -4062,6 +4065,55 @@ test("lace links conform settings, selection and view without geometry, and olde
     following,
   );
   assert.equal("follow" in planarStudy({ ...ordinary, lace }).lace!, false);
+});
+
+test("lace motifs and their sizes round-trip, older links open the star, and invalid ones are refused", async () => {
+  const { presetLace, laceRequest } = await import("../web/lace/model");
+  const ordinary = planarPreset(0);
+  const lace = presetLace(0);
+  // Absent: the star, with a request exactly as before other motifs.
+  const old = planarStudy({ ...ordinary, lace }).lace!;
+  for (const k of ["motifKind", "petalFullness", "leafFullness", "ringRadius"])
+    assert.equal(k in old, false);
+  assert.deepEqual(Object.keys(laceRequest(old)).sort(), [
+    "depth",
+    "maxTiles",
+    "starPoint",
+    "tiling",
+  ]);
+  for (const patch of [
+    { motifKind: "star" },
+    { motifKind: "petals" },
+    { motifKind: "leaves", leafFullness: 0 },
+    { motifKind: "rings", ringRadius: 0.1 },
+    { motifKind: "rings", ringRadius: 1, petalFullness: 0, leafFullness: 1 },
+    // A size kept for a motif not shown.
+    { motifKind: "star", petalFullness: 0.5 },
+  ]) {
+    const study = { ...lace, ...patch };
+    const decoded = await readStudyLink(
+      await writeStudyLink("2d", planarStudy({ ...ordinary, lace: study })),
+    );
+    assert.deepEqual(planarStudy(decoded.study).lace, study);
+  }
+  for (const [patch, field] of [
+    [{ motifKind: "spiral" }, "lace.motifKind"],
+    [{ motifKind: 1 }, "lace.motifKind"],
+    [{ petalFullness: -0.1 }, "lace.petalFullness"],
+    [{ petalFullness: 1.1 }, "lace.petalFullness"],
+    [{ leafFullness: "1" }, "lace.leafFullness"],
+    [{ ringRadius: 0.09 }, "lace.ringRadius"],
+    [{ ringRadius: 1.01 }, "lace.ringRadius"],
+  ] as const) {
+    let error: unknown;
+    try {
+      planarStudy({ ...ordinary, lace: { ...lace, ...patch } });
+    } catch (e) {
+      error = e;
+    }
+    assert.ok(error instanceof LinkError, JSON.stringify(patch));
+    assert.equal(error.field, field, JSON.stringify(patch));
+  }
 });
 
 test("garden detail and reveal settings round-trip, default to the static garden, and refuse invalid values", async () => {

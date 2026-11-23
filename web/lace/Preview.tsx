@@ -59,9 +59,11 @@ import {
   lacePage,
   laceRequest,
   laceScale,
+  motifSize,
   movedResult,
   neighbors,
   sideName,
+  studyMotif,
   tileName,
   type LaceFrame,
   type LaceFrameRequest,
@@ -73,6 +75,7 @@ import {
   type LaceStudyMotion,
 } from "./model";
 import { laceTilings, tilingOf, type LaceTilingId } from "./tilings";
+import { laceMotifs, motifOf } from "./motifs";
 import "../garden/garden.css";
 import "./lace.css";
 
@@ -220,6 +223,7 @@ export function LacePreview({
   const ready = valid && current;
   const selected = result ? indexOf(result, study.selected) : -1;
   const tiling = tilingOf(study.tiling);
+  const motif = studyMotif(study);
   const scalarStatus = useMemo(
     () => ({
       client: scalarClient,
@@ -485,7 +489,10 @@ export function LacePreview({
     units: "rim radius = 1",
     depth: study.depth,
     maxTiles: study.maxTiles,
-    starPoint: study.starPoint,
+    // The star as before other motifs; another motif by its own size.
+    ...(motif.id === "star"
+      ? { starPoint: study.starPoint }
+      : { motifKind: motif.id, [motif.field]: motifSize(study, motif) }),
     tiles: result?.center.length,
     omitted: result?.omitted,
     stopped: result?.stopped || undefined,
@@ -621,9 +628,11 @@ export function LacePreview({
       ? "Duration"
       : errorField === "repeat"
         ? "Repeat"
-        : errorField
-          ? labels[errorField]
-          : undefined);
+        : errorField === "size"
+          ? motif.size
+          : errorField
+            ? labels[errorField]
+            : undefined);
   const [claimed, setClaimed] = useState(false);
   const claim = useCallback((_key: string, on: boolean) => setClaimed(on), []);
   const target = useMemo(
@@ -763,12 +772,15 @@ export function LacePreview({
       </div>
     </div>
   );
+  // The shown motif's size; each motif keeps its own, restored when it is
+  // chosen again.
   const experiment = (
-    <Field label="Star point" help={ofTiling.starPoint}>
+    <Field label={motif.size} help={motif.help(tiling)}>
       <ScalarInput
-        name="Star point"
-        value={study.starPoint}
-        onChange={(v) => edit((s) => ({ ...s, starPoint: v }))}
+        key={motif.id}
+        name={motif.size}
+        value={motifSize(study, motif)}
+        onChange={(v) => edit((s) => ({ ...s, [motif.field]: v }))}
       />
     </Field>
   );
@@ -1199,6 +1211,25 @@ export function LacePreview({
                   </button>
                 </p>
                 <h3 className="garden-section">Motif</h3>
+                <Field label="Shape" help={laceHelp.motifKind}>
+                  <select
+                    value={motif.id}
+                    onChange={(e) => {
+                      const next = motifOf(e.currentTarget.value);
+                      // The tiles and the selection stay; the motif is a
+                      // generation setting, so a motion ends.
+                      edit(({ motifKind: _, ...s }) =>
+                        next.id === "star" ? s : { ...s, motifKind: next.id },
+                      );
+                    }}
+                  >
+                    {laceMotifs.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
                 {experiment}
                 <h3 className="garden-section">Cutoffs</h3>
                 <Field label="Tiling" help={laceHelp.tiling}>

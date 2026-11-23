@@ -16,6 +16,7 @@ import {
   type LaceTilingId,
   type LaceTilingInfo,
 } from "./tilings";
+import { motifOf, type LaceMotifId, type LaceMotifInfo } from "./motifs";
 
 // Hyperbolic lace: a finite patch of a regular tiling {p,q} of the
 // Poincaré disk, {7,3} by default, grown in Go by reflection from one
@@ -36,9 +37,13 @@ export type LaceRequest = {
   tiling: LaceTilingId;
   depth: number;
   maxTiles: number;
-  // Where the motif's strands turn, as a fraction of the hyperbolic
+  // Where the star's strands turn, as a fraction of the hyperbolic
   // distance from a tile's center to its corners: 0–1.
   starPoint: number;
+  // Another motif than the star, and its size (./motifs); absent for the
+  // star, which ignores the size.
+  motif?: Exclude<LaceMotifId, "star">;
+  size?: number;
   // Moves the patch; absent, it stays in place.
   isometry?: LaceIsometry;
 };
@@ -102,7 +107,8 @@ export type LaceResult = {
   edgeCenter: Vec[];
   edgeRadius: number[];
   edgeStraight: boolean[];
-  // 2p geodesic arcs per tile, in tile order.
+  // The motif's 2p strokes per tile, in tile order: geodesic segments or
+  // circular arcs, each its circle's minor arc, or straight.
   arcStart: Vec[];
   arcEnd: Vec[];
   arcCenter: Vec[];
@@ -126,7 +132,14 @@ export type LacePresentation = "complete" | "selected";
 // A tile's address: the sides crossed from the center tile, each numbered
 // 0 to p − 1 in the tile crossed. It names the same tile under any cutoffs.
 export type LaceAddress = number[];
-export type LaceStudy = LaceRequest & {
+export type LaceStudy = Omit<LaceRequest, "motif" | "size"> & {
+  // Which motif every tile carries, the star when absent, and the other
+  // motifs' sizes, each absent until edited (its descriptor's initial
+  // value) and kept while another motif is shown.
+  motifKind?: LaceMotifId;
+  petalFullness?: number;
+  leafFullness?: number;
+  ringRadius?: number;
   edges: boolean;
   motif: boolean;
   selected?: LaceAddress;
@@ -160,13 +173,22 @@ export const defaultLaceMotion: LaceStudyMotion = {
   repeat: "loop",
 };
 
-export const laceRequest = (s: LaceStudy): LaceRequest => ({
-  tiling: s.tiling,
-  depth: s.depth,
-  maxTiles: s.maxTiles,
-  starPoint: s.starPoint,
-  ...(s.isometry && { isometry: { ...s.isometry } }),
-});
+// The study's motif, and its size.
+export const studyMotif = (s: LaceStudy): LaceMotifInfo => motifOf(s.motifKind);
+export const motifSize = (s: LaceStudy, m = studyMotif(s)): number =>
+  s[m.field] ?? m.initial;
+// A star's request is as it was before other motifs existed.
+export const laceRequest = (s: LaceStudy): LaceRequest => {
+  const m = studyMotif(s);
+  return {
+    tiling: s.tiling,
+    depth: s.depth,
+    maxTiles: s.maxTiles,
+    starPoint: s.starPoint,
+    ...(m.id !== "star" && { motif: m.id, size: motifSize(s, m) }),
+    ...(s.isometry && { isometry: { ...s.isometry } }),
+  };
+};
 // A frame's geometry on its frozen patch: the patch's tiles and incidence
 // with the frame's positions.
 export function movedResult(source: LaceResult, frame: LaceFrame): LaceResult {
@@ -295,6 +317,55 @@ export const lacePresets: readonly {
     title: "Triangles, seven at every corner",
     note: "The dual of the heptagons: slender triangles whose slow rings reach ten deep",
     study: { ...defaultLace, tiling: "3,7", depth: 10 },
+  },
+  // The motifs beside the star (./motifs), each at full size. Petals at
+  // fullness 1 touch around each heptagon's center.
+  {
+    title: "Petals, a flower in every heptagon",
+    note: "Lenses from each center to its corners: seven-petal flowers, joined by three-petal ones at every corner",
+    study: { ...defaultLace, motifKind: "petals", edges: false },
+  },
+  // Leaves at fullness 1 touch around each pentagon's center, and join
+  // across every side into one leaf between two centers.
+  {
+    title: "Leaves joined across every side",
+    note: "Lenses from each pentagon's center to its sides' midpoints, each meeting its mirror image across the side",
+    study: { ...defaultLace, tiling: "5,4", depth: 5, motifKind: "leaves" },
+  },
+  // The inscribed circles, tangent at every side's midpoint: a packing of
+  // circles all the same hyperbolic size, five around each gap.
+  {
+    title: "Circles that touch at every side",
+    note: "Each square's inscribed circle, all the same size in the disk's own measure, touching four neighbors",
+    study: {
+      ...defaultLace,
+      tiling: "4,5",
+      depth: 6,
+      motifKind: "rings",
+      edges: false,
+    },
+  },
+  // The pentagon glide (tile 9, address 0, 4) with rings: the packing
+  // flows in along a mirror line, each circle swelling as it nears the
+  // center and shrinking as it leaves, always touching its neighbors.
+  {
+    title: "Rings glide to the center and back",
+    note: "Tangent circles flow in along a mirror line and out again, every one keeping its hyperbolic size",
+    study: {
+      ...defaultLace,
+      tiling: "5,4",
+      depth: 5,
+      motifKind: "rings",
+      selected: [0, 4],
+      isometry: { offset: 0, direction: Math.PI / 2, rotation: 0 },
+      motion: {
+        offset: 0.68712149944502521,
+        orbits: 0,
+        turns: 0,
+        duration: 10,
+        repeat: "loop",
+      },
+    },
   },
 ];
 export const presetLace = (index: number): LaceStudy =>
@@ -588,10 +659,7 @@ export function tilingHelp(t: LaceTilingInfo) {
       `Reflections from the center tile: 0–${t.maxDepth}.`,
       `Each depth reflects the previous ring of tiles across their outer sides. Depth ${t.depth} holds ${formatCount(held)} tiles; deeper rings exceed the tile limit, which then stops the last ring partway.`,
     ),
-    starPoint: tiered(
-      "Where each strand turns, from tile center (0) to corner (1).",
-      `Measured in the disk's hyperbolic distance. At 0 the strands meet at the center and draw the dual ${t.dual}; small values give ${t.sides}-pointed stars, larger ones strapwork that hugs the tile's sides.`,
-    ),
+    starPoint: motifOf("star").help(t),
   };
 }
 export const laceHelp = {
@@ -602,6 +670,10 @@ export const laceHelp = {
   tiling: tiered(
     "Which regular tiling {p,q}: p-sided tiles meeting q at each corner.",
     "Pentagons and squares are each other's duals, as are heptagons and triangles: the centers of one are the corners of the other. Changing the tiling clears the selection and opens at the deepest ring the tile limit completes.",
+  ),
+  motifKind: tiered(
+    "The motif every tile carries: a star, petals, leaves or rings.",
+    "Each is one stroke between a tile's center, a side's midpoint and a corner, mirrored into all the tile's symmetries, so every tile carries the same motif and neighbors' strands meet across their sides. Each keeps its own size.",
   ),
   edges: "Show the tiles' sides, each drawn once where two tiles share it.",
   motif: "Show the motif, the same strands reflected into every tile.",

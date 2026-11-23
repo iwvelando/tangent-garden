@@ -1446,6 +1446,13 @@ function laceSettings(q: import("./lace/model").LaceRequest) {
     maxTiles: q.maxTiles,
     starPoint: q.starPoint,
   };
+  // Another motif than the star, with its size.
+  if (q.motif !== undefined) {
+    if (typeof q.size !== "number" || !Number.isFinite(q.size))
+      throw fieldError("size", "Enter a finite number.");
+    out.motif = q.motif;
+    out.size = q.size;
+  }
   if (q.isometry) {
     const { offset, direction, rotation } = q.isometry;
     for (const [k, v] of Object.entries({ offset, direction, rotation }))
