@@ -55,6 +55,7 @@ import {
   isIdentity,
   laceHelp,
   laceLimits,
+  tilingHelp,
   lacePage,
   laceRequest,
   laceScale,
@@ -71,6 +72,12 @@ import {
   type LaceStudy,
   type LaceStudyMotion,
 } from "./model";
+import {
+  laceResearch,
+  offeredTilings,
+  tilingOf,
+  type LaceTilingId,
+} from "./tilings";
 import "../garden/garden.css";
 import "./lace.css";
 
@@ -217,6 +224,7 @@ export function LacePreview({
   const valid = !activeError && !scalarError && !scalarPending;
   const ready = valid && current;
   const selected = result ? indexOf(result, study.selected) : -1;
+  const tiling = tilingOf(study.tiling);
   const scalarStatus = useMemo(
     () => ({
       client: scalarClient,
@@ -476,7 +484,7 @@ export function LacePreview({
     };
   const metadata = () => ({
     kind: "hyperbolic-lace",
-    tiling: "{7,3}",
+    tiling: `{${tiling.p},${tiling.q}}`,
     model: "Poincaré disk",
     metric: "ds² = 4|dz|²/(1 − |z|²)², curvature −1",
     units: "rim radius = 1",
@@ -634,7 +642,10 @@ export function LacePreview({
     : shown && cutoffSummary(shown.result, JSON.parse(shown.key));
   const time = film?.time ?? (finished ? 1 : 0);
   const drawnIsometry = result?.isometry ?? isometry;
-  const about = result && selected >= 0 ? explain(result, selected) : undefined;
+  const about =
+    result && selected >= 0 ? explain(result, selected, !!film) : undefined;
+  // The tiling's own help for its rings and star.
+  const ofTiling = tilingHelp(tiling);
   const around = result && selected >= 0 ? neighbors(result, selected) : [];
   const whole = (
     k: "depth" | "maxTiles",
@@ -642,7 +653,7 @@ export function LacePreview({
     min: number,
     max: number,
   ) => (
-    <Field label={label} help={laceHelp[k]}>
+    <Field label={label} help={k === "depth" ? ofTiling.depth : laceHelp[k]}>
       <input
         type="number"
         min={min}
@@ -758,7 +769,7 @@ export function LacePreview({
     </div>
   );
   const experiment = (
-    <Field label="Star point" help={laceHelp.starPoint}>
+    <Field label="Star point" help={ofTiling.starPoint}>
       <ScalarInput
         name="Star point"
         value={study.starPoint}
@@ -846,13 +857,15 @@ export function LacePreview({
       </AppHeader>
       <div className="garden-content">
         <div className="garden-heading">
-          <p className="eyebrow">Poincaré disk · regular tiling {"{7,3}"}</p>
+          <p className="eyebrow">
+            Poincaré disk · regular tiling {`{${tiling.p},${tiling.q}}`}
+          </p>
           <h2 id="lace-title">Hyperbolic lace</h2>
           <p>
-            Heptagons meeting three at a corner cannot tile a flat plane, but
-            they tile the hyperbolic plane, drawn here in a disk whose rim is
-            infinitely far away. Every tile is the center tile reflected across
-            sides, as is its motif.
+            {tiling.polygons} meeting {tiling.around} at a corner cannot tile a
+            flat plane, but they tile the hyperbolic plane, drawn here in a disk
+            whose rim is infinitely far away. Every tile is the center tile
+            reflected across sides, as is its motif.
           </p>
         </div>
         <ScalarStatus.Provider value={scalarStatus}>
@@ -1007,7 +1020,14 @@ export function LacePreview({
                       {about ? (
                         <div className="garden-about">
                           <h3>{tileName(selected)}</h3>
-                          <p className="garden-facts">{about.facts}</p>
+                          {/* The moving wording's height is held at rest
+                              (lace.css), so Play moves nothing below. */}
+                          <p
+                            className="garden-facts lace-facts"
+                            data-reserve={about.reserve}
+                          >
+                            <span>{about.facts}</span>
+                          </p>
                           <p className="garden-facts">
                             Sides crossed from the center:{" "}
                             {addressText(addressOf(result, selected))}
@@ -1186,6 +1206,33 @@ export function LacePreview({
                 <h3 className="garden-section">Motif</h3>
                 {experiment}
                 <h3 className="garden-section">Cutoffs</h3>
+                {laceResearch && (
+                  <Field label="Tiling (research)" help={laceHelp.tiling}>
+                    <select
+                      value={study.tiling}
+                      onChange={(e) => {
+                        const next = tilingOf(
+                          e.currentTarget.value as LaceTilingId,
+                        );
+                        setTileDraft(undefined);
+                        // Another tiling: an address names a tile of this
+                        // one only, and its rings fill the tile limit at
+                        // another depth.
+                        edit(({ selected: _, ...s }) => ({
+                          ...s,
+                          tiling: next.id,
+                          depth: next.depth,
+                        }));
+                      }}
+                    >
+                      {offeredTilings().map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
                 <div className="pair">
                   {whole("depth", "Depth", 0, laceLimits.depth)}
                   {whole("maxTiles", "Tile limit", 1, laceLimits.tiles)}

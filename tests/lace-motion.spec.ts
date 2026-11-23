@@ -231,8 +231,10 @@ test("seeking draws the frozen patch moved by the path's isometry, and playback,
   await expect(d.locator(".lace-motion-status")).toHaveText(
     "5.0 / 10 s · offset 0.718143, direction −0.224399, rotation 0.00000 · Paused",
   );
+  // Mid-motion, every changing number keeps its frozen width: figure
+  // spaces (U+2007) hold the sign and integer columns.
   await expect(d.locator(".garden-about")).toContainText(
-    "drawn at (0, 0) · hyperbolic distance 1.8076 from the center tile and 0 from the disk's center · drawn 100% of a tile's size at the disk's center",
+    "drawn at (\u20070.00000, \u20070.00000) · hyperbolic distance \u20071.8076 from the center tile and \u20070.0000 from the disk's center · drawn 100.000% of a tile's size at the disk's center",
   );
   // The finite patch's edge nears the center on the far side: said so.
   await expect(d.locator(".lace-summary")).toContainText(
@@ -925,4 +927,66 @@ test("motion production measurements: one frame at a time, bounded replies, and 
       cancelToWorkerEnd: +cancelMs.toFixed(1),
     }),
   );
+});
+
+// The selected tile's facts change with every frame of a motion, but their
+// numbers keep one width (liveReadout's frozen ranges) and one wording, so
+// the text wraps the same way and nothing below it moves: not the facts'
+// height, nor the neighbor buttons, through the whole glide, its resting
+// ends included.
+test("a moving tile's facts keep their width, so the controls below them never move", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  const d = await openLace(page, glide);
+  const facts = d.locator(".garden-facts").first();
+  const neighbors = d.getByRole("group", { name: "Neighboring tiles" });
+  const lengths = new Set<number>(),
+    heights = new Set<number>(),
+    tops = new Set<number>();
+  for (let k = 1; k <= 40; k++) {
+    await seek(d, String(k / 40));
+    lengths.add((await facts.textContent())!.length);
+    heights.add(Math.round((await facts.boundingBox())!.height));
+    tops.add(
+      Math.round(
+        (await neighbors.boundingBox())!.y - (await facts.boundingBox())!.y,
+      ),
+    );
+  }
+  expect([...lengths]).toHaveLength(1);
+  expect([...heights]).toHaveLength(1);
+  expect([...tops]).toHaveLength(1);
+});
+
+// Pressing Play swaps the selected tile's facts from their at-rest wording
+// to the moving one. The explanation reserves the moving wording's height
+// from the start, so the playback buttons stay under the pointer: at rest,
+// while playing, paused (Resume) and after Stop.
+test("pressing Play leaves the playback buttons where they were", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  const d = await openLace(page, glide);
+  // Measured from the selected tile's heading above the facts, so that
+  // the sidebar's scrolling, which a click may cause, does not count.
+  const heading = d.locator(".garden-about h3");
+  const top = async (name: string) =>
+    Math.round(
+      (await d.getByRole("button", { name }).boundingBox())!.y -
+        (await heading.boundingBox())!.y,
+    );
+  const atRest = await top("Play motion");
+  await d.getByRole("button", { name: "Play motion" }).click();
+  for (const k of [1, 2, 3]) {
+    await expect
+      .poll(async () => Number(await slider(d).inputValue()))
+      .toBeGreaterThan(k / 20);
+    expect(await top("Pause motion")).toBe(atRest);
+  }
+  await d.getByRole("button", { name: "Pause motion" }).click();
+  expect(await top("Resume motion")).toBe(atRest);
+  await d.getByRole("button", { name: "Stop motion" }).click();
+  await ready(d);
+  expect(await top("Play motion")).toBe(atRest);
 });

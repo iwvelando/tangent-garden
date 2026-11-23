@@ -745,7 +745,7 @@ checkFourierFit();
     ["depth", { ...q, depth: 9 }],
     ["maxTiles", { ...q, maxTiles: 1001 }],
     ["starPoint", { ...q, starPoint: 2 }],
-    ["tiling", { ...q, tiling: "5,4" }],
+    ["tiling", { ...q, tiling: "8,3" }],
   ])
     assert.equal(
       JSON.parse(globalThis.tangentGardenLace(JSON.stringify(request))).field,

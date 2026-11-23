@@ -132,73 +132,75 @@ func TestLaceIsometryMap(t *testing.T) {
 // a geodesic inside the disk. At the identity the result is the unmoved
 // one exactly.
 func TestLaceMovedPatchIsTheImage(t *testing.T) {
-	q := lace(8, 1000, 0.3)
-	src := mustLace(t, q)
-	ident := moved(t, q, LaceIsometry{})
-	if !reflect.DeepEqual(ident, src) {
-		t.Fatal("the identity isometry changes the patch")
-	}
-	for _, iso := range []LaceIsometry{
-		{Offset: 0.5, Direction: 0.4}, {Offset: 0.8, Direction: math.Pi}, {Offset: 0.8, Direction: -1, Rotation: 2},
-		{Rotation: 0.7},
-	} {
-		r := moved(t, q, iso)
-		if !reflect.DeepEqual(topology(r), topology(src)) {
-			t.Fatalf("%v changes the patch's tiles or incidence", iso)
+	eachTiling(t, func(t *testing.T, p, _ int) {
+		q := lace(8, 1000, 0.3)
+		src := mustLace(t, q)
+		ident := moved(t, q, LaceIsometry{})
+		if !reflect.DeepEqual(ident, src) {
+			t.Fatal("the identity isometry changes the patch")
 		}
-		if r.Isometry != iso {
-			t.Errorf("result records %v, want %v", r.Isometry, iso)
-		}
-		T := isoT(iso)
-		near := func(what string, i int, got Vec, z complex128) {
-			if d := dist(cz(got), T(z)); d > laceBudget {
-				t.Errorf("%v: %s %d lies %v from its image", iso, what, i, d)
+		for _, iso := range []LaceIsometry{
+			{Offset: 0.5, Direction: 0.4}, {Offset: 0.8, Direction: math.Pi}, {Offset: 0.8, Direction: -1, Rotation: 2},
+			{Rotation: 0.7},
+		} {
+			r := moved(t, q, iso)
+			if !reflect.DeepEqual(topology(r), topology(src)) {
+				t.Fatalf("%v changes the patch's tiles or incidence", iso)
 			}
-		}
-		for i := range src.Center {
-			near("center", i, r.Center[i], cz(src.Center[i]))
-		}
-		for i := range src.Vertex {
-			near("vertex", i, r.Vertex[i], cz(src.Vertex[i]))
-		}
-		for i := range src.ArcStart {
-			near("stroke start", i, r.ArcStart[i], cz(src.ArcStart[i]))
-			near("stroke end", i, r.ArcEnd[i], cz(src.ArcEnd[i]))
-		}
-		checkGeodesics(t, r)
-		// Hyperbolic distances between returned vertices are preserved:
-		// each tile's side and its distance to the center tile.
-		for i := range src.Center {
-			for k := range 7 {
-				before := dist(corner(src, i, k), corner(src, i, k+1))
-				after := dist(corner(r, i, k), corner(r, i, k+1))
-				if math.Abs(after-before) > laceBudget {
-					t.Errorf("%v: tile %d side %d is %v long, was %v", iso, i, k, after, before)
+			if r.Isometry != iso {
+				t.Errorf("result records %v, want %v", r.Isometry, iso)
+			}
+			T := isoT(iso)
+			near := func(what string, i int, got Vec, z complex128) {
+				if d := dist(cz(got), T(z)); d > laceBudget {
+					t.Errorf("%v: %s %d lies %v from its image", iso, what, i, d)
 				}
 			}
-			before := dist(cz(src.Center[0]), cz(src.Center[i]))
-			after := dist(cz(r.Center[0]), cz(r.Center[i]))
-			if math.Abs(after-before) > laceBudget*math.Max(1, before) {
-				t.Errorf("%v: tile %d lies %v from the center tile, was %v", iso, i, after, before)
+			for i := range src.Center {
+				near("center", i, r.Center[i], cz(src.Center[i]))
 			}
-			// The motif stays in its own tile.
-			for s := range LaceStrokes {
-				a := LaceStrokes*i + s
-				for _, p := range arcPoints(cz(r.ArcStart[a]), cz(r.ArcEnd[a]), cz(r.ArcCenter[a]), r.ArcStraight[a], 6) {
-					if !inside(r, i, p, 1e-9) {
-						t.Fatalf("%v: tile %d's stroke %d leaves it at %v", iso, i, s, p)
+			for i := range src.Vertex {
+				near("vertex", i, r.Vertex[i], cz(src.Vertex[i]))
+			}
+			for i := range src.ArcStart {
+				near("stroke start", i, r.ArcStart[i], cz(src.ArcStart[i]))
+				near("stroke end", i, r.ArcEnd[i], cz(src.ArcEnd[i]))
+			}
+			checkGeodesics(t, r)
+			// Hyperbolic distances between returned vertices are preserved:
+			// each tile's side and its distance to the center tile.
+			for i := range src.Center {
+				for k := range p {
+					before := dist(corner(src, i, k), corner(src, i, k+1))
+					after := dist(corner(r, i, k), corner(r, i, k+1))
+					if math.Abs(after-before) > laceBudget {
+						t.Errorf("%v: tile %d side %d is %v long, was %v", iso, i, k, after, before)
+					}
+				}
+				before := dist(cz(src.Center[0]), cz(src.Center[i]))
+				after := dist(cz(r.Center[0]), cz(r.Center[i]))
+				if math.Abs(after-before) > laceBudget*math.Max(1, before) {
+					t.Errorf("%v: tile %d lies %v from the center tile, was %v", iso, i, after, before)
+				}
+				// The motif stays in its own tile.
+				for s := range 2 * p {
+					a := (2*p)*i + s
+					for _, p := range arcPoints(cz(r.ArcStart[a]), cz(r.ArcEnd[a]), cz(r.ArcCenter[a]), r.ArcStraight[a], 6) {
+						if !inside(r, i, p, 1e-9) {
+							t.Fatalf("%v: tile %d's stroke %d leaves it at %v", iso, i, s, p)
+						}
 					}
 				}
 			}
-		}
-		// Corners still wind by orientation: an isometry that keeps
-		// orientation keeps each tile's winding.
-		for i := range src.Center {
-			if sgn(winding(r, i)) != sgn(winding(src, i)) {
-				t.Errorf("%v: tile %d's corners change their winding", iso, i)
+			// Corners still wind by orientation: an isometry that keeps
+			// orientation keeps each tile's winding.
+			for i := range src.Center {
+				if sgn(winding(r, i)) != sgn(winding(src, i)) {
+					t.Errorf("%v: tile %d's corners change their winding", iso, i)
+				}
 			}
 		}
-	}
+	})
 }
 
 func sgn(v float64) int {
@@ -211,38 +213,40 @@ func sgn(v float64) int {
 // winding is the signed area of a tile's corner polygon.
 func winding(r LaceResult, i int) float64 {
 	area := 0.0
-	for k := range 7 {
+	for k := range pOf(r) {
 		a, b := corner(r, i, k), corner(r, i, k+1)
 		area += real(a)*imag(b) - imag(a)*real(b)
 	}
 	return area
 }
 
-// Rotation by a seventh of a turn maps the complete patch onto itself as a
+// Rotation by a p-th of a turn maps the complete patch onto itself as a
 // set, though each tile and vertex moves to another's place.
 func TestLaceRotationSymmetry(t *testing.T) {
-	q := lace(5, 1000, 0.3)
-	src := mustLace(t, q)
-	r := moved(t, q, LaceIsometry{Rotation: 2 * math.Pi / 7})
-	grid := newDiskGrid()
-	for i, v := range src.Vertex {
-		grid.add(cz(v), i)
-	}
-	at := func(i int) complex128 { return cz(src.Vertex[i]) }
-	hit := map[int]bool{}
-	for i, v := range r.Vertex {
-		j, d := grid.near(cz(v), 1e-6, at)
-		if j < 0 || d > laceBudget {
-			t.Fatalf("rotated vertex %d matches no vertex of the patch", i)
+	eachTiling(t, func(t *testing.T, p, _ int) {
+		q := lace(5, 1000, 0.3)
+		src := mustLace(t, q)
+		r := moved(t, q, LaceIsometry{Rotation: 2 * math.Pi / float64(p)})
+		grid := newDiskGrid()
+		for i, v := range src.Vertex {
+			grid.add(cz(v), i)
 		}
-		hit[j] = true
-		if j == i && cmplx.Abs(cz(v)) > 1e-12 {
-			t.Errorf("vertex %d is fixed by a seventh of a turn", i)
+		at := func(i int) complex128 { return cz(src.Vertex[i]) }
+		hit := map[int]bool{}
+		for i, v := range r.Vertex {
+			j, d := grid.near(cz(v), 1e-6, at)
+			if j < 0 || d > laceBudget {
+				t.Fatalf("rotated vertex %d matches no vertex of the patch", i)
+			}
+			hit[j] = true
+			if j == i && cmplx.Abs(cz(v)) > 1e-12 {
+				t.Errorf("vertex %d is fixed by a p-th of a turn", i)
+			}
 		}
-	}
-	if len(hit) != len(src.Vertex) {
-		t.Errorf("rotation reaches %d of %d vertices", len(hit), len(src.Vertex))
-	}
+		if len(hit) != len(src.Vertex) {
+			t.Errorf("rotation reaches %d of %d vertices", len(hit), len(src.Vertex))
+		}
+	})
 }
 
 // Offsets at the bound carry the deepest admitted corners nearer the rim,
@@ -250,28 +254,30 @@ func TestLaceRotationSymmetry(t *testing.T) {
 // 1 − |T z|² ≥ (1 − |z|²)(1 − |a|)/(1 + |a|), so far above the floor; and a
 // patch's set and order never change with the isometry.
 func TestLaceMovedNearTheRim(t *testing.T) {
-	q := lace(8, 1000, 0.3)
-	src := mustLace(t, q)
-	srcGap := math.Inf(1)
-	for _, v := range src.Vertex {
-		srcGap = math.Min(srcGap, rimGap(cz(v)))
-	}
-	bound := srcGap * (1 - 0.8) / (1 + 0.8)
-	worst := math.Inf(1)
-	for k := range 16 {
-		r := moved(t, q, LaceIsometry{Offset: 0.8, Direction: 2 * math.Pi * float64(k) / 16})
-		for i, v := range r.Vertex {
-			g := rimGap(cz(v))
-			worst = math.Min(worst, g)
-			if g < rimGap(cz(src.Vertex[i]))*(1-0.8)/(1+0.8)*(1-1e-9) {
-				t.Errorf("vertex %d's rim gap %v is below its bound", i, g)
+	eachTiling(t, func(t *testing.T, p, _ int) {
+		q := lace(8, 1000, 0.3)
+		src := mustLace(t, q)
+		srcGap := math.Inf(1)
+		for _, v := range src.Vertex {
+			srcGap = math.Min(srcGap, rimGap(cz(v)))
+		}
+		bound := srcGap * (1 - 0.8) / (1 + 0.8)
+		worst := math.Inf(1)
+		for k := range 16 {
+			r := moved(t, q, LaceIsometry{Offset: 0.8, Direction: 2 * math.Pi * float64(k) / 16})
+			for i, v := range r.Vertex {
+				g := rimGap(cz(v))
+				worst = math.Min(worst, g)
+				if g < rimGap(cz(src.Vertex[i]))*(1-0.8)/(1+0.8)*(1-1e-9) {
+					t.Errorf("vertex %d's rim gap %v is below its bound", i, g)
+				}
 			}
 		}
-	}
-	if worst < bound || worst < 1e3*lacePolicy.floor {
-		t.Errorf("moved rim gap %v, bound %v, floor %v", worst, bound, lacePolicy.floor)
-	}
-	t.Logf("unmoved rim gap %.3g; at offset 0.8 the worst is %.3g (bound %.3g)", srcGap, worst, bound)
+		if worst < bound || worst < 1e3*lacePolicy.floor {
+			t.Errorf("moved rim gap %v, bound %v, floor %v", worst, bound, lacePolicy.floor)
+		}
+		t.Logf("unmoved rim gap %.3g; at offset 0.8 the worst is %.3g (bound %.3g)", srcGap, worst, bound)
+	})
 }
 
 // The tiled radius about the window's center is where the patch's own
@@ -279,120 +285,122 @@ func TestLaceMovedNearTheRim(t *testing.T) {
 // just beyond lies in none. It is zero when the center itself lies outside
 // the patch, and it is not the outermost corner's radius.
 func TestLaceCoverage(t *testing.T) {
-	// z lies in tile i when it is on the tile center's side of each side's
-	// geodesic: inside its circle or not, or for a diameter, on the same
-	// side of the line through the origin and the side's far end.
-	in := func(r LaceResult, i int, z complex128) bool {
-		center := cz(r.Center[i])
-		for k := range 7 {
-			e := sideOf(r, i, k)
-			if r.EdgeStraight[e] {
-				u := cz(r.Vertex[int(r.EdgeA[e])])
-				if w := cz(r.Vertex[int(r.EdgeB[e])]); cmplx.Abs(w) > cmplx.Abs(u) {
-					u = w
+	eachTiling(t, func(t *testing.T, p, q int) {
+		// z lies in tile i when it is on the tile center's side of each side's
+		// geodesic: inside its circle or not, or for a diameter, on the same
+		// side of the line through the origin and the side's far end.
+		in := func(r LaceResult, i int, z complex128) bool {
+			center := cz(r.Center[i])
+			for k := range p {
+				e := sideOf(r, i, k)
+				if r.EdgeStraight[e] {
+					u := cz(r.Vertex[int(r.EdgeA[e])])
+					if w := cz(r.Vertex[int(r.EdgeB[e])]); cmplx.Abs(w) > cmplx.Abs(u) {
+						u = w
+					}
+					cross := func(p complex128) float64 { return real(u)*imag(p) - imag(u)*real(p) }
+					if cross(z)*cross(center) < 0 {
+						return false
+					}
+					continue
 				}
-				cross := func(p complex128) float64 { return real(u)*imag(p) - imag(u)*real(p) }
-				if cross(z)*cross(center) < 0 {
+				c, rho := cz(r.EdgeCenter[e]), r.EdgeRadius[e]
+				if (cmplx.Abs(z-c) < rho) != (cmplx.Abs(center-c) < rho) {
 					return false
 				}
-				continue
 			}
-			c, rho := cz(r.EdgeCenter[e]), r.EdgeRadius[e]
-			if (cmplx.Abs(z-c) < rho) != (cmplx.Abs(center-c) < rho) {
-				return false
-			}
+			return true
 		}
-		return true
-	}
-	covered := func(r LaceResult, z complex128) bool {
-		for i := range r.Center {
-			if in(r, i, z) {
-				return true
-			}
-		}
-		return false
-	}
-	for _, c := range []struct {
-		q   LaceRequest
-		iso LaceIsometry
-	}{
-		{lace(5, 1000, 0.3), LaceIsometry{}},
-		{lace(5, 1000, 0.3), LaceIsometry{Offset: 0.8, Direction: 1}},
-		{lace(8, 1000, 0.3), LaceIsometry{Offset: 0.6, Direction: -2}},
-		{lace(2, 1000, 0.3), LaceIsometry{Offset: 0.4}},
-		{lace(8, 40, 0.3), LaceIsometry{Offset: 0.2, Direction: 0.5}},
-		// A lone tile's boundary comes nearest at its sides' midpoints.
-		{lace(0, 1, 0.3), LaceIsometry{}},
-		{lace(0, 1, 0.3), LaceIsometry{Offset: 0.1, Direction: 0.3}},
-	} {
-		r := moved(t, c.q, c.iso)
-		R := r.Coverage.Radius
-		if R <= 0 || R >= 1 {
-			t.Fatalf("%v %v: tiled radius %v", c.q, c.iso, R)
-		}
-		if d := r.Coverage.Distance - 2*math.Atanh(R); math.Abs(d) > 1e-12 {
-			t.Errorf("hyperbolic radius %v for Euclidean %v", r.Coverage.Distance, R)
-		}
-		outer := 0.0
-		for _, v := range r.Vertex {
-			outer = math.Max(outer, cmplx.Abs(cz(v)))
-		}
-		if R >= outer {
-			t.Errorf("%v %v: tiled radius %v reaches the outermost corner %v", c.q, c.iso, R, outer)
-		}
-		// The radius is the nearest point of the patch's boundary, its
-		// edges with one tile, sampled densely along each arc: no sample
-		// nearer, and the nearest within the sampling's reach of it.
-		nearest := math.Inf(1)
-		for e := range r.EdgeA {
-			if r.EdgeTiles[e] != 1 {
-				continue
-			}
-			for _, p := range arcPoints(cz(r.Vertex[int(r.EdgeA[e])]), cz(r.Vertex[int(r.EdgeB[e])]),
-				cz(r.EdgeCenter[e]), r.EdgeStraight[e], 256) {
-				nearest = math.Min(nearest, cmplx.Abs(p))
-			}
-		}
-		if nearest < R*(1-1e-12) || nearest > R*(1+1e-5) {
-			t.Errorf("%v %v: tiled radius %v, nearest boundary sample %v", c.q, c.iso, R, nearest)
-		}
-		missing := false
-		for k := range 720 {
-			dir := cmplx.Rect(1, 2*math.Pi*float64(k)/720)
-			for _, f := range []float64{0, 0.3, 0.7, 0.99, 0.999} {
-				if z := dir * complex(R*f, 0); !covered(r, z) {
-					t.Fatalf("%v %v: %v, inside the tiled radius, is in no tile", c.q, c.iso, z)
+		covered := func(r LaceResult, z complex128) bool {
+			for i := range r.Center {
+				if in(r, i, z) {
+					return true
 				}
 			}
-			if !covered(r, dir*complex(R*1.01, 0)) {
-				missing = true
+			return false
+		}
+		for _, c := range []struct {
+			q   LaceRequest
+			iso LaceIsometry
+		}{
+			{lace(5, 1000, 0.3), LaceIsometry{}},
+			{lace(5, 1000, 0.3), LaceIsometry{Offset: 0.8, Direction: 1}},
+			{lace(8, 1000, 0.3), LaceIsometry{Offset: 0.6, Direction: -2}},
+			{lace(2, 1000, 0.3), LaceIsometry{Offset: 0.4}},
+			{lace(8, 40, 0.3), LaceIsometry{Offset: 0.2, Direction: 0.5}},
+			// A lone tile's boundary comes nearest at its sides' midpoints.
+			{lace(0, 1, 0.3), LaceIsometry{}},
+			{lace(0, 1, 0.3), LaceIsometry{Offset: 0.1, Direction: 0.3}},
+		} {
+			r := moved(t, c.q, c.iso)
+			R := r.Coverage.Radius
+			if R <= 0 || R >= 1 {
+				t.Fatalf("%v %v: tiled radius %v", c.q, c.iso, R)
+			}
+			if d := r.Coverage.Distance - 2*math.Atanh(R); math.Abs(d) > 1e-12 {
+				t.Errorf("hyperbolic radius %v for Euclidean %v", r.Coverage.Distance, R)
+			}
+			outer := 0.0
+			for _, v := range r.Vertex {
+				outer = math.Max(outer, cmplx.Abs(cz(v)))
+			}
+			if R >= outer {
+				t.Errorf("%v %v: tiled radius %v reaches the outermost corner %v", c.q, c.iso, R, outer)
+			}
+			// The radius is the nearest point of the patch's boundary, its
+			// edges with one tile, sampled densely along each arc: no sample
+			// nearer, and the nearest within the sampling's reach of it.
+			nearest := math.Inf(1)
+			for e := range r.EdgeA {
+				if r.EdgeTiles[e] != 1 {
+					continue
+				}
+				for _, p := range arcPoints(cz(r.Vertex[int(r.EdgeA[e])]), cz(r.Vertex[int(r.EdgeB[e])]),
+					cz(r.EdgeCenter[e]), r.EdgeStraight[e], 256) {
+					nearest = math.Min(nearest, cmplx.Abs(p))
+				}
+			}
+			if nearest < R*(1-1e-12) || nearest > R*(1+1e-5) {
+				t.Errorf("%v %v: tiled radius %v, nearest boundary sample %v", c.q, c.iso, R, nearest)
+			}
+			missing := false
+			for k := range 720 {
+				dir := cmplx.Rect(1, 2*math.Pi*float64(k)/720)
+				for _, f := range []float64{0, 0.3, 0.7, 0.99, 0.999} {
+					if z := dir * complex(R*f, 0); !covered(r, z) {
+						t.Fatalf("%v %v: %v, inside the tiled radius, is in no tile", c.q, c.iso, z)
+					}
+				}
+				if !covered(r, dir*complex(R*1.01, 0)) {
+					missing = true
+				}
+			}
+			if !missing {
+				t.Errorf("%v %v: nothing just beyond the tiled radius %v is missing", c.q, c.iso, R)
 			}
 		}
-		if !missing {
-			t.Errorf("%v %v: nothing just beyond the tiled radius %v is missing", c.q, c.iso, R)
+		// Unmoved, the lone tile is complete to its apothem h, at Euclidean
+		// radius tanh(h/2) (cosh h = cos(π/3)/sin(π/7)).
+		h := math.Acosh(math.Cos(math.Pi/float64(q)) / math.Sin(math.Pi/float64(p)))
+		if r := mustLace(t, lace(0, 1, 0.3)); math.Abs(r.Coverage.Radius-math.Tanh(h/2)) > 1e-15 {
+			t.Errorf("the lone tile is tiled to %v, want its apothem's radius %v", r.Coverage.Radius, math.Tanh(h/2))
 		}
-	}
-	// Unmoved, the lone tile is complete to its apothem h, at Euclidean
-	// radius tanh(h/2) (cosh h = cos(π/3)/sin(π/7)).
-	h := math.Acosh(math.Cos(math.Pi/3) / math.Sin(math.Pi/7))
-	if r := mustLace(t, lace(0, 1, 0.3)); math.Abs(r.Coverage.Radius-math.Tanh(h/2)) > 1e-15 {
-		t.Errorf("the lone tile is tiled to %v, want its apothem's radius %v", r.Coverage.Radius, math.Tanh(h/2))
-	}
-	// Placement refuses, rather than clamps, a vertex beyond the precision
-	// floor. Validation keeps every supported offset far from it, so the
-	// check bypasses validation with an offset of 1 − 10⁻⁹.
-	src, err := NewLaceSource(lace(8, 1000, 0.3))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := src.result(LaceIsometry{Offset: 1 - 1e-9}); err == nil {
-		t.Error("a vertex beyond the precision floor was placed")
-	}
-	// One tile moved off the window's center leaves the center uncovered.
-	r := moved(t, lace(0, 1, 0.3), LaceIsometry{Offset: 0.5})
-	if r.Coverage.Radius != 0 || r.Coverage.Distance != 0 {
-		t.Errorf("the center lies beyond the patch, but coverage is %+v", r.Coverage)
-	}
+		// Placement refuses, rather than clamps, a vertex beyond the precision
+		// floor. Validation keeps every supported offset far from it, so the
+		// check bypasses validation with an offset of 1 − 10⁻⁹.
+		src, err := NewLaceSource(lace(8, 1000, 0.3))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := src.result(LaceIsometry{Offset: 1 - 1e-9}); err == nil {
+			t.Error("a vertex beyond the precision floor was placed")
+		}
+		// One tile moved off the window's center leaves the center uncovered.
+		r := moved(t, lace(0, 1, 0.3), LaceIsometry{Offset: 0.5})
+		if r.Coverage.Radius != 0 || r.Coverage.Distance != 0 {
+			t.Errorf("the center lies beyond the patch, but coverage is %+v", r.Coverage)
+		}
+	})
 }
 
 // The authored path: a(p) = r(p)·e^{iφ(p)}, r(p) = (1 − s)·r₀ + s·r₁ with

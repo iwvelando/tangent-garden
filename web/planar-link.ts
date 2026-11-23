@@ -11,7 +11,8 @@ import {
   planarEngravingError,
   type PlanarEngravingPhrase,
 } from "./planar-engraving";
-import { laceLimits, laceTiling, type LaceStudy } from "./lace/model";
+import { laceLimits, type LaceStudy } from "./lace/model";
+import { offeredTilings, sidesOf, type LaceTilingId } from "./lace/tilings";
 import { planarStoryIds, type PlanarStoryId } from "./planar-story";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
@@ -989,11 +990,15 @@ function gardenStudy(value: unknown): GardenStudy {
 // presentation, view and weight; never generated geometry. Go validates
 // the same limits again.
 function laceStudy(value: unknown): LaceStudy {
+  // Issue #389's research tilings open only in its preview (?research=389).
+  const tilings = Object.fromEntries(
+    offeredTilings().map((t) => [t.id, true]),
+  ) as Record<LaceTilingId, true>;
   const out = conform<LaceStudy>(
     value,
     {
       fields: {
-        tiling: { options: { [laceTiling]: true } },
+        tiling: { options: tilings },
         depth: { range: [0, laceLimits.depth] },
         maxTiles: { range: [1, laceLimits.tiles] },
         starPoint: { range: [0, 1] },
@@ -1055,6 +1060,12 @@ function laceStudy(value: unknown): LaceStudy {
       throw new LinkError(
         `lace.selected[${i}]`,
         `lace.selected[${i}] must be a whole number.`,
+      );
+    // A tile has p sides: 0 to p − 1 (all of 0–6 for {7,3}).
+    if (side >= sidesOf(out))
+      throw new LinkError(
+        `lace.selected[${i}]`,
+        `lace.selected[${i}] must be 0–${sidesOf(out) - 1}.`,
       );
   });
   return out;
