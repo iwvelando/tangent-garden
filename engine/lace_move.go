@@ -208,6 +208,18 @@ func (s *LaceSource) geometry(iso LaceIsometry) (LaceResult, error) {
 		c := tr.apply(0)
 		r.Center[i] = Vec{real(c), imag(c)}
 		r.Transform[i] = [4]float64{real(tr.a), imag(tr.a), real(tr.b), imag(tr.b)}
+		if seed.circles != nil {
+			for j := range 2 * p {
+				z, w := tr.apply(seed.from[j]), tr.apply(seed.to[j])
+				c, radius, straight := circleLine(tr, seed.circles[j], z, w)
+				r.ArcStart = append(r.ArcStart, Vec{real(z), imag(z)})
+				r.ArcEnd = append(r.ArcEnd, Vec{real(w), imag(w)})
+				r.ArcCenter = append(r.ArcCenter, Vec{real(c), imag(c)})
+				r.ArcRadius = append(r.ArcRadius, radius)
+				r.ArcStraight = append(r.ArcStraight, straight)
+			}
+			continue
+		}
 		for k := range p {
 			m, st, next := tr.apply(seed.mid[k]), tr.apply(seed.star[k]), tr.apply(seed.mid[(k+1)%p])
 			for half, ends := range [2][2]complex128{{m, st}, {st, next}} {

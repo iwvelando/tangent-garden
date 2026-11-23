@@ -19,6 +19,11 @@ import {
   tilingOf,
   type LaceTilingId,
 } from "./lace/tilings";
+import {
+  laceMotifs,
+  type LaceMotifField,
+  type LaceMotifId,
+} from "./lace/motifs";
 import { planarStoryIds, type PlanarStoryId } from "./planar-story";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
@@ -999,6 +1004,17 @@ function laceStudy(value: unknown): LaceStudy {
   const tilings = Object.fromEntries(
     laceTilings.map((t) => [t.id, true]),
   ) as Record<LaceTilingId, true>;
+  const motifKinds = Object.fromEntries(
+    laceMotifs.map((m) => [m.id, true]),
+  ) as Record<LaceMotifId, true>;
+  const motifSizes = Object.fromEntries(
+    laceMotifs
+      .filter((m) => m.field !== "starPoint")
+      .map((m) => [m.field, { optional: { range: m.range } }]),
+  ) as Record<
+    Exclude<LaceMotifField, "starPoint">,
+    { optional: { range: [number, number] } }
+  >;
   const out = conform<LaceStudy>(
     value,
     {
@@ -1008,6 +1024,10 @@ function laceStudy(value: unknown): LaceStudy {
         depth: { range: [0, deepestDepth] },
         maxTiles: { range: [1, laceLimits.tiles] },
         starPoint: { range: [0, 1] },
+        // Absent in older links, which open the star; each motif's size
+        // is kept while another is shown.
+        motifKind: { optional: { options: motifKinds } },
+        ...motifSizes,
         edges: "boolean",
         motif: "boolean",
         selected: {

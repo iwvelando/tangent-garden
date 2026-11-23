@@ -102,6 +102,11 @@ test("the lace offers each tiling, and refuses an unknown one's link", async ({
     "4,5",
     "5,4",
     "3,7",
+    // The motifs' studies follow.
+    "7,3",
+    "5,4",
+    "4,5",
+    "5,4",
   ]);
   for (const p of lacePresets) expect(p.title).not.toContain("research");
   let error: unknown;
@@ -117,7 +122,7 @@ test("the lace offers each tiling, and refuses an unknown one's link", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Browse notebook examples" }).click();
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
-  await expect(gallery.locator("[data-lace-example]")).toHaveCount(9);
+  await expect(gallery.locator("[data-lace-example]")).toHaveCount(13);
   await page.keyboard.press("Escape");
   const d = await openExample(page, "Seven-pointed stars receding to the rim");
   await expect(tilingChoice(d)).toHaveValue("7,3");

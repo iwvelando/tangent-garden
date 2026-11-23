@@ -3323,6 +3323,19 @@ test("hyperbolic lace entry, scalar blur, phone controls and return preserve foc
   await star.blur();
   await expect(art).toHaveAttribute("aria-busy", "false");
   await expect(d.getByRole("alert")).toHaveCount(0);
+  // Another shape's size takes a constant too, and the star's is kept.
+  const shape = d.getByRole("combobox", { name: "Shape" });
+  await shape.selectOption("petals");
+  const fullness = d.getByLabel("Fullness", { exact: true });
+  await fullness.fill("1/phi");
+  await fullness.blur();
+  await expect(art).toHaveAttribute("aria-busy", "false");
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  await shape.selectOption("star");
+  await expect(d.getByLabel("Star point", { exact: true })).toHaveValue(
+    String(1 / ((1 + Math.sqrt(5)) / 2) ** 2),
+  );
+  await expect(art).toHaveAttribute("aria-busy", "false");
   // The paired cutoffs keep their clearance from what follows.
   const pair = (await d
     .locator(".pair")

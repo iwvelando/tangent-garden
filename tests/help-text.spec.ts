@@ -578,6 +578,7 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     "About Offset",
     "About Direction",
     "About Rotation",
+    "About Shape",
     "About Star point",
     "About Tiling",
     "About Depth",
@@ -630,6 +631,23 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     }
     const all = each.map((e) => `${e.brief} ${e.more}`).join(" ");
     for (const limit of limits) expect(all, tiling).toContain(limit);
+    // Each motif's size help, shown only under its Shape, fits in this
+    // tiling and states the range the engine admits.
+    for (const [motif, label, range] of [
+      ["petals", "Fullness", ["(0)", "(1)"]],
+      ["leaves", "Fullness", ["(0)", "(1)"]],
+      ["rings", "Ring radius", ["0.1–1"]],
+    ] as const) {
+      await d.getByLabel("Shape", { exact: true }).selectOption(motif);
+      const size = (await read()).find((e) => e.topic === `About ${label}`)!;
+      expect(words(size.brief), `${tiling} ${motif}`).toBeLessThanOrEqual(20);
+      expect(words(size.more), `${tiling} ${motif}`).toBeLessThanOrEqual(
+        moreWords,
+      );
+      for (const limit of range)
+        expect(`${size.brief} ${size.more}`, motif).toContain(limit);
+    }
+    await d.getByLabel("Shape", { exact: true }).selectOption("star");
   }
 });
 

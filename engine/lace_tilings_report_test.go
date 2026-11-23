@@ -86,7 +86,7 @@ func TestLaceTilingReport(t *testing.T) {
 		p, _ := tilingPQ(t, id)
 		for d := 4; d <= deep[id]; d += 2 {
 			r := computeLace(tiling(id, d, 1<<22, 0.3), laceLimits{d, 1 << 24, lacePolicy})
-			seed := newLaceSeed(id, 0.3)
+			seed := newLaceSeed(LaceRequest{Tiling: id, StarPoint: 0.3})
 			worst, scaled, gap := 0.0, 0.0, 1.0
 			for i, m := range r.Transform {
 				g := mobius{a: complex(m[0], m[1]), b: complex(m[2], m[3]), odd: r.Reversed[i]}
