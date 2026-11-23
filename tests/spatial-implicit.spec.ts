@@ -462,9 +462,7 @@ test("parameter playback shares frames with a second engine for its duration", a
   const before = (await engines(page)).length;
   await levelTrack(page, "4");
   await button(page, "Play animation").click();
-  await expect(stage(page)).toHaveAttribute("data-progress", "1", {
-    timeout: 20000,
-  });
+  await expect(stage(page)).toHaveAttribute("data-progress", "1");
   expect((await config(page)).implicit.level).toBe(1.3);
   let all = await engines(page);
   // One helper, released once playback completes; both engines calculated.
@@ -746,7 +744,7 @@ test("the Klein bottle's crossing opens close, seen through, and its flight play
   });
   await play.click();
   const pause = page.getByRole("button", { name: "Pause", exact: true });
-  await expect(pause).toBeVisible({ timeout: 20000 });
+  await expect(pause).toBeVisible();
   await expect(page.locator(".animation-error")).toHaveCount(0);
   await pause.click();
   await page.getByRole("slider", { name: "Animation progress" }).fill("0.5");

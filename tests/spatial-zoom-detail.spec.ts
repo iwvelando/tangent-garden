@@ -446,9 +446,7 @@ const corridor = { label: "A corridor of loops" };
 const stage = (page: Page) => page.locator(".spatial-stage");
 const canvas = (page: Page) => page.locator("#spatial-artwork");
 const settled = (page: Page) =>
-  expect(stage(page)).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(stage(page)).toHaveAttribute("aria-busy", "false");
 async function shown(page: Page): Promise<View> {
   return JSON.parse((await canvas(page).getAttribute("data-view"))!);
 }

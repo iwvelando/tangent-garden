@@ -14,9 +14,7 @@ const W = 1000,
 
 const art = (page: Page) => page.locator("#artwork");
 const ready = (page: Page) =>
-  expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(page.locator(".plot-wrap")).toHaveAttribute("aria-busy", "false");
 const readout = (page: Page) => page.locator(".refinement-readout");
 const toView = (page: Page) =>
   page.getByRole("checkbox", { name: "Refine to the view as you zoom" });
@@ -217,7 +215,7 @@ test("playback held at the current view refines every frame to it", async ({
   await p.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(
     p.getByRole("button", { name: "Replay", exact: true }),
-  ).toBeVisible({ timeout: 20_000 });
+  ).toBeVisible();
   await expect(art(p)).toHaveAttribute("data-camera-scale", scale!);
   await expect(innermost(p)).toHaveAttribute("d", drawn!);
 });

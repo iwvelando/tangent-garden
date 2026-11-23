@@ -14,9 +14,7 @@ const spring = { label: "A spring folded into a cusp" };
 const stage = (page: Page) => page.locator(".spatial-stage");
 const canvas = (page: Page) => page.locator("#spatial-artwork");
 const settled = (page: Page) =>
-  expect(stage(page)).toHaveAttribute("aria-busy", "false", {
-    timeout: 20_000,
-  });
+  expect(stage(page)).toHaveAttribute("aria-busy", "false");
 const readout = (page: Page) => page.locator(".refinement-readout");
 const toView = (page: Page) =>
   page.getByRole("checkbox", { name: "Refine to the view as you zoom" });

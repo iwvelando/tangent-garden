@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { choosePreset } from "./helpers";
+import { choosePreset, playAndPause } from "./helpers";
 import { decodeVideo, probe } from "./video";
 import { exportTiming } from "../web/export-quality";
 import { trace, traceTimeline } from "../web/spatial/raytrace";
@@ -486,11 +486,8 @@ for (const [label, camera] of [
     // half turn's own motion plays θ back and forth, eased.
     await page.getByLabel("Repeat", { exact: true }).selectOption("once");
     await page.getByLabel("Pace", { exact: true }).selectOption("steady");
-    await page
-      .getByRole("button", { name: "Play animation", exact: true })
-      .click();
+    await playAndPause(page);
     await expect(stage(page)).toHaveAttribute("data-mode", "trace");
-    await page.getByRole("button", { name: "Pause", exact: true }).click();
     const seek = async (p: string) => {
       await page.getByRole("slider", { name: "Animation progress" }).fill(p);
       await expect(stage(page)).toHaveAttribute("data-progress", p);

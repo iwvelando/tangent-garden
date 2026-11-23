@@ -2,7 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { deflateRawSync } from "node:zlib";
 import { presetStudy, spatialStudy } from "../web/spatial/link";
 import { settled, copiedStudy } from "./gallery-helpers";
-import { open, choosePreset } from "./helpers";
+import { open, choosePreset, playAndPause } from "./helpers";
 
 const source = () => {
   const s = presetStudy(0);
@@ -1155,18 +1155,9 @@ test("the signature's own phrase prepares once and seeks the full family", async
       0,
     ),
   );
-  await page
-    .getByRole("button", { name: "Play animation", exact: true })
-    .click();
   // Seeks rather than waiting out the ten-second film headless; its frames
   // come from the same prepared set either way.
-  await expect(
-    page.getByRole("button", { name: "Pause", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Pause", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Resume", exact: true }),
-  ).toBeVisible();
+  await playAndPause(page);
   for (const [t, shown] of [
     [1, 16],
     [0.5, 1],

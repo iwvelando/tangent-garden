@@ -197,6 +197,22 @@ export async function holdFrames(page: Page) {
     );
 }
 
+// Plays and pauses before playback can draw a frame, so the paused session a
+// test then seeks in exists however slowly frames draw (see holdFrames). A
+// test that clicks Pause unheld can watch a short animation end first on CI.
+export async function playAndPause(page: Page) {
+  const button = (name: string) =>
+    page.getByRole("button", { name, exact: true });
+  const release = await holdFrames(page);
+  try {
+    await button("Play animation").click();
+    await button("Pause").click({ timeout: 60_000 });
+    await expect(button("Resume")).toBeVisible();
+  } finally {
+    await release();
+  }
+}
+
 // iOS opens its keyboard over the page without shrinking the layout viewport:
 // it shortens the visual viewport and may pan it down inside the layout one,
 // and sometimes leaves it panned after the keyboard closes. Desktop engines

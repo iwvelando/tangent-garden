@@ -48,7 +48,7 @@ export async function copiedStudy(page: Page) {
     );
     await button.click();
     expect(await reached).toBe(true);
-  }).toPass({ timeout: 15_000 });
+  }).toPass();
   await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
   const url = await page.evaluate(() => navigator.clipboard.readText());
   await page.mouse.click(1, 1);

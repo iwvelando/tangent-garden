@@ -237,7 +237,7 @@ test("the probe moves smoothly along the curve as an animation", async ({
     .getByRole("spinbutton", { name: "Duration (seconds)" })
     .fill("0.5");
   await button(page, "Play animation").click();
-  await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+  await expect(button(page, "Replay")).toBeVisible();
   await expect(drawn(page, "probe")).toHaveAttribute(
     "data-t",
     String(2 * Math.PI),
@@ -292,7 +292,7 @@ for (const [motion, label] of [
       .getByRole("spinbutton", { name: "Duration (seconds)" })
       .fill("0.5");
     await button(page, "Play animation").click();
-    await expect(button(page, "Replay")).toBeVisible({ timeout: 20000 });
+    await expect(button(page, "Replay")).toBeVisible();
     if (motion === "stays")
       await expect(drawn(page, "probe")).toHaveAttribute("data-t", String(t0));
     if (motion === "along")

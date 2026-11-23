@@ -29,9 +29,11 @@ import { join } from "node:path";
 // its own page and fails on that error fails again on its retry. An engine
 // is lost when a page still open after the failure shows one of the two
 // forms the fault has taken: JavaScriptCore's out-of-bounds trap, or Go's
-// runtime already gone. A Go panic also ends the runtime, but a panic the
-// input causes happens again on the retry and fails it. A stack overflow or
-// any other engine error is the product's to explain.
+// runtime already gone. The worker reports a runtime that exits during a
+// call in the second form too, which once arrived as a JSON parse error
+// (#510). A Go panic also ends the runtime, but a panic the input causes
+// happens again on the retry and fails it. A stack overflow or any other
+// engine error is the product's to explain.
 const records = "page-crashes";
 const closedUnderTest = /Target page, context or browser has been closed/;
 const engineLost = /Out of bounds memory access|Go program has already exited/;

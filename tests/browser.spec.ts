@@ -21,6 +21,39 @@ test("a failed WASM download can recover on the next input change", async ({
   expect(attempts).toBe(2);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
+
+// When Go's runtime exits during a call (a panic, or a fault in the browser's
+// own engine), wasm_exec.js returns undefined from it. On CI's WebKit that
+// once reached the study as a JSON parse error (#510). The worker reports it
+// as the lost engine it is, the form the WebKit crash retry recognizes.
+test("a Go runtime that exits during a call is reported as exited", async ({
+  page,
+  context,
+}) => {
+  await context.route("**/wasm_exec.js", async (route) => {
+    const runtime = await (await route.fetch()).text();
+    await route.fulfill({
+      contentType: "text/javascript",
+      body: `${runtime}
+{
+  const wrap = Go.prototype._makeFuncWrapper;
+  let calls = 0;
+  Go.prototype._makeFuncWrapper = function (id) {
+    const call = wrap.call(this, id), go = this;
+    return function (...args) {
+      if (++calls > 1) return call.apply(this, args);
+      go.exited = true;
+      return undefined;
+    };
+  };
+}`,
+    });
+  });
+  await page.goto("/");
+  const alert = page.getByRole("alert").first();
+  await expect(alert).toContainText("Go program has already exited");
+  await expect(alert).not.toContainText(/JSON|undefined/);
+});
 // The placeholder holds the drawing's place, so the first result moves
 // nothing beneath it: at phone width, the study's controls.
 for (const viewport of [

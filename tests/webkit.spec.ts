@@ -163,7 +163,7 @@ async function openGalleryJourney(page: Page, gallery: Locator, name: string) {
   await expect(async () => {
     if (await gallery.isVisible()) await entry.click({ timeout: 5_000 });
     await expect(journey).toBeVisible({ timeout: 2_000 });
-  }).toPass({ timeout: 15_000 });
+  }).toPass();
   return journey;
 }
 

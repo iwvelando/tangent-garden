@@ -84,6 +84,8 @@ jobs:
   # The native race pass, split across runners: on its own, one engine3
   # package took 15 of the 20 minutes `check` allows. Each shard runs every
   # nth test by name (scripts/go-race.mjs); together they run every test.
+  # engine3's share sets a shard's length: 750-910 s of three shards' 13-16
+  # minutes, and a slow runner passed 20 (#517), so there are four.
   race:
     needs: reuse
     if: ${{ !cancelled() && needs.reuse.outputs.run-id == '' }}
@@ -93,8 +95,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-        total: [3]
+        shard: [1, 2, 3, 4]
+        total: [4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
