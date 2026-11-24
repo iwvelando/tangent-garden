@@ -241,6 +241,15 @@ test("a link carries the loop's terms and size, and refuses a fractional frequen
     page.getByText("lace.loopTerms[2].frequency", { exact: false }),
   ).toBeVisible();
   await expect(lace(page)).toHaveCount(0);
+  // Terms that do not move are refused by Go under the loop's own name,
+  // not as a failure to try again.
+  await openStudy(page, {
+    motifKind: "loop",
+    loopTerms: [{ frequency: 0, radius: 1, phase: 0 }],
+  });
+  const still = lace(page).getByRole("alert");
+  await expect(still).toContainText("Your loop: the loop must move");
+  await expect(still.getByRole("button", { name: "Try again" })).toHaveCount(0);
 });
 
 test("the still records the loop, and a moved selection draws its own copies", async ({

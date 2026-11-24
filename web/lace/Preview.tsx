@@ -667,9 +667,13 @@ export function LacePreview({
         ? "Repeat"
         : errorField === "size"
           ? motif.size
-          : errorField
-            ? labels[errorField]
-            : undefined);
+          : // The loop's terms have no field of their own here: a refusal
+            // of them names the motif that carries them.
+            errorField === "loop" || errorField?.startsWith("loop.")
+            ? motif.label
+            : errorField
+              ? labels[errorField]
+              : undefined);
   const [claimed, setClaimed] = useState(false);
   const claim = useCallback((_key: string, on: boolean) => setClaimed(on), []);
   const target = useMemo(
