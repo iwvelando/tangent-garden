@@ -1453,6 +1453,18 @@ function laceSettings(q: import("./lace/model").LaceRequest) {
     out.motif = q.motif;
     out.size = q.size;
   }
+  // The loop's terms, checked before JSON can turn NaN or infinity into
+  // null; Go checks their limits.
+  if (q.loop !== undefined) {
+    if (!Array.isArray(q.loop) || q.loop.length > 16)
+      throw fieldError("loop", "A loop has 1–16 terms.");
+    out.loop = q.loop.map((t, k) => {
+      for (const f of ["frequency", "radius", "phase"] as const)
+        if (typeof t?.[f] !== "number" || !Number.isFinite(t[f]))
+          throw fieldError(`loop.${k}.${f}`, "Enter a finite number.");
+      return { frequency: t.frequency, radius: t.radius, phase: t.phase };
+    });
+  }
   if (q.isometry) {
     const { offset, direction, rotation } = q.isometry;
     for (const [k, v] of Object.entries({ offset, direction, rotation }))

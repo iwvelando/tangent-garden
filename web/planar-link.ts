@@ -21,6 +21,7 @@ import {
 } from "./lace/tilings";
 import {
   laceMotifs,
+  loopMaxFrequency,
   type LaceMotifField,
   type LaceMotifId,
 } from "./lace/motifs";
@@ -1028,6 +1029,21 @@ function laceStudy(value: unknown): LaceStudy {
         // is kept while another is shown.
         motifKind: { optional: { options: motifKinds } },
         ...motifSizes,
+        // Absent until a loop is woven from Draw a loop: the example leaf.
+        // Only its fitted terms travel, never the drawn outline; whole
+        // frequencies are checked below.
+        loopTerms: {
+          optional: {
+            list: {
+              fields: {
+                frequency: { range: [-loopMaxFrequency, loopMaxFrequency] },
+                radius: { range: [0, 100000] },
+                phase: { range: [-1e6, 1e6] },
+              },
+            },
+            max: maxTerms,
+          },
+        },
         edges: "boolean",
         motif: "boolean",
         // A detailed view's addresses run deeper; each tiling's bound is
@@ -1091,6 +1107,15 @@ function laceStudy(value: unknown): LaceStudy {
       "lace.selected",
       `lace.selected must hold at most ${longest} sides.`,
     );
+  out.loopTerms?.forEach((term, i) => {
+    if (!Number.isInteger(term.frequency))
+      throw new LinkError(
+        `lace.loopTerms[${i}].frequency`,
+        `lace.loopTerms[${i}].frequency must be a whole number.`,
+      );
+  });
+  if (out.loopTerms && out.loopTerms.length === 0)
+    throw new LinkError("lace.loopTerms", "lace.loopTerms must hold a term.");
   for (const k of ["orbits", "turns"] as const)
     if (out.motion && !Number.isInteger(out.motion[k]))
       throw new LinkError(

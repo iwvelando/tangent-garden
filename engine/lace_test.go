@@ -58,6 +58,20 @@ func checkLaceShape(t *testing.T, r LaceResult) {
 		"corners": len(r.Corners) / pOf(r), "sides": len(r.Sides) / pOf(r),
 		"arcs": len(r.ArcStart) / (2 * pOf(r)),
 	} {
+		// The loop's tiles hold varying numbers of strokes, which arcFirst
+		// delimits: n + 1 offsets from 0 to every stroke, a whole number of
+		// strokes for each of the 2p copies.
+		if name == "arcs" && r.ArcFirst != nil {
+			if len(r.ArcFirst) != n+1 || r.ArcFirst[0] != 0 || int(r.ArcFirst[n]) != len(r.ArcStart) {
+				t.Fatalf("arcFirst has %d entries from %v to %v for %d tiles and %d strokes", len(r.ArcFirst), r.ArcFirst[0], r.ArcFirst[len(r.ArcFirst)-1], n, len(r.ArcStart))
+			}
+			for i := range n {
+				if d := int(r.ArcFirst[i+1] - r.ArcFirst[i]); d < 4*pOf(r) || d%(2*pOf(r)) != 0 {
+					t.Fatalf("tile %d has %d strokes", i, d)
+				}
+			}
+			continue
+		}
 		if length != n {
 			t.Fatalf("%s has %d per-tile entries, want %d", name, length, n)
 		}

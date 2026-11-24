@@ -54,7 +54,12 @@ const (
 	LaceMaxOffset = 0.8
 	LaceMaxAngle  = 100
 	LaceMaxTurns  = 3
+	// LaceMaxLoopStrokes caps the loop motif's strokes in one reply.
+	LaceMaxLoopStrokes = 160000
 )
+
+// laceLoopStrokes is the cap in force, lowered only by tests.
+var laceLoopStrokes = LaceMaxLoopStrokes
 
 // LaceRequest asks for a finite patch of a regular tiling of the Poincaré
 // disk, grown from the centered tile by reflection across its edges.
@@ -69,6 +74,9 @@ type LaceRequest struct {
 	StarPoint float64 `json:"starPoint"`
 	Motif     string  `json:"motif,omitempty"`
 	Size      float64 `json:"size,omitempty"`
+	// Loop is the loop motif's closed curve, Fourier terms with whole
+	// frequencies; the other motifs ignore it.
+	Loop []Term `json:"loop,omitempty"`
 	// Isometry moves the generated patch; absent, it stays in place.
 	Isometry *LaceIsometry `json:"isometry,omitempty"`
 	// Window, when present, asks for the tiles drawn in this rectangle
@@ -137,8 +145,10 @@ type LaceOmitted struct {
 // fewer on the patch's boundary. An edge
 // lies on the circle orthogonal to the rim with EdgeCenter and EdgeRadius,
 // or on a diameter when EdgeStraight (center and radius zero). Motif arcs
-// are geodesic segments, 2p per tile in tile order, stored the same way between ArcStart and ArcEnd; on a circle
-// each is its minor arc.
+// are geodesic segments or circular arcs, 2p per tile in tile order,
+// stored the same way between ArcStart and ArcEnd; on a circle each is its
+// minor arc. The loop motif's tiles hold 2p closed copies of varying
+// numbers of arcs, which ArcFirst delimits.
 type LaceResult struct {
 	Tiling       string       `json:"tiling"`
 	Center       []Vec        `json:"center"`
@@ -162,7 +172,11 @@ type LaceResult struct {
 	ArcCenter    []Vec        `json:"arcCenter"`
 	ArcRadius    []float64    `json:"arcRadius"`
 	ArcStraight  []bool       `json:"arcStraight"`
-	Omitted      LaceOmitted  `json:"omitted"`
+	// ArcFirst delimits each tile's strokes when their number varies, as
+	// the loop's do: tile i's run from ArcFirst[i] to ArcFirst[i+1]. It is
+	// absent for the other motifs, whose tiles hold 2p each.
+	ArcFirst []float64   `json:"arcFirst,omitempty"`
+	Omitted  LaceOmitted `json:"omitted"`
 	// Stopped is "count" or "candidates" when that ceiling ended generation
 	// with Pending tiles not fully expanded, else "".
 	Stopped string `json:"stopped"`
@@ -215,7 +229,10 @@ func ComputeLace(q LaceRequest) (LaceResult, error) {
 // stroke in the seed's fundamental triangle, and its size, here the
 // least size admitted and the size's name in refusals; the most is 1.
 // The star's size is the star point.
-const LaceStar = "star"
+const (
+	LaceStar = "star"
+	LaceLoop = "loop"
+)
 
 var laceMotifs = map[string]struct {
 	least float64
@@ -225,6 +242,7 @@ var laceMotifs = map[string]struct {
 	"petals": {0, "fullness"},
 	"leaves": {0, "fullness"},
 	"rings":  {0.1, "ring radius"},
+	LaceLoop: {0.1, "loop size"},
 }
 
 // motif is the request's motif, the star when it names none.
@@ -251,10 +269,15 @@ func (q LaceRequest) validate() error {
 	}
 	m, ok := laceMotifs[q.motif()]
 	if !ok {
-		return fieldErr("motif", "choose the star, petals, leaves or rings motif")
+		return fieldErr("motif", "choose the star, petals, leaves, rings or loop motif")
 	}
 	if q.motif() != LaceStar && (!finite(q.Size) || q.Size < m.least || q.Size > 1) {
 		return fieldErr("size", "%s must be %v–1", m.name, m.least)
+	}
+	if q.motif() == LaceLoop {
+		if err := validateLoop(q.Loop); err != nil {
+			return err
+		}
 	}
 	if q.Isometry != nil {
 		if err := q.Isometry.validate(); err != nil {
@@ -350,6 +373,8 @@ type laceSeed struct {
 	// in its circle, 2p of each; empty for the star.
 	from, to []complex128
 	circles  []laceCircle
+	// The loop motif's strokes at every level of detail (lace_loop.go).
+	loop *laceLoop
 }
 
 // laceCircle is the inversion in a circle, or reflection in a line,
@@ -454,6 +479,10 @@ func newLaceSeed(q LaceRequest) laceSeed {
 			s.strokes[2*k] = mirror(s.mid[k], s.star[k])
 			s.strokes[2*k+1] = mirror(s.star[k], s.mid[(k+1)%n])
 		}
+		return s
+	}
+	if q.motif() == LaceLoop {
+		s.loop = newLaceLoop(&s, q.Loop, q.Size, tl)
 		return s
 	}
 	s.motif(q.motif(), q.Size, tl)
