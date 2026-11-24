@@ -53,6 +53,7 @@ import {
   followView,
   indexOf,
   isIdentity,
+  laceDetailFor,
   laceHelp,
   laceLimits,
   tilingHelp,
@@ -143,7 +144,8 @@ export function LacePreview({
     key?: string;
   }>({ message: "" });
   const [scalars, setScalars] = useState<Record<string, ScalarState>>({});
-  const followHelp = useHelp();
+  const followHelp = useHelp(),
+    detailHelp = useHelp();
   // The tile number as typed, while it is being typed.
   const [tileDraft, setTileDraft] = useState<string>();
   // Asking again after a failure that names no field, such as a timeout.
@@ -481,6 +483,22 @@ export function LacePreview({
       scheme: theme.scheme,
       weight: study.weight,
     };
+  // The detail policy and request behind the drawn patch, when detail
+  // changed them; a motion records its frozen request.
+  function detailRecord() {
+    const q: LaceRequest = JSON.parse(film?.key ?? shown?.key ?? key);
+    const d = laceDetailFor(study);
+    return {
+      ...(study.detail && { detail: true }),
+      ...(q.window && {
+        detailRequest: {
+          minRadius: q.minRadius,
+          window: q.window,
+          ...(d && { level: d.level, factor: d.factor }),
+        },
+      }),
+    };
+  }
   const metadata = () => ({
     kind: "hyperbolic-lace",
     tiling: `{${tiling.p},${tiling.q}}`,
@@ -496,6 +514,7 @@ export function LacePreview({
     tiles: result?.center.length,
     omitted: result?.omitted,
     stopped: result?.stopped || undefined,
+    ...detailRecord(),
     finite: result
       ? `A finite patch of an infinite tiling: ${result.center.length} tiles within ${Math.max(0, ...result.depth)} reflections of the center tile. The rim is the disk's boundary at infinity; no tile reaches it.`
       : undefined,
@@ -641,13 +660,21 @@ export function LacePreview({
   );
   const props = drawing();
   // The summary describes the drawn patch: a frame's coverage as it moves.
+  // A motion's request is the one it froze, with its view's detail.
+  const drawnRequest: LaceRequest | undefined =
+    film || shown ? JSON.parse(film?.key ?? shown!.key) : undefined;
+  const viewed = !!drawnRequest?.window;
   const summary = film
-    ? cutoffSummary(result!, JSON.parse(film.key))
-    : shown && cutoffSummary(shown.result, JSON.parse(shown.key));
+    ? cutoffSummary(result!, drawnRequest!, study.view.zoom)
+    : shown && cutoffSummary(shown.result, drawnRequest!, study.view.zoom);
   const time = film?.time ?? (finished ? 1 : 0);
   const drawnIsometry = result?.isometry ?? isometry;
   const about =
-    result && selected >= 0 ? explain(result, selected, !!film) : undefined;
+    result && selected >= 0
+      ? explain(result, selected, !!film, viewed)
+      : undefined;
+  // A detailed view's tile numbers count its own tiles.
+  const nameOf = (i: number) => tileName(i) + (viewed ? " of this view" : "");
   // The tiling's own help for its rings and star.
   const ofTiling = tilingHelp(tiling);
   const around = result && selected >= 0 ? neighbors(result, selected) : [];
@@ -882,8 +909,15 @@ export function LacePreview({
                 {artwork}
                 <p className="note garden-gestures">
                   Click or tap a tile to select it. Drag to pan; scroll or pinch
-                  to zoom, which enlarges the drawing without moving the disk.
-                  Keys: arrows, + / −, Home.{" "}
+                  to zoom, which enlarges the drawing without moving the disk
+                  {study.detail
+                    ? film
+                      ? " and only enlarges the motion's tiles until it stops"
+                      : isometry.offset > 0
+                        ? "; a lace moved off center keeps its patch"
+                        : " and, past 1.4×, grows deeper tiles for the view"
+                    : ""}
+                  . Keys: arrows, + / −, Home.{" "}
                   <button
                     type="button"
                     className="text-button"
@@ -1026,7 +1060,7 @@ export function LacePreview({
                       <HelpText help={followHelp}>{laceHelp.follow}</HelpText>
                       {about ? (
                         <div className="garden-about">
-                          <h3>{tileName(selected)}</h3>
+                          <h3>{nameOf(selected)}</h3>
                           {/* The moving wording's height is held at rest
                               (lace.css), so Play moves nothing below. */}
                           <p
@@ -1054,7 +1088,7 @@ export function LacePreview({
                                 aria-label={
                                   t < 0
                                     ? `Across ${sideName(k)}: beyond the patch`
-                                    : `Across ${sideName(k)}: ${tileName(t)}`
+                                    : `Across ${sideName(k)}: ${nameOf(t)}`
                                 }
                               >
                                 {k + 1}: {t < 0 ? "—" : t + 1}
@@ -1069,7 +1103,9 @@ export function LacePreview({
                       ) : (
                         <p className="note">
                           {study.selected
-                            ? "The selected tile lies beyond the current cutoffs."
+                            ? viewed
+                              ? "The selected tile lies beyond the cutoffs and outside this view."
+                              : "The selected tile lies beyond the current cutoffs."
                             : "No tile selected."}
                         </p>
                       )}
@@ -1261,6 +1297,23 @@ export function LacePreview({
                   {whole("depth", "Depth", 0, tiling.maxDepth)}
                   {whole("maxTiles", "Tile limit", 1, laceLimits.tiles)}
                 </div>
+                <div className="garden-follow">
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={!!study.detail}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        edit(({ detail: _, ...s }) =>
+                          on ? { ...s, detail: true } : s,
+                        );
+                      }}
+                    />
+                    Deeper tiles when zoomed in
+                  </label>
+                  <HelpToggle topic="zoom detail" help={detailHelp} />
+                </div>
+                <HelpText help={detailHelp}>{ofTiling.detail}</HelpText>
                 <p
                   className="note garden-summary lace-summary"
                   data-current={current || undefined}

@@ -46,6 +46,17 @@ export type LaceRequest = {
   size?: number;
   // Moves the patch; absent, it stays in place.
   isometry?: LaceIsometry;
+  // Detail for a view: the cutoffs' patch where it meets this window,
+  // and every tile drawn in it at least minRadius in circumradius, both
+  // in model units as drawn (laceDetailFor).
+  window?: LaceWindow;
+  minRadius?: number;
+};
+export type LaceWindow = {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
 };
 // The disk isometry T(z) = e^{iθ}(z − a)/(1 − āz), a = offset·e^{i·direction}
 // and θ = rotation, angles in radians (engine.LaceIsometry). It brings the
@@ -114,7 +125,9 @@ export type LaceResult = {
   arcCenter: Vec[];
   arcRadius: number[];
   arcStraight: boolean[];
-  omitted: { depth: number; precision: number };
+  // Under a window, candidates outside the view or too small to draw
+  // there, in place of those beyond the depth.
+  omitted: { depth: number; precision: number; view?: number; radius?: number };
   stopped: "" | "count" | "candidates";
   pending: number;
   processed: number;
@@ -132,7 +145,10 @@ export type LacePresentation = "complete" | "selected";
 // A tile's address: the sides crossed from the center tile, each numbered
 // 0 to p − 1 in the tile crossed. It names the same tile under any cutoffs.
 export type LaceAddress = number[];
-export type LaceStudy = Omit<LaceRequest, "motif" | "size"> & {
+export type LaceStudy = Omit<
+  LaceRequest,
+  "motif" | "size" | "window" | "minRadius"
+> & {
   // Which motif every tile carries, the star when absent, and the other
   // motifs' sizes, each absent until edited (its descriptor's initial
   // value) and kept while another motif is shown.
@@ -152,6 +168,9 @@ export type LaceStudy = Omit<LaceRequest, "motif" | "size"> & {
   viewBeforeFollow?: PlotCamera;
   // The motion's path and timing; absent, defaultLaceMotion.
   motion?: LaceStudyMotion;
+  // Deeper tiles for the view when zoomed in (laceDetailFor); absent or
+  // false, zoom only enlarges the patch, as in older links.
+  detail?: boolean;
 };
 export type LaceStudyMotion = LaceMotion & {
   duration: number;
@@ -177,9 +196,11 @@ export const defaultLaceMotion: LaceStudyMotion = {
 export const studyMotif = (s: LaceStudy): LaceMotifInfo => motifOf(s.motifKind);
 export const motifSize = (s: LaceStudy, m = studyMotif(s)): number =>
   s[m.field] ?? m.initial;
-// A star's request is as it was before other motifs existed.
+// A star's request is as it was before other motifs existed. With zoom
+// detail at a zoom past 1.4×, it carries the view's window.
 export const laceRequest = (s: LaceStudy): LaceRequest => {
   const m = studyMotif(s);
+  const d = laceDetailFor(s);
   return {
     tiling: s.tiling,
     depth: s.depth,
@@ -187,8 +208,70 @@ export const laceRequest = (s: LaceStudy): LaceRequest => {
     starPoint: s.starPoint,
     ...(m.id !== "star" && { motif: m.id, size: motifSize(s, m) }),
     ...(s.isometry && { isometry: { ...s.isometry } }),
+    ...(d && { window: d.window, minRadius: d.minRadius }),
   };
 };
+
+// The window's tile limit (engine.LaceMaxViewTiles).
+export const laceViewTiles = 2000;
+// The longest address a detailed view's link may select: far deeper than
+// any view reaches at the 100× zoom limit (about 13 reflections for
+// {7,3}, 25 for {3,7}).
+export const laceViewAddress = 64;
+
+// Zoom detail (docs/mathematics.md, Hyperbolic lace, Detail for a view),
+// the garden's policy (web/garden/model.ts, detailFor) for the lace. Zoom
+// snaps down to half-octave levels, factor f = 2^(level/2) ≥ √2, and the
+// least drawn circumradius of tiles beyond the cutoffs is the tiling's
+// detailRadius over f in model units: on screen it stays that size, to √2
+// times it. The window is the view snapped outward to a grid of
+// quarter-view cells at that level, plus one cell, clamped to the cells
+// around the disk, so small pans and a revisited view ask for the same
+// request, and the shown result is replaced, never accumulated. Below √2,
+// with detail off, or with the lace moved off center, there is none: the
+// static request: off center, the search keeps several times the view's
+// tiles (docs/mathematics.md, Detail for a view), so a moved lace keeps
+// its patch.
+export const laceDetailLevel = (zoom: number) =>
+  Math.max(0, Math.floor(2 * Math.log2(zoom)));
+export function laceDetailFor(s: LaceStudy) {
+  if (!s.detail) return undefined;
+  if (s.isometry && s.isometry.offset > 0) return undefined;
+  return laceDetailView(s.tiling, s.view);
+}
+// The policy's level, cutoff and window for a tiling at a view, or
+// undefined below √2.
+export function laceDetailView(tiling: LaceTilingId, view: PlotCamera) {
+  const s = { tiling, view };
+  const level = laceDetailLevel(s.view.zoom);
+  if (level === 0) return undefined;
+  const factor = 2 ** (level / 2);
+  const cell = lacePage.width / (laceScale * factor) / 4;
+  const k = laceScale * s.view.zoom,
+    v = s.view;
+  // Cells covering the disk, and one more on each side; a view beyond
+  // them keeps a one-cell window there, outside the disk.
+  const reach = Math.ceil(1 / cell) + 1;
+  const index = (value: number, round: (v: number) => number, by: number) =>
+    Math.max(-reach, Math.min(reach, round(value / cell) + by));
+  const span = (lo: number, hi: number) => {
+    const a = index(lo, Math.floor, -1);
+    return [a, Math.max(a + 1, index(hi, Math.ceil, 1))];
+  };
+  const [i0, i1] = span((-500 - v.x) / k, (500 - v.x) / k);
+  const [j0, j1] = span((v.y - 380) / k, (v.y + 380) / k);
+  return {
+    level,
+    factor,
+    minRadius: tilingOf(s.tiling).detailRadius / (laceScale * factor),
+    window: {
+      xMin: i0 * cell,
+      xMax: i1 * cell,
+      yMin: j0 * cell,
+      yMax: j1 * cell,
+    },
+  };
+}
 // A frame's geometry on its frozen patch: the patch's tiles and incidence
 // with the frame's positions.
 export function movedResult(source: LaceResult, frame: LaceFrame): LaceResult {
@@ -568,12 +651,21 @@ const liveRanges = {
   distance: [0, 10],
   share: [0, 100],
 } as const;
+// A detailed view's tiles lie deeper: about 25 from the center at the
+// 100× zoom limit, so their moving distances get a wider frozen range.
+const deepDistance = [0, 40] as const;
 
 // The explanation beside the drawing for the selected tile. While a motion
 // plays, is paused or seeks, its numbers change with every frame: they keep
 // the moved wording and one width throughout (liveReadout), so the text
 // wraps alike and the controls below it hold still.
-export function explain(r: LaceResult, i: number, moving = false) {
+export function explain(
+  r: LaceResult,
+  i: number,
+  moving = false,
+  deep = false,
+) {
+  const far = deep ? deepDistance : liveRanges.distance;
   const d = r.depth[i];
   const side = formatNumber(r.sideLength);
   const t = tilingOf(r.tiling);
@@ -587,7 +679,7 @@ export function explain(r: LaceResult, i: number, moving = false) {
   // distance from the disk's center, which it changes.
   const live = (v: number, range: readonly [number, number]) =>
     liveReadout(withoutResidue(v), range);
-  const motion = `Depth ${d} · drawn at (${live(r.center[i].x, liveRanges.disk)}, ${live(r.center[i].y, liveRanges.disk)}) · hyperbolic distance ${live(between(r.center[0], r.center[i]), liveRanges.distance)} from the center tile and ${live(fromCenter(r.center[i]), liveRanges.distance)} from the disk's center · drawn ${live(100 * drawnShare(r, i), liveRanges.share)}% of a tile's size at the disk's center`;
+  const motion = `Depth ${d} · drawn at (${live(r.center[i].x, liveRanges.disk)}, ${live(r.center[i].y, liveRanges.disk)}) · hyperbolic distance ${live(between(r.center[0], r.center[i]), far)} from the center tile and ${live(fromCenter(r.center[i]), far)} from the disk's center · drawn ${live(100 * drawnShare(r, i), liveRanges.share)}% of a tile's size at the disk's center`;
   const facts = moving
     ? motion
     : isIdentity(r.isometry)
@@ -617,8 +709,10 @@ export function explain(r: LaceResult, i: number, moving = false) {
 }
 
 // What finite cutoffs left out, outside the artwork: the counts, and when
-// a ceiling ended generation, a notice that the patch is incomplete.
-export function cutoffSummary(r: LaceResult, q: LaceRequest) {
+// a ceiling ended generation, a notice that the patch is incomplete. With
+// detail, it also gives the view's least drawn radius on screen at this
+// zoom, and says that tile numbers count the view's tiles.
+export function cutoffSummary(r: LaceResult, q: LaceRequest, zoom = 1) {
   const n = r.center.length;
   const deepest = n ? Math.max(...r.depth) : 0;
   let gap = 1;
@@ -630,10 +724,17 @@ export function cutoffSummary(r: LaceResult, q: LaceRequest) {
   ];
   const cut = [
     r.omitted.depth && `${tiles(r.omitted.depth)} beyond depth ${q.depth}`,
+    r.omitted.view && `${tiles(r.omitted.view)} outside this view`,
+    r.omitted.radius &&
+      `${tiles(r.omitted.radius)} too small to draw in this view`,
     r.omitted.precision &&
       `${tiles(r.omitted.precision)} too near the rim to place reliably`,
   ].filter(Boolean);
   if (cut.length) parts.push(`Left out: ${cut.join("; ")}.`);
+  if (q.window && q.minRadius)
+    parts.push(
+      `Beyond the cutoffs' patch, this view's tiles reach ${formatNumber(q.minRadius * laceScale * zoom)} drawing units in radius, however deep. Tile numbers count this view's tiles; addresses are the same in every view.`,
+    );
   // Moved off center, the patch's finite edge nears the disk's center on
   // one side: say how far it is complete about the center.
   if (r.isometry.offset > 0)
@@ -644,7 +745,7 @@ export function cutoffSummary(r: LaceResult, q: LaceRequest) {
     );
   const stopped =
     r.stopped === "count"
-      ? `Stopped at the ${formatCount(q.maxTiles)}-tile limit with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
+      ? `Stopped at the ${formatCount(q.window ? laceViewTiles : q.maxTiles)}-tile limit${q.window ? " for a view" : ""} with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
       : r.stopped === "candidates"
         ? `Stopped after examining ${formatCount(laceLimits.candidates)} candidate tiles with ${tiles(r.pending)} unexpanded, so depth ${deepest} is incomplete.`
         : "";
@@ -660,6 +761,10 @@ export function tilingHelp(t: LaceTilingInfo) {
       `Each depth reflects the previous ring of tiles across their outer sides. Depth ${t.depth} holds ${formatCount(held)} tiles; deeper rings exceed the tile limit, which then stops the last ring partway.`,
     ),
     starPoint: motifOf("star").help(t),
+    detail: tiered(
+      "Generate deeper tiles for the view as you zoom past 1.4×.",
+      `Zoom snaps down to steps of √2. The cutoffs' patch stays, and beyond it the view gets every tile drawn at least ${formatNumber(t.detailRadius)} drawing units in radius, to 1.4 times it, however deep; at most ${formatCount(laceViewTiles)} tiles. A lace moved off center keeps its patch. A motion keeps its tiles until stopped.`,
+    ),
   };
 }
 export const laceHelp = {

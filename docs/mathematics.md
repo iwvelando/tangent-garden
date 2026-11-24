@@ -707,7 +707,7 @@ The motif therefore has all `2p` of the seed's symmetries, which it needs. A til
 
 **Drawn arcs.** The drawing draws every stroke as its circle's minor arc. In the metric `4|dz|²/(1 − |z|²)²`, a curve's Euclidean turning is at most `(1 + |κ|)·L`, where `κ` is its geodesic curvature and `L` its hyperbolic length. A Euclidean circle `|z − c| = ρ` has `κ = (1 + ρ² − |c|²)/(2ρ)`. Isometries keep both quantities, and for every admitted stroke the bound is below `π`, so an arc stays minor wherever it is carried. The petal and leaf at full size come nearest, `{3,7}`'s leaves at about 2.5.
 
-**Finiteness and the camera.** The tiling is infinite; the lace draws a finite patch and states its cutoffs outside the drawing. The view frames the rim in a fixed page; pan and zoom move the camera, never the disk's geometry, so a tile near the rim stays smaller in the drawing while its hyperbolic size is the same as every other tile's. Moving the center of attention by a disk isometry is a separate operation, not ordinary zoom: see [Moving the lace](#moving-the-lace). **Follow selection** is a camera action too: it frames a newly selected tile's corners, their bounding box centered with its larger side a quarter of the page's height, within the zoom range 1–100. At the 1,000-tile limit and the depth bound, the smallest `{3,7}` triangle frames at about 57×, and the smallest tiles of the other tilings reach the 100× limit, drawn smaller than a quarter of the page.
+**Finiteness and the camera.** The tiling is infinite; the lace draws a finite patch and states its cutoffs outside the drawing. The view frames the rim in a fixed page; pan and zoom move the camera, never the disk's geometry, so a tile near the rim stays smaller in the drawing while its hyperbolic size is the same as every other tile's. With zoom detail on, a zoomed view also asks for the tiles drawn in it: see [Detail for a view](#detail-for-a-view). Moving the center of attention by a disk isometry is a separate operation, not ordinary zoom: see [Moving the lace](#moving-the-lace). **Follow selection** is a camera action too: it frames a newly selected tile's corners, their bounding box centered with its larger side a quarter of the page's height, within the zoom range 1–100. At the 1,000-tile limit and the depth bound, the smallest `{3,7}` triangle frames at about 57×, and the smallest tiles of the other tilings reach the 100× limit, drawn smaller than a quarter of the page.
 
 **Selection.** A pointer chooses the drawn tile containing it, on the same side of each of its `p` geodesics as its center; tiles of a complete patch do not overlap. Outside every drawn tile, such as between the last ring and the rim, it chooses the tile whose corners come nearest within a screen tolerance, and otherwise nothing.
 
@@ -750,6 +750,61 @@ The tests check, on the returned geometry and from these definitions:
 - **Refusals.** Every bound is refused under its own field.
 - **Work.** A frame's allocations are the same for 29 tiles as for 1,000, while generation's grow.
 - **In the browser.** Drawn corners at several times, forward, backward and paused, against `T` from the drawing at rest; a decoded MP4's frames against seeks at their times; a refused loop when the ends differ in geometry, camera or layers.
+
+### Detail for a view
+
+**What a view holds.** A request may carry a **window**, a rectangle in model units in the drawing's frame (after the isometry), and a **minimum radius** `L`. A tile is **in view** when its circumscribed circle, the hyperbolic circle of radius `R` about its center, meets the window as drawn, and its Euclidean radius there is at least `L`. A circle of hyperbolic radius `R` about a point at Euclidean radius `t` is drawn with radius `(1 − t²)τ/(1 − t²τ²)`, `τ = tanh(R/2)`; it is largest at the center, so a tile in view lies within the distance `D` of the drawing's center where that radius is `L`, `t² = (τ − L)/(τ(1 − Lτ))`.
+
+A windowed patch holds:
+- every tile of the patch the cutoffs make whose circle meets the window, so zooming in never loses a tile drawn at 1×;
+- every tile in view, however deep, beyond the depth and the tile limit;
+- every tile on the address of one of those.
+
+Each tile has the address, depth, orientation and transformation the unlimited breadth-first patch gives it. The patch's tiles are in that patch's breadth-first order. Depth and the tile limit shape only the cutoffs' part. A window's patch is limited to 2,000 tiles, its search to 10,000 candidates, and the precision policy applies unchanged. Candidates left out are counted once each: **outside the view**, or **too small** when their circle meets the window.
+
+**Why the search finds every address.** A tile's address is its first gallery from the center tile, and the tiles on it keep near the straight line to the tile. On unlimited patches, every tile on an address lies within the tiling's **gallery reach** of the ray from the center through the tile's center, and never farther from the center than the tile.
+
+| Tiling | Most measured | Unlimited to depth | Gallery reach used |
+|---|---|---|---|
+| `{7,3}` | 1.066 | 10 | 1.3 |
+| `{5,4}` | 1.711 | 10 | 2.0 |
+| `{4,5}` | 1.129 | 11 | 1.4 |
+| `{3,7}` | 0.796 | 16 | 1.0 |
+
+The measured value grows by less each ring: geodesics of the tile graph stay a bounded distance from hyperbolic geodesics. The bound is measured, not proved; the tests keep at least 0.2 of headroom under it.
+
+Carried back by the inverse isometry, the window's circumscribed disk is a Euclidean disk `B`. A tile in view meets `B`, so its center lies within `R` of a point `P` of `B`. Geodesics from the center are diameters, Euclidean segments, and two from one point stay within the distance of their ends. So the segment to the tile's center lies within `R` of the segment to `P`, which lies in `H`, the Euclidean convex hull of the center and `B`. The tile's center also lies within `D` plus the isometry's offset distance, `2 artanh |a|`, of the center tile's.
+
+A breadth-first **search** that keeps a candidate when it lies within the gallery reach plus `R` of `H`, and within that distance of the center, therefore reaches every tile in view by its own address. The points within a hyperbolic distance of a candidate form a Euclidean disk, so the first test is exact. A tile near the region's edge may be reached by another gallery. So the patch is grown again, keeping only the cutoffs' tiles meeting the window, the search's tiles in view, and the tiles on their addresses. Those reach each other by their own addresses, so each is placed by the unlimited patch's transformation, composed in the same order, bit for bit.
+
+**The view's request.** The page's **zoom detail** maps the manual view to a window as the [garden's](#apollonian-garden) does.
+- Past 1.4×, zoom snaps down to half-octave levels `ℓ = ⌊2 log₂ zoom⌋`, factor `f = 2^(ℓ/2)`. The minimum radius is the tiling's **detail radius** over `350·f`: 3 drawing units, or 4 for `{3,7}`, whose triangles are small for their circumradius. On screen, the smallest tiles beyond the cutoffs' patch are therefore drawn between the detail radius and √2 times it.
+- The window is the view snapped outward to a grid of quarter-view cells at that level, `1000/(350 f)/4` model units, plus one cell on each side, clamped to the cells around the disk.
+- Pans within a cell, zooms within a level and a revisited view ask for the identical request. The shown result is replaced, never accumulated, so a view's drawing depends only on its request, however it was reached.
+- Below 1.4×, with detail off, or with a static offset above 0, the request is the static one. Under an offset the bound on distance from the center loosens by the offset's own distance, and the search keeps 10 to 90 times the view's tiles at offsets 0.3 to 0.8, so a moved lace keeps its patch.
+
+**Finite loops.** A motion freezes the shown request, window included. Its tiles move as any frozen patch's do; zoom during the motion only enlarges them, and the view is detailed again when it stops.
+
+**Bounds.** A sweep over views at every level, at the center and the rim, in every tiling, from the opening cutoffs and the densest, found at most 1,615 tiles (`{3,7}`, the whole disk at 2×) and 5,383 candidates (`{7,3}`). A view at the rim needs 350 to 740 tiles at any zoom. At the 100× limit, tiles reach depth 10 (`{7,3}`) to 21 (`{3,7}`), their centers about `10⁻⁴` inside the rim, where the precision policy leaves nothing out.
+
+The tests check, on the returned geometry:
+- **The unlimited patch.** In 23 views per tiling (rim views at 2–12×, centered, beyond the rim, and moved, the last without the limits), every tile in view is present. Every windowed tile has the unlimited patch's address, depth, orientation and transformation bit for bit, and none lies within its depth without being in it.
+- **The cutoffs' patch.** Every tile of it meeting the window is kept.
+- **At the zoom limit.** Sides are regular within `10⁻⁹`. Edges and strokes lie on circles orthogonal to the rim within `10⁻¹¹` (observed `1.1·10⁻¹²`). Nothing is left out for precision.
+- **Gallery reaches.** Every address path stays within its tiling's reach, with headroom, and never farther from the center than its tile.
+- **Purity.** A patch is the same after other requests.
+- **Limits and omissions.** The ceilings, the omission counts and a raised precision floor.
+- **Frames.** Frames end on the static drawing, and a frozen window refuses another window, minimum radius or start.
+- **Refusals.** Every refusal names its field.
+- **Budget.** The policy's densest views stay within the limits.
+- **In the browser.**
+  - A view reached through a burst of gestures draws what the same view opened directly draws.
+  - Below 1.4× and for a moved lace, the drawing is the static one.
+  - Every tile drawn without detail is drawn with it.
+  - A deep selection keeps its address across views and links.
+  - A motion makes no request while it plays.
+  - The still records its request.
+  - The policy's levels, cutoffs, windows and snapping match values worked by hand.
 
 ## Curves that smooth themselves
 

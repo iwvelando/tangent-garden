@@ -11,7 +11,7 @@ import {
   planarEngravingError,
   type PlanarEngravingPhrase,
 } from "./planar-engraving";
-import { laceLimits, type LaceStudy } from "./lace/model";
+import { laceLimits, laceViewAddress, type LaceStudy } from "./lace/model";
 import {
   deepestDepth,
   laceTilings,
@@ -1030,8 +1030,10 @@ function laceStudy(value: unknown): LaceStudy {
         ...motifSizes,
         edges: "boolean",
         motif: "boolean",
+        // A detailed view's addresses run deeper; each tiling's bound is
+        // checked below.
         selected: {
-          optional: { list: { range: [0, 6] }, max: deepestDepth },
+          optional: { list: { range: [0, 6] }, max: laceViewAddress },
         },
         presentation: { options: { complete: true, selected: true } },
         view: {
@@ -1044,6 +1046,8 @@ function laceStudy(value: unknown): LaceStudy {
             fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
           },
         },
+        // Absent in older links, which open without zoom detail.
+        detail: { optional: "boolean" },
         // Absent in older links, which open the lace in place and still.
         isometry: {
           optional: {
@@ -1080,10 +1084,12 @@ function laceStudy(value: unknown): LaceStudy {
   const { maxDepth } = tilingOf(out.tiling);
   if (out.depth > maxDepth)
     throw new LinkError("lace.depth", `lace.depth must be 0–${maxDepth}.`);
-  if (out.selected && out.selected.length > maxDepth)
+  // With zoom detail a view's tiles lie deeper than any cutoff.
+  const longest = out.detail ? laceViewAddress : maxDepth;
+  if (out.selected && out.selected.length > longest)
     throw new LinkError(
       "lace.selected",
-      `lace.selected must hold at most ${maxDepth} sides.`,
+      `lace.selected must hold at most ${longest} sides.`,
     );
   for (const k of ["orbits", "turns"] as const)
     if (out.motion && !Number.isInteger(out.motion[k]))
