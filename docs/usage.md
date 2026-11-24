@@ -439,7 +439,7 @@ Zoomed far toward the rim, the finite patch ends in a blank band before the rim.
 - New tiles appear a moment after the view comes to rest.
 - Zoom snaps to steps of √2 and the view to a coarse grid, so small pans keep the same tiles and a view you return to is drawn exactly as before.
 - The summary says how small this view's tiles go and what it leaves out.
-- A selected tile keeps its sides crossed from the center in every view, and the selection stays when you pan it out of view and back. Its number counts this view's tiles, so the heading reads "of this view".
+- A selected tile keeps its sides crossed from the center in every view, and the selection stays when you pan it out of view and back. Its number counts this view's tiles, so the heading reads "of this view". Turning the option off clears a selection deeper than the cutoffs can reach.
 - A lace moved off center keeps its patch.
 - While a motion plays, zoom only enlarges its tiles; the view grows its own again when the motion stops.
 

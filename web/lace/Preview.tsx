@@ -53,7 +53,6 @@ import {
   followView,
   indexOf,
   isIdentity,
-  laceDetailFor,
   laceHelp,
   laceLimits,
   tilingHelp,
@@ -487,16 +486,23 @@ export function LacePreview({
   // changed them; a motion records its frozen request.
   function detailRecord() {
     const q: LaceRequest = JSON.parse(film?.key ?? shown?.key ?? key);
-    const d = laceDetailFor(study);
+    if (!q.window || !q.minRadius)
+      return { ...(study.detail && { detail: true }) };
+    // The drawn request's own level, which the zoom may since have left
+    // during a motion: its minimum radius is the tiling's detail radius
+    // over laceScale · 2^(level/2) (laceDetailView).
+    const level = Math.round(
+      2 *
+        Math.log2(tilingOf(q.tiling).detailRadius / (laceScale * q.minRadius)),
+    );
     return {
       ...(study.detail && { detail: true }),
-      ...(q.window && {
-        detailRequest: {
-          minRadius: q.minRadius,
-          window: q.window,
-          ...(d && { level: d.level, factor: d.factor }),
-        },
-      }),
+      detailRequest: {
+        minRadius: q.minRadius,
+        window: q.window,
+        level,
+        factor: 2 ** (level / 2),
+      },
     };
   }
   const metadata = () => ({
@@ -1304,8 +1310,15 @@ export function LacePreview({
                       checked={!!study.detail}
                       onChange={(e) => {
                         const on = e.target.checked;
+                        // Off, no patch reaches a selection deeper than
+                        // the tiling's cutoffs, and a link refuses it.
                         edit(({ detail: _, ...s }) =>
-                          on ? { ...s, detail: true } : s,
+                          on
+                            ? { ...s, detail: true }
+                            : (s.selected?.length ?? 0) >
+                                tilingOf(s.tiling).maxDepth
+                              ? { ...s, selected: undefined }
+                              : s,
                         );
                       }}
                     />

@@ -802,8 +802,9 @@ The tests check, on the returned geometry:
   - Below 1.4× and for a moved lace, the drawing is the static one.
   - Every tile drawn without detail is drawn with it.
   - A deep selection keeps its address across views and links.
+  - Turning detail off clears a selection deeper than the depth bound, so the study's link opens.
   - A motion makes no request while it plays.
-  - The still records its request.
+  - The still records its request, with the frozen request's level after zoom during a motion.
   - The policy's levels, cutoffs, windows and snapping match values worked by hand.
 
 ## Curves that smooth themselves

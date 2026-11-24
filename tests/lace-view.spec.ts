@@ -382,3 +382,90 @@ test("the detail policy snaps zoom to half octaves and the window to quarter-vie
       expect(v.window.yMax).toBeGreaterThanOrEqual(clip(cy + 380 / k));
     }
 });
+
+test("turning detail off drops a selection deeper than any cutoff, so the study's link still opens", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).copied = value;
+        },
+      },
+    }),
+  );
+  const d = await openStudy(page, { view: at(1, 2.6, 30), detail: true });
+  // The last tile breadth-first lies beyond the deepest cutoff, 8.
+  const count = Number(await art(d).getAttribute("data-tiles"));
+  const field = d.getByLabel("Tile", { exact: true });
+  await field.fill(String(count));
+  await field.blur();
+  const address = d.locator(".garden-about .garden-facts").last();
+  expect((await address.textContent())!.split(":")[1].split("→").length).toBe(
+    Number(
+      (await d.locator(".garden-about").textContent())!.match(
+        /Depth (\d+)/,
+      )![1],
+    ),
+  );
+  expect(
+    Number(
+      (await d.locator(".garden-about").textContent())!.match(
+        /Depth (\d+)/,
+      )![1],
+    ),
+  ).toBeGreaterThan(8);
+  await detail(d).uncheck();
+  await ready(d);
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link: string = await page.evaluate(() => (window as any).copied);
+  const { wireStudy } = await import("./study-link-wire");
+  const { planarStudy } = await import("../web/planar-link");
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  // The link opens, without detail or the deep selection.
+  expect(planarStudy(saved).lace!.detail).toBeUndefined();
+  expect(saved.lace.selected).toBeUndefined();
+  await expect(d.getByText("No tile selected.")).toBeVisible();
+  // A selection within the cutoffs is kept.
+  await detail(d).check();
+  await ready(d);
+  await field.fill("3");
+  await field.blur();
+  await detail(d).uncheck();
+  await ready(d);
+  await expect(d.locator(".garden-about h3")).toHaveText("Tile 3");
+});
+
+test("a still exported after zooming during a motion records the level of the request it froze", async ({
+  page,
+}) => {
+  const d = await openStudy(page, { view: at(1, 2, 20), detail: true });
+  await d.getByRole("button", { name: "Play motion" }).click();
+  await art(d).focus();
+  // Zoom out three steps while it plays: the frozen request stays at
+  // zoom 20's level, 8.
+  for (const key of ["-", "-", "-"]) await page.keyboard.press(key);
+  await d.getByRole("button", { name: "Pause motion" }).click();
+  await ready(d);
+  expect(Number(await art(d).getAttribute("data-zoom"))).toBeLessThan(16);
+  const download = page.waitForEvent("download");
+  await d.getByRole("button", { name: "Export image" }).click();
+  await page.getByRole("menuitem", { name: /SVG/ }).click();
+  const text = await readFile((await (await download).path())!, "utf8");
+  const desc = await page.evaluate(
+    (text) =>
+      JSON.parse(
+        new DOMParser()
+          .parseFromString(text, "image/svg+xml")
+          .querySelector("svg > desc")!.textContent!,
+      ),
+    text,
+  );
+  const { level, factor, minRadius } = desc.detailRequest;
+  expect(minRadius).toBeCloseTo(3 / (350 * 16), 15);
+  expect(level).toBe(8);
+  expect(factor).toBe(16);
+});
