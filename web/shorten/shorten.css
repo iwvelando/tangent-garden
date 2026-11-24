@@ -3,12 +3,38 @@
 .shorten .shorten-first {
   margin-top: 0;
 }
+/* The readout is a small table: each value right-aligned in its column, the
+   width it reserves for the whole film ahead of it, so nothing moves while
+   the loop shrinks and no gap opens inside a sentence. Two pairs a row, four
+   where the drawing's column is wide. */
+.shorten .garden-layout > main {
+  container: shorten-main / inline-size;
+}
 .shorten-readout {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: center;
+  column-gap: 1.6em;
   margin: 6px 4px 0;
-  text-align: center;
-  min-height: 2.6em;
   font-variant-numeric: tabular-nums;
 }
-.shorten-readout p {
-  margin: 2px 0;
+.shorten-readout:not([data-shown]) {
+  visibility: hidden;
+}
+.shorten-readout > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6em;
+}
+.shorten-readout dt {
+  color: var(--muted);
+}
+.shorten-readout dd {
+  margin: 0;
+  white-space: pre;
+}
+@container shorten-main (min-width: 600px) {
+  .shorten-readout {
+    grid-template-columns: repeat(4, max-content);
+  }
 }

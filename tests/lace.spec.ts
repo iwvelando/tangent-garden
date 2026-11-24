@@ -996,6 +996,7 @@ test("a lace link whose selection lies beyond its cutoffs opens and says so", as
 for (const [name, viewport] of [
   ["phone portrait", { width: 390, height: 844 }],
   ["phone landscape", { width: 844, height: 390 }],
+  ["small phone landscape", { width: 667, height: 375 }],
 ] as const)
   test(`the lace fits a ${name} layout with every control reachable`, async ({
     browser,
@@ -1048,6 +1049,20 @@ for (const [name, viewport] of [
     ]) {
       await control.scrollIntoViewIfNeeded();
       await expect(control).toBeInViewport();
+    }
+    // Sideways, the drawing column sticks beside the settings at one
+    // screen's height, so halfway down them the drawing and everything
+    // under it are in view (#410: they showed only at the settings' end).
+    if (name.endsWith("landscape")) {
+      await d.evaluate((e) =>
+        e.scrollTo(0, (e.scrollHeight - e.clientHeight) / 2),
+      );
+      for (const below of [
+        art,
+        d.locator(".garden-gestures"),
+        d.locator(".garden-legend"),
+      ])
+        await expect(below).toBeInViewport({ ratio: 1 });
     }
     await context.close();
   });

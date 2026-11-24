@@ -14,27 +14,34 @@ import (
 // function of the request and time, so retention changes only latency.
 var frozenFilm struct {
 	key  string
-	film *shorten.Film
+	film shorten.Evolution
 }
+
+// A user loop's outline (#410) may hold 4,096 points; every other
+// request keeps the 8 KiB ceiling.
+const shortenRequestLimit, loopOutlineLimit = 8192, 262144
 
 // tangentGardenShorten solves (or reuses) an evolution and replies with its
 // summary and the loop at each requested time; the vertices travel as
 // lifted arrays (docs/architecture.md, curve-shortening interfaces).
 func registerShorten() {
 	js.Global().Set("tangentGardenShorten", js.FuncOf(func(this js.Value, args []js.Value) any {
-		if len(args) != 1 || len(args[0].String()) > 8192 {
+		if len(args) != 1 || len(args[0].String()) > loopOutlineLimit {
 			return `{"error":"curve-shortening request is too large"}`
 		}
 		var q shorten.FrameRequest
 		if err := json.Unmarshal([]byte(args[0].String()), &q); err != nil {
 			return refusal(err)
 		}
+		if len(args[0].String()) > shortenRequestLimit && (q.Loop == nil || len(q.Loop.Loop.Points) == 0) {
+			return `{"error":"curve-shortening request is too large"}`
+		}
 		fresh := false
 		settings := q
 		settings.Times = nil
 		key, _ := json.Marshal(settings)
 		if frozenFilm.film == nil || frozenFilm.key != string(key) {
-			film, err := q.Solve()
+			film, err := q.Evolve()
 			if err != nil {
 				return refusal(err)
 			}

@@ -50,15 +50,26 @@ test("normalization rescales a measured loop about its centroid to the starting 
   expect(square.x).toEqual([1, 3, 3, 1]);
 });
 
-test("presets lead with the flower and keep the convex loop last", async () => {
+test("presets lead with the flowers, then the example leaf, and keep the convex loop last", async () => {
   const { shortenPresets } = await import("../web/shorten/model");
   expect(shortenPresets[0].title).toBe(flower);
-  expect(shortenPresets[0].study.family).toBe("flower");
+  expect(shortenPresets.map((p) => p.study.family)).toEqual([
+    "flower",
+    "flower",
+    "flower",
+    "flower",
+    "loop",
+    "loop",
+    "convex",
+  ]);
   expect(shortenPresets.at(-1)!.title).toBe(convex);
-  expect(shortenPresets.at(-1)!.study.family).toBe("convex");
-  expect(
-    shortenPresets.slice(0, -1).every((p) => p.study.family === "flower"),
-  ).toBe(true);
+  // The leaf studies carry no loop of their own: each is the example leaf,
+  // as drawn and as fitted.
+  const leaves = shortenPresets.filter((p) => p.study.family === "loop");
+  expect(leaves.map((p) => [p.study.loopTerms, p.study.loopSource])).toEqual([
+    [undefined, "outline"],
+    [undefined, undefined],
+  ]);
 });
 
 async function settled(page: Page) {
@@ -82,6 +93,33 @@ async function openStudy(page: Page, name = flower) {
   return d;
 }
 const loops = (d: Locator) => art(d).locator("path[data-role=family]");
+// The readout's values: their text lengths, the right edges of each
+// column's values, and its height. A value is figure spaces, then its
+// sign, then its digits, with no space between them.
+async function readoutShape(d: Locator) {
+  const shape = await d.locator(".shorten-readout").evaluate((e) => {
+    const values = Array.from(e.querySelectorAll("dd"), (v) => {
+      const b = v.getBoundingClientRect();
+      return { text: v.textContent!, left: b.left, right: b.right };
+    });
+    return { values, height: e.getBoundingClientRect().height };
+  });
+  expect(shape.values).toHaveLength(7);
+  for (const v of shape.values)
+    expect(v.text).toMatch(/^\u2007*(?:[−>]|<)?[−\d.e]+%?$/u);
+  // Values in one column share their right edge.
+  const columns = new Map<number, number[]>();
+  for (const v of shape.values) {
+    const key = [...columns.keys()].find((x) => Math.abs(x - v.left) < 40);
+    columns.set(key ?? v.left, [
+      ...(columns.get(key ?? v.left) ?? []),
+      v.right,
+    ]);
+  }
+  for (const rights of columns.values())
+    expect(Math.max(...rights) - Math.min(...rights)).toBeLessThan(0.5);
+  return [shape.values.map((v) => v.text.length), shape.height];
+}
 const current = (d: Locator) => art(d).locator("path[data-role=current]");
 // The refusal shown under a control.
 const refusal = (d: Locator, text: RegExp) =>
@@ -158,12 +196,45 @@ test("seeks depend only on time, and the readout states the area law", async ({
   await seek(d, 0.1);
   expect(await seek(d, 0.5)).toBe(first);
   const readout = d.locator(".shorten-readout");
-  await expect(readout).toContainText("t =");
-  await expect(readout).toContainText("A₀ − 2πt");
-  await expect(readout).toContainText("κ from");
+  await expect(readout.locator("dt")).toHaveText([
+    "t",
+    "t / T",
+    "Area",
+    "A₀ − 2πt",
+    "κ min",
+    "κ max",
+    "Length",
+  ]);
   // Stop returns to the whole nest.
   await d.getByRole("button", { name: "Stop motion" }).click();
   await expect(current(d)).toHaveCount(0);
+});
+
+// The readout's numbers keep one width through the motion, so on a phone
+// its lines never rewrap and jump while the loop shrinks (found in #409's
+// exploration on an iPhone in portrait). Seeks across the whole film, with
+// the flower's curvature from negative notches to the floor's round loop.
+// The width a value reserves leads it, so each sign stays beside its
+// digits, and values stand right-aligned in columns rather than leaving
+// gaps in a sentence (#410).
+test("the readout keeps its width and height through the motion on a phone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  for (const name of [flower, convex]) {
+    const d = await openStudy(page, name);
+    const seen = new Set<string>();
+    for (const p of [0.001, 0.02, 0.1, 0.3, 0.5, 0.75, 0.9, 0.99, 1]) {
+      await seek(d, p);
+      seen.add(JSON.stringify(await readoutShape(d)));
+    }
+    expect([...seen], name).toHaveLength(1);
+    await d
+      .getByRole("button", { name: "Return to study", exact: true })
+      .click();
+    await expect(d).toBeHidden();
+  }
 });
 
 test("playback pauses, resumes and stops, and a seed edit ends it", async ({
@@ -351,6 +422,7 @@ test("Play and the progress slider keep the garden's spacing on a desktop", asyn
 for (const [name, viewport] of [
   ["phone portrait", { width: 390, height: 844 }],
   ["phone landscape", { width: 844, height: 390 }],
+  ["small phone landscape", { width: 667, height: 375 }],
 ] as const)
   test(`the study fits a ${name} layout with every control reachable, and Play shows the drawing`, async ({
     browser,
@@ -393,6 +465,21 @@ for (const [name, viewport] of [
     await play.click();
     await expect(d.getByRole("button", { name: "Pause motion" })).toBeVisible();
     await expect(art(d)).toBeInViewport({ ratio: 0.9 });
+    // Sideways, the drawing column sticks beside the settings at one
+    // screen's height, so halfway down them the drawing and everything
+    // under it are in view (#410: they showed only at the settings' end).
+    if (name.endsWith("landscape")) {
+      await d.evaluate((e) =>
+        e.scrollTo(0, (e.scrollHeight - e.clientHeight) / 2),
+      );
+      for (const below of [
+        art(d),
+        d.locator(".garden-gestures"),
+        d.locator(".garden-legend"),
+        d.locator(".shorten-readout"),
+      ])
+        await expect(below).toBeInViewport({ ratio: 1 });
+    }
     await context.close();
   });
 

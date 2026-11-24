@@ -177,12 +177,29 @@
   flex: 0 0 auto;
   gap: 8px;
 }
-/* Weaving keeps the study, so it is the quieter of the two actions. */
-.fit-footer button.fit-weave {
+/* Three actions (adopting, weaving and smoothing) keep one row, beside the
+   copy where it fits and below it on a narrow phone: their labels wrap
+   rather than the row, so the footer is no taller than with two. */
+.fit-footer-actions:has(.fit-shorten) {
+  flex: 1 1 260px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.fit-footer-actions:has(.fit-shorten) button {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.15;
+  padding: 4px 8px;
+}
+/* Weaving and smoothing keep the study, so they are quieter than adopting. */
+.fit-footer button.fit-weave,
+.fit-footer button.fit-shorten {
   background: transparent;
   color: var(--base-ink);
 }
-.fit-footer button.fit-weave:hover:not(:disabled) {
+.fit-footer button.fit-weave:hover:not(:disabled),
+.fit-footer button.fit-shorten:hover:not(:disabled) {
   background: transparent;
   filter: none;
   color: var(--text);

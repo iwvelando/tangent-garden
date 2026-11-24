@@ -847,6 +847,36 @@ The loop is sampled on 512 equally spaced polar angles; `p` and `q` are central 
 
 **Sampling at any time.** A film keeps a checkpoint every `S` accepted steps; `S` doubles whenever more than 64 accumulate. The loop at a time `t ≤ End` is recomputed from the last checkpoint at or before `t` with the solve's own step rule, then one partial step that ends at `t`. A sample is therefore a pure function of the seed and `t`, whatever was played or seeked before. A seek retakes at most `S` steps.
 
+**Your own loop: sources.** A loop from Draw a loop is frozen when it arrives, as one of two sources. Its *fitted terms* are `z(u) = Σ r_k e^{i(f_k u + φ_k)}`: 1–16 terms, whole frequencies within ±64, radii 0–100,000 and phases within ±1,000,000, evaluated exactly. Its *outline as drawn* is 3–4,096 points, each finite and within ±100,000, closed by an explicit last edge, with consecutive duplicates removed. A source traversed clockwise is traversed backward. Lengths are the loop's own: its equal-area radius `R = √(A/π)` must be 0.001–1,000, and times scale with `R²`.
+
+**Admission.** Before any solver sees it, the loop is measured, and it is refused under **Your loop** if it cannot be evolved honestly:
+
+- **Fitted terms are certified embedded.** With `B = Σ r_k f_k²`, `|z''| ≤ B`, so the arc between samples `h` apart in `u` stays within `Bh²/8` of its chord. Dense samples (`2¹²` to `2¹⁸`, at least four per wavelength of the top frequency, doubled until the certificate decides) then prove, up to rounding, three things. The speed stays positive between samples. Each short window of arcs turns less than `π/2`, so it is injective. Arcs farther apart are separated by more than both departures. A crossing is refused, as is a cusp or a near one whose speed cannot be proven positive, and arcs too close to separate.
+- **An outline must be a simple polygon**, by the exact segment test on every pair of edges.
+- **Minimum feature.** The thickness is `min(ρ_min, neck/2)`. Here `ρ_min` is the least radius of curvature. The neck is the shortest chord whose ends are both local minima of their distance, a doubly critical pair, found on 8,192 equal-arclength samples. A circle has no neck, an ellipse's is its minor axis, and a polygon's corner is not one. The solver must span the neck with at least 4 node spacings.
+
+**Two solvers.** The first that takes the loop evolves it; the summary names which, and how far its time can be trusted.
+
+- **Arclength** is the tangent-angle and length formulation of Hou, Lowengrub and Shelley on equal-arclength nodes: Fourier collocation and ETDRK4, whose stiff part `γ_αα` is integrated exactly. `N` is the coarsest power of two from 256 to 4,096 whose curvature spectrum beyond `N/4` is at most `10⁻⁶` of the whole and whose neck spans 4 spacings. Each step is error-controlled. It is accepted when it agrees with two half steps within `10⁻⁹`, measured in the loop's own size: the tangent angle's coefficients, the relative length, the base point and the time. Steps are capped at `dτ = 0.04/max θ_α²`, with `dτ = dt/σ²` and `σ = L/2π`. So a fast transient, such as a high ripple's decay, takes shorter steps than its curvature alone suggests. The solver refuses every outline, whose chords meet at corners.
+- **Polygon** is the semi-implicit parametric scheme of Barrett, Garcke and Nürnberg, mass-lumped and first order in time. It takes outlines as drawn, keeping every vertex and splitting edges to at most `L/N`. It also takes smooth loops the arclength solver cannot resolve, sampled at `N` equal-arclength points. `N` is enough for the neck to span 4 spacings, from 1,024 to 4,096. Steps are `Δt = τ/max κ_i²` with `τ = 0.0025`, `κ_i` the discrete curvature, so they scale with the loop. Every 16 accepted steps, a polygon of more than 1,024 vertices keeps every other vertex. It does so when the halved polygon still turns at most 0.125 rad at each vertex and its neck spans 8 of the new spacings. Each dropped vertex's distance from its new chord is recorded as the remeshing error.
+
+The flowers' radial graph is not used for user loops: it stops as soon as a loop drifts off its star center.
+
+**Accuracy, stated beside the drawing.** The arclength solver is spectral in space and fourth order in time. The polygon solver is first order in time: at `τ = 0.0025` its area runs up to 0.3% behind `A₀ − 2πt` by the end, about `2·10⁻³` of `R(t)` at `0.75T`. Its physical time is honest only to that order, and the summary says so.
+
+**A user loop's film.** The seeds' floor, work caps and first-failing-guard rule apply. The arclength film also guards its closure defect at `10⁻⁸`, and checks after every step that the loop is embedded. The polygon guards positive edges, embeddedness and each vertex's turn: at most 0.25 rad, or for an outline 1.5 times its own sharpest corner. A densely drawn stroke is jagged, and its sharpest turn grows briefly, by up to a third, as its jags melt in the first steps. A user loop's film keeps 128 checkpoints, so a seek retakes half as many steps. The arclength film records the length of each accepted step, and the polygon each remesh, and seeks replay them. A sample is still a pure function of the source and `t`.
+
+**Evidence for user loops.** `engine/shorten`'s loop tests observe returned geometry against closed forms and the flow's symmetries:
+
+- **Circle law** `R² = R₀² − 2t`: within `10⁻⁶` of `R₀²` on the arclength solver and `4·10⁻³` on the polygon.
+- **Area and length:** the area falls at `2π` within `10⁻⁵ A₀` (arclength) and `3·10⁻³ A₀` (polygon), and the length strictly falls. Every returned loop is embedded, checked against every pair of edges independently.
+- **Fast transients:** a ripple of frequency 63 follows a reference controlled a thousand times more tightly within `10⁻⁶` of `R(t)`. The former fixed step was off by up to `3·10⁻³`.
+- **Drawn strokes:** a stroke of 600 samples in pixel steps and one of 1,800 with a tremor keep the area law and stay embedded to the end.
+- **Covariance:** scaling by `10⁻³` and 512 within `10⁻⁹ R`, translation by `(1000, 1000)` within `10⁻⁶ R`, and reversal and a shifted start within `10⁻³ R`.
+- **Bookkeeping:** seeks are bit-identical in any order, including either side of a remesh, and work stays within its caps.
+- **Admission:** the measures of an ellipse and of horseshoes match their closed forms, no limaçon with an inner loop is ever certified, and every refusal names its field.
+- **The shipped seeds:** the flowers' and the convex loop's replies are unchanged byte for byte. They are hashed per architecture, since Go fuses multiply-adds on arm64 and not on amd64.
+
 **Contours, pacing and normalization.** The nest shows `n` loops at `t_j = End·f(j/n)`, and the motion's progress `p` shows `End·f(p)`. Here `f(x) = x³` (dense early, where petals change fastest), `1 − (1 − x)²` (equal radius: a circle ending at `T` steps evenly) or `x` (equal time, so equal area). **Normalized** framing draws each loop scaled by `√(A₀/A)` about its centroid, both measured from the drawn polygon, at the page's center. It is a declared presentation: it never feeds the evolution, and the readouts stay physical.
 
 **Evidence.** `engine/shorten`'s tests observe returned geometry:

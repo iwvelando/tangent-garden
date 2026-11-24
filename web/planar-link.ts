@@ -1141,12 +1141,28 @@ function laceStudy(value: unknown): LaceStudy {
 // The seed's and the nest's settings, presentation, view, weight and
 // motion timing; never solved geometry. Go validates the seeds again,
 // including the limits that depend on several fields.
+// A user's loop travels as its fitted terms, as the lace's does, and never
+// as the outline it was drawn as (linkShorten in shorten/model.ts); links
+// made before it have no loop and name no "loop" family.
 function shortenStudy(value: unknown): ShortenStudy {
-  const out = conform<ShortenStudy>(
+  const out = conform<Omit<ShortenStudy, "loopPoints">>(
     value,
     {
       fields: {
-        family: { options: { flower: true, convex: true } },
+        family: { options: { flower: true, convex: true, loop: true } },
+        loopTerms: {
+          optional: {
+            list: {
+              fields: {
+                frequency: { range: [-loopMaxFrequency, loopMaxFrequency] },
+                radius: { range: [0, 100000] },
+                phase: { range: [-1e6, 1e6] },
+              },
+            },
+            max: maxTerms,
+          },
+        },
+        loopSource: { optional: { options: { terms: true, outline: true } } },
         petals: { range: [0, shortenLimits.petals] },
         depth: { range: [-shortenLimits.depths, shortenLimits.depths] },
         ruffles: { range: [0, shortenLimits.ruffles[1]] },
@@ -1186,6 +1202,21 @@ function shortenStudy(value: unknown): ShortenStudy {
       );
   if (out.lobes !== 3 && out.lobes !== 6)
     throw new LinkError("shorten.lobes", "shorten.lobes must be 3 or 6.");
+  if (out.loopTerms && out.loopTerms.length === 0)
+    throw new LinkError(
+      "shorten.loopTerms",
+      "shorten.loopTerms must hold a term.",
+    );
+  out.loopTerms?.forEach((term, i) => {
+    if (!Number.isInteger(term.frequency))
+      throw new LinkError(
+        `shorten.loopTerms[${i}].frequency`,
+        `shorten.loopTerms[${i}].frequency must be a whole number.`,
+      );
+  });
+  // A drawn loop's outline never travels, so its link evolves the terms;
+  // only the example leaf, whose outline is built in, keeps its source.
+  if (out.loopTerms) delete out.loopSource;
   return out;
 }
 
