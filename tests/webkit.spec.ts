@@ -3424,6 +3424,53 @@ test("the loop's round trip between Draw a loop and the lace keeps its place and
   ).toBeFocused();
 });
 
+test("a loop's round trip between Draw a loop and curves that smooth themselves keeps its place and focus by clicks", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const fitDialog = await leafFit(page, 8);
+  const smooth = fitDialog.getByRole("button", {
+    name: "Smooth into a circle",
+    exact: true,
+  });
+  await expect(smooth).toBeEnabled();
+  await smooth.click();
+  const d = page.getByRole("dialog", { name: "Curves that smooth themselves" });
+  const back = d.getByRole("button", { name: "Return to study", exact: true });
+  await expect(back).toBeFocused();
+  const art = d.locator("#shorten-artwork");
+  await expect(art).toHaveAttribute("aria-busy", "false", { timeout: 60_000 });
+  const source = d.getByLabel("Your loop", { exact: true });
+  await expect(source).toHaveValue("terms");
+  await source.selectOption("outline");
+  await expect(art).toHaveAttribute("aria-busy", "false", { timeout: 60_000 });
+  // Draw a new loop and cancel it: the study comes back as it was, the
+  // outline as drawn still evolved.
+  await d.getByRole("button", { name: "Draw a new loop…" }).click();
+  const again = page.getByRole("dialog", { name: /made of circles/ });
+  await expect(
+    again.getByRole("button", { name: "Cancel drawing", exact: true }),
+  ).toBeFocused();
+  await again
+    .getByRole("button", { name: "Cancel drawing", exact: true })
+    .click();
+  await expect(again).toBeHidden();
+  await expect(back).toBeFocused();
+  await expect(source).toHaveValue("outline");
+  await expect(art).toHaveAttribute("aria-busy", "false", { timeout: 60_000 });
+  await back.click();
+  await expect(d).toBeHidden();
+  await expect(
+    page.getByRole("button", { name: "Draw a loop", exact: true }),
+  ).toBeFocused();
+});
+
 test("curves that smooth themselves: entry, scalar blur, phone playback and return preserve focus", async ({
   page,
 }) => {

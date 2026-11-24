@@ -789,7 +789,12 @@ test("curves that smooth themselves help fits both tiers and states the engine's
     ["About Lobes", "About Ripple"].includes(e.topic!),
   );
   expect(convex).toHaveLength(2);
-  const entries = [...flower, ...convex];
+  // Your loop's own help: the example leaf until one is drawn.
+  await d.getByLabel("Seed", { exact: true }).selectOption("loop");
+  await expect(art).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+  const loop = (await read()).filter((e) => e.topic === "About Your loop");
+  expect(loop).toHaveLength(1);
+  const entries = [...flower, ...convex, ...loop];
   for (const e of entries) {
     expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
       e.paired ? pairedBriefWords : 20,
@@ -808,6 +813,7 @@ test("curves that smooth themselves help fits both tiers and states the engine's
     "0.1–3,600",
     "7,200",
     "√(A₀/A)",
+    "4,096",
   ])
     expect(text).toContain(limit);
 });

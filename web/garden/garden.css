@@ -254,17 +254,29 @@ html.garden-open {
     overflow: visible;
     padding: 0;
   }
+  /* Once it sticks, the drawing column is one screen tall, and the drawing
+     takes the height its gesture note, legend and readout leave, so they
+     stay in view beside the settings. (A taller column kept them below the
+     screen until the settings ended.) */
   .garden-layout > main {
     position: sticky;
     top: 0;
     z-index: 1;
     background: var(--panel);
+    height: 100svh;
+    display: flex;
+    flex-direction: column;
   }
   .garden-view {
+    flex: 1 1 0;
+    min-height: 0;
     padding: 0;
+    container-type: size;
   }
-  .garden-drawing {
-    width: min(100%, calc((100svh - 90px) * 1000 / 760));
+  .garden-drawing,
+  .garden-placeholder {
+    width: min(100cqw, 100cqh * 1000 / 760);
+    margin-inline: auto;
   }
 }
 .garden-reveal-status {

@@ -8,10 +8,11 @@ import {
 } from "./planar-link";
 import type { ConstructionTrack, Frame, Term, Vec } from "./types";
 import { tiered } from "./help";
+import { exampleLeafPoints } from "./example-leaf";
 
 export const fitEntryHelp = tiered(
   "Draw any shape as one outline, then turn it into an editable study.",
-  "Close an open outline explicitly, or use your current base curve. Compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your study; adoption replaces it, and weaving into hyperbolic lace keeps it. Links preserve fitted terms, not the outline.",
+  "Close an open outline explicitly, or use your current base curve. Compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your study; adoption replaces it, while weaving into lace or smoothing keeps it. Links preserve fitted terms, not the outline.",
 );
 
 export const fitSourceHelp = tiered(
@@ -38,37 +39,7 @@ export const maxStrokePoints = 4096;
 // Equal scale in the 1000 × 760 input rectangle; x right, y up.
 export const strokeWindow = { width: 6, height: 4.56 };
 // An authored single outline, available without a pointing device.
-export const sampleLeaf: Vec[] = [
-  { x: -1.9, y: -1.35 },
-  { x: -1.65, y: -0.65 },
-  { x: -1.7, y: -0.3 },
-  { x: -1.35, y: -0.18 },
-  { x: -1.4, y: 0.2 },
-  { x: -0.98, y: 0.27 },
-  { x: -1.02, y: 0.65 },
-  { x: -0.57, y: 0.66 },
-  { x: -0.55, y: 1.02 },
-  { x: -0.12, y: 0.97 },
-  { x: 0.05, y: 1.34 },
-  { x: 0.4, y: 1.19 },
-  { x: 0.74, y: 1.49 },
-  { x: 1, y: 1.3 },
-  { x: 1.8, y: 1.55 },
-  { x: 1.55, y: 0.8 },
-  { x: 1.69, y: 0.5 },
-  { x: 1.37, y: 0.26 },
-  { x: 1.5, y: -0.05 },
-  { x: 1.12, y: -0.18 },
-  { x: 1.16, y: -0.53 },
-  { x: 0.74, y: -0.53 },
-  { x: 0.65, y: -0.87 },
-  { x: 0.22, y: -0.71 },
-  { x: 0.03, y: -1.03 },
-  { x: -0.4, y: -0.81 },
-  { x: -0.62, y: -1.07 },
-  { x: -1.1, y: -0.85 },
-  { x: -1.64, y: -1.48 },
-];
+export const sampleLeaf: readonly Vec[] = exampleLeafPoints;
 export type FourierFitResult = {
   terms: Term[];
   rms: number;
@@ -416,8 +387,8 @@ export class FourierFitSession {
       ? structuredClone(this.state.fit.terms)
       : null;
   }
-  // The outline the completed fit was made from (#409 research), under the
-  // same conditions.
+  // The outline the completed fit was made from, for curves that smooth
+  // themselves, under the same conditions.
   candidatePoints(): Vec[] | null {
     return this.candidateTerms() && this.state.fitPoints
       ? structuredClone(this.state.fitPoints)

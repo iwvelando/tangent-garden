@@ -8,8 +8,7 @@ import { LaceContext, type LaceEntry } from "./lace/Context";
 import { defaultLace, presetLace, studyLoop } from "./lace/model";
 import { drawnMotif } from "./lace/motifs";
 import { ShortenContext, type ShortenEntry } from "./shorten/Context";
-import { defaultShorten, presetShorten } from "./shorten/model";
-import { researchLoops } from "./shorten/research";
+import { defaultShorten, presetShorten, studyLoopTerms } from "./shorten/model";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
@@ -3621,6 +3620,22 @@ function Notebook() {
                       restoreFocus.current = () => shorten.restoreFocus(via);
                       setShorten(null);
                     }}
+                    // Draw a loop over this study: it comes back to the
+                    // study as it stands, whether the loop is smoothed or
+                    // canceled.
+                    onDrawLoop={(shortenStudy, via) => {
+                      const entry = {
+                        ...shorten,
+                        study: { ...shorten.study, shorten: shortenStudy },
+                      };
+                      setShorten(null);
+                      setFit({
+                        study: fittedStudy([...studyLoopTerms(shortenStudy)]),
+                        via,
+                        restoreFocus: shorten.restoreFocus,
+                        shorten: entry,
+                      });
+                    }}
                   />
                 </Suspense>
               </div>
@@ -3712,8 +3727,10 @@ function Notebook() {
                   request={fit}
                   onReturn={(via) => {
                     setFit(null);
-                    // Back to the lace it was opened from, unchanged.
+                    // Back to the lace or the smoothing study it was opened
+                    // from, unchanged.
                     if (fit.lace) setLace({ ...fit.lace, via });
+                    else if (fit.shorten) setShorten({ ...fit.shorten, via });
                     else restoreFocus.current = () => fit.restoreFocus(via);
                   }}
                   // Hyperbolic lace with the fitted loop as its motif: the
@@ -3721,8 +3738,12 @@ function Notebook() {
                   // notebook's study, which stays as it was.
                   onWeave={(terms, via) => {
                     const base = fit.lace ?? {
-                      study: { ...fit.study, lace: defaultLace },
-                      restoreFocus: fit.restoreFocus,
+                      study: {
+                        ...(fit.shorten?.study ?? fit.study),
+                        lace: defaultLace,
+                      },
+                      restoreFocus:
+                        fit.shorten?.restoreFocus ?? fit.restoreFocus,
                     };
                     setFit(null);
                     setLace({
@@ -3738,28 +3759,33 @@ function Notebook() {
                       },
                     });
                   }}
-                  // #409 research: curve shortening of the fitted loop over
-                  // the unchanged notebook study.
-                  onShorten={
-                    researchLoops()
-                      ? (terms, points, via) => {
-                          setFit(null);
-                          setShorten({
-                            study: {
-                              ...fit.study,
-                              shorten: {
-                                ...structuredClone(defaultShorten),
-                                family: "loop",
-                                loopTerms: terms,
-                                ...(points && { loopPoints: points }),
-                              },
-                            },
-                            via,
-                            restoreFocus: fit.restoreFocus,
-                          });
-                        }
-                      : undefined
-                  }
+                  // Curves that smooth themselves with the fitted loop and the
+                  // outline it was fitted to: the study it was opened from,
+                  // keeping its other settings, or the default study over
+                  // the notebook's study, which stays as it was.
+                  onShorten={(terms, points, via) => {
+                    const base = fit.shorten ?? {
+                      study: { ...(fit.lace?.study ?? fit.study) },
+                      restoreFocus: fit.lace?.restoreFocus ?? fit.restoreFocus,
+                    };
+                    const { loopPoints: _, ...kept } = structuredClone(
+                      base.study.shorten ?? defaultShorten,
+                    );
+                    setFit(null);
+                    setShorten({
+                      ...base,
+                      via,
+                      study: {
+                        ...base.study,
+                        shorten: {
+                          ...kept,
+                          family: "loop",
+                          loopTerms: terms,
+                          ...(points && { loopPoints: points }),
+                        },
+                      },
+                    });
+                  }}
                   onAdopt={(study, via) => {
                     links.current++;
                     setShared((s) => ({ ...s, "2d": undefined }));

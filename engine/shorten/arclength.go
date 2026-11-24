@@ -1,9 +1,10 @@
 package shorten
 
-// The arclength solver, first a test-only reference for experiment 2 of #322
-// and promoted for #409's research arm A: curve shortening of smooth embedded loops that need
-// not be convex, such as flowers, in the tangent-angle and length
-// formulation of Hou, Lowengrub and Shelley.
+// The arclength solver: a test-only reference for experiment 2 of #322,
+// then #409's research arm A, and since #410 the solver for the smooth user
+// loops it resolves. It evolves smooth embedded loops that need not be
+// convex, such as flowers, in the tangent-angle and length formulation of
+// Hou, Lowengrub and Shelley.
 //
 // The parameter α ∈ [0, 2π) is proportional to arclength: X_α = σ(cos θ,
 // sin θ) with σ = L/2π, and θ = α + γ(α) with γ periodic. The flow
@@ -20,7 +21,12 @@ package shorten
 // Space: Fourier collocation on N = 2^p nodes, with no smoothing filter.
 // Time: ETDRK4 (Cox and Matthews), with coefficients by Kassam and
 // Trefethen's contour integrals, so γ_αα is integrated exactly. Steps are
-// dτ = c / max θ_α², so dt = c R² on a circle of radius R. The loop is
+// dτ = c / max θ_α², so dt = c R² on a circle of radius R. With a
+// tolerance (user loops, #410), that rule only caps each step: a step is
+// accepted when it agrees with two half steps within the tolerance, so a
+// fast transient such as a high ripple's decay takes shorter steps than
+// its curvature alone suggests. The film records each accepted step, and
+// seeks replay them. The loop is
 // rebuilt from θ by a spectral antiderivative of e^{iθ}, after removing
 // its mean, the closure defect, which is reported and guarded.
 
@@ -45,6 +51,10 @@ type arcRequest struct {
 	Initial func(e *etd) []complex128
 	// Checkpoints, when set, replaces limits.Checkpoints.
 	Checkpoints int
+	// Tolerance, when set, controls each step's local error (#410): Step
+	// then only caps the step, and the film records the steps it takes so
+	// that seeks replay them.
+	Tolerance float64
 }
 
 const (
@@ -74,6 +84,8 @@ type arcFilm struct {
 	e           *etd
 	horizon     float64
 	checkpoints []bloomCheckpoint
+	// With error control, the τ-length of every accepted step, in order.
+	taken []float64
 }
 
 type bloomCheckpoint struct {
@@ -135,6 +147,7 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 	f := &arcFilm{Area0: area0, Extinction: area0 / (2 * math.Pi)}
 	f.horizon = q.Horizon * f.Extinction
 	e := newETD(n, q.Step)
+	e.tol = q.Tolerance
 	f.e = e
 	var u []complex128
 	if q.Initial != nil {
@@ -159,6 +172,8 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 	st := &f.Stats
 	st.Stride = 1
 	out := make([]complex128, len(u))
+	// The controller's next trial step; 0 starts from the cap.
+	suggest := 0.0
 	for {
 		t := real(u[n+1])
 		if t >= f.horizon {
@@ -170,19 +185,32 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 			f.Stop = "work"
 			break
 		}
-		attempts, trials, ok := e.next(u, out, budget, f.horizon)
+		var attempts, trials int
+		var ok bool
+		h := 0.0
+		if e.tol > 0 {
+			h, suggest, attempts, trials, ok = e.controlled(u, out, suggest, budget, f.horizon)
+		} else {
+			attempts, trials, ok = e.next(u, out, budget, f.horizon)
+		}
 		st.Attempted += attempts
 		st.Trials += trials
 		st.NodeUpdates += (attempts + trials) * n
+		// An accepted step is one attempt, or three under error control
+		// (the step and its two halves).
+		per := 1
+		if e.tol > 0 {
+			per = 3
+		}
 		if !ok {
 			st.Rejected += attempts
 			f.Stop = "nonfinite"
-			if attempts < retries+1 {
+			if attempts < per*(retries+1) {
 				f.Stop = "work"
 			}
 			break
 		}
-		st.Rejected += attempts - 1
+		st.Rejected += attempts - per
 		if why := e.guard(out, floor); why != "" {
 			st.Discarded = 1
 			f.Stop = why
@@ -196,6 +224,9 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 			break
 		}
 		st.Accepted++
+		if e.tol > 0 {
+			f.taken = append(f.taken, h)
+		}
 		u, out = out, u
 		if st.Accepted%st.Stride == 0 {
 			if !embedded(e.contour(u, real(u[n+1]), 0)) {
@@ -243,7 +274,25 @@ func (f *arcFilm) Sample(t float64) (Contour, error) {
 	u := append([]complex128{}, f.checkpoints[k].u...)
 	out := make([]complex128, len(u))
 	steps, trials := 0, 0
-	for real(u[n+1]) < t {
+	for i := f.checkpoints[k].step; real(u[n+1]) < t; i++ {
+		if f.taken != nil {
+			// The solve's own step, or the partial step that lands on t.
+			if i >= len(f.taken) {
+				return Contour{}, fmt.Errorf("no recorded step after %g", real(u[n+1]))
+			}
+			steps++
+			ok := e.step(u, f.taken[i], out)
+			if ok && real(out[n+1]) > t {
+				var tr int
+				tr, ok = e.land(u, f.taken[i], t, out)
+				trials += tr
+			}
+			if !ok {
+				return Contour{}, fmt.Errorf("a recomputed step failed at %g", real(u[n+1]))
+			}
+			u, out = out, u
+			continue
+		}
 		attempts, tr, ok := e.next(u, out, retries+1, t)
 		steps += attempts
 		trials += tr
@@ -265,10 +314,14 @@ func (f *arcFilm) Frames(times []float64) (Reply, error) {
 // etd is the discretization and its scratch: N Fourier modes of γ, then
 // ln L, t, and the base point's x and y.
 type etd struct {
-	n    int
-	c    float64
-	wave []float64
-	lin  []float64
+	n int
+	c float64
+	// The local error tolerance, or 0 for the step rule alone.
+	tol float64
+	// Scratch for the controller's half steps.
+	mid, fine []complex128
+	wave      []float64
+	lin       []float64
 	// Coefficients for the step h they were computed for.
 	h                       float64
 	ex, ex2, q, f1, f2, f3  []float64
@@ -456,6 +509,69 @@ func (e *etd) next(u, out []complex128, budget int, limit float64) (attempts, tr
 		return attempts, trials + tr, ok
 	}
 	return attempts, trials, false
+}
+
+// controlled is the error-controlled step (#410): from u, a step of at
+// most the step rule's c / max θ_α², starting from the suggested length,
+// accepted when the full step and two half steps agree within e.tol. The
+// full step is kept, so a replay of its length retakes it exactly; the
+// halves serve only to estimate its error, which for a fourth-order step
+// is 16/15 of their difference. A step that would pass limit lands on it.
+// It returns the accepted length, the next one to try, and the attempts,
+// each three steps' work.
+func (e *etd) controlled(u, out []complex128, suggest float64, budget int, limit float64) (h, next float64, attempts, trials int, ok bool) {
+	n := e.n
+	if e.mid == nil {
+		e.mid, e.fine = make([]complex128, len(u)), make([]complex128, len(u))
+	}
+	top := e.c / e.slopes(u)
+	h = top
+	if suggest > 0 && suggest < top {
+		h = suggest
+	}
+	for range retries + 1 {
+		if attempts+3 > budget {
+			break
+		}
+		attempts += 3
+		if !e.step(u, h, out) || !e.step(u, h/2, e.mid) || !e.step(e.mid, h/2, e.fine) {
+			h /= 2
+			continue
+		}
+		err := e.distance(out, e.fine) * 16 / 15
+		if err > e.tol {
+			h *= max(0.1, 0.9*math.Pow(e.tol/err, 0.2))
+			continue
+		}
+		next = 2 * h
+		if err > 0 {
+			next = h * min(2, 0.9*math.Pow(e.tol/err, 0.2))
+		}
+		if real(out[n+1]) > limit {
+			tr, ok := e.land(u, h, limit, out)
+			return h, next, attempts, tr, ok
+		}
+		return h, next, attempts, 0, true
+	}
+	return h, 0, attempts, 0, false
+}
+
+// distance is how far apart two states are, in units of the loop's size:
+// the largest change of the tangent angle (bounded by its coefficients'
+// sum), the relative change of length, the base point's move over σ, and
+// the change of physical time over σ².
+func (e *etd) distance(a, b []complex128) float64 {
+	n := e.n
+	d := 0.0
+	for k := range n {
+		d += cmplx.Abs(a[k] - b[k])
+	}
+	d /= float64(n)
+	sigma := math.Exp(real(a[n])) / (2 * math.Pi)
+	d += math.Abs(real(a[n]) - real(b[n]))
+	d += math.Hypot(real(a[n+2])-real(b[n+2]), real(a[n+3])-real(b[n+3])) / sigma
+	d += math.Abs(real(a[n+1])-real(b[n+1])) / (sigma * sigma)
+	return d
 }
 
 // land solves for the step length in (0, hi) whose step from u ends at

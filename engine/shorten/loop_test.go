@@ -183,6 +183,9 @@ func TestAdmittedLoopsLoseAreaAtTwoPiAndStayEmbedded(t *testing.T) {
 	}{
 		{"leaf, 8 terms", Loop{Terms: leafTerms(t, 8)}, []string{"arc", "bgn"}, nil},
 		{"leaf, 16 terms", Loop{Terms: leafTerms(t, 16)}, []string{"arc", "bgn"}, nil},
+		// A ripple of frequency 63 decays within the first thousandth of
+		// the film; the arclength solver's steps must follow it (#410).
+		{"ripple f=63 ε=0.001", Loop{Terms: rippleTerms(63, 0.001)}, []string{"arc"}, nil},
 		{"near cusp a=0.3", Loop{Terms: nearCusp(0.3)}, []string{"polar", "arc", "bgn"}, nil},
 		{"limaçon b=0.9", Loop{Terms: limacon(0.9)}, []string{"bgn"}, nil},
 		{"leaf outline", Loop{Points: exampleLeaf}, []string{"bgn"}, nil},
@@ -420,4 +423,156 @@ func pentagram() []engine.Vec {
 		out = append(out, engine.Vec{X: math.Cos(a), Y: math.Sin(a)})
 	}
 	return out
+}
+
+// The automatic choice is the arclength solver, then the polygon solver
+// (#410's contract): the radial graph, a comparison arm of the research,
+// never evolves a user loop, nor is its refusal reported. Every outline
+// goes to the polygon solver.
+func TestTheAutomaticChoiceIsArclengthThenPolygon(t *testing.T) {
+	for _, c := range append(fourierCorpus(t), outlineCorpus()...) {
+		f, err := SolveLoop(LoopRequest{Loop: c.loop, Horizon: 0.5})
+		if err != nil {
+			continue
+		}
+		a := f.Admission
+		if a.Solver != "arc" && a.Solver != "bgn" {
+			t.Errorf("%s: evolved on %q", c.name, a.Solver)
+		}
+		if _, ok := a.Refused["polar"]; ok {
+			t.Errorf("%s: the radial graph's refusal is reported", c.name)
+		}
+		if a.Source == "outline" && a.Solver != "bgn" {
+			t.Errorf("%s: an outline on %q", c.name, a.Solver)
+		}
+	}
+	f, err := SolveLoop(LoopRequest{Loop: Loop{Terms: leafTerms(t, 8)}, Horizon: 0.5})
+	if err != nil || f.Admission.Solver != "arc" {
+		t.Errorf("the 8-term leaf: %v", err)
+	}
+}
+
+// A loop that admission accepts but neither solver can resolve is refused
+// on its source's own path, in a sentence that names the reason and the
+// limit, not the solvers' internal names.
+func TestUnresolvableLoopsAreRefusedInPlainWords(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		loop Loop
+		path string
+		want string
+	}{
+		{"near cusp a=0.49", Loop{Terms: nearCusp(0.49)}, "loop.terms", "4,096"},
+		{"horseshoe, gap 0.01", Loop{Points: cShape(0.01, 0.3, 0.02)}, "loop.points", "4,096"},
+	} {
+		_, err := SolveLoop(LoopRequest{Loop: c.loop, Horizon: 0.5})
+		refusedOn(t, err, c.path)
+		m := err.Error()
+		if !strings.Contains(m, c.want) || !strings.HasSuffix(m, ".") || m[0] < 'A' || m[0] > 'Z' {
+			t.Errorf("%s: %q", c.name, m)
+		}
+		for _, jargon := range []string{"arc:", "polar", "bgn", "nodes", "spacings"} {
+			if strings.Contains(m, jargon) {
+				t.Errorf("%s: %q names %q", c.name, m, jargon)
+			}
+		}
+	}
+}
+
+// A ripple of frequency 63 decays within the first thousandth of the film,
+// far faster than the curvature suggests. The arclength solver's steps are
+// error-controlled (#410), so its film follows a reference whose steps are
+// controlled a thousand times more tightly, from the transient to the end.
+func TestTheArclengthStepFollowsAFastRipple(t *testing.T) {
+	loop := Loop{Terms: rippleTerms(63, 0.001)}
+	f, err := SolveLoop(LoopRequest{Loop: loop, Horizon: 0.999})
+	if err != nil || f.Admission.Solver != "arc" {
+		t.Fatalf("%v", err)
+	}
+	src, err := admit(loop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := arcTol
+	arcTol = 1e-12
+	ref, _, _, err := src.arc(LoopRequest{Loop: loop, Tau: 0.005, Horizon: 0.999})
+	arcTol = saved
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _ := f.Frames(nil)
+	first, _ := f.Sample(0)
+	for _, frac := range []float64{1e-4, 1e-3, 1e-2, 0.1, 0.5, 0.95} {
+		at := frac * r.Extinction
+		c, err := f.Sample(at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		k, _ := ref.Sample(at)
+		if e := shapeError(k, c); e > 1e-6 {
+			t.Errorf("t=%gT: %.1e of R(t) from the reference", frac, e)
+		}
+		if e := math.Abs(c.Area-(first.Area-2*math.Pi*at)) / r.Area0; e > 1e-5 {
+			t.Errorf("t=%gT: area error %.1e of A₀", frac, e)
+		}
+	}
+}
+
+// The neck search bounded by a coarse pass returns exactly what a search to
+// the limit does, on every loop of the corpus, smooth or drawn.
+func TestTheBoundedNeckSearchMatchesTheFullOne(t *testing.T) {
+	for _, c := range append(fourierCorpus(t), outlineCorpus()...) {
+		src, err := admit(c.loop)
+		if err != nil {
+			continue
+		}
+		var x, y []float64
+		if src.adm.Source == "outline" {
+			for _, p := range resample(src.poly, 8192) {
+				x, y = append(x, real(p)), append(y, imag(p))
+			}
+		} else {
+			x, y = src.equalArc(8192)
+		}
+		limit := 2 * src.adm.Radius
+		if got, want := neck(x, y, limit), neckBelow(x, y, limit); got != want {
+			t.Errorf("%s: neck %v, full search %v", c.name, got, want)
+		}
+	}
+}
+
+// A seek retakes the solve's own steps: every state the solve accepted was
+// checked for embedding, so a replay must reproduce it. Just before a
+// checkpoint, a sample replays from the one before through the recorded
+// steps and lands within rounding of the checkpoint's own state; a replay
+// that took other steps would differ by their local error.
+func TestArclengthSeeksRetakeTheSolvesOwnSteps(t *testing.T) {
+	f, err := SolveLoop(LoopRequest{Loop: Loop{Terms: leafTerms(t, 8)}, Horizon: 0.999})
+	if err != nil || f.Admission.Solver != "arc" {
+		t.Fatalf("%v", err)
+	}
+	a := f.film.(*arcFilm)
+	if a.Stats.Stride < 2 {
+		t.Fatalf("stride %d: every step is a checkpoint", a.Stats.Stride)
+	}
+	n := a.e.n
+	R := f.Admission.Radius
+	for _, k := range []int{1, len(a.checkpoints) / 2, len(a.checkpoints) - 1} {
+		at := real(a.checkpoints[k].u[n+1])
+		c, _ := f.Sample(at)
+		before, err := f.Sample(math.Nextafter(at, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if before.Steps != a.Stats.Stride {
+			t.Errorf("checkpoint %d: the seek retook %d steps, not the stride %d", k, before.Steps, a.Stats.Stride)
+		}
+		e := 0.0
+		for i := range c.X {
+			e = math.Max(e, math.Hypot(c.X[i]-before.X[i], c.Y[i]-before.Y[i]))
+		}
+		if e > 1e-12*R {
+			t.Errorf("checkpoint %d at t=%g: a replay just before it is %.1e R away", k, at, e/R)
+		}
+	}
 }

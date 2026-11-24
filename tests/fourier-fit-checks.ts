@@ -156,7 +156,7 @@ export async function checkFitAdoptionVisibility(page: Page) {
     await expect(adopt).toBeInViewport({ ratio: 1 });
     await expect(
       dialog.getByText(
-        "Adopting replaces your current study; weaving keeps it.",
+        "Adopting replaces your current study; weaving or smoothing keeps it.",
         { exact: true },
       ),
     ).toBeInViewport({ ratio: 1 });

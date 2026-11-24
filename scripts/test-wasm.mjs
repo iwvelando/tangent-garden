@@ -5359,4 +5359,37 @@ console.log("Curved sections WASM contract passed");
     );
 }
 
+// Curves that smooth themselves: a user loop's request keeps the 8 KiB
+// ceiling unless it carries an outline, which may hold 4,096 points within
+// 256 KiB (#410). Its loops travel lifted, with its admission in the JSON.
+{
+  const shorten = globalThis.tangentGardenShorten;
+  const outline = Array.from({ length: 4096 }, (_, i) => {
+    const u = (2 * Math.PI * i) / 4096;
+    return { x: 2 * Math.cos(u), y: Math.sin(u) };
+  });
+  const big = JSON.stringify({
+    loop: { loop: { points: outline }, horizon: 0.5 },
+    times: [0],
+  });
+  assert.ok(big.length > 8192 && big.length <= 262144);
+  const reply = lifted(shorten(big));
+  assert.equal(reply.admission.source, "outline");
+  assert.equal(reply.admission.solver, "bgn");
+  assert.equal(reply.contours[0].x.length, reply.admission.nodes);
+  // Terms padded past 8 KiB are refused; so is anything past 256 KiB.
+  const terms = JSON.stringify({
+    loop: {
+      loop: { terms: [{ frequency: 1, radius: 1, phase: 0 }] },
+      horizon: 0.5,
+    },
+    times: [0],
+  });
+  assert.equal(lifted(shorten(terms)).admission.solver, "arc");
+  const padded = terms.replace("{", "{" + " ".repeat(8192));
+  assert.match(JSON.parse(shorten(padded)).error, /too large/);
+  const huge = big.replace("{", "{" + " ".repeat(262144));
+  assert.match(JSON.parse(shorten(huge)).error, /too large/);
+}
+
 process.exit(0);

@@ -1,8 +1,9 @@
 package shorten
 
-// Arm C of #409's research: curve shortening of a closed polygon by the
-// semi-implicit parametric scheme of Barrett, Garcke and Nürnberg (J.
-// Comput. Phys. 222, 2007), with mass lumping.
+// The polygon solver for user loops (#409's arm C, shipped by #410): curve
+// shortening of a closed polygon by the semi-implicit parametric scheme of
+// Barrett, Garcke and Nürnberg (J. Comput. Phys. 222, 2007), with mass
+// lumping.
 //
 // With X the vertices of a counterclockwise polygon, edge lengths h_j and
 // outward edge normals ν_j, each vertex has the lumped mass
@@ -15,7 +16,8 @@ package shorten
 // a symmetric positive definite cyclic block-tridiagonal system with 2×2
 // blocks, in O(N). The normal velocity is the discrete curvature; the
 // tangential velocity the scheme leaves free equidistributes the vertices
-// over time, so nothing is remeshed. It is first order in time and takes
+// over time, so vertices are never moved apart from the flow; the only
+// remeshing halves them (below). It is first order in time and takes
 // a polygon's corners as given. Steps are Δt = τ / max κ_i², with κ_i the
 // discrete curvature |(AX)_i|/m_i, so the step sequence is covariant under
 // scaling.
@@ -546,7 +548,7 @@ func (src *source) bgn(q LoopRequest) (*bgnFilm, int, float64, error) {
 			}
 		}
 		if len(x) > bgnTo {
-			return nil, 0, 0, field("nodes", "the outline needs %d nodes, more than %d", len(x), bgnTo)
+			return nil, 0, 0, &tooFine{field("nodes", "the outline needs %d nodes, more than %d", len(x), bgnTo), true}
 		}
 	} else {
 		if src.smoothOK != "" {
@@ -566,10 +568,10 @@ func (src *source) bgn(q LoopRequest) (*bgnFilm, int, float64, error) {
 	f.floor = floorFraction * src.adm.Radius
 	f.turn = math.Max(turnLimit, corner(x, y)*(1+1e-9))
 	if !src.neckResolved(f.n) {
-		return nil, 0, 0, field("nodes", "the loop's narrowest neck spans fewer than %d node spacings on %d nodes", neckSpacings, f.n)
+		return nil, 0, 0, &tooFine{field("nodes", "the loop's narrowest neck spans fewer than %d node spacings on %d nodes", neckSpacings, f.n), true}
 	}
 	if why := f.guard(x, y); why != "" {
-		return nil, 0, 0, field("nodes", "the polygon fails the %s limit", why)
+		return nil, 0, 0, &tooFine{field("nodes", "the polygon fails the %s limit", why), false}
 	}
 	remesh := 0.0
 	if src.adm.Source != "outline" {

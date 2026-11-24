@@ -1,4 +1,5 @@
 import {
+  count as formatCount,
   elapsed,
   liveReadout,
   percent,
@@ -51,6 +52,9 @@ import {
   defaultShortenMotion,
   extentOf,
   familyTimes,
+  linkShorten,
+  loopAccuracy,
+  loopSource,
   refusedField,
   rippleLimit,
   shortenHelp,
@@ -58,8 +62,11 @@ import {
   shortenPage,
   shortenRequest,
   stopText,
+  studyLoopTerms,
+  studyOutline,
   timeAt,
   type Framing,
+  type LoopSource,
   type Nest,
   type ShortenContour,
   type ShortenMotion,
@@ -68,8 +75,6 @@ import {
   type ShortenStudy,
   type Spacing,
 } from "./model";
-import { admissionText, loopHelp, loopMethods } from "./research";
-import type { LoopSolver } from "./model";
 import "../garden/garden.css";
 import "./shorten.css";
 
@@ -84,8 +89,7 @@ const labels: Partial<
   lobes: "Lobes",
   ripple: "Ripple",
   contours: "Loops",
-  loopSource: "Source",
-  loopSolver: "Solver",
+  loopSource: "Your loop",
   duration: "Duration",
   repeat: "Repeat",
 };
@@ -102,14 +106,23 @@ const generationOf = (s: ShortenStudy): Generation => ({
 // stands, from 0 to 1, and the loop drawn, with the timeline time it is for.
 type Film = { time: number; frame?: ShortenContour; frameTime?: number };
 
+// How a user loop's solver works, for the export record.
+const loopMethods: Record<string, string> = {
+  arc: "equal-arclength tangent angle and length (Hou–Lowengrub–Shelley): Fourier collocation, ETDRK4 with error-controlled steps",
+  bgn: "parametric polygon (Barrett–Garcke–Nürnberg), mass-lumped, semi-implicit, first order in time",
+};
+
 export function ShortenPreview({
   entry,
   onReturn,
+  onDrawLoop,
   journey,
 }: {
   entry: ShortenEntry;
   journey?: OverlayGuide;
   onReturn: (via: "keyboard" | "pointer") => void;
+  // Opens Draw a loop over this study as it stands, to replace its loop.
+  onDrawLoop?: (study: ShortenStudy, via: "keyboard" | "pointer") => void;
 }) {
   const theme = useTheme(),
     dialog = useRef<HTMLDialogElement>(null),
@@ -246,14 +259,6 @@ export function ShortenPreview({
       async (client, q: ShortenRequest) =>
         (await client.shorten(q)).result.contours[0],
     );
-    // #409 research: a user loop's frames cost tens of milliseconds, so a
-    // second worker samples every other one where the device allows.
-    if (entry.study.shorten?.loopTerms && playbackEngineCount() > 1)
-      helper.current = new LatestSession(
-        () => new EngineClient(),
-        async (client, q: ShortenRequest) =>
-          (await client.shorten(q)).result.contours[0],
-      );
     scalarClient.current = new EngineClient();
     return () => {
       exportGeneration.current++;
@@ -282,11 +287,11 @@ export function ShortenPreview({
     const g = generationOf(study);
     const timer = setTimeout(
       () => {
-        // #409 research: the motion's workers solve a user loop's film beside
-        // the nest's, on their own workers, so Play need not wait for it.
+        // A user loop's motion workers solve its film beside the nest's,
+        // each on its own worker, so Play need not wait for it.
         if (g.study.family === "loop")
-          for (const lane of [frames.current, helper.current])
-            lane?.update(
+          for (const lane of loopLanes())
+            lane.update(
               shortenRequest(g.study, [0]),
               () => {},
               () => {},
@@ -303,11 +308,8 @@ export function ShortenPreview({
               field:
                 e instanceof EngineError && e.field
                   ? g.study.family === "loop"
-                    ? // #409 research: the loop's own paths, else the
-                      // solver that refused it.
-                      e.field.startsWith("loop")
-                      ? "loopSource"
-                      : "loopSolver"
+                    ? // Every refusal of a loop is the loop's own.
+                      "loopSource"
                     : (refusedField[e.field] ?? e.field)
                   : undefined,
               key,
@@ -346,6 +348,18 @@ export function ShortenPreview({
   };
   const canPlay =
     ready && !!reply && !durationError && !repeatError && !exporting;
+  // The motion's lanes for a user loop: its own worker and, where the
+  // device allows, a second that samples every other frame, since a user
+  // loop's frames cost tens of milliseconds. The flowers keep one.
+  const loopLanes = () => {
+    if (!helper.current && playbackEngineCount() > 1)
+      helper.current = new LatestSession(
+        () => new EngineClient(),
+        async (client, q: ShortenRequest) =>
+          (await client.shorten(q)).result.contours[0],
+      );
+    return [frames.current!, ...(helper.current ? [helper.current] : [])];
+  };
   // The loop at a timeline time: its progress through the motion, then the
   // flow's physical time by the pacing.
   const physical = (time: number, path: ShortenMotion, end: number) =>
@@ -372,10 +386,7 @@ export function ShortenPreview({
     setFinished(false);
     setPlaying(true);
     revealDrawing(view.current, playback.current);
-    const lanes = [
-      frames.current!,
-      ...(helper.current ? [helper.current] : []),
-    ];
+    const lanes = study.family === "loop" ? loopLanes() : [frames.current!];
     const run = () => {
       stopClock.current = play<ShortenContour>({
         from,
@@ -392,8 +403,9 @@ export function ShortenPreview({
       });
     };
     if (study.family !== "loop") return run();
-    // #409 research: the clock starts once every worker holds the film and
-    // the first frame is drawn, so the motion never opens with a jump.
+    // A user loop's clock starts once every worker holds the film and the
+    // first frame is drawn, so the motion never opens with a stall or a
+    // jump.
     const token = ++preparing.current;
     setWaiting(true);
     Promise.all(lanes.map((lane) => frameAt(from, path, end, lane))).then(
@@ -467,8 +479,9 @@ export function ShortenPreview({
       const a = reply?.admission;
       return {
         flow: "dX/dt = −κ n_out",
-        method: a ? loopMethods[a.solver] : "admission pending",
+        method: a ? loopMethods[a.solver] : undefined,
         nodes: a?.nodes,
+        accuracy: a ? loopAccuracy(a) : undefined,
         admission: a,
       };
     }
@@ -500,10 +513,15 @@ export function ShortenPreview({
       study.family === "loop"
         ? {
             family: "loop",
-            source:
-              study.loopSource === "outline" && study.loopPoints
-                ? { outline: study.loopPoints.length }
-                : { terms: study.loopTerms },
+            // The outline as drawn is evolved, never recorded: like a
+            // link, the record keeps the fitted terms.
+            source: loopSource(study) === "outline" ? "outline" : "terms",
+            example: !study.loopTerms,
+            ...(loopSource(study) === "outline" && {
+              points: studyOutline(study)?.length,
+            }),
+            curve: "z(u) = Σ r e^{i(fu + φ)}",
+            terms: studyLoopTerms(study),
           }
         : study.family === "flower"
           ? {
@@ -522,7 +540,10 @@ export function ShortenPreview({
               ripple: study.ripple,
             },
     ...solver(),
-    units: "starting radius 1; time in length²",
+    units:
+      study.family === "loop"
+        ? "the loop's own coordinates; time in length²"
+        : "starting radius 1; time in length²",
     extinction: reply?.extinction,
     end: reply?.end,
     stop: reply?.stop,
@@ -641,6 +662,7 @@ export function ShortenPreview({
     [title, message, claim],
   );
   const props = drawing();
+  const outline = studyOutline(study);
   const time = film?.time ?? (finished ? 1 : 0);
   const frame = film?.frame;
   const a0 = reply?.contours[0]?.area;
@@ -667,8 +689,40 @@ export function ShortenPreview({
       ] as [number, number],
     };
   }, [reply]);
-  const live = (v: number | undefined, range: [number, number]) =>
-    v !== undefined && Number.isFinite(v) ? liveReadout(v, range) : "—";
+  // The width a value reserves for its whole film leads it, so its sign
+  // stays beside its digits and it stands right-aligned in its column.
+  const live = (v: number | undefined, range: [number, number]) => {
+    if (v === undefined || !Number.isFinite(v)) return "—";
+    const text = liveReadout(v, range);
+    return text.replaceAll("\u2007", "").padStart(text.length, "\u2007");
+  };
+  // The readout: the shown loop's time, area against the area law, length
+  // and curvature (a convex loop's radius of curvature). Before a loop is
+  // shown it holds the seed's values, hidden, so it keeps its height.
+  const shownLoop = frame ?? reply?.contours[0];
+  const readoutPairs: [string, string][] | undefined = shownLoop &&
+    reply && [
+      ["t", live(shownLoop.t, [0, reply.end])],
+      ["t / T", `${live((100 * shownLoop.t) / reply.extinction, [0, 100])}%`],
+      ["Area", live(shownLoop.area, ranges.area)],
+      [
+        "A₀ − 2πt",
+        live(
+          a0 === undefined ? NaN : a0 - 2 * Math.PI * shownLoop.t,
+          ranges.area,
+        ),
+      ],
+      ...((shownLoop.minKappa !== undefined
+        ? [
+            ["κ min", live(shownLoop.minKappa, ranges.kappa)],
+            ["κ max", live(shownLoop.maxKappa, ranges.kappa)],
+          ]
+        : [
+            ["ρ min", live(shownLoop.minRho, ranges.rho)],
+            ["ρ max", live(shownLoop.maxRho, ranges.rho)],
+          ]) as [string, string][]),
+      ["Length", live(shownLoop.length, ranges.length)],
+    ];
   const select = <T extends string | number>(
     label: string,
     value: T,
@@ -858,7 +912,7 @@ export function ShortenPreview({
           // One mode per link: a garden or lace there would open instead.
           study={() => {
             const { garden: _, lace: __, ...base } = entry.study;
-            return { ...base, shorten: study };
+            return { ...base, shorten: linkShorten(study) };
           }}
           disabled={!valid || !current}
         />
@@ -875,9 +929,9 @@ export function ShortenPreview({
           <p className="eyebrow">Curve-shortening flow · dX/dt = κN</p>
           <h2 id="shorten-title">Curves that smooth themselves</h2>
           <p>
-            Every point of the loop moves inward at its curvature. Petal tips
-            retract, notches fill, and the loop rounds itself off as it shrinks
-            toward a point.
+            {study.family === "loop"
+              ? "Every point of your loop moves inward at its curvature. Corners and teeth melt first, dents fill, and the loop rounds itself off as it shrinks toward a point."
+              : "Every point of the loop moves inward at its curvature. Petal tips retract, notches fill, and the loop rounds itself off as it shrinks toward a point."}
           </p>
         </div>
         <ScalarStatus.Provider value={scalarStatus}>
@@ -930,32 +984,21 @@ export function ShortenPreview({
                     ]}
                   />
                 </div>
-                <div className="note shorten-readout" aria-live="off">
-                  {frame && reply ? (
-                    <>
-                      <p>
-                        t = {liveReadout(frame.t, [0, reply.end])} of extinction
-                        T = {fmt(reply.extinction)} (
-                        {liveReadout(
-                          (100 * frame.t) / reply.extinction,
-                          [0, 100],
-                        )}
-                        %)
-                      </p>
-                      <p>
-                        Area {live(frame.area, ranges.area)}; A₀ − 2πt ={" "}
-                        {live(
-                          a0 === undefined ? NaN : a0 - 2 * Math.PI * frame.t,
-                          ranges.area,
-                        )}{" "}
-                        · length {live(frame.length, ranges.length)} ·{" "}
-                        {frame.minKappa !== undefined
-                          ? `κ from ${live(frame.minKappa, ranges.kappa)} to ${live(frame.maxKappa, ranges.kappa)}`
-                          : `ρ from ${live(frame.minRho, ranges.rho)} to ${live(frame.maxRho, ranges.rho)}`}
-                      </p>
-                    </>
-                  ) : null}
-                </div>
+                {readoutPairs && (
+                  <dl
+                    className="note shorten-readout"
+                    aria-live="off"
+                    aria-hidden={frame ? undefined : true}
+                    data-shown={frame ? "" : undefined}
+                  >
+                    {readoutPairs.map(([label, value]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
               </main>
               <aside>
                 <h3 className="garden-section shorten-first">Seed</h3>
@@ -965,58 +1008,51 @@ export function ShortenPreview({
                   [
                     ["flower", "Flower"],
                     ["convex", "Convex loop"],
-                    ...(study.loopTerms
-                      ? [["loop", "Your loop (research)"] as ["loop", string]]
-                      : []),
+                    ["loop", "Your loop"],
                   ],
                   (family) => void switchSeed((s) => ({ ...s, family })),
                   shortenHelp.family,
                 )}
                 {study.family === "loop" ? (
                   <>
-                    <div className="pair">
-                      {select<"terms" | "outline">(
-                        "Source",
-                        study.loopPoints
-                          ? (study.loopSource ?? "terms")
-                          : "terms",
-                        [
-                          ["terms", "Fitted terms"],
-                          ...(study.loopPoints
-                            ? [
-                                ["outline", "Outline as drawn"] as [
-                                  "outline",
-                                  string,
-                                ],
-                              ]
-                            : []),
-                        ],
-                        (loopSource) => edit((s) => ({ ...s, loopSource })),
-                        loopHelp.source,
+                    <Field label="Your loop" help={shortenHelp.loopSource}>
+                      <select
+                        value={loopSource(study)}
+                        onChange={(e) => {
+                          const loopSource = e.currentTarget
+                            .value as LoopSource;
+                          edit((s) => ({ ...s, loopSource }));
+                        }}
+                      >
+                        <option value="terms">
+                          Fitted, {formatCount(studyLoopTerms(study).length)}{" "}
+                          terms
+                        </option>
+                        <option value="outline" disabled={!outline}>
+                          {outline
+                            ? `As drawn, ${formatCount(outline.length)} points`
+                            : "As drawn (not kept)"}
+                        </option>
+                      </select>
+                    </Field>
+                    <p className="note" data-testid="shorten-loop-note">
+                      {study.loopTerms
+                        ? "Your loop from Draw a loop."
+                        : "The example leaf, until you draw a loop."}{" "}
+                      {onDrawLoop && (
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={(e) =>
+                            onDrawLoop(
+                              structuredClone(study),
+                              e.detail === 0 ? "keyboard" : "pointer",
+                            )
+                          }
+                        >
+                          Draw a new loop…
+                        </button>
                       )}
-                      {select<LoopSolver | "auto">(
-                        "Solver",
-                        study.loopSolver ?? "auto",
-                        [
-                          ["auto", "Automatic"],
-                          ["polar", "Radial graph"],
-                          ["arc", "Arclength"],
-                          ["bgn", "Polygon (BGN)"],
-                        ],
-                        (v) =>
-                          edit((s) => ({
-                            ...s,
-                            loopSolver: v === "auto" ? undefined : v,
-                          })),
-                        loopHelp.solver,
-                      )}
-                    </div>
-                    <p className="note shorten-admission">
-                      {reply?.admission && current
-                        ? admissionText(reply.admission)
-                        : activeError
-                          ? "Not admitted."
-                          : "Admitting the loop…"}
                     </p>
                   </>
                 ) : study.family === "flower" ? (
@@ -1098,7 +1134,7 @@ export function ShortenPreview({
                   data-end={reply && current ? reply.end : undefined}
                 >
                   {reply && current
-                    ? `${reply.contours.length} loops from the seed to ${percent(reply.end / reply.extinction)} of the extinction time; the flow ${stopText[reply.stop] ?? reply.stop}. ${study.family === "loop" ? "" : shortenHelp.limits}`
+                    ? `${reply.contours.length} loops from the seed to ${percent(reply.end / reply.extinction)} of the extinction time T = ${fmt(reply.extinction)}; the flow ${stopText[reply.stop] ?? reply.stop}. ${reply.admission ? loopAccuracy(reply.admission) : shortenHelp.limits}`
                     : "Solving…"}
                 </p>
                 <h3 className="garden-section">Motion</h3>

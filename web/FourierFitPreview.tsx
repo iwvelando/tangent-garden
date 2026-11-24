@@ -139,7 +139,8 @@ export function FourierFitPreview({
   onAdopt: (study: PlanarStudy, via: JourneyVia) => void;
   // Opens hyperbolic lace with the fitted loop as its motif.
   onWeave?: (terms: Term[], via: JourneyVia) => void;
-  // #409 research: opens Curves that smooth themselves with this loop.
+  // Opens curves that smooth themselves with this loop, its fitted terms
+  // and the outline they were fitted to.
   onShorten?: (terms: Term[], points: Vec[] | null, via: JourneyVia) => void;
 }) {
   const theme = useTheme(),
@@ -317,8 +318,10 @@ export function FourierFitPreview({
     else if (terms && onWeave) onWeave(terms, via.current);
     else onReturn(via.current);
   }
-  // Opened from hyperbolic lace, the source is the lace's loop.
+  // Opened from hyperbolic lace or curves that smooth themselves, the
+  // source is that study's loop.
   const fromLace = !!request.lace;
+  const fromShorten = !!request.shorten;
   const viewHint = useMemo(
     () =>
       matchMedia("(pointer: coarse)").matches
@@ -739,7 +742,9 @@ export function FourierFitPreview({
       <p className="note">
         {fromLace
           ? "Draw a new outline or start with the example leaf, then close it. Or use the lace's current loop; the lace stays as it was until you weave."
-          : "Draw your own outline or start with the example leaf, then close it. Or use your current base curve; your original study stays here until adoption."}
+          : fromShorten
+            ? "Draw a new outline or start with the example leaf, then close it. Or use the current loop's fit; the smoothing study stays as it was until you smooth a new loop."
+            : "Draw your own outline or start with the example leaf, then close it. Or use your current base curve; your original study stays here until adoption."}
       </p>
       <div className="fit-layout">
         <section className="fit-draft" aria-label="Outline input">
@@ -786,7 +791,9 @@ export function FourierFitPreview({
                     engine.current?.useCurve(request.study);
                   }}
                 >
-                  {fromLace ? "Use current loop" : "Use current curve"}
+                  {fromLace || fromShorten
+                    ? "Use current loop"
+                    : "Use current curve"}
                 </button>
                 <HelpToggle topic="current curve" help={sourceHelp} />
               </div>
@@ -799,7 +806,7 @@ export function FourierFitPreview({
               type="button"
               className="fit-example-action"
               disabled={drawing}
-              onClick={() => reset(structuredClone(sampleLeaf))}
+              onClick={() => reset(sampleLeaf.map((p) => ({ ...p })))}
             >
               Use example leaf
             </button>
@@ -1100,6 +1107,12 @@ export function FourierFitPreview({
           Links and exports preserve the fitted study, never the raw outline.
           The reference and correction history are discarded when you leave.
         </p>
+        {onShorten && (
+          <p className="note">
+            Smooth into a circle opens curves that smooth themselves with this
+            loop shrinking by its curvature, keeping your study.
+          </p>
+        )}
         {onWeave && (
           <p className="note">
             Weave into lace opens hyperbolic lace with this loop mirrored into
@@ -1114,8 +1127,8 @@ export function FourierFitPreview({
         <p className="fit-adopt-copy">
           <strong>Use the fitted loop</strong>
           <span id={`${title}-adopt-note`}>
-            {onWeave
-              ? "Adopting replaces your current study; weaving keeps it."
+            {onWeave || onShorten
+              ? "Adopting replaces your current study; weaving or smoothing keeps it."
               : "Replaces your current study."}
           </span>
         </p>
@@ -1124,13 +1137,14 @@ export function FourierFitPreview({
             <button
               type="button"
               className="fit-shorten"
+              aria-describedby={`${title}-adopt-note`}
               aria-busy={state.pending && !!state.frame}
               disabled={
                 !state.frame || state.pending || !!state.error || drawing
               }
               onClick={() => finish("shorten")}
             >
-              Shorten (research)
+              Smooth into a circle
             </button>
           )}
           {onWeave && (

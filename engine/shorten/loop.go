@@ -1,20 +1,25 @@
 package shorten
 
-// Research for #409: curve shortening from a user's own closed loop.
+// Curve shortening from a user's own closed loop (#409's research, shipped
+// by #410; docs/mathematics.md, Curves that smooth themselves).
 //
 // A loop arrives as one of two frozen sources: fitted Fourier terms
 // z(u) = Σ r e^{i(fu + φ)} with whole frequencies (Draw a loop's fit), or a
 // bounded outline polygon. Admission measures the source (scale,
-// regularity, simplicity, minimum feature) and refuses what no arm can
-// evolve honestly; then one of three arms evolves it:
+// regularity, simplicity, minimum feature) and refuses what no solver can
+// evolve honestly; then the first solver ("arm") that takes it evolves it:
 //
-//   - "polar": the shipped radial graph (bloom.go), seeded with the source's
-//     polar radius about the center that keeps its tangents farthest from
-//     its rays. Only star-shaped loops.
 //   - "arc": the equal-arclength tangent-angle solver (arclength.go), with
-//     N chosen from the source's curvature spectrum.
+//     N chosen from the source's curvature spectrum and error-controlled
+//     steps. It takes smooth loops only.
 //   - "bgn": a polygon-native parametric scheme (bgn.go), the only arm that
-//     takes an outline's corners as given.
+//     takes an outline's corners as given, and the one for smooth loops
+//     the arclength solver cannot resolve.
+//
+// "polar", the shipped flowers' radial graph seeded about the loop's best
+// star center, remains only as a comparison arm for the research's
+// reports, run when a request names it: it stops when a loop drifts off
+// its star center, so no user loop is given to it.
 //
 // The trigonometric source admits a certificate of embeddedness: |z''| is
 // bounded by Σ r f², so every arc between dense samples stays within a
@@ -86,7 +91,10 @@ type Admission struct {
 	Refused map[string]string `json:"refused,omitempty"`
 }
 
-// The research's limits.
+// arcTol is the arclength arm's local error tolerance per step (#410).
+var arcTol = 1e-9
+
+// The limits on a user loop and its solvers.
 const (
 	loopTerms     = 16
 	loopFrequency = 64
@@ -95,6 +103,9 @@ const (
 	certifyFrom, certifyTo = 1 << 12, 1 << 18
 	// The arclength arm's resolutions.
 	arcFrom, arcTo = 256, 4096
+	// The arclength arm's local error tolerance per step, and its default
+	// step cap (#410).
+	arcStep = 0.04
 	// The polygon arm's nodes by default and at most.
 	bgnNodes, bgnTo = 1024, 4096
 	// A neck must span this many node spacings.
@@ -426,37 +437,82 @@ func simplePolygon(x, y []float64) bool {
 // axis; two arcs that nearly touch give their gap. A polygon's corner is
 // not one, since the distance keeps falling toward the corner. Only chords
 // shorter than limit are looked for; with none, the neck is limit.
+//
+// Pairs are bucketed in cells as large as the longest chord looked for, so
+// a search to 2R visits nearly every pair. A first search on every eighth
+// sample finds a neck of the coarse curve, which bounds the search on all
+// of them (#410: a fifth of a user loop's first load). Every doubly
+// critical pair shorter than the bound is still visited, so the result is
+// the same; if none is shorter, the search runs again to limit.
 func neck(x, y []float64, limit float64) float64 {
-	n := len(x)
-	d := func(i, j int) float64 {
-		i, j = (i+n)%n, (j+n)%n
-		return math.Hypot(x[j]-x[i], y[j]-y[i])
-	}
-	g := newCells(n)
-	for i := range n {
-		g.add(cellOf(x[i], limit), cellOf(y[i], limit), i)
-	}
-	best := limit
-	for i := range n {
-		cx, cy := cellOf(x[i], limit), cellOf(y[i], limit)
-		for a := cx - 1; a <= cx+1; a++ {
-			for b := cy - 1; b <= cy+1; b++ {
-				g.each(a, b, func(j int) {
-					if j <= i || min(j-i, n-j+i) < 3 {
-						return
-					}
-					c := d(i, j)
-					if c >= best {
-						return
-					}
-					if c <= d(i-1, j) && c <= d(i+1, j) && c <= d(i, j-1) && c <= d(i, j+1) {
-						best = c
-					}
-				})
+	const coarse = 8
+	if n := len(x); n >= 64*coarse {
+		cx, cy := make([]float64, n/coarse), make([]float64, n/coarse)
+		for i := range cx {
+			cx[i], cy[i] = x[coarse*i], y[coarse*i]
+		}
+		if b := neckBelow(cx, cy, limit); b < limit {
+			bound := math.Nextafter(b, limit)
+			if r := neckBelow(x, y, bound); r < bound {
+				return r
 			}
 		}
 	}
-	return best
+	return neckBelow(x, y, limit)
+}
+
+// neckBelow is the least doubly critical chord shorter than limit, or limit.
+// Chords are compared by their squares, and the shortest measured once.
+// When limit spans the whole curve, the cells would hold every sample, so
+// every pair is visited directly instead.
+func neckBelow(x, y []float64, limit float64) float64 {
+	n := len(x)
+	d2 := func(i, j int) float64 {
+		i, j = (i+n)%n, (j+n)%n
+		dx, dy := x[j]-x[i], y[j]-y[i]
+		return dx*dx + dy*dy
+	}
+	best2, bi, bj := limit*limit, -1, -1
+	visit := func(i, j int) {
+		if j <= i || min(j-i, n-j+i) < 3 {
+			return
+		}
+		c := d2(i, j)
+		if c >= best2 {
+			return
+		}
+		if c <= d2(i-1, j) && c <= d2(i+1, j) && c <= d2(i, j-1) && c <= d2(i, j+1) {
+			best2, bi, bj = c, i, j
+		}
+	}
+	x0, x1, y0, y1 := x[0], x[0], y[0], y[0]
+	for i := range n {
+		x0, x1, y0, y1 = min(x0, x[i]), max(x1, x[i]), min(y0, y[i]), max(y1, y[i])
+	}
+	if limit >= max(x1-x0, y1-y0)/2 {
+		for i := range n {
+			for j := i + 3; j < n; j++ {
+				visit(i, j)
+			}
+		}
+	} else {
+		g := newCells(n)
+		for i := range n {
+			g.add(cellOf(x[i], limit), cellOf(y[i], limit), i)
+		}
+		for i := range n {
+			cx, cy := cellOf(x[i], limit), cellOf(y[i], limit)
+			for a := cx - 1; a <= cx+1; a++ {
+				for b := cy - 1; b <= cy+1; b++ {
+					g.each(a, b, func(j int) { visit(i, j) })
+				}
+			}
+		}
+	}
+	if bi < 0 {
+		return limit
+	}
+	return math.Hypot(x[bj]-x[bi], y[bj]-y[bi])
 }
 
 // starAbout is min sin(tangent, ray) about c on dense samples of a
@@ -823,7 +879,9 @@ func (f *LoopFilm) End() float64 {
 }
 
 // SolveLoop admits q's loop and evolves it with the requested arm, or with
-// the first arm that takes it: arc, polar, then bgn.
+// the first arm that takes it: arc, then bgn (#410). The radial graph,
+// "polar", is a comparison arm of #409's research, run only when named: it
+// stops when a loop drifts off its star center.
 func SolveLoop(q LoopRequest) (*LoopFilm, error) {
 	if !(q.Horizon > 0 && q.Horizon <= 0.999) {
 		return nil, field("horizon", "Horizon must be above 0 and at most 0.999 of the extinction time.")
@@ -835,9 +893,9 @@ func SolveLoop(q LoopRequest) (*LoopFilm, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Automatic: the spectrally accurate arm first, then the shipped radial
-	// graph, then the polygon scheme, which takes the most.
-	arms := []string{"arc", "polar", "bgn"}
+	// Automatic: the spectrally accurate arm first, then the polygon
+	// scheme, which takes the most.
+	arms := []string{"arc", "bgn"}
 	switch q.Solver {
 	case "":
 	case "polar", "arc", "bgn":
@@ -889,16 +947,32 @@ func SolveLoop(q LoopRequest) (*LoopFilm, error) {
 		}
 		return nil, last
 	}
-	return nil, field(src.path(), "No solver can take this loop: %s", joinRefusals(arms, refused))
+	// The polygon arm takes the most, so its reason is the loop's: a
+	// feature finer than its 4,096 nodes can follow.
+	var plain *tooFine
+	if errors.As(last, &plain) && plain.neck {
+		return nil, field(src.path(), "The loop's narrowest neck or sharpest point is too fine to follow with %s points.", thousands(bgnTo))
+	}
+	if plain != nil {
+		return nil, field(src.path(), "The loop bends too sharply to follow with %s points.", thousands(bgnTo))
+	}
+	return nil, field(src.path(), "No solver can take this loop: %s.", last)
 }
 
-func joinRefusals(arms []string, refused map[string]string) string {
-	s := ""
-	for i, a := range arms {
-		if i > 0 {
-			s += "; "
-		}
-		s += a + ": " + refused[a]
+// tooFine is the polygon arm's refusal of a feature it cannot resolve: a
+// neck (or an outline's gap) or a bend. The research's own message stays
+// as the error's text, for a named arm.
+type tooFine struct {
+	error
+	neck bool
+}
+
+func (e *tooFine) Unwrap() error { return e.error }
+
+func thousands(n int) string {
+	s := fmt.Sprint(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
 	}
 	return s
 }
@@ -1002,7 +1076,7 @@ func (src *source) arc(q LoopRequest) (*arcFilm, int, float64, error) {
 	}
 	step := q.Tau
 	if step == 0 {
-		step = 0.01
+		step = arcStep
 	}
 	curve := src.seedCurve()
 	floor := floorFraction * src.adm.Radius
@@ -1029,7 +1103,7 @@ func (src *source) arc(q LoopRequest) (*arcFilm, int, float64, error) {
 			last = field("nodes", "the loop's narrowest neck spans fewer than %d node spacings on %d nodes", neckSpacings, n)
 			continue
 		}
-		f, err := solveArc(arcRequest{Nodes: n, Step: step, Horizon: q.Horizon, MaxNodes: arcTo, EveryStep: true, Checkpoints: loopCheckpoints,
+		f, err := solveArc(arcRequest{Nodes: n, Step: step, Tolerance: arcTol, Horizon: q.Horizon, MaxNodes: arcTo, EveryStep: true, Checkpoints: loopCheckpoints,
 			Initial: func(e *etd) []complex128 { return append([]complex128{}, u...) }}, curve, src.adm.Area)
 		if err != nil {
 			return nil, 0, 0, err

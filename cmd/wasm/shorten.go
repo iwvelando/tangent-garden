@@ -17,7 +17,7 @@ var frozenFilm struct {
 	film shorten.Evolution
 }
 
-// A user loop's outline (#409 research) may hold 4,096 points; every other
+// A user loop's outline (#410) may hold 4,096 points; every other
 // request keeps the 8 KiB ceiling.
 const shortenRequestLimit, loopOutlineLimit = 8192, 262144
 

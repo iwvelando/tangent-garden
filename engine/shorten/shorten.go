@@ -601,7 +601,7 @@ type Reply struct {
 	Stats      Stats     `json:"stats"`
 	Contours   []Contour `json:"contours"`
 	Fresh      bool      `json:"fresh"`
-	// A user loop's admission (#409 research); absent for the seeds.
+	// A user loop's admission (#410); absent for the seeds.
 	Admission *Admission `json:"admission,omitempty"`
 }
 

@@ -1,5 +1,6 @@
 import { tiered, type Help } from "../help";
 import type { Term } from "../types";
+import { exampleLeafTerms } from "../example-leaf";
 import type { LaceTilingInfo } from "./tilings";
 
 // The motifs the lace reflects into every tile (engine laceMotifs,
@@ -100,17 +101,8 @@ export const laceMotifs: readonly LaceMotifInfo[] = [
 ];
 
 // The loop the lace shows until one is drawn: the example leaf of Draw a
-// loop (fourier-fit.ts, sampleLeaf) fitted with 8 terms, as Go fits it.
-export const exampleLoop: readonly Term[] = [
-  { frequency: 0, radius: 0.07380196413782487, phase: 2.0118362730533916 },
-  { frequency: -1, radius: 1.419723912035244, phase: -2.54812186120912 },
-  { frequency: 1, radius: 0.44569943540349205, phase: -2.5979464811593407 },
-  { frequency: 3, radius: 0.11405156588444013, phase: -2.118376046160493 },
-  { frequency: -3, radius: 0.10770905363261428, phase: -2.3105380227028074 },
-  { frequency: 2, radius: 0.0539559922425223, phase: -2.915645709915259 },
-  { frequency: 5, radius: 0.05395375123749766, phase: -1.8127548668539546 },
-  { frequency: -5, radius: 0.04547927263327711, phase: -2.284355839723539 },
-];
+// loop fitted with 8 terms, as Go fits it.
+export const exampleLoop: readonly Term[] = exampleLeafTerms;
 // A loop term's whole frequency, within the range Draw a loop fits
 // (engine.LaceLoopMaxFrequency).
 export const loopMaxFrequency = 64;
