@@ -42,17 +42,25 @@ func topology(r LaceResult) []any {
 // diameter through the origin; and every point of it inside the disk.
 func checkGeodesics(t *testing.T, r LaceResult) {
 	t.Helper()
+	checkGeodesicsWithin(t, r, 1e-12)
+}
+
+// checkGeodesicsWithin is checkGeodesics to a stated tolerance, for tiles
+// far deeper than a patch reaches, whose transformations compose many
+// more reflections.
+func checkGeodesicsWithin(t *testing.T, r LaceResult, tol float64) {
+	t.Helper()
 	check := func(what string, i int, a, b, c complex128, rho float64, straight bool) {
 		if straight {
-			if d := math.Abs(real(a)*imag(b)-imag(a)*real(b)) / cmplx.Abs(a-b); d > 1e-12 {
+			if d := math.Abs(real(a)*imag(b)-imag(a)*real(b)) / cmplx.Abs(a-b); d > tol {
 				t.Errorf("straight %s %d misses the origin by %v", what, i, d)
 			}
 		} else {
-			if d := math.Abs(cmplx.Abs(c)*cmplx.Abs(c)-1-rho*rho) / (1 + rho*rho); d > 1e-12 {
+			if d := math.Abs(cmplx.Abs(c)*cmplx.Abs(c)-1-rho*rho) / (1 + rho*rho); d > tol {
 				t.Errorf("%s %d's circle is not orthogonal to the rim (relative %v)", what, i, d)
 			}
 			for _, p := range []complex128{a, b} {
-				if d := math.Abs(cmplx.Abs(p-c) - rho); d > 1e-12*math.Max(1, rho) {
+				if d := math.Abs(cmplx.Abs(p-c) - rho); d > tol*math.Max(1, rho) {
 					t.Errorf("%s %d's end %v is %v off its circle", what, i, p, d)
 				}
 			}

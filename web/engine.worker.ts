@@ -1460,6 +1460,17 @@ function laceSettings(q: import("./lace/model").LaceRequest) {
         throw fieldError(`isometry.${k}`, "Enter a finite number.");
     out.isometry = { offset, direction, rotation };
   }
+  // Detail for a view: its window and the least drawn radius.
+  if (q.window) {
+    const { xMin, xMax, yMin, yMax } = q.window;
+    for (const [k, v] of Object.entries({ xMin, xMax, yMin, yMax }))
+      if (typeof v !== "number" || !Number.isFinite(v))
+        throw fieldError(`window.${k}`, "Enter a finite number.");
+    if (typeof q.minRadius !== "number" || !Number.isFinite(q.minRadius))
+      throw fieldError("minRadius", "Enter a finite number.");
+    out.window = { xMin, xMax, yMin, yMax };
+    out.minRadius = q.minRadius;
+  }
   return out;
 }
 

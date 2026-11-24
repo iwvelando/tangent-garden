@@ -583,6 +583,7 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     "About Tiling",
     "About Depth",
     "About Tile limit",
+    "About zoom detail",
     "About Line weight",
   ]);
   for (const e of entries) {
@@ -606,6 +607,10 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
     "−3–3",
     "0.1–3,600",
     "7,200 frames",
+    // Zoom detail (laceDetailFor, engine.LaceMaxViewTiles).
+    "past 1.4×",
+    "3 drawing units",
+    "2,000 tiles",
   ])
     expect(text).toContain(limit);
   // Each tiling's help fits too, and names its own depth bound and the
@@ -613,7 +618,16 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
   for (const [tiling, limits] of [
     ["5,4", ["0–8", "Depth 5 holds 441", "five-pointed", "dual squares"]],
     ["4,5", ["0–8", "Depth 6 holds 597", "four-pointed", "dual pentagons"]],
-    ["3,7", ["0–11", "Depth 10 holds 742", "three-pointed", "dual heptagons"]],
+    [
+      "3,7",
+      [
+        "0–11",
+        "Depth 10 holds 742",
+        "three-pointed",
+        "dual heptagons",
+        "4 drawing units",
+      ],
+    ],
   ] as const) {
     await d.getByLabel("Tiling", { exact: true }).selectOption(tiling);
     await expect(d.locator("#lace-artwork")).toHaveAttribute(

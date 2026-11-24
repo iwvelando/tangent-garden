@@ -9,12 +9,10 @@ import (
 )
 
 // frozenLace is the one generated patch a motion's frames move: the
-// latest frame request's generation settings and their source. A frame for
-// other settings replaces it; it lives as long as the worker.
-var frozenLace struct {
-	settings engine.LaceRequest
-	source   *engine.LaceSource
-}
+// latest frame request's source. A frame for other generation settings,
+// or under a window for another window or static isometry, replaces it; it
+// lives as long as the worker.
+var frozenLace *engine.LaceSource
 
 // Hyperbolic lace's tiles, edges and motif travel as lifted parallel
 // arrays, like the garden's circles. tangentGardenLace generates a patch
@@ -44,16 +42,14 @@ func registerLace() {
 		if err := json.Unmarshal([]byte(args[0].String()), &f); err != nil {
 			return refusal(err)
 		}
-		settings := f.Lace
-		settings.Isometry = nil
-		if frozenLace.source == nil || frozenLace.settings != settings {
+		if frozenLace == nil || !frozenLace.Matches(f.Lace) {
 			source, err := engine.NewLaceSource(f.Lace)
 			if err != nil {
 				return refusal(err)
 			}
-			frozenLace.settings, frozenLace.source = settings, source
+			frozenLace = source
 		}
-		frame, err := frozenLace.source.Frame(f)
+		frame, err := frozenLace.Frame(f)
 		if err != nil {
 			return refusal(err)
 		}

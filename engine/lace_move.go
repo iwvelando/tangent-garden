@@ -97,9 +97,7 @@ func (s *LaceSource) Frame(f LaceFrameRequest) (LaceFrame, error) {
 	if err := f.Lace.validate(); err != nil {
 		return LaceFrame{}, err
 	}
-	q := f.Lace
-	q.Isometry = nil
-	if q != s.q {
+	if !s.Matches(f.Lace) {
 		return LaceFrame{}, errors.New("the frame's lace settings are not the frozen patch's")
 	}
 	if err := f.Motion.validate(); err != nil {

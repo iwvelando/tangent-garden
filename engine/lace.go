@@ -14,11 +14,15 @@ const LaceTiling = "7,3"
 // vertex, hyperbolic when (p − 2)(q − 2) > 4. The angles π/p and π/q are
 // constants folded exactly by the compiler, as the {7,3} seed always used
 // them, so its tiles are unchanged to the last bit. maxDepth is the
-// deepest patch a request may ask for.
+// deepest patch a request may ask for. gallery bounds how far a tile's
+// address path strays from the straight line to it, in hyperbolic
+// distance, with headroom over the most measured (TestLaceAddressPathsHugTheirLine):
+// 1.07, 1.71, 1.13 and 0.80 on unlimited patches to depth 10, 10, 11 and 16.
 type laceTiling struct {
 	p, q             int
 	piOverP, piOverQ float64
 	maxDepth         int
+	gallery          float64
 }
 
 // laceTilings is the catalog: {7,3}, {5,4}, and their duals {3,7} and
@@ -27,10 +31,10 @@ type laceTiling struct {
 // it has its own bound: at depth 11 the tile limit, not the depth, ends
 // its patch, as it does for the others by depth 8.
 var laceTilings = map[string]laceTiling{
-	"7,3": {7, 3, math.Pi / 7, math.Pi / 3, LaceMaxDepth},
-	"5,4": {5, 4, math.Pi / 5, math.Pi / 4, LaceMaxDepth},
-	"4,5": {4, 5, math.Pi / 4, math.Pi / 5, LaceMaxDepth},
-	"3,7": {3, 7, math.Pi / 3, math.Pi / 7, LaceMaxDepthTriangles},
+	"7,3": {7, 3, math.Pi / 7, math.Pi / 3, LaceMaxDepth, 1.3},
+	"5,4": {5, 4, math.Pi / 5, math.Pi / 4, LaceMaxDepth, 2},
+	"4,5": {4, 5, math.Pi / 4, math.Pi / 5, LaceMaxDepth, 1.4},
+	"3,7": {3, 7, math.Pi / 3, math.Pi / 7, LaceMaxDepthTriangles, 1},
 }
 
 const (
@@ -67,6 +71,12 @@ type LaceRequest struct {
 	Size      float64 `json:"size,omitempty"`
 	// Isometry moves the generated patch; absent, it stays in place.
 	Isometry *LaceIsometry `json:"isometry,omitempty"`
+	// Window, when present, asks for the tiles drawn in this rectangle
+	// with circumscribed circles at least MinRadius in Euclidean radius,
+	// at any depth: detail for a view (lace_view.go). The depth is then
+	// ignored. Both are in model units, as drawn under the isometry.
+	Window    *LaceWindow `json:"window,omitempty"`
+	MinRadius float64     `json:"minRadius,omitempty"`
 }
 
 // LaceIsometry is the orientation-preserving disk automorphism
@@ -100,10 +110,13 @@ type LaceCoverage struct {
 }
 
 // LaceOmitted counts distinct candidate tiles left out: beyond the depth, or
-// unresolved near the rim (see lacePrecision).
+// unresolved near the rim (see lacePrecision); under a window, outside the
+// view's search or too small to be drawn, instead of beyond the depth.
 type LaceOmitted struct {
 	Depth     int `json:"depth"`
 	Precision int `json:"precision"`
+	View      int `json:"view,omitempty"`
+	Radius    int `json:"radius,omitempty"`
 }
 
 // LaceResult holds a finite patch in breadth-first order as parallel arrays,
@@ -244,9 +257,11 @@ func (q LaceRequest) validate() error {
 		return fieldErr("size", "%s must be %v–1", m.name, m.least)
 	}
 	if q.Isometry != nil {
-		return q.Isometry.validate()
+		if err := q.Isometry.validate(); err != nil {
+			return err
+		}
 	}
-	return nil
+	return q.validateWindow()
 }
 
 func (iso LaceIsometry) validate() error {
@@ -557,40 +572,50 @@ func geodesic(z, w complex128) (c complex128, radius float64, straight bool) {
 	return c, math.Sqrt(real(c)*real(c) + imag(c)*imag(c) - 1), false
 }
 
-// diskGrid finds stored points near a point, by cells of a square grid.
-type diskGrid struct {
-	cell  float64
-	cells map[[2]int32][]int
+// diskGrid finds stored points near a point, by cells of square grids
+// graded toward the rim: a point with 2^−(ℓ+1) < 1 − |z|² ≤ 2^−ℓ is stored
+// at level ℓ, in cells 2^−ℓ/2 wide, so a cell holds a bounded number of
+// tiles however near the rim they lie.
+type diskGrid map[[3]int32][]int
+
+func newDiskGrid() diskGrid { return diskGrid{} }
+
+func gridLevel(z complex128) int32 {
+	return int32(max(0, math.Floor(-math.Log2(rimGap(z)))))
 }
 
-func newDiskGrid() diskGrid { return diskGrid{1.0 / 16, map[[2]int32][]int{}} }
-
-func (g diskGrid) key(z complex128) [2]int32 {
-	return [2]int32{int32(math.Floor(real(z) / g.cell)), int32(math.Floor(imag(z) / g.cell))}
-}
+func gridCell(level int32) float64 { return math.Ldexp(0.5, -int(level)) }
 
 func (g diskGrid) add(z complex128, i int) {
-	k := g.key(z)
-	g.cells[k] = append(g.cells[k], i)
+	l := gridLevel(z)
+	c := gridCell(l)
+	k := [3]int32{l, int32(math.Floor(real(z) / c)), int32(math.Floor(imag(z) / c))}
+	g[k] = append(g[k], i)
 }
 
 // near returns the stored point within hyperbolic distance d of z that is
 // nearest, or −1. A hyperbolic disk of radius d about z, with τ = tanh(d/2),
 // is a Euclidean disk of radius (1 − |z|²)τ/(1 − |z|²τ²) whose center lies
 // |z|τ²(1 − |z|²)/(1 − |z|²τ²) nearer the origin, so none of it is farther
-// from z than their sum, (1 − |z|²)τ/(1 − |z|τ): the cells to search.
+// from z than their sum, (1 − |z|²)τ/(1 − |z|τ): the cells to search. The
+// metric's factor 2/(1 − |w|²) changes by at most e^d within distance d,
+// so the points sought lie within d/ln 2 + 1 levels of z's.
 func (g diskGrid) near(z complex128, d float64, at func(int) complex128) (int, float64) {
 	tau := math.Tanh(d / 2)
 	r2 := real(z)*real(z) + imag(z)*imag(z)
 	reach := (1 - r2) * tau / (1 - math.Sqrt(r2)*tau)
-	lo := g.key(z - complex(reach, reach))
-	hi := g.key(z + complex(reach, reach))
+	l0, span := gridLevel(z), int32(math.Ceil(d/math.Ln2))+1
 	best, bestD := -1, d
-	for x := lo[0]; x <= hi[0]; x++ {
-		for y := lo[1]; y <= hi[1]; y++ {
-			for _, i := range g.cells[[2]int32{x, y}] {
-				if e := hyperbolic(z, at(i)); e <= bestD {
-					best, bestD = i, e
+	for l := max(0, l0-span); l <= l0+span; l++ {
+		c := gridCell(l)
+		x0, x1 := int32(math.Floor((real(z)-reach)/c)), int32(math.Floor((real(z)+reach)/c))
+		y0, y1 := int32(math.Floor((imag(z)-reach)/c)), int32(math.Floor((imag(z)+reach)/c))
+		for x := x0; x <= x1; x++ {
+			for y := y0; y <= y1; y++ {
+				for _, i := range g[[3]int32{l, x, y}] {
+					if e := hyperbolic(z, at(i)); e <= bestD {
+						best, bestD = i, e
+					}
 				}
 			}
 		}
@@ -614,10 +639,31 @@ func computeLace(q LaceRequest, limits laceLimits) LaceResult {
 // tile is kept; later ones are duplicates. Generation decides the tiles,
 // their incidence and the transformations that place them; place then
 // computes every position from those transformations.
+//
+// With a window, the patch is the tiles in view and their address paths
+// (windowLace).
 func generateLace(q LaceRequest, limits laceLimits) *LaceSource {
+	if q.Window != nil {
+		return windowLace(q, limits)
+	}
+	return growLace(q, limits, nil)
+}
+
+// laceLeft is why a window's filter leaves a candidate out: outside the
+// view or too small to be drawn there; laceAdmit admits it.
+type laceLeft int
+
+const (
+	laceAdmit laceLeft = iota
+	laceOutside
+	laceSmall
+)
+
+// growLace generates a patch breadth-first. A filter, when given, decides
+// each new candidate in place of the depth.
+func growLace(q LaceRequest, limits laceLimits, filter func(c complex128) laceLeft) *LaceSource {
 	seed := newLaceSeed(q)
 	n := seed.p
-	q.Isometry = nil
 	src := &LaceSource{q: q, seed: seed}
 	r := &src.topology
 	*r = LaceResult{
@@ -722,7 +768,18 @@ grow:
 				continue
 			}
 			depth := t.depth + 1
-			if depth > limits.depth {
+			if filter != nil {
+				if why := filter(c); why != laceAdmit {
+					if leftOnce(&left, leftGrid, leftAt, c, sameTile) {
+						if why == laceOutside {
+							r.Omitted.View++
+						} else {
+							r.Omitted.Radius++
+						}
+					}
+					continue
+				}
+			} else if depth > limits.depth {
 				if leftOnce(&left, leftGrid, leftAt, c, sameTile) {
 					r.Omitted.Depth++
 				}

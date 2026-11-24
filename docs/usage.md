@@ -435,6 +435,14 @@ Under **Cutoffs**, **Depth** (0–8 rings of reflection, or 0–11 for triangles
 
 Drag to pan, scroll or pinch to zoom about the pointer or the point between your fingers, or focus the drawing and use the arrows, + and − (which zoom about the middle of the view) and Home; **Reset view** returns to the whole disk. Zoom moves the camera: it enlarges the drawing without moving the disk, and strokes thicken as tiles are drawn larger. **Line weight** is the lace's own. Theme and color scheme follow the notebook.
 
+Zoomed far toward the rim, the finite patch ends in a blank band before the rim. Turn on **Deeper tiles when zoomed in**, under the cutoffs, and past 1.4× the lace grows the tiles of the view you are looking at, however deep: it keeps the patch's tiles and adds every tile drawn at least 3 drawing units in radius (4 for triangles), so the lace reaches the rim at every zoom.
+- New tiles appear a moment after the view comes to rest.
+- Zoom snaps to steps of √2 and the view to a coarse grid, so small pans keep the same tiles and a view you return to is drawn exactly as before.
+- The summary says how small this view's tiles go and what it leaves out.
+- A selected tile keeps its sides crossed from the center in every view, and the selection stays when you pan it out of view and back. Its number counts this view's tiles, so the heading reads "of this view". Turning the option off clears a selection deeper than the cutoffs can reach.
+- A lace moved off center keeps its patch.
+- While a motion plays, zoom only enlarges its tiles; the view grows its own again when the motion stops.
+
 **Disk isometry** moves the lace itself, a different thing from the camera. The rim stays where it is while the tiles move through it, each keeping its hyperbolic size; zoom and pan move the whole drawing, rim and all.
 - **Offset** (0–0.8) and **Direction** (radians, counterclockwise from the right) name the point of the lace brought to the middle.
 - **Rotation** (radians) then turns the disk about its center.
@@ -447,7 +455,7 @@ Drag to pan, scroll or pinch to zoom about the pointer or the point between your
 - Follow selection frames a tile only when you select it, where it is at that moment; while the disk moves, the camera holds still.
 - Changing the cutoffs, the shape or its size, the isometry or the path stops the motion and returns to the still drawing. Changing the timing pauses it.
 
-**Copy link** saves the tiling, cutoffs, the shape and each shape's size once changed, layers, selection, presentation, view, line weight, the isometry and motion once changed, and Follow selection with the view it returns to, beneath the study you came from. A link never saves a paused time. **Export image** saves a vector SVG or a PNG of the drawing as shown, a paused frame included, with the settings, the selection and a note that the patch is finite recorded in the file. **Export** under Motion saves the motion as an MP4 video or animated WebP, drawn frame by frame from the geometry.
+**Copy link** saves the tiling, cutoffs, whether deeper tiles are on, the shape and each shape's size once changed, layers, selection, presentation, view, line weight, the isometry and motion once changed, and Follow selection with the view it returns to, beneath the study you came from. A link never saves a paused time. **Export image** saves a vector SVG or a PNG of the drawing as shown, a paused frame included, with the settings, the selection, the view's detail request when deeper tiles are drawn, and a note that the patch is finite recorded in the file. **Export** under Motion saves the motion as an MP4 video or animated WebP, drawn frame by frame from the geometry.
 
 ## Curves that smooth themselves
 

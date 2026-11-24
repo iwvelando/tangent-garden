@@ -829,8 +829,54 @@ checkFourierFit();
         .field,
       field,
     );
+  // Detail for a view: a window at the rim at 30× gives tiles far beyond
+  // the depth bound through the same transport, and its frames move that
+  // patch. A frame for another window replaces the frozen one.
+  const at = (x, y, zoom) => {
+    const k = 350 * zoom;
+    return {
+      window: {
+        xMin: x - 500 / k,
+        xMax: x + 500 / k,
+        yMin: y - 380 / k,
+        yMax: y + 380 / k,
+      },
+      minRadius: 3 / k,
+    };
+  };
+  const deep = { ...q, depth: 5, ...at(0.6, 0.79, 30) };
+  const rawView = globalThis.tangentGardenLace(JSON.stringify(deep));
+  assert.equal(typeof rawView, "object", "a view must use typed transport");
+  const view = lifted(rawView);
+  assert.equal(view.stopped, "");
+  assert.ok(Math.max(...view.depth) > 8, "a view reaches past the depth");
+  assert.equal(view.corners.length, 7 * view.center.length);
+  assert.ok(view.omitted.view > 0 && view.omitted.radius > 0);
+  const viewFrame = (progress, lace) =>
+    lifted(
+      globalThis.tangentGardenLaceFrame(
+        JSON.stringify({ lace, motion, progress }),
+      ),
+    );
+  assert.deepEqual(viewFrame(0, deep).vertex, view.vertex);
+  const other = { ...q, depth: 5, ...at(-0.6, 0.79, 30) };
+  const otherView = lifted(globalThis.tangentGardenLace(JSON.stringify(other)));
+  assert.equal(
+    viewFrame(0.5, other).center.length,
+    otherView.center.length,
+    "another window's frame replaces the frozen patch",
+  );
+  for (const [field, request] of [
+    ["window.xMax", { ...deep, window: { ...deep.window, xMax: -2 } }],
+    ["minRadius", { ...deep, minRadius: 0 }],
+    ["minRadius", { ...q, minRadius: 0.01 }],
+  ])
+    assert.equal(
+      JSON.parse(globalThis.tangentGardenLace(JSON.stringify(request))).field,
+      field,
+    );
   console.log(
-    `Lace: typed hyperbolic tiling bridge passed (${n} tiles, ${replyBytes(raw)} bytes; frame ${replyBytes(rawFrame)} bytes)`,
+    `Lace: typed hyperbolic tiling bridge passed (${n} tiles, ${replyBytes(raw)} bytes; frame ${replyBytes(rawFrame)} bytes; view ${view.center.length} tiles, ${replyBytes(rawView)} bytes)`,
   );
 }
 const config = {

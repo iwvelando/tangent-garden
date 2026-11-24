@@ -23,6 +23,12 @@ export type LaceTilingInfo = {
   // The rings' sizes from depth 0 to maxDepth, for help (from
   // engine/lace_tilings_test.go).
   rings: number[];
+  // Zoom detail's least drawn circumradius for tiles beyond the cutoffs,
+  // in drawing units (./model, laceDetailFor): small enough to reach
+  // toward the rim, large enough that every view stays within the
+  // engine's limits (engine TestLaceDetailBudget). {3,7}'s triangles are
+  // small for their circumradius, so they stop larger.
+  detailRadius: number;
 };
 
 export const laceTilings: readonly LaceTilingInfo[] = [
@@ -39,6 +45,7 @@ export const laceTilings: readonly LaceTilingInfo[] = [
     depth: 5,
     maxDepth: 8,
     rings: [1, 7, 21, 56, 147, 385, 1008, 2639, 6909],
+    detailRadius: 3,
   },
   {
     id: "5,4",
@@ -53,6 +60,7 @@ export const laceTilings: readonly LaceTilingInfo[] = [
     depth: 5,
     maxDepth: 8,
     rings: [1, 5, 15, 40, 105, 275, 720, 1885, 4935],
+    detailRadius: 3,
   },
   {
     id: "4,5",
@@ -67,6 +75,7 @@ export const laceTilings: readonly LaceTilingInfo[] = [
     depth: 6,
     maxDepth: 8,
     rings: [1, 4, 12, 28, 64, 148, 340, 780, 1792],
+    detailRadius: 3,
   },
   {
     id: "3,7",
@@ -81,6 +90,7 @@ export const laceTilings: readonly LaceTilingInfo[] = [
     depth: 10,
     maxDepth: 11,
     rings: [1, 3, 6, 12, 18, 30, 45, 72, 111, 174, 270, 420],
+    detailRadius: 4,
   },
 ];
 
