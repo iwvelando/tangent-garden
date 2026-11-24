@@ -177,8 +177,14 @@
   flex: 0 0 auto;
   gap: 8px;
 }
+/* #409 research: a third action wraps rather than overflow a phone. */
+.fit-footer-actions:has(.fit-shorten) {
+  flex-wrap: wrap;
+  flex-shrink: 1;
+}
 /* Weaving keeps the study, so it is the quieter of the two actions. */
-.fit-footer button.fit-weave {
+.fit-footer button.fit-weave,
+.fit-footer button.fit-shorten {
   background: transparent;
   color: var(--base-ink);
 }

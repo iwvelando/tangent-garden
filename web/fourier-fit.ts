@@ -416,6 +416,13 @@ export class FourierFitSession {
       ? structuredClone(this.state.fit.terms)
       : null;
   }
+  // The outline the completed fit was made from (#409 research), under the
+  // same conditions.
+  candidatePoints(): Vec[] | null {
+    return this.candidateTerms() && this.state.fitPoints
+      ? structuredClone(this.state.fitPoints)
+      : null;
+  }
   candidate(): PlanarStudy | null {
     return !this.state.pending &&
       this.state.frame &&

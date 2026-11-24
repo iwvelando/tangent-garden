@@ -3,6 +3,12 @@ import { tiered } from "../help";
 import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
 import type { Repeat } from "../timing";
+import type { Term, Vec } from "../types";
+import {
+  researchLeaf,
+  researchLoops,
+  researchShortenPresets,
+} from "./research";
 
 // Curves that smooth themselves: a smooth closed loop evolving by curve
 // shortening, dX/dt = −κ n_out, solved in Go (engine/shorten; see
@@ -31,10 +37,44 @@ export type ConvexSeed = {
   centerY: number;
 };
 type Run<S> = { seed: S; nodes: number; tau: number; horizon: number };
+// A user loop, frozen: Fourier terms or an outline (engine/shorten.Loop;
+// #409 research). The solver is "polar", "arc" or "bgn", or absent to let
+// admission choose.
+export type LoopSolver = "polar" | "arc" | "bgn";
+export type LoopRun = {
+  loop: { terms?: Term[]; points?: Vec[] };
+  solver?: LoopSolver;
+  horizon: number;
+};
 export type ShortenRequest = {
   convex?: Run<ConvexSeed>;
   bloom?: Run<BloomSeed>;
+  loop?: LoopRun;
   times: number[];
+};
+// What admission measured (engine/shorten.Admission), in units of the
+// equal-area radius where noted.
+export type LoopAdmission = {
+  source: "fourier" | "outline";
+  reversed: boolean;
+  area: number;
+  length: number;
+  radius: number;
+  centerX: number;
+  centerY: number;
+  minSpeed: number;
+  minKappa: number;
+  maxKappa: number;
+  neck: number;
+  thickness: number;
+  certified: boolean;
+  samples: number;
+  star: number;
+  corner?: number;
+  solver: LoopSolver;
+  nodes: number;
+  remesh: number;
+  refused?: Record<string, string>;
 };
 export type ShortenContour = {
   t: number;
@@ -68,12 +108,14 @@ export type ShortenReply = {
   stats: ShortenStats;
   contours: ShortenContour[];
   fresh: boolean;
+  admission?: LoopAdmission;
 };
 
 export type Spacing = "early" | "radius" | "time";
 export type Framing = "physical" | "normalized";
 export type Nest = "whole" | "ghost" | "grows";
-export type ShortenFamily = "flower" | "convex";
+// "loop" is a user's own loop, under #409's research parameter only.
+export type ShortenFamily = "flower" | "convex" | "loop";
 
 // The study. Both seeds' settings are kept, so switching between them
 // returns to the other's last values; only the chosen family is solved.
@@ -94,6 +136,12 @@ export type ShortenStudy = {
   weight: LineWeight;
   // The motion's timing; absent, defaultShortenMotion.
   motion?: ShortenMotion;
+  // #409 research: a user loop's fitted terms, the outline it came from
+  // (never in a link), which of them to evolve, and the solver.
+  loopTerms?: Term[];
+  loopPoints?: Vec[];
+  loopSource?: "terms" | "outline";
+  loopSolver?: LoopSolver;
 };
 export type ShortenMotion = {
   duration: number;
@@ -191,6 +239,21 @@ export const shortenPresets: {
     },
   },
 ];
+// #409 research studies join the list only under ?research=409. The leaf
+// outline study carries the example leaf's points.
+if (researchLoops())
+  for (const p of researchShortenPresets())
+    shortenPresets.push({
+      title: p.title,
+      note: p.note,
+      study: {
+        ...defaultShorten,
+        ...p.study,
+        ...(p.study.loopSource === "outline" && {
+          loopPoints: structuredClone(researchLeaf),
+        }),
+      },
+    });
 export const presetShorten = (index: number): ShortenStudy =>
   structuredClone(shortenPresets[index].study);
 
@@ -199,6 +262,17 @@ export function shortenRequest(
   s: ShortenStudy,
   times: number[],
 ): ShortenRequest {
+  if (s.family === "loop") {
+    const outline = s.loopSource === "outline" && s.loopPoints;
+    return {
+      loop: {
+        loop: outline ? { points: s.loopPoints } : { terms: s.loopTerms ?? [] },
+        ...(s.loopSolver && { solver: s.loopSolver }),
+        horizon: shortenLimits.horizon,
+      },
+      times,
+    };
+  }
   if (s.family === "convex") {
     const { nodes, tau } = shortenLimits.convex;
     return {
@@ -291,10 +365,26 @@ export function normalized(
 
 // The seed's largest radius, which fixes the physical frame: every drawing
 // shows the whole seed at zoom 1, and the nest shrinks within it.
-export function extentOf(s: ShortenStudy) {
+export function extentOf(s: ShortenStudy, seed?: ShortenContour) {
+  if (s.family === "loop") {
+    if (!seed) return 1;
+    const c = centerOf(seed);
+    let r = 0;
+    for (let i = 0; i < seed.x.length; i++)
+      r = Math.max(r, Math.hypot(seed.x[i] - c.x, seed.y[i] - c.y));
+    return r || 1;
+  }
   return s.family === "convex"
     ? 1 + Math.abs(s.ripple)
     : 1 + Math.abs(s.depth) + Math.abs(s.ruffle);
+}
+// A user loop is drawn about the center of its seed's bounding box; the
+// authored seeds are centered on the origin already.
+export function centerOf(seed: Pick<ShortenContour, "x" | "y">) {
+  return {
+    x: (Math.min(...seed.x) + Math.max(...seed.x)) / 2,
+    y: (Math.min(...seed.y) + Math.max(...seed.y)) / 2,
+  };
 }
 export const shortenPage = { width: 1000, height: 760 };
 export const shortenZoom: [number, number] = [0.1, 100];
@@ -306,6 +396,9 @@ export const stopText: Record<string, string> = {
   floor: "stops at the size floor, a twentieth of the starting radius",
   curvature: "stops at the curvature floor, a twentieth of the starting radius",
   star: "stops where the loop would leave its rays (no longer star-shaped)",
+  embedding: "stops where two of its arcs would touch",
+  closure: "stops where the loop no longer closes",
+  nonfinite: "stops where no step keeps the loop finite",
   resolution: "stops where the curvature is no longer resolved",
   positivity: "stops where no step keeps the loop valid",
   work: "stops at the work limit",

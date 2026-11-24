@@ -21,7 +21,11 @@ import {
 import { AppHeader } from "../AppHeader";
 import { ExportImageMenu } from "../ExportImageMenu";
 import type { Still } from "../export-image";
-import { EngineClient, EngineError } from "../engine-client";
+import {
+  EngineClient,
+  EngineError,
+  playbackEngineCount,
+} from "../engine-client";
 import { Field, FieldErrorContext } from "../Field";
 import { LatestSession } from "../latest-session";
 import type { PlotCamera } from "../planar-link";
@@ -42,6 +46,7 @@ import type { ShortenEntry } from "./Context";
 import { ShortenDrawing, type ShortenDrawingProps } from "./Drawing";
 import { shortenMovie, shortenStill } from "./export";
 import {
+  centerOf,
   defaultShorten,
   defaultShortenMotion,
   extentOf,
@@ -63,6 +68,8 @@ import {
   type ShortenStudy,
   type Spacing,
 } from "./model";
+import { admissionText, loopHelp, loopMethods } from "./research";
+import type { LoopSolver } from "./model";
 import "../garden/garden.css";
 import "./shorten.css";
 
@@ -77,6 +84,8 @@ const labels: Partial<
   lobes: "Lobes",
   ripple: "Ripple",
   contours: "Loops",
+  loopSource: "Source",
+  loopSolver: "Solver",
   duration: "Duration",
   repeat: "Repeat",
 };
@@ -142,6 +151,12 @@ export function ShortenPreview({
   const frames = useRef<LatestSession<ShortenRequest, ShortenContour> | null>(
     null,
   );
+  const helper = useRef<LatestSession<ShortenRequest, ShortenContour> | null>(
+    null,
+  );
+  // A motion waiting for its first frame; Pause, Stop or an edit abandons it.
+  const preparing = useRef(0);
+  const [waiting, setWaiting] = useState(false);
   const exportGeneration = useRef(0);
   // The film's settings, and the nest's: the family's count and spacing too.
   const filmKey = JSON.stringify(shortenRequest(study, []));
@@ -231,6 +246,14 @@ export function ShortenPreview({
       async (client, q: ShortenRequest) =>
         (await client.shorten(q)).result.contours[0],
     );
+    // #409 research: a user loop's frames cost tens of milliseconds, so a
+    // second worker samples every other one where the device allows.
+    if (entry.study.shorten?.loopTerms && playbackEngineCount() > 1)
+      helper.current = new LatestSession(
+        () => new EngineClient(),
+        async (client, q: ShortenRequest) =>
+          (await client.shorten(q)).result.contours[0],
+      );
     scalarClient.current = new EngineClient();
     return () => {
       exportGeneration.current++;
@@ -239,6 +262,7 @@ export function ShortenPreview({
       stopClock.current();
       session.current?.cancel();
       frames.current?.cancel();
+      helper.current?.cancel();
       scalarClient.current?.dispose();
       generation.current++;
     };
@@ -257,7 +281,16 @@ export function ShortenPreview({
     if (film || current || countError || scalarError || scalarPending) return;
     const g = generationOf(study);
     const timer = setTimeout(
-      () =>
+      () => {
+        // #409 research: the motion's workers solve a user loop's film beside
+        // the nest's, on their own workers, so Play need not wait for it.
+        if (g.study.family === "loop")
+          for (const lane of [frames.current, helper.current])
+            lane?.update(
+              shortenRequest(g.study, [0]),
+              () => {},
+              () => {},
+            );
         session.current!.update(
           g,
           (r) => {
@@ -269,11 +302,18 @@ export function ShortenPreview({
               message: e.message,
               field:
                 e instanceof EngineError && e.field
-                  ? (refusedField[e.field] ?? e.field)
+                  ? g.study.family === "loop"
+                    ? // #409 research: the loop's own paths, else the
+                      // solver that refused it.
+                      e.field.startsWith("loop")
+                      ? "loopSource"
+                      : "loopSolver"
+                    : (refusedField[e.field] ?? e.field)
                   : undefined,
               key,
             }),
-        ),
+        );
+      },
       reply ? 120 : 0,
     );
     return () => {
@@ -282,6 +322,8 @@ export function ShortenPreview({
     };
   }, [key, !!countError, !!scalarError, scalarPending, attempt, !!film]);
   const pause = () => {
+    preparing.current++;
+    setWaiting(false);
     stopClock.current();
     stopClock.current = () => {};
     setPlaying(false);
@@ -290,6 +332,7 @@ export function ShortenPreview({
   const endFilm = () => {
     pause();
     frames.current?.invalidate();
+    helper.current?.invalidate();
     setFilm(undefined);
     setFinished(false);
   };
@@ -307,9 +350,14 @@ export function ShortenPreview({
   // flow's physical time by the pacing.
   const physical = (time: number, path: ShortenMotion, end: number) =>
     timeAt(progressAt(time, path.repeat, "steady"), end, path.pacing);
-  const frameAt = (time: number, path: ShortenMotion, end: number) =>
+  const frameAt = (
+    time: number,
+    path: ShortenMotion,
+    end: number,
+    lane = frames.current!,
+  ) =>
     new Promise<ShortenContour>((resolve, reject) =>
-      frames.current!.update(
+      lane.update(
         shortenRequest(study, [physical(time, path, end)]),
         resolve,
         reject,
@@ -324,19 +372,41 @@ export function ShortenPreview({
     setFinished(false);
     setPlaying(true);
     revealDrawing(view.current, playback.current);
-    stopClock.current = play<ShortenContour>({
-      from,
-      duration: path.duration * 1000,
-      repeat: cycles(path.repeat),
-      lanes: [(t) => frameAt(t, path, end)],
-      show: (frame, t) => setFilm({ time: t, frame, frameTime: t }),
-      end: () => {
-        stopClock.current = () => {};
-        setPlaying(false);
-        setFinished(true);
+    const lanes = [
+      frames.current!,
+      ...(helper.current ? [helper.current] : []),
+    ];
+    const run = () => {
+      stopClock.current = play<ShortenContour>({
+        from,
+        duration: path.duration * 1000,
+        repeat: cycles(path.repeat),
+        lanes: lanes.map((lane) => (t: number) => frameAt(t, path, end, lane)),
+        show: (frame, t) => setFilm({ time: t, frame, frameTime: t }),
+        end: () => {
+          stopClock.current = () => {};
+          setPlaying(false);
+          setFinished(true);
+        },
+        fail,
+      });
+    };
+    if (study.family !== "loop") return run();
+    // #409 research: the clock starts once every worker holds the film and
+    // the first frame is drawn, so the motion never opens with a jump.
+    const token = ++preparing.current;
+    setWaiting(true);
+    Promise.all(lanes.map((lane) => frameAt(from, path, end, lane))).then(
+      ([first]) => {
+        if (token !== preparing.current) return;
+        setWaiting(false);
+        setFilm({ time: from, frame: first, frameTime: from });
+        run();
       },
-      fail,
-    });
+      (e) => {
+        if (token === preparing.current) fail(e);
+      },
+    );
   };
   const seek = (time: number) => {
     if (!ready || !reply || exporting) return;
@@ -379,7 +449,9 @@ export function ShortenPreview({
   const manual = (view: PlotCamera) => setStudy((s) => ({ ...s, view }));
   const drawing = (): ShortenDrawingProps | undefined =>
     reply && {
-      extent: extentOf(study),
+      extent: extentOf(study, reply.contours[0]),
+      ...(study.family === "loop" &&
+        reply.contours[0] && { center: centerOf(reply.contours[0]) }),
       family: reply.contours,
       current: film?.frame,
       framing: study.framing,
@@ -391,6 +463,15 @@ export function ShortenPreview({
     };
   const solver = () => {
     const q = shortenRequest(study, []);
+    if (study.family === "loop") {
+      const a = reply?.admission;
+      return {
+        flow: "dX/dt = −κ n_out",
+        method: a ? loopMethods[a.solver] : "admission pending",
+        nodes: a?.nodes,
+        admission: a,
+      };
+    }
     return study.family === "flower"
       ? {
           flow: "dX/dt = −κ n_out as a radial graph: (ln r)_t = e^{−2ℓ}(ℓ_φφ − 1 − ℓ_φ²)/(1 + ℓ_φ²)",
@@ -416,22 +497,30 @@ export function ShortenPreview({
   const metadata = () => ({
     kind: "curve-shortening",
     seed:
-      study.family === "flower"
+      study.family === "loop"
         ? {
-            family: "flower",
-            curve: "r(φ) = 1 + a cos kφ + b cos(jφ + ψ)",
-            petals: study.petals,
-            depth: study.depth,
-            ruffles: study.ruffles,
-            ruffle: study.ruffle,
-            phase: study.phase,
+            family: "loop",
+            source:
+              study.loopSource === "outline" && study.loopPoints
+                ? { outline: study.loopPoints.length }
+                : { terms: study.loopTerms },
           }
-        : {
-            family: "convex",
-            curve: "h(θ) = 1 + ε cos mθ",
-            lobes: study.lobes,
-            ripple: study.ripple,
-          },
+        : study.family === "flower"
+          ? {
+              family: "flower",
+              curve: "r(φ) = 1 + a cos kφ + b cos(jφ + ψ)",
+              petals: study.petals,
+              depth: study.depth,
+              ruffles: study.ruffles,
+              ruffle: study.ruffle,
+              phase: study.phase,
+            }
+          : {
+              family: "convex",
+              curve: "h(θ) = 1 + ε cos mθ",
+              lobes: study.lobes,
+              ripple: study.ripple,
+            },
     ...solver(),
     units: "starting radius 1; time in length²",
     extinction: reply?.extinction,
@@ -555,6 +644,31 @@ export function ShortenPreview({
   const time = film?.time ?? (finished ? 1 : 0);
   const frame = film?.frame;
   const a0 = reply?.contours[0]?.area;
+  // The readout's changing numbers keep one width through a motion, so its
+  // lines never rewrap: each is formatted over a range the whole film stays
+  // in. Area and length only fall. Curvature runs from the nest's most
+  // negative to the largest a loop can reach at the size floor, a round
+  // loop a twentieth of the starting equal-area radius, with room to spare;
+  // a convex loop's radius of curvature only falls toward that floor.
+  const ranges = useMemo(() => {
+    const seed = reply?.contours[0];
+    const r0 = Math.sqrt((seed?.area ?? Math.PI) / Math.PI);
+    const ks = (reply?.contours ?? []).flatMap((c) => [
+      c.minKappa ?? 0,
+      c.maxKappa ?? 0,
+    ]);
+    return {
+      area: [0, seed?.area ?? 1] as [number, number],
+      length: [0, seed?.length ?? 1] as [number, number],
+      kappa: [Math.min(0, ...ks), Math.max(...ks, 40 / r0)] as [number, number],
+      rho: [
+        0,
+        Math.max(...(reply?.contours ?? []).map((c) => c.maxRho ?? 0), r0),
+      ] as [number, number],
+    };
+  }, [reply]);
+  const live = (v: number | undefined, range: [number, number]) =>
+    v !== undefined && Number.isFinite(v) ? liveReadout(v, range) : "—";
   const select = <T extends string | number>(
     label: string,
     value: T,
@@ -661,11 +775,19 @@ export function ShortenPreview({
           />
         </Field>
         <p className="note garden-reveal-status" aria-live="off">
-          {durationError
-            ? "—"
-            : elapsed(time * motion.duration, motion.duration)}
-          {frame ? ` · t = ${liveReadout(frame.t, [0, reply!.end])}` : ""}
-          {film && !playing && !finished && film.time < 1 ? " · Paused" : ""}
+          {waiting ? (
+            "Preparing the motion…"
+          ) : (
+            <>
+              {durationError
+                ? "—"
+                : elapsed(time * motion.duration, motion.duration)}
+              {frame ? ` · t = ${liveReadout(frame.t, [0, reply!.end])}` : ""}
+              {film && !playing && !finished && film.time < 1
+                ? " · Paused"
+                : ""}
+            </>
+          )}
         </p>
       </div>
     </div>
@@ -814,17 +936,22 @@ export function ShortenPreview({
                       <p>
                         t = {liveReadout(frame.t, [0, reply.end])} of extinction
                         T = {fmt(reply.extinction)} (
-                        {percent(frame.t / reply.extinction)})
+                        {liveReadout(
+                          (100 * frame.t) / reply.extinction,
+                          [0, 100],
+                        )}
+                        %)
                       </p>
                       <p>
-                        Area {fmt(frame.area)}; A₀ − 2πt ={" "}
-                        {fmt(
+                        Area {live(frame.area, ranges.area)}; A₀ − 2πt ={" "}
+                        {live(
                           a0 === undefined ? NaN : a0 - 2 * Math.PI * frame.t,
+                          ranges.area,
                         )}{" "}
-                        · length {fmt(frame.length)} ·{" "}
+                        · length {live(frame.length, ranges.length)} ·{" "}
                         {frame.minKappa !== undefined
-                          ? `κ from ${fmt(frame.minKappa)} to ${fmt(frame.maxKappa)}`
-                          : `ρ from ${fmt(frame.minRho)} to ${fmt(frame.maxRho)}`}
+                          ? `κ from ${live(frame.minKappa, ranges.kappa)} to ${live(frame.maxKappa, ranges.kappa)}`
+                          : `ρ from ${live(frame.minRho, ranges.rho)} to ${live(frame.maxRho, ranges.rho)}`}
                       </p>
                     </>
                   ) : null}
@@ -838,11 +965,61 @@ export function ShortenPreview({
                   [
                     ["flower", "Flower"],
                     ["convex", "Convex loop"],
+                    ...(study.loopTerms
+                      ? [["loop", "Your loop (research)"] as ["loop", string]]
+                      : []),
                   ],
                   (family) => void switchSeed((s) => ({ ...s, family })),
                   shortenHelp.family,
                 )}
-                {study.family === "flower" ? (
+                {study.family === "loop" ? (
+                  <>
+                    <div className="pair">
+                      {select<"terms" | "outline">(
+                        "Source",
+                        study.loopPoints
+                          ? (study.loopSource ?? "terms")
+                          : "terms",
+                        [
+                          ["terms", "Fitted terms"],
+                          ...(study.loopPoints
+                            ? [
+                                ["outline", "Outline as drawn"] as [
+                                  "outline",
+                                  string,
+                                ],
+                              ]
+                            : []),
+                        ],
+                        (loopSource) => edit((s) => ({ ...s, loopSource })),
+                        loopHelp.source,
+                      )}
+                      {select<LoopSolver | "auto">(
+                        "Solver",
+                        study.loopSolver ?? "auto",
+                        [
+                          ["auto", "Automatic"],
+                          ["polar", "Radial graph"],
+                          ["arc", "Arclength"],
+                          ["bgn", "Polygon (BGN)"],
+                        ],
+                        (v) =>
+                          edit((s) => ({
+                            ...s,
+                            loopSolver: v === "auto" ? undefined : v,
+                          })),
+                        loopHelp.solver,
+                      )}
+                    </div>
+                    <p className="note shorten-admission">
+                      {reply?.admission && current
+                        ? admissionText(reply.admission)
+                        : activeError
+                          ? "Not admitted."
+                          : "Admitting the loop…"}
+                    </p>
+                  </>
+                ) : study.family === "flower" ? (
                   <>
                     <div className="pair">
                       {count("petals", 0, shortenLimits.petals)}
@@ -921,7 +1098,7 @@ export function ShortenPreview({
                   data-end={reply && current ? reply.end : undefined}
                 >
                   {reply && current
-                    ? `${reply.contours.length} loops from the seed to ${percent(reply.end / reply.extinction)} of the extinction time; the flow ${stopText[reply.stop] ?? reply.stop}. ${shortenHelp.limits}`
+                    ? `${reply.contours.length} loops from the seed to ${percent(reply.end / reply.extinction)} of the extinction time; the flow ${stopText[reply.stop] ?? reply.stop}. ${study.family === "loop" ? "" : shortenHelp.limits}`
                     : "Solving…"}
                 </p>
                 <h3 className="garden-section">Motion</h3>

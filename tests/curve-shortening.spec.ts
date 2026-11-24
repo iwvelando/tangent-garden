@@ -166,6 +166,35 @@ test("seeks depend only on time, and the readout states the area law", async ({
   await expect(current(d)).toHaveCount(0);
 });
 
+// The readout's numbers keep one width through the motion, so on a phone
+// its lines never rewrap and jump while the loop shrinks (found in #409's
+// exploration on an iPhone in portrait). Seeks across the whole film, with
+// the flower's curvature from negative notches to the floor's round loop.
+test("the readout keeps its width and height through the motion on a phone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  for (const name of [flower, convex]) {
+    const d = await openStudy(page, name);
+    const lines = d.locator(".shorten-readout p");
+    const seen = new Set<string>();
+    for (const p of [0.001, 0.02, 0.1, 0.3, 0.5, 0.75, 0.9, 0.99, 1]) {
+      await seek(d, p);
+      const texts = await lines.allTextContents();
+      const height = await d
+        .locator(".shorten-readout")
+        .evaluate((e) => e.getBoundingClientRect().height);
+      seen.add(JSON.stringify([texts.map((t) => t.length), height]));
+    }
+    expect([...seen], name).toHaveLength(1);
+    await d
+      .getByRole("button", { name: "Return to study", exact: true })
+      .click();
+    await expect(d).toBeHidden();
+  }
+});
+
 test("playback pauses, resumes and stops, and a seed edit ends it", async ({
   page,
 }) => {

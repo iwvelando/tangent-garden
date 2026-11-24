@@ -59,7 +59,7 @@ type Request struct {
 }
 
 // Stats counts a solve's work. A node update is one node through one
-// attempted step; Remeshed is always 0 and is reported to say so.
+// attempted step. The seeds never remesh, and report Remeshed 0 to say so.
 type Stats struct {
 	Accepted  int `json:"accepted"`
 	Rejected  int `json:"rejected"`
@@ -70,10 +70,13 @@ type Stats struct {
 	// Trials are the steps of root solves that land a partial step on a
 	// horizon, used by the tests' arclength reference; counted in
 	// NodeUpdates, not in Attempted.
-	Trials      int `json:"trials,omitempty"`
-	Remeshed    int `json:"remeshed"`
-	NodeUpdates int `json:"nodeUpdates"`
-	Checkpoints int `json:"checkpoints"`
+	Trials   int `json:"trials,omitempty"`
+	Remeshed int `json:"remeshed"`
+	// The largest distance a remeshing moved the loop, over the equal-area
+	// radius (#409's polygon arm; the seeds never remesh).
+	RemeshError float64 `json:"remeshError,omitempty"`
+	NodeUpdates int     `json:"nodeUpdates"`
+	Checkpoints int     `json:"checkpoints"`
 	// Stride is the number of accepted steps between checkpoints, and so
 	// the most a seek recomputes, apart from rejected attempts and the
 	// final partial step.
@@ -561,18 +564,30 @@ func Solve(q Request) (*Film, error) {
 type FrameRequest struct {
 	Convex *Request      `json:"convex,omitempty"`
 	Bloom  *BloomRequest `json:"bloom,omitempty"`
+	Loop   *LoopRequest  `json:"loop,omitempty"`
 	Times  []float64     `json:"times"`
 }
 
 // Solve solves the request's evolution.
 func (q FrameRequest) Solve() (*Film, error) {
 	switch {
-	case q.Convex != nil && q.Bloom == nil:
+	case q.Convex != nil && q.Bloom == nil && q.Loop == nil:
 		return Solve(*q.Convex)
-	case q.Bloom != nil && q.Convex == nil:
+	case q.Bloom != nil && q.Convex == nil && q.Loop == nil:
 		return SolveBloom(*q.Bloom)
 	}
 	return nil, fmt.Errorf("ask for one evolution, convex or bloom")
+}
+
+// Evolve solves the request's evolution, a seed's or a user loop's.
+func (q FrameRequest) Evolve() (Evolution, error) {
+	if q.Loop != nil {
+		if q.Convex != nil || q.Bloom != nil {
+			return nil, fmt.Errorf("ask for one evolution, convex, bloom or loop")
+		}
+		return SolveLoop(*q.Loop)
+	}
+	return q.Solve()
 }
 
 // Reply is a film's summary and the loop at each requested time. Fresh says
@@ -586,6 +601,8 @@ type Reply struct {
 	Stats      Stats     `json:"stats"`
 	Contours   []Contour `json:"contours"`
 	Fresh      bool      `json:"fresh"`
+	// A user loop's admission (#409 research); absent for the seeds.
+	Admission *Admission `json:"admission,omitempty"`
 }
 
 // maxTimes bounds one reply: a contour family or one movie frame.

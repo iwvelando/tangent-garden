@@ -26,7 +26,12 @@ import {
   type LaceMotifId,
 } from "./lace/motifs";
 import { planarStoryIds, type PlanarStoryId } from "./planar-story";
-import { shortenLimits, type ShortenStudy } from "./shorten/model";
+import {
+  shortenLimits,
+  type ShortenFamily,
+  type ShortenStudy,
+} from "./shorten/model";
+import { researchLoops } from "./shorten/research";
 import {
   gardenLimits,
   gardenSeed,
@@ -1142,11 +1147,34 @@ function laceStudy(value: unknown): LaceStudy {
 // motion timing; never solved geometry. Go validates the seeds again,
 // including the limits that depend on several fields.
 function shortenStudy(value: unknown): ShortenStudy {
-  const out = conform<ShortenStudy>(
+  // A drawn outline (#409 research) never travels in a link.
+  const out = conform<Omit<ShortenStudy, "loopPoints">>(
     value,
     {
       fields: {
-        family: { options: { flower: true, convex: true } },
+        // A user's loop only under #409's research parameter; elsewhere a
+        // link naming it is refused here.
+        family: {
+          options: researchLoops()
+            ? { flower: true, convex: true, loop: true }
+            : ({ flower: true, convex: true } as Record<ShortenFamily, true>),
+        },
+        loopTerms: {
+          optional: {
+            list: {
+              fields: {
+                frequency: { range: [-loopMaxFrequency, loopMaxFrequency] },
+                radius: { range: [0, 100000] },
+                phase: { range: [-1e6, 1e6] },
+              },
+            },
+            max: maxTerms,
+          },
+        },
+        loopSolver: {
+          optional: { options: { polar: true, arc: true, bgn: true } },
+        },
+        loopSource: { optional: { options: { terms: true, outline: true } } },
         petals: { range: [0, shortenLimits.petals] },
         depth: { range: [-shortenLimits.depths, shortenLimits.depths] },
         ruffles: { range: [0, shortenLimits.ruffles[1]] },
@@ -1186,6 +1214,24 @@ function shortenStudy(value: unknown): ShortenStudy {
       );
   if (out.lobes !== 3 && out.lobes !== 6)
     throw new LinkError("shorten.lobes", "shorten.lobes must be 3 or 6.");
+  if (out.family === "loop" && !out.loopTerms?.length)
+    throw new LinkError(
+      "shorten.loopTerms",
+      "shorten.loopTerms must hold a term.",
+    );
+  out.loopTerms?.forEach((term, i) => {
+    if (!Number.isInteger(term.frequency))
+      throw new LinkError(
+        `shorten.loopTerms[${i}].frequency`,
+        `shorten.loopTerms[${i}].frequency must be a whole number.`,
+      );
+  });
+  // The outline never travels; a link evolves the fitted terms.
+  delete out.loopSource;
+  if (!researchLoops()) {
+    delete out.loopTerms;
+    delete out.loopSolver;
+  }
   return out;
 }
 

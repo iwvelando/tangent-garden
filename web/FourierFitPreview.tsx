@@ -132,12 +132,15 @@ export function FourierFitPreview({
   onReturn,
   onAdopt,
   onWeave,
+  onShorten,
 }: {
   request: FourierFitRequest;
   onReturn: (via: JourneyVia) => void;
   onAdopt: (study: PlanarStudy, via: JourneyVia) => void;
   // Opens hyperbolic lace with the fitted loop as its motif.
   onWeave?: (terms: Term[], via: JourneyVia) => void;
+  // #409 research: opens Curves that smooth themselves with this loop.
+  onShorten?: (terms: Term[], points: Vec[] | null, via: JourneyVia) => void;
 }) {
   const theme = useTheme(),
     title = useId();
@@ -295,15 +298,22 @@ export function FourierFitPreview({
         "Stroke interrupted. The visible draft is kept open; redraw or explicitly close it.",
       );
   }
-  function finish(action: "return" | "adopt" | "weave" = "return") {
+  function finish(action: "return" | "adopt" | "weave" | "shorten" = "return") {
     const study = action === "adopt" ? engine.current?.candidate() : null;
-    const terms = action === "weave" ? engine.current?.candidateTerms() : null;
+    const terms =
+      action === "weave" || action === "shorten"
+        ? engine.current?.candidateTerms()
+        : null;
+    const points =
+      action === "shorten" ? (engine.current?.candidatePoints() ?? null) : null;
     if (ending.current || (action !== "return" && !study && !terms)) return;
     ending.current = true;
     engine.current?.cancel();
     setPlaying(false);
     dialog.current?.close();
     if (study) onAdopt(study, via.current);
+    else if (terms && action === "shorten" && onShorten)
+      onShorten(terms, points, via.current);
     else if (terms && onWeave) onWeave(terms, via.current);
     else onReturn(via.current);
   }
@@ -1110,6 +1120,19 @@ export function FourierFitPreview({
           </span>
         </p>
         <div className="fit-footer-actions">
+          {onShorten && (
+            <button
+              type="button"
+              className="fit-shorten"
+              aria-busy={state.pending && !!state.frame}
+              disabled={
+                !state.frame || state.pending || !!state.error || drawing
+              }
+              onClick={() => finish("shorten")}
+            >
+              Shorten (research)
+            </button>
+          )}
           {onWeave && (
             <button
               type="button"

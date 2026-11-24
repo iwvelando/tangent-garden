@@ -1,6 +1,7 @@
 package shorten
 
-// A test-only reference for experiment 2 of #322: curve shortening of smooth embedded loops that need
+// The arclength solver, first a test-only reference for experiment 2 of #322
+// and promoted for #409's research arm A: curve shortening of smooth embedded loops that need
 // not be convex, such as flowers, in the tangent-angle and length
 // formulation of Hou, Lowengrub and Shelley.
 //
@@ -35,11 +36,23 @@ type arcRequest struct {
 	Nodes   int
 	Step    float64
 	Horizon float64
+	// MaxNodes raises the node ceiling above limits.Nodes (user loops).
+	MaxNodes int
+	// EveryStep checks embeddedness after every accepted step, not only at
+	// checkpoints, and ends the film at the step before a crossing.
+	EveryStep bool
+	// Initial, when set, builds the initial state in place of e.initial.
+	Initial func(e *etd) []complex128
+	// Checkpoints, when set, replaces limits.Checkpoints.
+	Checkpoints int
 }
 
 const (
 	// The curvature spectrum beyond N/4, as a fraction of all of it.
 	tailLimit = 1e-6
+	// The tail's coefficients, in units of θ_α (mean 1), below which it is
+	// rounding.
+	tailFloor = 1e-9
 	// |mean e^{iθ}|, the loop's failure to close before it is removed.
 	closureLimit = 1e-8
 	// Contour points for the ETDRK4 coefficients.
@@ -100,8 +113,9 @@ func supportArea(s Seed) float64 {
 }
 
 func validateRun(q arcRequest) error {
-	if q.Nodes < 64 || q.Nodes > limits.Nodes || q.Nodes&(q.Nodes-1) != 0 {
-		return field("nodes", "Nodes must be 64, 128, 256 or 512.")
+	top := max(limits.Nodes, q.MaxNodes)
+	if q.Nodes < 64 || q.Nodes > top || q.Nodes&(q.Nodes-1) != 0 {
+		return field("nodes", "Nodes must be a power of two from 64 to %d.", top)
 	}
 	if math.IsNaN(q.Step) || q.Step < 0.002 || q.Step > 0.2 {
 		return field("step", "Step factor must be from 0.002 to 0.2.")
@@ -122,7 +136,12 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 	f.horizon = q.Horizon * f.Extinction
 	e := newETD(n, q.Step)
 	f.e = e
-	u := e.initial(curve)
+	var u []complex128
+	if q.Initial != nil {
+		u = q.Initial(e)
+	} else {
+		u = e.initial(curve)
+	}
 	floor := floorFraction * math.Sqrt(area0/math.Pi)
 	if why := e.guard(u, floor); why == "resolution" {
 		return nil, field("nodes", "%d nodes cannot resolve this seed's curvature; use more.", n)
@@ -131,6 +150,10 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 	}
 	if !embedded(e.contour(u, 0, 0)) {
 		return nil, fmt.Errorf("the seed crosses itself")
+	}
+	keep := limits.Checkpoints
+	if q.Checkpoints > 0 {
+		keep = q.Checkpoints
 	}
 	f.checkpoints = []bloomCheckpoint{{0, append([]complex128{}, u...)}}
 	st := &f.Stats
@@ -165,6 +188,13 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 			f.Stop = why
 			break
 		}
+		if q.EveryStep && !embedded(e.contour(out, real(out[n+1]), 0)) {
+			// Every state up to the last accepted one was checked, so the
+			// film ends there, not at the last checkpoint.
+			st.Discarded = 1
+			f.Stop = "embedding"
+			break
+		}
 		st.Accepted++
 		u, out = out, u
 		if st.Accepted%st.Stride == 0 {
@@ -174,7 +204,7 @@ func solveArc(q arcRequest, curve seedCurve, area0 float64) (*arcFilm, error) {
 				break
 			}
 			f.checkpoints = append(f.checkpoints, bloomCheckpoint{st.Accepted, append([]complex128{}, u...)})
-			if len(f.checkpoints) > limits.Checkpoints {
+			if len(f.checkpoints) > keep {
 				kept := f.checkpoints[:0]
 				for _, c := range f.checkpoints {
 					if c.step%(2*st.Stride) == 0 {
@@ -271,35 +301,55 @@ func newETD(n int, c float64) *etd {
 	return e
 }
 
-// coefficients computes ETDRK4's coefficients for step h by contour
-// integrals, which stay accurate where hλ is small.
+// coefficients computes ETDRK4's coefficients for step h. Every
+// eigenvalue is real (−k²), so z = hλ is real: the closed forms are exact
+// to rounding for |z| ≥ 2, and their Taylor series, which avoid the
+// closed forms' cancellation, below. (Kassam and Trefethen's contour
+// integrals give the same values for real z, at 32 complex exponentials
+// each.)
 func (e *etd) coefficients(h float64) {
 	if h == e.h {
 		return
 	}
 	e.h = h
-	cache := map[float64][6]float64{}
+	var last float64
+	var v [6]float64
 	for i, l := range e.lin {
-		if v, ok := cache[l]; ok {
-			e.ex[i], e.ex2[i], e.q[i], e.f1[i], e.f2[i], e.f3[i] = v[0], v[1], v[2], v[3], v[4], v[5]
-			continue
+		if i == 0 || l != last {
+			v = etdCoefficients(h, l)
+			last = l
 		}
-		z0 := h * l
-		var q, a1, a2, a3 complex128
-		for j := range contourPoints {
-			z := complex(z0, 0) + cmplx.Rect(1, math.Pi*(float64(j)+0.5)/contourPoints)
-			ez, ez2 := cmplx.Exp(z), cmplx.Exp(z/2)
-			z3 := z * z * z
-			q += (ez2 - 1) / z
-			a1 += (-4 - z + ez*(4-3*z+z*z)) / z3
-			a2 += (2 + z + ez*(z-2)) / z3
-			a3 += (-4 - 3*z - z*z + ez*(4-z)) / z3
-		}
-		v := [6]float64{math.Exp(z0), math.Exp(z0 / 2), h * real(q) / contourPoints,
-			h * real(a1) / contourPoints, h * real(a2) / contourPoints, h * real(a3) / contourPoints}
-		cache[l] = v
 		e.ex[i], e.ex2[i], e.q[i], e.f1[i], e.f2[i], e.f3[i] = v[0], v[1], v[2], v[3], v[4], v[5]
 	}
+}
+
+func etdCoefficients(h, l float64) [6]float64 {
+	z := h * l
+	ez, ez2 := math.Exp(z), math.Exp(z/2)
+	if math.Abs(z) >= 2 {
+		z3 := z * z * z
+		return [6]float64{ez, ez2, h * (ez2 - 1) / z,
+			h * (-4 - z + ez*(4-3*z+z*z)) / z3,
+			h * (2 + z + ez*(z-2)) / z3,
+			h * (-4 - 3*z - z*z + ez*(4-z)) / z3}
+	}
+	// (e^{z/2} − 1)/z = Σ (z/2)^k / (2 (k+1)!), and the numerators' series
+	// from the z³ term on, over z³.
+	var q, a1, a2, a3 float64
+	fact := []float64{1}
+	for k := 1; k <= 36; k++ {
+		fact = append(fact, fact[k-1]*float64(k))
+	}
+	p := 1.0
+	for k := 0; k <= 32; k++ {
+		q += p / math.Pow(2, float64(k)) / (2 * fact[k+1])
+		m := k + 3
+		a1 += p * (4/fact[m] - 3/fact[m-1] + 1/fact[m-2])
+		a2 += p * (1/fact[m-1] - 2/fact[m])
+		a3 += p * (4/fact[m] - 1/fact[m-1])
+		p *= z
+	}
+	return [6]float64{ez, ez2, h * q, h * a1, h * a2, h * a3}
 }
 
 // slopes returns θ_α at the nodes, into e.w1 (real parts), and max θ_α².
@@ -521,7 +571,10 @@ func (e *etd) guard(u []complex128, floor float64) string {
 			tail += v
 		}
 	}
-	if total > 1e-12*float64(n) && tail > tailLimit*total {
+	// The sums are of the unnormalized transform, N times the
+	// coefficients. Rounding alone (a circle's tail is about 1e-11 at
+	// N = 4,096) stays far below the absolute floor on the coefficients.
+	if total > 1e-12*float64(n) && tail > tailLimit*total && tail > tailFloor*float64(n) {
 		return "resolution"
 	}
 	c := e.contour(u, real(u[n+1]), 0)
@@ -600,35 +653,29 @@ func embedded(c Contour) bool {
 	if !(cell > 0) {
 		return false
 	}
-	buckets := map[[2]int][]int{}
+	g := segmentCells(c.X, c.Y, cell, 0)
+	ok := true
 	for i := range n {
-		j := (i + 1) % n
-		x0, x1 := math.Floor(min(c.X[i], c.X[j])/cell), math.Floor(max(c.X[i], c.X[j])/cell)
-		y0, y1 := math.Floor(min(c.Y[i], c.Y[j])/cell), math.Floor(max(c.Y[i], c.Y[j])/cell)
-		for x := x0; x <= x1; x++ {
-			for y := y0; y <= y1; y++ {
-				key := [2]int{int(x), int(y)}
-				buckets[key] = append(buckets[key], i)
+		i2 := (i + 1) % n
+		x0, x1 := cellOf(min(c.X[i], c.X[i2]), cell), cellOf(max(c.X[i], c.X[i2]), cell)
+		y0, y1 := cellOf(min(c.Y[i], c.Y[i2]), cell), cellOf(max(c.Y[i], c.Y[i2]), cell)
+		for a := x0; a <= x1 && ok; a++ {
+			for b := y0; b <= y1 && ok; b++ {
+				g.each(a, b, func(j int) {
+					if j <= i || !ok {
+						return
+					}
+					if d := j - i; d <= 1 || d == n-1 {
+						return
+					}
+					if crosses(c.X, c.Y, i, i2, j, (j+1)%n) {
+						ok = false
+					}
+				})
 			}
 		}
 	}
-	orient := func(a, b, p int) float64 {
-		return (c.X[b]-c.X[a])*(c.Y[p]-c.Y[a]) - (c.Y[b]-c.Y[a])*(c.X[p]-c.X[a])
-	}
-	for _, edges := range buckets {
-		for p, i := range edges {
-			for _, j := range edges[p+1:] {
-				if d := (j - i + n) % n; d <= 1 || d == n-1 {
-					continue
-				}
-				i2, j2 := (i+1)%n, (j+1)%n
-				if orient(i, i2, j)*orient(i, i2, j2) < 0 && orient(j, j2, i)*orient(j, j2, i2) < 0 {
-					return false
-				}
-			}
-		}
-	}
-	return true
+	return ok
 }
 
 func fft(a []complex128, inverse bool) {

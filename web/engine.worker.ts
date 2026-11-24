@@ -212,6 +212,32 @@ self.onmessage = async ({
     }
     if (data.action === "shorten") {
       const q = data.shorten;
+      if (q?.loop) {
+        // A user loop (#409 research): every number finite, by path.
+        const l = q.loop;
+        const numbers: [string, unknown][] = [
+          ...(l.loop.terms ?? []).flatMap((t, i): [string, unknown][] => [
+            [`loop.terms.${i}.frequency`, t.frequency],
+            [`loop.terms.${i}.radius`, t.radius],
+            [`loop.terms.${i}.phase`, t.phase],
+          ]),
+          ...(l.loop.points ?? []).flatMap((p, i): [string, unknown][] => [
+            [`loop.points.${i}`, p.x],
+            [`loop.points.${i}`, p.y],
+          ]),
+          ["horizon", l.horizon],
+          ...q.times.map((t, i): [string, unknown] => [`times.${i}`, t]),
+        ];
+        for (const [path, v] of numbers)
+          if (typeof v !== "number" || !Number.isFinite(v))
+            throw fieldError(path, "Enter a finite number.");
+        const start = performance.now();
+        const raw = tangentGardenShorten(
+          JSON.stringify({ loop: l, times: q.times }),
+        );
+        postLifted(data.id, raw, start);
+        return;
+      }
       if (!q || !!q.convex === !!q.bloom)
         throw new Error("Enter one curve-shortening evolution.");
       const run = (q.convex ?? q.bloom)!;

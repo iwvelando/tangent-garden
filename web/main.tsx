@@ -8,7 +8,8 @@ import { LaceContext, type LaceEntry } from "./lace/Context";
 import { defaultLace, presetLace, studyLoop } from "./lace/model";
 import { drawnMotif } from "./lace/motifs";
 import { ShortenContext, type ShortenEntry } from "./shorten/Context";
-import { presetShorten } from "./shorten/model";
+import { defaultShorten, presetShorten } from "./shorten/model";
+import { researchLoops } from "./shorten/research";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
 import { FamilyPanel, usePlanarFamily } from "./FamilyPanel";
@@ -3737,6 +3738,28 @@ function Notebook() {
                       },
                     });
                   }}
+                  // #409 research: curve shortening of the fitted loop over
+                  // the unchanged notebook study.
+                  onShorten={
+                    researchLoops()
+                      ? (terms, points, via) => {
+                          setFit(null);
+                          setShorten({
+                            study: {
+                              ...fit.study,
+                              shorten: {
+                                ...structuredClone(defaultShorten),
+                                family: "loop",
+                                loopTerms: terms,
+                                ...(points && { loopPoints: points }),
+                              },
+                            },
+                            via,
+                            restoreFocus: fit.restoreFocus,
+                          });
+                        }
+                      : undefined
+                  }
                   onAdopt={(study, via) => {
                     links.current++;
                     setShared((s) => ({ ...s, "2d": undefined }));

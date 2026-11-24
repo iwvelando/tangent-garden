@@ -28,14 +28,17 @@ export type ShortenDrawingProps = {
   dark: boolean;
   scheme: ColorScheme;
   weight: LineWeight;
+  // Where the physical frame is centered: a user loop's seed center; the
+  // origin for the authored seeds.
+  center?: { x: number; y: number };
 };
 const { width, height } = shortenPage;
 
 const fixed = (v: number) => v.toFixed(2);
-function pathOf(x: number[], y: number[], k: number) {
+function pathOf(x: number[], y: number[], k: number, cx = 0, cy = 0) {
   let d = "";
   for (let i = 0; i < x.length; i++)
-    d += `${i ? "L" : "M"}${fixed(500 + x[i] * k)} ${fixed(380 - y[i] * k)}`;
+    d += `${i ? "L" : "M"}${fixed(500 + (x[i] - cx) * k)} ${fixed(380 - (y[i] - cy) * k)}`;
   return d + "Z";
 }
 
@@ -50,13 +53,14 @@ function Art(p: ShortenDrawingProps & { clip?: string }) {
   const k = pageScale(p.extent) * p.camera.zoom;
   const area0 = p.family[0]?.area ?? 1;
   const shape = (c: ShortenContour) => {
-    if (p.framing !== "normalized") return pathOf(c.x, c.y, k);
+    if (p.framing !== "normalized")
+      return pathOf(c.x, c.y, k, p.center?.x, p.center?.y);
     const n = normalized(c, area0);
     return pathOf(n.x, n.y, k);
   };
   const family = useMemo(
     () => p.family.map(shape),
-    [p.family, p.framing, k, area0],
+    [p.family, p.framing, k, area0, p.center?.x, p.center?.y],
   );
   return (
     <>
