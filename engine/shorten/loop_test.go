@@ -193,6 +193,11 @@ func TestAdmittedLoopsLoseAreaAtTwoPiAndStayEmbedded(t *testing.T) {
 		// Two arcs 0.02 apart, 4 node spacings at 3,225 nodes; the gap
 		// widens as the ends retract, and the polygon halves once.
 		{"horseshoe, gap 0.02", Loop{Points: cShape(0.02, 0.3, 0.02)}, []string{"bgn"}, nil},
+		// Strokes as a pointer draws them, densely: pixel steps, and a
+		// tremor. Their sharpest turn grows a little in the first steps
+		// before the jags melt (#410's review).
+		{"drawn, 600 samples in pixel steps", Loop{Points: drawnOutline(600, 0.01, 0)}, []string{"bgn"}, nil},
+		{"drawn, 1,800 samples with tremor", Loop{Points: drawnOutline(1800, 0, 0.015)}, []string{"bgn"}, nil},
 	}
 	// The polygon arm is first order in time: at τ = 0.0025 its area runs
 	// about 0.3% behind the law by the end (measured 2.8e-3 on the square).

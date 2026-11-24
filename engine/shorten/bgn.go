@@ -124,6 +124,14 @@ const growth = 1.5
 // Accepted steps between remeshing checks.
 const remeshEvery = 16
 
+// An outline may turn this many times its own sharpest corner before the
+// turn guard ends its film (#410's review). A densely drawn stroke is
+// jagged, and as its jags melt in the first steps the scheme's vertices
+// slide, so its sharpest turn grows briefly, by up to a third over a corpus
+// of 393 drawn strokes, while the loop stays embedded; a limit of the
+// corner itself stopped a quarter of them before their first step.
+const outlineTurnSlack = 1.5
+
 // 2×2 matrices as [a b; c d] = [4]float64{a, b, c, d}.
 func inv2(m [4]float64) ([4]float64, bool) {
 	det := m[0]*m[3] - m[1]*m[2]
@@ -567,6 +575,9 @@ func (src *source) bgn(q LoopRequest) (*bgnFilm, int, float64, error) {
 	f.horizon = q.Horizon * f.Extinction
 	f.floor = floorFraction * src.adm.Radius
 	f.turn = math.Max(turnLimit, corner(x, y)*(1+1e-9))
+	if src.adm.Source == "outline" {
+		f.turn = math.Max(turnLimit, outlineTurnSlack*corner(x, y))
+	}
 	if !src.neckResolved(f.n) {
 		return nil, 0, 0, &tooFine{field("nodes", "the loop's narrowest neck spans fewer than %d node spacings on %d nodes", neckSpacings, f.n), true}
 	}

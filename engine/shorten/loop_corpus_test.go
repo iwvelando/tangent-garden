@@ -90,6 +90,26 @@ func cShape(gap, w, ds float64) []engine.Vec {
 	return out
 }
 
+// drawnOutline is a stroke as Draw a loop captures it from a pointer: n
+// samples around a three-lobed blob of radius about 1.5 (the input window
+// is 6 wide), with a tremor of the given amplitude and, when px > 0, each
+// sample rounded to a grid of that spacing, as integer screen pixels are.
+// Dense samples make jagged corners (#410's review: a quarter of such
+// strokes stopped before their first step).
+func drawnOutline(n int, px, tremor float64) []engine.Vec {
+	out := make([]engine.Vec, n)
+	for i := range n {
+		u := 2 * math.Pi * float64(i) / float64(n)
+		r := 1.5*(1+0.2*math.Cos(3*u)+0.08*math.Sin(7*u)) + tremor*math.Sin(173*u)*math.Cos(61*u)
+		x, y := r*math.Cos(u), r*math.Sin(u)
+		if px > 0 {
+			x, y = math.Round(x/px)*px, math.Round(y/px)*px
+		}
+		out[i] = engine.Vec{X: x, Y: y}
+	}
+	return out
+}
+
 func ellipseOutline(a, b float64, n int) []engine.Vec {
 	out := make([]engine.Vec, n)
 	for i := range n {

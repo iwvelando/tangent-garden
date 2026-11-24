@@ -864,13 +864,14 @@ The flowers' radial graph is not used for user loops: it stops as soon as a loop
 
 **Accuracy, stated beside the drawing.** The arclength solver is spectral in space and fourth order in time. The polygon solver is first order in time: at `τ = 0.0025` its area runs up to 0.3% behind `A₀ − 2πt` by the end, about `2·10⁻³` of `R(t)` at `0.75T`. Its physical time is honest only to that order, and the summary says so.
 
-**A user loop's film.** The seeds' floor, work caps and first-failing-guard rule apply. The arclength film also guards its closure defect at `10⁻⁸`, and checks after every step that the loop is embedded. The polygon guards positive edges, embeddedness and each vertex's turn: at most 0.25 rad, or the outline's own sharpest corner. A user loop's film keeps 128 checkpoints, so a seek retakes half as many steps. The arclength film records the length of each accepted step, and the polygon each remesh, and seeks replay them. A sample is still a pure function of the source and `t`.
+**A user loop's film.** The seeds' floor, work caps and first-failing-guard rule apply. The arclength film also guards its closure defect at `10⁻⁸`, and checks after every step that the loop is embedded. The polygon guards positive edges, embeddedness and each vertex's turn: at most 0.25 rad, or for an outline 1.5 times its own sharpest corner. A densely drawn stroke is jagged, and its sharpest turn grows briefly, by up to a third, as its jags melt in the first steps. A user loop's film keeps 128 checkpoints, so a seek retakes half as many steps. The arclength film records the length of each accepted step, and the polygon each remesh, and seeks replay them. A sample is still a pure function of the source and `t`.
 
 **Evidence for user loops.** `engine/shorten`'s loop tests observe returned geometry against closed forms and the flow's symmetries:
 
 - **Circle law** `R² = R₀² − 2t`: within `10⁻⁶` of `R₀²` on the arclength solver and `4·10⁻³` on the polygon.
 - **Area and length:** the area falls at `2π` within `10⁻⁵ A₀` (arclength) and `3·10⁻³ A₀` (polygon), and the length strictly falls. Every returned loop is embedded, checked against every pair of edges independently.
 - **Fast transients:** a ripple of frequency 63 follows a reference controlled a thousand times more tightly within `10⁻⁶` of `R(t)`. The former fixed step was off by up to `3·10⁻³`.
+- **Drawn strokes:** a stroke of 600 samples in pixel steps and one of 1,800 with a tremor keep the area law and stay embedded to the end.
 - **Covariance:** scaling by `10⁻³` and 512 within `10⁻⁹ R`, translation by `(1000, 1000)` within `10⁻⁶ R`, and reversal and a shifted start within `10⁻³ R`.
 - **Bookkeeping:** seeks are bit-identical in any order, including either side of a remesh, and work stays within its caps.
 - **Admission:** the measures of an ellipse and of horseshoes match their closed forms, no limaçon with an inner loop is ever certified, and every refusal names its field.
