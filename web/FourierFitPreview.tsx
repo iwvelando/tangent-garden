@@ -43,7 +43,7 @@ import { Plot } from "./Plot";
 import { reveal, ridesHead } from "./animation";
 import { Field, HelpToggle, HelpText, useHelp } from "./Field";
 import type { PlanarStudy } from "./planar-link";
-import type { ConstructionTrack, Frame, Vec } from "./types";
+import type { ConstructionTrack, Frame, Term, Vec } from "./types";
 import "./fourier-fit.css";
 
 // A press that makes its own button unavailable must not drop the keyboard's
@@ -131,10 +131,13 @@ export function FourierFitPreview({
   request,
   onReturn,
   onAdopt,
+  onWeave,
 }: {
   request: FourierFitRequest;
   onReturn: (via: JourneyVia) => void;
   onAdopt: (study: PlanarStudy, via: JourneyVia) => void;
+  // Opens hyperbolic lace with the fitted loop as its motif.
+  onWeave?: (terms: Term[], via: JourneyVia) => void;
 }) {
   const theme = useTheme(),
     title = useId();
@@ -292,16 +295,20 @@ export function FourierFitPreview({
         "Stroke interrupted. The visible draft is kept open; redraw or explicitly close it.",
       );
   }
-  function finish(adopt = false) {
-    const study = adopt ? engine.current?.candidate() : null;
-    if (ending.current || (adopt && !study)) return;
+  function finish(action: "return" | "adopt" | "weave" = "return") {
+    const study = action === "adopt" ? engine.current?.candidate() : null;
+    const terms = action === "weave" ? engine.current?.candidateTerms() : null;
+    if (ending.current || (action !== "return" && !study && !terms)) return;
     ending.current = true;
     engine.current?.cancel();
     setPlaying(false);
     dialog.current?.close();
     if (study) onAdopt(study, via.current);
+    else if (terms && onWeave) onWeave(terms, via.current);
     else onReturn(via.current);
   }
+  // Opened from hyperbolic lace, the source is the lace's loop.
+  const fromLace = !!request.lace;
   const viewHint = useMemo(
     () =>
       matchMedia("(pointer: coarse)").matches
@@ -720,9 +727,9 @@ export function FourierFitPreview({
         </button>
       </div>
       <p className="note">
-        Draw your own outline or start with the example leaf, then close it. Or
-        use your current base curve; your original study stays here until
-        adoption.
+        {fromLace
+          ? "Draw a new outline or start with the example leaf, then close it. Or use the lace's current loop; the lace stays as it was until you weave."
+          : "Draw your own outline or start with the example leaf, then close it. Or use your current base curve; your original study stays here until adoption."}
       </p>
       <div className="fit-layout">
         <section className="fit-draft" aria-label="Outline input">
@@ -769,7 +776,7 @@ export function FourierFitPreview({
                     engine.current?.useCurve(request.study);
                   }}
                 >
-                  Use current curve
+                  {fromLace ? "Use current loop" : "Use current curve"}
                 </button>
                 <HelpToggle topic="current curve" help={sourceHelp} />
               </div>
@@ -1083,21 +1090,50 @@ export function FourierFitPreview({
           Links and exports preserve the fitted study, never the raw outline.
           The reference and correction history are discarded when you leave.
         </p>
+        {onWeave && (
+          <p className="note">
+            Weave into lace opens hyperbolic lace with this loop mirrored into
+            every tile, keeping your study.
+          </p>
+        )}
       </div>
-      <footer className="fit-footer" aria-label="Use the fitted study">
+      <footer
+        className="fit-footer fit-footer-two"
+        aria-label="Use the fitted loop"
+      >
         <p className="fit-adopt-copy">
-          <strong>Make this your study</strong>
-          <span id={`${title}-adopt-note`}>Replaces your current study.</span>
+          <strong>Use the fitted loop</strong>
+          <span id={`${title}-adopt-note`}>
+            {onWeave
+              ? "Adopting replaces your current study; weaving keeps it."
+              : "Replaces your current study."}
+          </span>
         </p>
-        <button
-          type="button"
-          aria-describedby={`${title}-adopt-note`}
-          aria-busy={state.pending && !!state.frame}
-          disabled={!state.frame || state.pending || !!state.error || drawing}
-          onClick={() => finish(true)}
-        >
-          Adopt fitted study
-        </button>
+        <div className="fit-footer-actions">
+          {onWeave && (
+            <button
+              type="button"
+              className="fit-weave"
+              aria-describedby={`${title}-adopt-note`}
+              aria-busy={state.pending && !!state.frame}
+              disabled={
+                !state.frame || state.pending || !!state.error || drawing
+              }
+              onClick={() => finish("weave")}
+            >
+              Weave into lace
+            </button>
+          )}
+          <button
+            type="button"
+            aria-describedby={`${title}-adopt-note`}
+            aria-busy={state.pending && !!state.frame}
+            disabled={!state.frame || state.pending || !!state.error || drawing}
+            onClick={() => finish("adopt")}
+          >
+            Adopt fitted study
+          </button>
+        </div>
       </footer>
     </dialog>
   );

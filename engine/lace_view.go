@@ -3,6 +3,7 @@ package engine
 import (
 	"math"
 	"math/cmplx"
+	"reflect"
 )
 
 // Detail for a view (docs/mathematics.md, Hyperbolic lace, Detail for a
@@ -87,6 +88,10 @@ type laceKey struct {
 func (q LaceRequest) key() laceKey {
 	k := laceKey{q: q}
 	k.q.Isometry, k.q.Window = nil, nil
+	// Only the loop motif reads its terms.
+	if q.motif() != LaceLoop || len(q.Loop) == 0 {
+		k.q.Loop = nil
+	}
 	if q.Window != nil {
 		k.window = *q.Window
 		if q.Isometry != nil {
@@ -97,8 +102,9 @@ func (q LaceRequest) key() laceKey {
 }
 
 // Matches reports whether the source's tiles are the request's: whether
-// its frames may be drawn for it.
-func (s *LaceSource) Matches(q LaceRequest) bool { return q.key() == s.q.key() }
+// its frames may be drawn for it. The loop's terms make the key a value
+// to compare field by field.
+func (s *LaceSource) Matches(q LaceRequest) bool { return reflect.DeepEqual(q.key(), s.q.key()) }
 
 // windowLace generates a window's patch in three passes. The cutoffs'
 // patch is generated as without a window. The search grows a patch within

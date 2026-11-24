@@ -172,6 +172,29 @@
   min-height: 1.5em;
   font-size: 13px;
 }
+.fit-footer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+/* Weaving keeps the study, so it is the quieter of the two actions. */
+.fit-footer button.fit-weave {
+  background: transparent;
+  color: var(--base-ink);
+}
+.fit-footer button.fit-weave:hover:not(:disabled) {
+  background: transparent;
+  filter: none;
+  color: var(--text);
+}
+/* Draw a loop's footer holds two actions, which wrap below the copy when
+   the row is too narrow for both. */
+.fit-footer-two {
+  flex-wrap: wrap;
+}
+.fit-footer-two .fit-adopt-copy {
+  flex: 1 1 200px;
+}
 .fit-footer {
   position: sticky;
   bottom: calc(-1 * var(--fit-dialog-padding));
@@ -249,6 +272,19 @@ html.fourier-fit-open body {
   }
   .fit-heading button {
     flex: 0 0 100px;
+  }
+}
+/* On a portrait phone the two actions share a row below the copy, and
+   scrolling keeps clear of that taller footer. */
+@media (max-width: 480px) {
+  .fourier-fit:has(.fit-footer-two) {
+    scroll-padding-bottom: 140px;
+  }
+  .fit-footer-actions {
+    flex: 1 1 100%;
+  }
+  .fit-footer-actions button {
+    flex: 1 1 0;
   }
 }
 

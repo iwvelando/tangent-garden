@@ -12,6 +12,7 @@ import {
   laceScale,
   laceZoom,
   presented,
+  strokesOf,
   type LacePresentation,
   type LaceResult,
 } from "./model";
@@ -150,20 +151,26 @@ function Geometry(p: LaceDrawingProps) {
           );
         }
         const level = levelOf(out * k, reachRef);
-        for (let s = 0; s < 2 * p; s++) {
-          const a = 2 * p * t + s;
-          add(
-            which,
-            level,
-            arcCommand(
-              r.arcStart[a],
-              r.arcEnd[a],
-              r.arcCenter[a],
-              r.arcRadius[a],
-              r.arcStraight[a],
-              k,
-            ),
+        const [first, end] = strokesOf(r, t, p);
+        // The loop's copies are closed chains of arcs, each starting where
+        // the last ends: one subpath a copy, with no move between its arcs.
+        const chained = !!r.arcFirst;
+        let joined = "";
+        for (let a = first; a < end; a++) {
+          const d = arcCommand(
+            r.arcStart[a],
+            r.arcEnd[a],
+            r.arcCenter[a],
+            r.arcRadius[a],
+            r.arcStraight[a],
+            k,
           );
+          const move = d.slice(0, d.search(/[AL]/));
+          if (chained && move === joined)
+            add(which, level, d.slice(move.length));
+          else add(which, level, d);
+          const e = r.arcEnd[a];
+          joined = `M${fixed(500 + e.x * k)} ${fixed(380 - e.y * k)}`;
         }
       }
     const ink: Record<Role, string> = {

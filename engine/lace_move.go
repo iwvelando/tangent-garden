@@ -60,6 +60,7 @@ type LaceFrame struct {
 	ArcCenter    []Vec        `json:"arcCenter"`
 	ArcRadius    []float64    `json:"arcRadius"`
 	ArcStraight  []bool       `json:"arcStraight"`
+	ArcFirst     []float64    `json:"arcFirst,omitempty"`
 	Coverage     LaceCoverage `json:"coverage"`
 }
 
@@ -120,7 +121,7 @@ func (s *LaceSource) Frame(f LaceFrameRequest) (LaceFrame, error) {
 		Center: g.Center, Transform: g.Transform, Vertex: g.Vertex,
 		EdgeCenter: g.EdgeCenter, EdgeRadius: g.EdgeRadius, EdgeStraight: g.EdgeStraight,
 		ArcStart: g.ArcStart, ArcEnd: g.ArcEnd, ArcCenter: g.ArcCenter, ArcRadius: g.ArcRadius,
-		ArcStraight: g.ArcStraight, Coverage: g.Coverage,
+		ArcStraight: g.ArcStraight, ArcFirst: g.ArcFirst, Coverage: g.Coverage,
 	}, nil
 }
 
@@ -146,6 +147,7 @@ func (s *LaceSource) result(iso LaceIsometry) (LaceResult, error) {
 	r.Center, r.Transform, r.Vertex = g.Center, g.Transform, g.Vertex
 	r.EdgeCenter, r.EdgeRadius, r.EdgeStraight = g.EdgeCenter, g.EdgeRadius, g.EdgeStraight
 	r.ArcStart, r.ArcEnd, r.ArcCenter, r.ArcRadius, r.ArcStraight = g.ArcStart, g.ArcEnd, g.ArcCenter, g.ArcRadius, g.ArcStraight
+	r.ArcFirst = g.ArcFirst
 	r.Isometry, r.Coverage = iso, g.Coverage
 	return r, nil
 }
@@ -170,6 +172,16 @@ func (s *LaceSource) geometry(iso LaceIsometry) (LaceResult, error) {
 		}
 	}
 	strokes := 2 * s.seed.p
+	var counts []int
+	if s.seed.loop != nil {
+		counts = s.loopCounts(g)
+		strokes = 0
+		for _, m := range counts {
+			strokes += 2 * s.seed.p * m
+		}
+		// Per tile, as the allocation below takes it.
+		strokes = (strokes + n - 1) / max(n, 1)
+	}
 	r := LaceResult{
 		Center:       make([]Vec, n),
 		Transform:    make([][4]float64, n),
@@ -206,6 +218,23 @@ func (s *LaceSource) geometry(iso LaceIsometry) (LaceResult, error) {
 		c := tr.apply(0)
 		r.Center[i] = Vec{real(c), imag(c)}
 		r.Transform[i] = [4]float64{real(tr.a), imag(tr.a), real(tr.b), imag(tr.b)}
+		if seed.loop != nil {
+			if i == 0 {
+				r.ArcFirst = make([]float64, 1, n+1)
+			}
+			lv := seed.loop.level(counts[i])
+			for j := range lv.circles {
+				z, w := tr.apply(lv.from[j]), tr.apply(lv.to[j])
+				c, radius, straight := circleLine(tr, lv.circles[j], z, w)
+				r.ArcStart = append(r.ArcStart, Vec{real(z), imag(z)})
+				r.ArcEnd = append(r.ArcEnd, Vec{real(w), imag(w)})
+				r.ArcCenter = append(r.ArcCenter, Vec{real(c), imag(c)})
+				r.ArcRadius = append(r.ArcRadius, radius)
+				r.ArcStraight = append(r.ArcStraight, straight)
+			}
+			r.ArcFirst = append(r.ArcFirst, float64(len(r.ArcStart)))
+			continue
+		}
 		if seed.circles != nil {
 			for j := range 2 * p {
 				z, w := tr.apply(seed.from[j]), tr.apply(seed.to[j])
@@ -290,4 +319,34 @@ func (s *LaceSource) coverage(r *LaceResult, vertices []complex128) LaceCoverage
 		radius = math.Min(radius, d)
 	}
 	return LaceCoverage{Radius: radius, Distance: 2 * math.Atanh(radius)}
+}
+
+// loopCounts is the loop's arcs per copy in each tile placed by g, its
+// level of detail. Tile i, drawn at scale σ = |g_i'(0)| = 1/|a|², has a
+// copy of Euclidean radius about σρ₀ and gets 2^⌈log₂(4σρ₀/m)⌉ arcs within
+// 2 and the loop's top, m being the window's minimum radius, or
+// laceLoopDetail without one. While the strokes exceed the cap, every
+// count above 2 halves; at 2 each, 2,000 tiles hold 56,000 strokes, well
+// within it.
+func (s *LaceSource) loopCounts(g []mobius) []int {
+	l := s.seed.loop
+	least := laceLoopDetail
+	if s.q.Window != nil {
+		least = s.q.MinRadius
+	}
+	counts := make([]int, len(g))
+	total := 0
+	for i, tr := range g {
+		scale := 1 / (real(tr.a)*real(tr.a) + imag(tr.a)*imag(tr.a))
+		counts[i] = pow2(4*scale*l.rho0/least, 2, l.top)
+		total += counts[i]
+	}
+	for 2*s.seed.p*total > laceLoopStrokes && total > 2*len(counts) {
+		total = 0
+		for i := range counts {
+			counts[i] = max(2, counts[i]/2)
+			total += counts[i]
+		}
+	}
+	return counts
 }

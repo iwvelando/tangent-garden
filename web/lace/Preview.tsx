@@ -1,4 +1,9 @@
-import { elapsed, liveReadout, progressPercent } from "../number-format";
+import {
+  count as formatCount,
+  elapsed,
+  liveReadout,
+  progressPercent,
+} from "../number-format";
 import {
   OverlayJourneyLayout,
   type OverlayGuide,
@@ -61,6 +66,7 @@ import {
   laceScale,
   motifSize,
   movedResult,
+  studyLoop,
   neighbors,
   sideName,
   studyMotif,
@@ -112,11 +118,15 @@ const pathOf = ({ offset, orbits, turns }: LaceStudyMotion) => ({
 export function LacePreview({
   entry,
   onReturn,
+  onDrawLoop,
   journey,
 }: {
   entry: LaceEntry;
   journey?: OverlayGuide;
   onReturn: (via: "keyboard" | "pointer") => void;
+  // Opens Draw a loop to redraw the loop motif, handing it the lace as it
+  // stands, to come back to.
+  onDrawLoop?: (study: LaceStudy, via: "keyboard" | "pointer") => void;
 }) {
   const theme = useTheme(),
     dialog = useRef<HTMLDialogElement>(null),
@@ -513,10 +523,12 @@ export function LacePreview({
     units: "rim radius = 1",
     depth: study.depth,
     maxTiles: study.maxTiles,
-    // The star as before other motifs; another motif by its own size.
+    // The star as before other motifs; another motif by its own size, and
+    // the loop by its terms too.
     ...(motif.id === "star"
       ? { starPoint: study.starPoint }
       : { motifKind: motif.id, [motif.field]: motifSize(study, motif) }),
+    ...(motif.drawn && { loopTerms: studyLoop(study) }),
     tiles: result?.center.length,
     omitted: result?.omitted,
     stopped: result?.stopped || undefined,
@@ -1273,6 +1285,27 @@ export function LacePreview({
                   </select>
                 </Field>
                 {experiment}
+                {motif.drawn && (
+                  <p className="note" data-testid="lace-loop-note">
+                    {study.loopTerms
+                      ? `Your loop, ${formatCount(study.loopTerms.length)} terms.`
+                      : `The example leaf, ${formatCount(studyLoop(study).length)} terms, until you draw a loop.`}{" "}
+                    {onDrawLoop && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        onClick={(e) =>
+                          onDrawLoop(
+                            structuredClone(study),
+                            e.detail === 0 ? "keyboard" : "pointer",
+                          )
+                        }
+                      >
+                        Draw a new loop…
+                      </button>
+                    )}
+                  </p>
+                )}
                 <h3 className="garden-section">Cutoffs</h3>
                 <Field label="Tiling" help={laceHelp.tiling}>
                   <select

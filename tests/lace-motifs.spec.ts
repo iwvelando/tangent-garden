@@ -90,6 +90,7 @@ test("the Shape choice offers four motifs, each drawn as defined, with the tiles
     "Petals",
     "Leaves",
     "Rings",
+    "Your loop",
   ]);
   await d.getByLabel("Tile", { exact: true }).fill("9");
   await expect(art(d)).toHaveAttribute("data-selected", "8");
@@ -403,7 +404,7 @@ test("the motif helps state their ranges and follow the tiling", async () => {
   const { laceHelp } = await import("../web/lace/model");
   const { helpText } = await import("../web/help");
   expect(helpText(laceHelp.motifKind)).toContain(
-    "a star, petals, leaves or rings",
+    "a star, petals, leaves, rings or your own loop",
   );
   for (const m of laceMotifs)
     expect(helpText(m.help(tilingOf("7,3")))).toContain(

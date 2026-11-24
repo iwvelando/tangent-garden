@@ -651,6 +651,7 @@ test("hyperbolic lace help fits both tiers and states the engine's limits", asyn
       ["petals", "Fullness", ["(0)", "(1)"]],
       ["leaves", "Fullness", ["(0)", "(1)"]],
       ["rings", "Ring radius", ["0.1–1"]],
+      ["loop", "Loop size", ["0.1–1", "up to 16 terms"]],
     ] as const) {
       await d.getByLabel("Shape", { exact: true }).selectOption(motif);
       const size = (await read()).find((e) => e.topic === `About ${label}`)!;

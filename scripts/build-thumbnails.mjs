@@ -313,20 +313,35 @@ async function planarThumbnail({ name, stroke, roles, selector = "#artwork" }) {
   for (const e of art.querySelectorAll("circle[data-circle]"))
     if (+e.getAttribute("r") < 1) e.remove();
   // A lace arc under four units across is under a thumbnail pixel, as the
-  // outer rings' are by the thousand: leave it out likewise. (Other
-  // drawings' paths, such as contour levels, carry data-level too.)
+  // outer rings' are by the thousand: leave it out likewise. A loop motif's
+  // copy is one subpath of many short arcs, kept or left out whole by the
+  // diagonal of its ends' extent, and drawn through its arcs' ends: each
+  // arc spans a few units, so the polyline differs by under a tenth of a
+  // thumbnail pixel before it is simplified below. (Other drawings' paths,
+  // such as contour levels, carry data-level too.)
   const lace = selector === "#lace-artwork";
   for (const e of lace ? art.querySelectorAll("path[data-level]") : []) {
-    const kept = (
-      e
-        .getAttribute("d")
-        .match(
-          /M-?[\d.]+ -?[\d.]+(?:A-?[\d.]+ -?[\d.]+ 0 0 [01] |L)-?[\d.]+ -?[\d.]+/g,
-        ) ?? []
-    ).filter((run) => {
-      const v = run.match(/-?[\d.]+/g).map(Number);
-      return Math.hypot(v.at(-2) - v[0], v.at(-1) - v[1]) >= 4;
-    });
+    const kept = [];
+    for (const run of e.getAttribute("d").match(/M[^M]*/g) ?? []) {
+      const ends = [
+        ...run.matchAll(
+          /(?:^M|A-?[\d.]+ -?[\d.]+ 0 0 [01] |L)(-?[\d.]+) (-?[\d.]+)/g,
+        ),
+      ].map((m) => [+m[1], +m[2]]);
+      const xs = ends.map((v) => v[0]),
+        ys = ends.map((v) => v[1]);
+      if (ends.length === 2) {
+        if (Math.hypot(xs[1] - xs[0], ys[1] - ys[0]) >= 4) kept.push(run);
+      } else if (
+        Math.hypot(
+          Math.max(...xs) - Math.min(...xs),
+          Math.max(...ys) - Math.min(...ys),
+        ) >= 4
+      )
+        kept.push(
+          ends.map(([x, y], i) => `${i ? "L" : "M"}${x} ${y}`).join(""),
+        );
+    }
     if (kept.length) e.setAttribute("d", kept.join(""));
     else e.remove();
   }

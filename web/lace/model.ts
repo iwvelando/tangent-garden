@@ -9,14 +9,19 @@ import { tiered } from "../help";
 import type { Repeat } from "../timing";
 import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
-import type { Vec } from "../types";
+import type { Term, Vec } from "../types";
 import {
   sidesOf,
   tilingOf,
   type LaceTilingId,
   type LaceTilingInfo,
 } from "./tilings";
-import { motifOf, type LaceMotifId, type LaceMotifInfo } from "./motifs";
+import {
+  exampleLoop,
+  motifOf,
+  type LaceMotifId,
+  type LaceMotifInfo,
+} from "./motifs";
 
 // Hyperbolic lace: a finite patch of a regular tiling {p,q} of the
 // Poincaré disk, {7,3} by default, grown in Go by reflection from one
@@ -44,6 +49,8 @@ export type LaceRequest = {
   // star, which ignores the size.
   motif?: Exclude<LaceMotifId, "star">;
   size?: number;
+  // The loop motif's closed curve: Fourier terms with whole frequencies.
+  loop?: Term[];
   // Moves the patch; absent, it stays in place.
   isometry?: LaceIsometry;
   // Detail for a view: the cutoffs' patch where it meets this window,
@@ -94,6 +101,7 @@ export type LaceFrame = Pick<
   | "arcCenter"
   | "arcRadius"
   | "arcStraight"
+  | "arcFirst"
   | "isometry"
   | "coverage"
 > & { progress: number };
@@ -125,6 +133,9 @@ export type LaceResult = {
   arcCenter: Vec[];
   arcRadius: number[];
   arcStraight: boolean[];
+  // Tile i's strokes run from arcFirst[i] to arcFirst[i + 1] when their
+  // number varies, as the loop's do; absent, every tile holds 2p.
+  arcFirst?: number[];
   // Under a window, candidates outside the view or too small to draw
   // there, in place of those beyond the depth.
   omitted: { depth: number; precision: number; view?: number; radius?: number };
@@ -147,7 +158,7 @@ export type LacePresentation = "complete" | "selected";
 export type LaceAddress = number[];
 export type LaceStudy = Omit<
   LaceRequest,
-  "motif" | "size" | "window" | "minRadius"
+  "motif" | "size" | "loop" | "window" | "minRadius"
 > & {
   // Which motif every tile carries, the star when absent, and the other
   // motifs' sizes, each absent until edited (its descriptor's initial
@@ -156,6 +167,10 @@ export type LaceStudy = Omit<
   petalFullness?: number;
   leafFullness?: number;
   ringRadius?: number;
+  loopSize?: number;
+  // The loop motif's curve, absent until one is woven from Draw a loop:
+  // the example leaf (motifs.ts, exampleLoop).
+  loopTerms?: Term[];
   edges: boolean;
   motif: boolean;
   selected?: LaceAddress;
@@ -196,6 +211,14 @@ export const defaultLaceMotion: LaceStudyMotion = {
 export const studyMotif = (s: LaceStudy): LaceMotifInfo => motifOf(s.motifKind);
 export const motifSize = (s: LaceStudy, m = studyMotif(s)): number =>
   s[m.field] ?? m.initial;
+// The study's loop, the example leaf until one is drawn.
+export const studyLoop = (s: LaceStudy): readonly Term[] =>
+  s.loopTerms ?? exampleLoop;
+// Tile t's strokes in the result: [first, end).
+export const strokesOf = (r: LaceResult, t: number, p: number) =>
+  r.arcFirst
+    ? [r.arcFirst[t], r.arcFirst[t + 1]]
+    : [2 * p * t, 2 * p * (t + 1)];
 // A star's request is as it was before other motifs existed. With zoom
 // detail at a zoom past 1.4×, it carries the view's window.
 export const laceRequest = (s: LaceStudy): LaceRequest => {
@@ -207,6 +230,7 @@ export const laceRequest = (s: LaceStudy): LaceRequest => {
     maxTiles: s.maxTiles,
     starPoint: s.starPoint,
     ...(m.id !== "star" && { motif: m.id, size: motifSize(s, m) }),
+    ...(m.drawn && { loop: structuredClone(studyLoop(s)) as Term[] }),
     ...(s.isometry && { isometry: { ...s.isometry } }),
     ...(d && { window: d.window, minRadius: d.minRadius }),
   };
@@ -449,6 +473,14 @@ export const lacePresets: readonly {
         repeat: "loop",
       },
     },
+  },
+  // The loop motif with the example leaf of Draw a loop (motifs.ts,
+  // exampleLoop): one copy in each of a heptagon's 14 triangles, mirrored
+  // across every side, so 14 leaves ring each center and 6 each corner.
+  {
+    title: "A drawn leaf in every triangle",
+    note: "The example leaf from Draw a loop, mirrored like a kaleidoscope into each of every heptagon's fourteen triangles",
+    study: { ...defaultLace, motifKind: "loop" },
   },
 ];
 export const presetLace = (index: number): LaceStudy =>
@@ -777,8 +809,8 @@ export const laceHelp = {
     "Pentagons and squares are each other's duals, as are heptagons and triangles: the centers of one are the corners of the other. Changing the tiling clears the selection and opens at the deepest ring the tile limit completes.",
   ),
   motifKind: tiered(
-    "The motif every tile carries: a star, petals, leaves or rings.",
-    "Each is one stroke between a tile's center, a side's midpoint and a corner, mirrored into all the tile's symmetries, so every tile carries the same motif and neighbors' strands meet across their sides. Each keeps its own size.",
+    "The motif every tile carries: a star, petals, leaves, rings or your own loop.",
+    "Each is one stroke between a tile's center, a side's midpoint and a corner, or your loop inside the triangle they make, mirrored into all the tile's symmetries, so every tile carries the same motif. Each keeps its own size.",
   ),
   edges: "Show the tiles' sides, each drawn once where two tiles share it.",
   motif: "Show the motif, the same strands reflected into every tile.",

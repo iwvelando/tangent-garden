@@ -11,7 +11,7 @@ import { tiered } from "./help";
 
 export const fitEntryHelp = tiered(
   "Draw any shape as one outline, then turn it into an editable study.",
-  "Close an open outline explicitly, or use your current base curve. Compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your study; adoption replaces it. Links preserve fitted terms, not the outline.",
+  "Close an open outline explicitly, or use your current base curve. Compare 2–16 Fourier terms and watch their rotating circles trace the fit. Use the example leaf or a mouse, pen, or finger. Capture stops at 4,096 points. Cancel keeps your study; adoption replaces it, and weaving into hyperbolic lace keeps it. Links preserve fitted terms, not the outline.",
 );
 
 export const fitSourceHelp = tiered(
@@ -405,6 +405,16 @@ export class FourierFitSession {
   // replaced.
   async track(frame: Frame): Promise<ConstructionTrack | undefined> {
     return this.client?.track?.(frame.config);
+  }
+  // The completed fit's terms, for weaving into hyperbolic lace, under the
+  // same conditions as adoption.
+  candidateTerms(): Term[] | null {
+    return !this.state.pending &&
+      this.state.frame &&
+      this.state.fit &&
+      !this.state.error
+      ? structuredClone(this.state.fit.terms)
+      : null;
   }
   candidate(): PlanarStudy | null {
     return !this.state.pending &&

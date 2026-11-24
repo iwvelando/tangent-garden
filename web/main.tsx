@@ -5,7 +5,8 @@ import { LoomContext, type LoomEntry } from "./loom/Context";
 import { GardenContext, type GardenEntry } from "./garden/Context";
 import { presetGarden } from "./garden/model";
 import { LaceContext, type LaceEntry } from "./lace/Context";
-import { presetLace } from "./lace/model";
+import { defaultLace, presetLace, studyLoop } from "./lace/model";
+import { drawnMotif } from "./lace/motifs";
 import { ShortenContext, type ShortenEntry } from "./shorten/Context";
 import { presetShorten } from "./shorten/model";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
@@ -42,7 +43,7 @@ import {
   HarmonicFitContext,
   type HarmonicFitEntry,
 } from "./spatial/HarmonicFitContext";
-import { fitEntryHelp } from "./fourier-fit";
+import { fitEntryHelp, fittedStudy } from "./fourier-fit";
 import { AtlasPreview } from "./AtlasPreview";
 import {
   AtlasContext,
@@ -3644,6 +3645,21 @@ function Notebook() {
                       setShorten(null);
                       setShorten(null);
                     }}
+                    // Draw a loop over the lace: it comes back to this lace,
+                    // as it stands, whether the loop is woven or canceled.
+                    onDrawLoop={(laceStudy, via) => {
+                      const entry = {
+                        ...lace,
+                        study: { ...lace.study, lace: laceStudy },
+                      };
+                      setLace(null);
+                      setFit({
+                        study: fittedStudy([...studyLoop(laceStudy)]),
+                        via,
+                        restoreFocus: lace.restoreFocus,
+                        lace: entry,
+                      });
+                    }}
                   />
                 </Suspense>
               </div>
@@ -3694,8 +3710,32 @@ function Notebook() {
                 <FourierFitPreview
                   request={fit}
                   onReturn={(via) => {
-                    restoreFocus.current = () => fit.restoreFocus(via);
                     setFit(null);
+                    // Back to the lace it was opened from, unchanged.
+                    if (fit.lace) setLace({ ...fit.lace, via });
+                    else restoreFocus.current = () => fit.restoreFocus(via);
+                  }}
+                  // Hyperbolic lace with the fitted loop as its motif: the
+                  // lace it was opened from, or the default lace over the
+                  // notebook's study, which stays as it was.
+                  onWeave={(terms, via) => {
+                    const base = fit.lace ?? {
+                      study: { ...fit.study, lace: defaultLace },
+                      restoreFocus: fit.restoreFocus,
+                    };
+                    setFit(null);
+                    setLace({
+                      ...base,
+                      via,
+                      study: {
+                        ...base.study,
+                        lace: {
+                          ...structuredClone(base.study.lace ?? defaultLace),
+                          motifKind: drawnMotif.id,
+                          loopTerms: terms,
+                        },
+                      },
+                    });
                   }}
                   onAdopt={(study, via) => {
                     links.current++;
