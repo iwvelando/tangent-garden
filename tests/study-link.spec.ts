@@ -1449,6 +1449,25 @@ test("fields a link predates take the notebook's defaults", async () => {
     ),
     journey,
   );
+  // A translated circle carries its center; a link made before translated
+  // circles carries none and opens the origin circle it drew.
+  const translated: TesseractStudy = {
+    ...journey,
+    config: {
+      ...journey.config,
+      root: { ...journey.config.root!, offset: 1.1, direction: -2 * Math.PI },
+    },
+  };
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", translated))).study,
+    ),
+    translated,
+  );
+  const before = tesseractStudy(
+    (await readStudyLink(await writeStudyLink("4d", journey))).study,
+  ).config.root!;
+  assert.equal("offset" in before || "direction" in before, false);
   const bareJourney = structuredClone(journey) as any;
   delete bareJourney.config.root;
   assert.deepEqual(
@@ -1461,6 +1480,8 @@ test("fields a link predates take the notebook's defaults", async () => {
     ["sheet", "both"],
     ["trace", 0.5],
     ["radius", "2"],
+    ["offset", "1"],
+    ["direction", true],
   ] as const) {
     const bad = structuredClone(journey) as any;
     bad.config.root[key] = value;

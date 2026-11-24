@@ -131,6 +131,10 @@ const weave = {
 const root = {
   fields: {
     radius: "number",
+    // The circle's center; absent in links made before translated
+    // circles, which open the origin circle they drew.
+    offset: { optional: "number" },
+    direction: { optional: "number" },
     sheet: { options: { plus: true, minus: true } },
     from: "number",
     to: "number",

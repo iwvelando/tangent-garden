@@ -1,4 +1,5 @@
 import { readout as formatNumber } from "../web/number-format";
+import { rootAtlasPoints } from "../web/tesseract/atlas-pairs";
 import { test, expect, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import {
@@ -24,12 +25,14 @@ const desc = async (p: Page, mode: "diagram" | "orthographic") =>
   );
 const meta = async (p: Page) =>
   JSON.parse((await p.locator("#tesseract-artwork > desc").textContent())!);
-const open = async (p: Page) => {
+const open = async (p: Page, label = name) => {
   await p.goto("/?study=4d");
   await settle(p);
-  await choosePreset(p, { label: name });
+  await choosePreset(p, { label });
   await settle(p);
 };
+const missing = "A loop that misses zero";
+const enclosing = "Around an off-center branch point";
 // A marker's center in its pane's 1000 × 760 units.
 const at = async (p: Page, id: string) => {
   const c = p.locator(`[data-marker="${id}"]`);
@@ -377,58 +380,60 @@ test("the still and a link carry both panes and cameras", async ({
   expect(reopened.views).toEqual(live.views);
 });
 
-test("a decoded looping movie matches direct seeks at 0, 2π and 4π", async ({
-  page,
-}) => {
-  test.slow();
-  await open(page);
-  await page.getByRole("spinbutton", { name: "Duration (seconds)" }).fill("2");
-  await playThenPause(page);
-  const references: number[][] = [];
-  for (const s of [0, 0.5, 1]) {
-    await scrub(page, s);
-    references.push(await raster(page, 1000, 380));
-  }
-  await openShapeExport(page);
-  await page
-    .getByRole("combobox", { name: "Export format" })
-    .selectOption("mp4");
-  await page
-    .getByRole("slider", { name: "Export resolution", exact: true })
-    .fill("0.5");
-  await page
-    .getByRole("combobox", { name: "Export frame rate" })
-    .selectOption("15");
-  const download = page.waitForEvent("download");
-  const started = Date.now();
-  await page.getByRole("button", { name: /^Export MP4 video/ }).click();
-  const path = (await (await download).path())!;
-  console.log(
-    `${name}: 2 s / 15 fps / 1000×380 MP4 saved in ${Date.now() - started} ms`,
-  );
-  const p = probe(path);
-  // A loop leaves out its last frame, which is its first: 30 frames, with
-  // frame 15 at t = 2π and frame 0 standing for both 0 and 4π.
-  if (p) {
-    expect([p.width, p.height, p.frames]).toEqual([1000, 380, 30]);
-    expect(p.durations.reduce((a, b) => a + b, 0)).toBe(2000);
-  }
-  expect((await decodeVideo(page, await readFile(path))).duration).toBeCloseTo(
-    2,
-    3,
-  );
-  for (const [index, reference] of [
-    [0, references[0]],
-    [15, references[1]],
-    [0, references[2]],
-  ] as const) {
-    const d = frameDifference(path, 1000, 380, index, reference);
-    if (d) {
-      expect(d.meanDifference).toBeLessThan(6);
-      expect(d.unmatchedInk).toBeLessThan(0.02);
+for (const study of [name, missing])
+  test(`${study}: a decoded looping movie matches direct seeks at 0, 2π and 4π`, async ({
+    page,
+  }) => {
+    test.slow();
+    await open(page, study);
+    await page
+      .getByRole("spinbutton", { name: "Duration (seconds)" })
+      .fill("2");
+    await playThenPause(page);
+    const references: number[][] = [];
+    for (const s of [0, 0.5, 1]) {
+      await scrub(page, s);
+      references.push(await raster(page, 1000, 380));
     }
-  }
-});
+    await openShapeExport(page);
+    await page
+      .getByRole("combobox", { name: "Export format" })
+      .selectOption("mp4");
+    await page
+      .getByRole("slider", { name: "Export resolution", exact: true })
+      .fill("0.5");
+    await page
+      .getByRole("combobox", { name: "Export frame rate" })
+      .selectOption("15");
+    const download = page.waitForEvent("download");
+    const started = Date.now();
+    await page.getByRole("button", { name: /^Export MP4 video/ }).click();
+    const path = (await (await download).path())!;
+    console.log(
+      `${study}: 2 s / 15 fps / 1000×380 MP4 saved in ${Date.now() - started} ms`,
+    );
+    const p = probe(path);
+    // A loop leaves out its last frame, which is its first: 30 frames, with
+    // frame 15 at t = 2π and frame 0 standing for both 0 and 4π.
+    if (p) {
+      expect([p.width, p.height, p.frames]).toEqual([1000, 380, 30]);
+      expect(p.durations.reduce((a, b) => a + b, 0)).toBe(2000);
+    }
+    expect(
+      (await decodeVideo(page, await readFile(path))).duration,
+    ).toBeCloseTo(2, 3);
+    for (const [index, reference] of [
+      [0, references[0]],
+      [15, references[1]],
+      [0, references[2]],
+    ] as const) {
+      const d = frameDifference(path, 1000, 380, index, reference);
+      if (d) {
+        expect(d.meanDifference).toBeLessThan(6);
+        expect(d.unmatchedInk).toBeLessThan(0.02);
+      }
+    }
+  });
 
 // Slow replies to the study's own requests (not playback frames). While
 // `holdRoot` is set, requests wait in `heldRoot` until `releaseRoot()`, so a
@@ -647,4 +652,201 @@ test("circuit, accent and guide inks follow the color scheme in drawing, legend 
     }
   }
   expect(seen.size).toBe(4);
+});
+
+// Translated source circles: z = r e^{iφ}(k + e^{it}) about c = k r e^{iφ}.
+test("a circle that misses zero returns after one circuit and draws the other root's loop; enclosing it again exchanges the sheets", async ({
+  page,
+}) => {
+  await open(page, missing);
+  await expect(
+    page.locator("#tesseract-artwork text, #tesseract-artwork foreignObject"),
+  ).toHaveCount(0);
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "0: w returns each circuit",
+  );
+  await expect(readout(page, "Closest |z|")).toHaveText(
+    formatNumber(1.2 * 0.1),
+  );
+  // The unvisited sheet's loop is a guide in the w plane and the 4D view;
+  // the z plane has one circle for both sheets.
+  for (const view of ["value", "lifted"])
+    await expect(
+      page.locator(`[data-source="root/${view}/other-sheet"]`),
+    ).toHaveCount(1);
+  await expect(
+    page.locator('[data-source="root/source/other-sheet"]'),
+  ).toHaveCount(0);
+  const d0 = (await desc(page, "orthographic")).root;
+  expect([d0.winding, d0.offset]).toEqual([0, 1.1]);
+  expect(d0.refined).toBeGreaterThan(d0.intervals);
+  await expect(page.locator(".tesseract-diagnostics")).toContainText(
+    "after refinement near the branch point",
+  );
+  const start = await drawing(page);
+  await playThenPause(page);
+  await scrub(page, 0.5);
+  // One circuit: z, w and the 4D point are all home.
+  await expect(readout(page, "Circuit")).toHaveText("2 of 2");
+  for (const view of ["source", "value", "lifted"])
+    expect(
+      distance(
+        await at(page, `root/${view}/current`),
+        await at(page, `root/${view}/start`),
+      ),
+    ).toBeLessThan(0.01);
+  // The moving point's |(z, w)| moves within the framing bound.
+  const half = (await desc(page, "orthographic")).root;
+  expect(half.norm).toBeLessThanOrEqual(half.normBound);
+  await scrub(page, 1);
+  expect(await drawing(page)).toBe(start);
+  await page.getByRole("button", { name: /^(Stop|Back to study)$/ }).click();
+  await settle(page);
+  // A single circuit returns every point but not the trace's circuit, so
+  // it cannot loop either.
+  await page.getByText("Journey endpoints", { exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Trace end", exact: true })
+    .fill("2*pi");
+  await settle(page);
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(page.locator(".animation-error")).toContainText(
+    "Repeat can loop only motion that ends where it starts",
+  );
+  await page
+    .getByRole("textbox", { name: "Trace end", exact: true })
+    .fill("4*pi");
+  // Below 1 the circle encloses zero: the guide goes, and one circuit
+  // leaves w opposite its start.
+  await page
+    .getByRole("textbox", { name: "Center offset", exact: true })
+    .fill("0.8");
+  await settle(page);
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "1: w changes sheet each circuit",
+  );
+  await expect(page.locator('[data-role="other-sheet"]')).toHaveCount(0);
+  await playThenPause(page);
+  await scrub(page, 0.5);
+  const [w, w0, origin] = [
+    await at(page, "root/value/current"),
+    await at(page, "root/value/start"),
+    await at(page, "root/value/branch-point"),
+  ];
+  expect(w[0] - origin[0]).toBeCloseTo(origin[0] - w0[0], 2);
+  expect(w[1] - origin[1]).toBeCloseTo(origin[1] - w0[1], 2);
+  const d = (await desc(page, "orthographic")).root;
+  const [a, b] = d.w;
+  expect(Math.hypot(a * a - b * b - d.z[0], 2 * a * b - d.z[1])).toBeLessThan(
+    1e-14,
+  );
+});
+
+test("the off-center example encloses zero, and the center fields refuse a pass too near the branch point by field", async ({
+  page,
+}) => {
+  await open(page, enclosing);
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "1: w changes sheet each circuit",
+  );
+  const d = (await desc(page, "orthographic")).root;
+  expect(d.closest).toBeCloseTo(1.4 * 0.15, 14);
+  expect(d.normBound).toBeCloseTo(Math.sqrt(1.4 * 1.85 * (1.4 * 1.85 + 1)), 12);
+  expect(d.residual).toBeLessThan(1e-12);
+  await expect(page.locator('[data-role="other-sheet"]')).toHaveCount(0);
+  for (const [label, value, message, valid] of [
+    [
+      "Center offset",
+      "1.02",
+      "Center offset must stay at least 0.05 from 1",
+      "0.95",
+    ],
+    ["Center offset", "3.5", "Center offset must be between 0 and 3", "3"],
+    [
+      "Center direction",
+      "7",
+      "Center direction must be between −2π and 2π",
+      "-2*pi",
+    ],
+  ]) {
+    const field = page.getByRole("textbox", { name: label, exact: true });
+    await field.fill(value);
+    await settle(page);
+    await expect(page.locator(".stale-study")).toBeVisible();
+    await expect(field).toHaveAccessibleDescription(new RegExp(message));
+    await field.fill(valid);
+    await settle(page);
+    await expect(page.locator(".stale-study")).toHaveCount(0);
+  }
+  // The band's edge is admitted and refined.
+  const edge = (await desc(page, "orthographic")).root;
+  expect([edge.offset, edge.winding]).toEqual([3, 0]);
+});
+
+test("the other root's loop takes the guide ink in drawing, legend and export", async ({
+  page,
+}) => {
+  await open(page, missing);
+  await chooseColorScheme(page, "cobalt");
+  await settle(page);
+  const guide = await page
+    .locator('[data-source="root/source/axis/re"]')
+    .getAttribute("stroke");
+  for (const view of ["value", "lifted"])
+    expect(
+      await page
+        .locator(`[data-source="root/${view}/other-sheet"]`)
+        .getAttribute("stroke"),
+    ).toBe(guide);
+  const swatch = await page
+    .locator(".tesseract-legend span, .tesseract-legend li")
+    .filter({ hasText: "the other root's loop" })
+    .locator("i")
+    .evaluate((i) => getComputedStyle(i).backgroundColor);
+  const css = await page.evaluate((c) => {
+    const d = document.createElement("i");
+    d.style.color = c;
+    document.body.append(d);
+    const v = getComputedStyle(d).color;
+    d.remove();
+    return v;
+  }, guide!);
+  expect(swatch).toBe(css);
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  expect(svg).toContain('data-source="root/lifted/other-sheet"');
+  expect(svg).not.toMatch(/<text|<foreignObject/);
+});
+
+// The atlas reserves each cell's points before asking the engine, so the
+// reservation must cover the refined grid near the branch point.
+test("the atlas reservation covers every refined journey's returned points", async ({
+  page,
+}) => {
+  await open(page, enclosing);
+  for (const [offset, samples] of [
+    ["0.95", "4096"],
+    ["1.05", "4096"],
+    ["0.6", "64"],
+    ["3", "1000"],
+    ["0", "4096"],
+  ]) {
+    await page
+      .getByRole("textbox", { name: "Center offset", exact: true })
+      .fill(offset);
+    await page
+      .getByRole("spinbutton", { name: "Path intervals" })
+      .fill(samples);
+    await settle(page);
+    const m = await meta(page);
+    expect(m.config.root.offset).toBe(Number(offset));
+    expect(m.config.samples).toBe(Number(samples));
+    expect(m.emittedPoints).toBeGreaterThan(0);
+    expect(m.emittedPoints, `${offset} at ${samples}`).toBeLessThanOrEqual(
+      rootAtlasPoints(m.config),
+    );
+  }
 });

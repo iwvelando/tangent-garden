@@ -103,6 +103,18 @@ const object = (o: Config["object"], mode?: Config["mode"]) => (c: Config) =>
   c.object === o && (!mode || c.mode === mode);
 const cases: Case[] = [
   ["root.radius", object("root"), (c) => (c.root!.radius = 5), "Radius r"],
+  [
+    "root.offset",
+    object("root"),
+    (c) => (c.root!.offset = 1.02),
+    "Center offset",
+  ],
+  [
+    "root.direction",
+    object("root"),
+    (c) => (c.root!.direction = 7),
+    "Center direction",
+  ],
   ["root.from", object("root"), (c) => (c.root!.from = -1), "Trace start"],
   ["root.to", object("root"), (c) => (c.root!.to = 13), "Trace end"],
   ["samples", object("root"), (c) => (c.samples = 63), "Path intervals"],

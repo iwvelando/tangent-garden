@@ -35,7 +35,7 @@ The parameters are the object's continuous values, the default first:
 | Tesseract | the six rotation angles; in perspective the 4D eye distance; in the stereographic view the projection window radius; in sections the slice offset h first, and the section spread when there are several sections |
 | Spherical ring weave, stereographic loom | central latitude α, the latitude spread when there are several latitudes, the six angles and the window radius |
 | Spherical ring weave, base sphere and fibers | **Trace (turns)**, the moving point's offset from the selected fiber in turns; α on a latitude or flower; the flower amplitude A on a spherical flower; the tilt β on a great circle; the six angles and the window radius |
-| Square-root journey | **Journey parameter t**, where the moving point stands, from 0 to 4π; radius r; the six angles |
+| Square-root journey | **Journey parameter t**, where the moving point stands, from 0 to 4π; radius r, which keeps the center offset in radii; the six angles |
 
 Counts, petals, the Lissajous frequencies, a polygon's vertices, the base path, the weave family, the initial sheet and the motion endpoint fields are fixed for the whole phrase. The journey's start marker stays at **Trace start**, and its trace lies behind the point as seen from there.
 
@@ -439,7 +439,7 @@ On the development macOS arm64 desktop, a native shadow result of both whole pol
 
 ## The square-root journey
 
-Choose **Square-root journey** in **4D object**, or the example **The second time around**. A point circles the origin twice in the z plane. Its continuously followed square root w goes only halfway around on the first circuit, ending at −w(0), and comes home on the second. Beside them, the same path in four dimensions is one closed curve. The mathematics is in [the square-root journey](mathematics.md#the-square-root-journey).
+Choose **Square-root journey** in **4D object**, or one of its examples. In **The second time around** a point circles the origin twice in the z plane. Its continuously followed square root w goes only halfway around on the first circuit, ending at −w(0), and comes home on the second. Beside them, the same path in four dimensions is one closed curve. **Around an off-center branch point** moves the circle off center while it still encloses zero: w traces one pinched oval and still needs both circuits. **A loop that misses zero** moves it past zero: w comes home after one circuit, keeping to one of two ovals. The mathematics is in [the square-root journey](mathematics.md#the-square-root-journey).
 
 **Views.** **Source, value and lift** is the study's one view, two panes sharing one result. Pane 1 is a flat diagram with the z plane on the left and the w plane on the right, at one scale. Pane 2 is the 4D path `(Re z, Im z, Re w, Im w)`, turned by the six angles, with its fourth coordinate dropped. Every view draws:
 - both whole circuits, quietly, the second dashed;
@@ -447,15 +447,15 @@ Choose **Square-root journey** in **4D object**, or the example **The second tim
 - the moving point, and a ring at the trace start;
 - the branch point, the origin, as a guide.
 
-Each circuit has one ink in all three views. The z plane cannot tell the circuits apart, since they coincide there; the w plane and the 4D view separate them. The z plane also draws the principal cut on the negative real axis, dashed, as a guide. The diagram pans and zooms; the 4D pane orbits, pans and zooms. **Front**, **Side**, **Top**, **Isometric** and **Rotate view** turn only the 4D pane. Keys act on the focused pane.
+Each circuit has one ink in all three views. The z plane cannot tell the circuits apart, since they coincide there. Around a circle that encloses zero, the w plane and the 4D view separate them; around one that misses zero they coincide in every view, and the w plane and the 4D view add the other root's loop `(z, −w)`, never visited, dashed in the guide ink. The z plane also draws the principal cut on the negative real axis, dashed, as a guide. The diagram pans and zooms; the 4D pane orbits, pans and zooms. **Front**, **Side**, **Top**, **Isometric** and **Rotate view** turn only the 4D pane. Keys act on the focused pane.
 
-**Controls.** **Initial sheet** chooses `w(0) = +√r` or `−√r`. **Radius r** is from 0.25 to 4. **Journey endpoints** hold **Trace start** and **Trace end**, radians from 0 to 4π (`4*pi`), within 10⁻¹² of either end; a start after the end traverses in reverse. **Path intervals**, 64 to 4,096, divide 0 ≤ t ≤ 4π; exact points are added at 2π and at the moving point. Errors appear under the field that caused them.
+**Controls.** **Initial sheet** chooses `w(0) = +√z(0)`, the principal root, or `−√z(0)`. **Radius r** is from 0.25 to 4. **Center offset** is the center's distance from 0 in radii, from 0 to 3: below 1 the circle encloses the branch point, above 1 it misses it, and within 0.05 of 1 it passes too near and is refused. **Center direction** is the center's angle from the positive real axis, radians from −2π to 2π; it turns the whole circle, start included. Older links and the first example have neither and draw the origin circle. **Journey endpoints** hold **Trace start** and **Trace end**, radians from 0 to 4π (`4*pi`), within 10⁻¹² of either end; a start after the end traverses in reverse. **Path intervals**, 64 to 4,096, divide 0 ≤ t ≤ 4π; near the branch point each interval is split so w turns no faster per segment than on the origin circle, and exact points are added at 2π and at the moving point. Errors appear under the field that caused them.
 
-**Motion.** **Follow the root** moves t from Trace start to Trace end. Only a whole 4π journey returns every view, so only it can loop; Play says why another refuses. Playback for this study uses one engine: one frame is computed at a time, and the latest scrub replaces a waiting one. Still, MP4 and WebP exports draw both panes through the shared sampler. A link saves the radius, sheet, endpoints, interval count, angles and both cameras, never the playback progress.
+**Motion.** **Follow the root** moves t from Trace start to Trace end. Only a whole 4π journey returns every view, trace included, so only it can loop; Play says why another refuses. A 2π journey around a circle that misses zero returns z, w and the 4D point, but its trace changes circuit, so it cannot loop either. Playback for this study uses one engine: one frame is computed at a time, and the latest scrub replaces a waiting one. Still, MP4 and WebP exports draw both panes through the shared sampler. A link saves the radius, center, sheet, endpoints, interval count, angles and both cameras, never the playback progress.
 
-**Readouts.** The parameter t and turns of z, the circuit (1 for t mod 4π below 2π, otherwise 2), z and w, whether w is `+√z` or `−√z` for the principal root, the largest `|w² − z|` over the returned points, and the norm `√(r² + r)`. The status line below the drawing stays the same through the motion.
+**Readouts.** The parameter t and turns of z, the circuit (1 for t mod 4π below 2π, otherwise 2), the winding of z about 0 (1 when the circle encloses it, and w changes sheet each circuit; 0 when it misses, and w returns), z and w, whether w is `+√z` or `−√z` for the principal root, the closest approach `|z| = r|1 − k|`, the largest `|w² − z|` over the returned points, and the norm `|(z, w)|`: constant, `√(r² + r)`, on the origin circle, and the moving point's otherwise. The status line below the drawing stays the same through the motion, and names the refined interval count when refinement adds any.
 
-**Identities and bounds.** Paths are `root/{source|value|lifted}/circuit/{1|2}` (role `circuit`, branch the circuit) and `…/trace/k` (role `trace`, branch the circuit). Markers are `…/start`, `…/current` and `…/branch-point`. Guides are `root/{source|value}/axis/{re|im}` and `root/source/cut`. Lifted paths carry their parameters and 4D source points; diagram paths carry parameters. Each view draws two circuits of at most n/2 + 4 points, a trace of at most n/2 + 6 points in two pieces, and three markers; the diagram adds ten guide points. All three views together return at most `3(3n/2 + 17) + 10` points: 18,493 at n = 4,096, where 18,466 are emitted. The arrays travel in the typed buffer. The request is refused before evaluation outside these limits.
+**Identities and bounds.** Paths are `root/{source|value|lifted}/circuit/{1|2}` (role `circuit`, branch the circuit) and `…/trace/k` (role `trace`, branch the circuit). Around a circle that misses zero, `root/{value|lifted}/other-sheet` (role `other-sheet`, a dashed guide) is the other root's loop over one circuit. Markers are `…/start`, `…/current` and `…/branch-point`. Guides are `root/{source|value}/axis/{re|im}` and `root/source/cut`. Lifted paths carry their parameters and 4D source points; diagram paths carry parameters. On the origin circle each view draws two circuits of at most n/2 + 4 points, a trace of at most n/2 + 6 points in two pieces, and three markers; the diagram adds ten guide points. All three views together return at most `3(3n/2 + 17) + 10` points: 18,493 at n = 4,096, where 18,466 are emitted. A translated circle's refined grid is counted exactly before evaluation and checked against the 65,536-point budget; the largest, offset 1.05 at 4,096 intervals, returns about 46,100 points. The arrays travel in the typed buffer. The request is refused before evaluation outside these limits.
 
 **Checks.** Native tests and targeted mutations are listed with [the mathematics](mathematics.md#the-square-root-journey). The WASM contract checks the lifted reply, `w² = z` on the restored points and the point count at the maximum. Browser tests exercise the following:
 - the opening still, without text in the artwork;
@@ -468,18 +468,22 @@ Each circuit has one ink in all three views. The z plane cannot tell the circuit
 - export cancellation by Cancel, an edit or leaving the notebook;
 - pane ownership of keys and named views;
 - inks under every color scheme in drawing, legend and SVG;
-- link conformance;
-- an independently decoded looping MP4 whose frames match direct seeks.
+- link conformance, including the center and older links without it;
+- independently decoded looping MP4s, of the origin circle and of a circle that misses zero, whose frames match direct seeks;
+- a missing circle home after one circuit with the other root's loop, refusing a 2π loop, and an enclosing one exchanging sheets again;
+- center refusals by field near the branch point and out of range;
+- the other root's loop in the guide ink in drawing, legend and SVG;
+- the atlas reservation covering every refined journey's returned points.
 
 ### Square-root journey performance observations
 
-On the development macOS arm64 desktop (Apple M5 Max), at 4,096 intervals through the real WASM bridge, a reply sent 790,993 bytes in a median 2.9 ms including parsing. Headless Chromium measured 89 ms from editing the interval count to the redrawn study, a seek to a settled frame in about 30 ms, 40 rapid scrubs settled in 309 ms, and 115 ms from Stop to idle. At the preset's 1,024 intervals those were 15 ms, 7 ms, 140 ms and 115 ms. A 2-second, 15 fps, 1000 × 380 looping MP4 encoded in about 0.2 s. These are observations, not limits.
+On the development macOS arm64 desktop (Apple M5 Max), at 4,096 intervals through the real WASM bridge, a reply sent 790,993 bytes in a median 2.9 ms including parsing. Headless Chromium measured 89 ms from editing the interval count to the redrawn study, a seek to a settled frame in about 30 ms, 40 rapid scrubs settled in 309 ms, and 115 ms from Stop to idle. At the preset's 1,024 intervals those were 15 ms, 7 ms, 140 ms and 115 ms. A 2-second, 15 fps, 1000 × 380 looping MP4 encoded in about 0.2 s. On the same desktop, the largest translated journey, **A loop that misses zero** at offset 1.05 and 4,096 intervals (8,368 after refinement, with the other root's loop), sent 2,013,534 bytes in a median 7.2 ms through the bridge; headless Chromium measured about 124 ms from editing the offset to the redrawn study, a seek in about 33 ms, 40 rapid scrubs settled in about 635 ms, and 116 ms from Stop to idle. The same 2-second movie of the example encoded in about 0.3 s. These are observations, not limits.
 
 ## Scale and translation
 
 Every tolerance in `engine4` is absolute plus relative to the study's own scale. What a study can move:
 
-- **Square-root journey:** neither. The source is fixed by r, from 0.25 to 4, about the origin. Its only tolerance is the endpoint band below, on parameters.
+- **Square-root journey:** both, within its fields. The source circle has radius r, from 0.25 to 4, about `c = k r e^{iφ}`, with the offset k in radii. Since the offset is a ratio, the refusal near the branch point, `|1 − k| < 0.05`, and the refinement are the same at every radius. Its only tolerance is the endpoint band below, on parameters and the direction.
 - **24-cell:** neither. Coordinates and source incidence are exact; rotated sections use the fixed source-unit contact band stated above.
 - **Tesseract and spherical weave:** neither. They are the unit tesseract and the unit 3-sphere, centered at the origin, and the request carries no size or center for them; the shared size fields leave every mode unchanged. The weave's window radius sets the window, not the sphere.
 - **Ball and tube:** scale only, since they have no center. Radii, slice and spread scale together.
@@ -496,7 +500,7 @@ Every tolerance in `engine4` is absolute plus relative to the study's own scale.
 | Lift present set, on d² | 10⁻¹² r (r + √10) | missing radius r | δ ≤ 5 × 10⁻¹³ (1 + √10/r): below 4 × 10⁻¹¹ for r ≥ 0.05 |
 | Lift line event | 10⁻¹² + 10⁻¹⁰ max(1, r²) | — | none: below zero residual it only repeats the closest-point event |
 | Lift circle event, on a cosine; event coalescing, on a parameter | 10⁻¹²; 10⁻¹³ | dimensionless | — |
-| Square-root journey endpoint snap, on t | 10⁻¹² | radians, 0 ≤ t ≤ 4π | — |
+| Square-root journey endpoint snap, on t; direction band, on φ | 10⁻¹² | radians, 0 ≤ t ≤ 4π; −2π ≤ φ ≤ 2π | — |
 | 24-cell section contact, on w − h | 64·2⁻⁵²·√2 ≈ 2.01·10⁻¹⁴ | fixed declared coordinates | fixed object |
 | Weave window and latitude snap, on q_w and radians | 10⁻¹² | unit sphere | — |
 | Tesseract stereographic coefficients, cut spacing; section level, coincidence and planarity | 10⁻¹⁴; 10⁻¹⁰, 10⁻⁹ (10⁻¹⁸ squared), 10⁻⁹ | unit tesseract, coordinates within 2 | fixed object |

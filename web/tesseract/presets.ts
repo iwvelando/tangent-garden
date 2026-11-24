@@ -698,4 +698,49 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
+  // Opens at t = 0 on a circle that still encloses zero, off center: w
+  // traces one pinched Cassini oval and needs both circuits to come home.
+  // Follow the root loops over the whole 4π journey.
+  {
+    name: "Around an off-center branch point",
+    detail:
+      "The circle is off center but still encloses zero, so its square root still needs two circuits to come home, around one pinched oval.",
+    config: {
+      ...objects.root.defaults(base),
+      root: {
+        radius: 1.4,
+        offset: 0.85,
+        direction: 0.6,
+        sheet: "plus",
+        from: 0,
+        to: 4 * Math.PI,
+      },
+    },
+    motion: "trace",
+    repeat: "loop",
+  },
+  // Opens at t = 0 on a circle that just misses zero and crosses the
+  // principal cut: w keeps to one of two teardrop ovals and comes home
+  // after one circuit, so the second retraces the first; the other sheet's
+  // loop is a dashed guide. yw turns the two 4D loops apart. Follow the
+  // root loops over 4π.
+  {
+    name: "A loop that misses zero",
+    detail:
+      "The circle passes zero by. Its square root comes home after a single circuit, keeping to one of two ovals; the other is never visited.",
+    config: {
+      ...objects.root.defaults(base),
+      angles: [0, 0, -1, 0, 0.8, 0.6],
+      root: {
+        radius: 1.2,
+        offset: 1.1,
+        direction: 2.8,
+        sheet: "plus",
+        from: 0,
+        to: 4 * Math.PI,
+      },
+    },
+    motion: "trace",
+    repeat: "loop",
+  },
 ];

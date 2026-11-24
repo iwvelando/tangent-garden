@@ -167,5 +167,16 @@ export function weaveAtlasPoints(c: Config): number {
     c.count * (c.weave!.family === "tori" ? 2 * n : n) * (s + 2) + 3 * (s + 1)
   );
 }
-export const rootAtlasPoints = (c: Config) =>
-  3 * ((3 * c.samples) / 2 + 17) + 10;
+// The origin circle's bound (engine4/root.go rootPoints). Refinement near
+// the branch point splits each interval into at most p = ⌈1/|1 − k|⌉
+// parts, since |z| ≥ r|1 − k|, so a piece of a view meeting n/2 + 2
+// intervals holds at most (n/2 + 2)p + 2 points: counting n + 4 intervals
+// covers that. A circle that misses 0 adds the other sheet's loop, one
+// circuit in two views. The engine counts the exact total before
+// evaluating.
+export const rootAtlasPoints = (c: Config) => {
+  const k = c.root?.offset ?? 0;
+  const parts = Math.max(1, Math.ceil(1 / Math.abs(1 - k)));
+  const n = parts === 1 ? c.samples : (c.samples + 4) * parts;
+  return 3 * ((3 * n) / 2 + 17) + 10 + (k > 1 ? 2 * (n / 2 + 4) : 0);
+};
