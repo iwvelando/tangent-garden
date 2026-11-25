@@ -64,7 +64,9 @@ export function planarLayerChoices(config: Config) {
     {
       key: "base",
       label: implicit
-        ? "Curve F = c"
+        ? config.curve.implicit.disk
+          ? "Curve u = c"
+          : "Curve F = c"
         : attractor
           ? "Visit density"
           : "Base curve",

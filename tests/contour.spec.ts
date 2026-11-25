@@ -1029,6 +1029,8 @@ test("a disk study draws its nodal lines to an analytic boundary, edits by field
     "Disk mode (m, k) = (5, 3): 5 nodal diameters and 2 nodal circles inside the boundary",
   );
   await expect(note(page)).toContainText("ending on the disk's boundary");
+  // The legend names the mode's level set, not F's.
+  await expect(page.locator(".legend")).toHaveText("Curve u = c Other levels");
   // The boundary is drawn from r = R; every open contour ends on it, two
   // per diameter, and none runs along it.
   const circle = page.getByTestId("disk-boundary");

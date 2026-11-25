@@ -1868,6 +1868,8 @@ function App({
       : familyFrame
     : shown;
   const drawnFormat = (displayFrame?.config ?? config).curve.format;
+  // A disk mode replaces F: its curve is the level set of u.
+  const drawnDisk = !!(displayFrame?.config ?? config).curve.implicit.disk;
   const drawn = displayFrame
     ? legendGeometry(
         displayFrame.result,
@@ -3391,7 +3393,9 @@ function App({
                         <>
                           <span className="base-dot" />
                           {drawnFormat === "implicit"
-                            ? "Curve F = c"
+                            ? drawnDisk
+                              ? "Curve u = c"
+                              : "Curve F = c"
                             : drawnFormat === "attractor"
                               ? "Visit density"
                               : "Base curve"}
