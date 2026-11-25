@@ -140,7 +140,7 @@ test("Source path needs no research parameter; a ripple's fields set its winding
   await spin(page, "Frequency m").fill("-2");
   await settle(page);
   await expect(readout(page, "Winding about 0")).toHaveText(
-    "−2: w turns by ω² backward each circuit",
+    "−2: w turns by ω⁻² each circuit",
   );
   await expect(readout(page, "w home after")).toHaveText("1 circuit");
   await expect(

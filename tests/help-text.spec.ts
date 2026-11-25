@@ -838,3 +838,49 @@ test("surface engraving help states its scope within the sidebar word limits", a
       expect(words(h.more), h.topic).toBeLessThanOrEqual(moreWords);
   }
 });
+
+// Show more and Show less are one toggle in one place: its label changing
+// must never rewrap the essentials beside it, as a paired field's narrow
+// help did (Ripple a beside Frequency m).
+test("a tiered help's Show more toggle stays where it is when it becomes Show less", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/?study=4d");
+  await choosePreset(page, { label: "Roots in star order" });
+  const controls = page.locator(".tesseract-controls");
+  const toggles = controls.locator(".help-toggle:visible");
+  const count = await toggles.count();
+  let tiered = 0;
+  for (let i = 0; i < count; i++) {
+    const toggle = toggles.nth(i);
+    await toggle.scrollIntoViewIfNeeded();
+    await toggle.click();
+    const help = page.locator(
+      `[id="${await toggle.getAttribute("aria-controls")}"]`,
+    );
+    const more = help.locator(".help-more");
+    if ((await more.count()) === 0) {
+      await toggle.click();
+      continue;
+    }
+    tiered++;
+    // Relative to its own help, since opening the rest can scroll the
+    // sidebar.
+    const at = () =>
+      more.evaluate((e) => {
+        const b = e.getBoundingClientRect(),
+          h = e.closest(".hint")!.getBoundingClientRect();
+        return { x: b.x - h.x, y: b.y - h.y };
+      });
+    const before = await at();
+    await more.click();
+    await expect(more).toHaveAccessibleName("Show less");
+    const after = await at();
+    const topic = await toggle.getAttribute("aria-label");
+    expect([after.x, after.y], topic!).toEqual([before.x, before.y]);
+    await more.click();
+    await toggle.click();
+  }
+  expect(tiered).toBeGreaterThan(5);
+});

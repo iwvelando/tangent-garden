@@ -2460,7 +2460,9 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           value: d.path
             ? d.winding === 0
               ? "0: w returns each circuit"
-              : `${d.winding < 0 ? "−" : ""}${Math.abs(d.winding)}: w turns by ω${Math.abs(d.winding) === 1 ? "" : superscript(Math.abs(d.winding))}${d.winding < 0 ? " backward" : ""} each circuit`
+              : // ω^W, with a raised minus sign backward: as short
+                // as the forward readout, so it fits its column.
+                `${d.winding < 0 ? "−" : ""}${Math.abs(d.winding)}: w turns by ω${d.winding < 0 ? "⁻" : ""}${d.winding === 1 ? "" : superscript(Math.abs(d.winding))} each circuit`
             : d.winding === 1
               ? degree === 2
                 ? "1: w changes sheet each circuit"
