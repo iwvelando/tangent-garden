@@ -59,6 +59,9 @@ export function fieldLabel(c: Config, path: string): string | undefined {
   m = /^(lift|bypass|weave|cell24|cell16|root)\.(\w+)(?:\.(\d))?$/.exec(path);
   if (!m || m[1] !== d.parameterKey) return undefined;
   if (m[2] === "selected") return d.selection?.label;
+  // The root journey's turn of the initial sheet is shown under its choice.
+  if (m[2] === "branch")
+    return d.choices?.find((f) => f.key === "sheet")?.label;
   if (m[2] === "vertices" && d.vertexList)
     return d.choices?.find((f) => f.key === "path")?.label;
   const index = m[3] === undefined ? undefined : +m[3];

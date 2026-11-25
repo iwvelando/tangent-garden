@@ -156,6 +156,8 @@ export type LegendItem = {
   label: string;
   family: number;
   roles?: Result["paths"][number]["role"][];
+  // An index ink (sectionInk in ./Drawing.tsx) in place of the family's.
+  ink?: number;
 };
 export type ObjectDescriptor = {
   atlas?: {
@@ -256,10 +258,21 @@ export type ObjectDescriptor = {
   reconcile?: (c: Config) => Config;
   choicesFirst?: boolean;
   choices?: {
-    key: "obstacle" | "family" | "path" | "sampling" | "view" | "sheet";
+    key:
+      "obstacle" | "family" | "path" | "sampling" | "view" | "sheet" | "degree";
     label: string;
-    help: Help<string>;
-    values: { value: string; label: string }[];
+    help: Help<string> | ((c: Config) => Help<string>);
+    // The options, which may depend on the study (read them with
+    // choiceOptions in ./DescriptorControls.tsx).
+    values:
+      | { value: string; label: string }[]
+      | ((c: Config) => { value: string; label: string }[]);
+    // A choice stored other than as its option's text in its key, such as
+    // a number, or in more than one field: how to read and apply it. The
+    // notebook applies set only after pending numeric evaluations land, so
+    // it may compute from those fields.
+    get?: (c: Config) => string;
+    set?: (c: Config, value: string) => Config;
     visible?: (c: Config) => boolean;
     // Shown after the count fields, with the numeric fields placed there.
     after?: "counts";
@@ -541,14 +554,73 @@ function pairEnterMode(spreadMax: number, sliceMax: number, spread: number) {
           }
         : { ...c, mode };
 }
-// Which square-root journey a study draws: the origin circle, or a
-// translated one that encloses or misses the branch point z = 0.
-const rootCase = (c: Config): "origin" | "encloses" | "misses" => {
+// The root journey's degree n: 2, the square root, when absent.
+export const rootDegree = (c: Config) => c.root?.degree ?? 2;
+const superscripts = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+const superscript = (m: number) =>
+  [...String(m)].map((d) => superscripts[+d]).join("");
+// ⁿ√ as one sign where there is one, and ω^m, ω = e^{2πi/n}.
+const radical = (n: number) =>
+  n === 2 ? "√" : n === 3 ? "∛" : n === 4 ? "∜" : `${superscript(n)}√`;
+const omega = (m: number) =>
+  m === 0 ? "" : m === 1 ? "ω" : `ω${superscript(m)}`;
+const circuitWords = ["", "One", "Two", "Three", "Four", "Five", "Six"];
+// The initial sheet's index j, w(0) = ω^j ⁿ√z(0): the turn b, and half a
+// turn more for the minus sign, which names a root only at even degree.
+export const rootSheet = (c: Config) => {
+  const n = rootDegree(c);
+  const { branch = 0, sheet } = c.root!;
+  return (branch + (sheet === "minus" ? n / 2 : 0)) % n;
+};
+// The root with sheet j at degree n, written as links write it: the sign
+// alone for the square root, as before higher roots; the turn otherwise.
+function withRootSheet(root: Root, n: number, j: number): Root {
+  const { branch: _, ...rest } = root;
+  if (n === 2) return { ...rest, sheet: j === 1 ? "minus" : "plus" };
+  return { ...rest, sheet: "plus", ...(j ? { branch: j } : {}) };
+}
+// A new degree scales both endpoints by n′/n, so a whole journey stays
+// whole and a partial one keeps its share, with exact ends kept exact. The
+// initial sheet is kept while it is one of the n′ roots, and otherwise is
+// the principal root.
+function withRootDegree(c: Config, next: number): Config {
+  const n = rootDegree(c);
+  if (next === n) return c;
+  const scale = (t: number) =>
+    Math.abs(t) <= 1e-12
+      ? 0
+      : Math.abs(t - 2 * Math.PI * n) <= 1e-12
+        ? 2 * Math.PI * next
+        : (t * next) / n;
+  const j = rootSheet(c);
+  const { degree: _, ...rest } = c.root!;
+  const root = withRootSheet(
+    {
+      ...rest,
+      ...(next === 2 ? {} : { degree: next }),
+      from: scale(c.root!.from),
+      to: scale(c.root!.to),
+    },
+    next,
+    Number.isInteger(j) && j < next ? j : 0,
+  );
+  return { ...c, root };
+}
+// Which root journey a study draws: for the square root, the origin
+// circle, or a translated one that encloses or misses the branch point
+// z = 0; for a higher root, whether the sheets trade places or not.
+const rootCase = (
+  c: Config,
+): "origin" | "encloses" | "misses" | "cycle" | "fixed" => {
   const k = c.root?.offset ?? 0;
+  if (rootDegree(c) !== 2) return k < 1 ? "cycle" : "fixed";
   return k === 0 ? "origin" : k < 1 ? "encloses" : "misses";
 };
+const rootMisses = (c: Config) => (c.root?.offset ?? 0) > 1;
 const rootFormula =
   "z = r e^{iφ}(k + e^{it}),   c = k r e^{iφ},   w² = z,   |w² − c| = r,   0 ≤ t ≤ 4π";
+const higherRootFormula =
+  "z = r e^{iφ}(k + e^{it}),   c = k r e^{iφ},   wⁿ = z,   |wⁿ − c| = r,   ω = e^{2πi/n},   0 ≤ t ≤ 2πn";
 const rootExplanations: Record<ReturnType<typeof rootCase>, Explanation> = {
   origin: [
     "The second time around",
@@ -565,7 +637,51 @@ const rootExplanations: Record<ReturnType<typeof rootCase>, Explanation> = {
     "The circle misses the branch point z = 0, so z winds about it zero times, and w comes home after a single circuit: the second retraces the first in every view. w keeps to one of two Cassini ovals, |w − √c||w + √c| = r, about +√c or −√c; the other sheet's oval is never visited. Where the circle crosses the principal cut, only the ±√z label changes.",
     rootFormula,
   ],
+  cycle: [
+    "Roots that trade places",
+    "z winds once about the branch point z = 0 each circuit, and its n-th root w moves on to the next of the n roots, turned by ω = e^{2πi/n}: the n sheets trade places in a cycle, and only after n circuits is w home. In the w plane the circuits join into one loop, |wⁿ − c| = r, each circuit one stretch of it; in four dimensions, one closed curve. The principal cut changes only the ωᵐ ⁿ√z label.",
+    higherRootFormula,
+  ],
+  fixed: [
+    "Roots that never trade",
+    "The circle misses the branch point z = 0, so z winds about it zero times, and w comes home after every circuit: the n circuits retrace one loop in every view. |wⁿ − c| = r has n separate loops, one about each n-th root of c, and w keeps to the one it starts on; the other n − 1 are never visited. Where the circle crosses the principal cut, only the ωᵐ ⁿ√z label changes.",
+    higherRootFormula,
+  ],
 };
+
+type Choice = NonNullable<ObjectDescriptor["choices"]>[number];
+
+// The choice's options for this study.
+export const choiceOptions = (config: Config, choice: Choice) =>
+  typeof choice.values === "function" ? choice.values(config) : choice.values;
+
+// The choice's help for this study.
+export const choiceHelp = (config: Config, choice: Choice): Help<string> =>
+  typeof choice.help === "function" ? choice.help(config) : choice.help;
+
+// The choice's current option: the study's value, or the first option for
+// a study that has never set it.
+export function choiceValue(config: Config, choice: Choice): string {
+  if (choice.get) return choice.get(config);
+  const key = objects[config.object].parameterKey!;
+  return (
+    (config[key] as unknown as Record<string, string | undefined>)[
+      choice.key
+    ] ?? choiceOptions(config, choice)[0].value
+  );
+}
+
+// The study with an option chosen, as the notebook's control applies it
+// before the descriptor reconciles the rest.
+export function applyChoice(
+  config: Config,
+  choice: Choice,
+  value: string,
+): Config {
+  if (choice.set) return choice.set(config, value);
+  const key = objects[config.object].parameterKey!;
+  return { ...config, [key]: { ...config[key], [choice.key]: value } };
+}
 
 export const objects: Record<Object4, ObjectDescriptor> = {
   tesseract: {
@@ -1965,10 +2081,10 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       samples: { 3: 256, 5: 128 },
       points: rootAtlasPoints,
     },
-    name: "Square-root journey",
-    noun: "square-root journey",
+    name: "Root journey",
+    noun: "root journey",
     about:
-      "Not a solid but a journey. A point circles a loop twice, around zero or past it, and its square root follows smoothly. Around zero the root needs both circuits to come home; past it, one suffices. The pair of numbers, four coordinates in all, traces a closed curve in four dimensions.",
+      "Not a solid but a journey. A point circles a loop, around zero or past it, and its square root, or a higher root, follows smoothly. Around zero an n-th root needs n circuits to come home; past it, one suffices. The pair of numbers, four coordinates in all, traces a closed curve in four dimensions.",
     controls: "root",
     playbackEngines: 1,
     parameterKey: "root",
@@ -1976,7 +2092,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     modeLabels: { paired: "Source, value and lift" },
     viewAbout: {
       paired:
-        "Three linked pictures: the point z circling its loop, its square root w, and the pair (z, w) as one path in four dimensions, turned and with its fourth coordinate dropped. That path shows whether two circuits are needed.",
+        "Three linked pictures: the point z circling its loop, its root w, and the pair (z, w) as one path in four dimensions, turned and with its fourth coordinate dropped. That path shows how many circuits are needed.",
     },
     // The 4D curve is the result; its companion is one flat diagram that
     // holds the z and w planes side by side.
@@ -1995,10 +2111,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       "Flat z and w planes · the 4D path turned, then its fourth coordinate dropped",
     constructionNumber: "03",
     radiusFields: [],
-    // |q|² = |z|² + |z| ≤ R² + R, with R = max |z| = r(1 + k).
+    // |q|² = |z|² + |z|^{2/n} ≤ R² + R^{2/n}, with R = max |z| = r(1 + k).
     support: (c) => {
       const big = c.root!.radius * (1 + (c.root!.offset ?? 0));
-      return Math.sqrt(big * big + big);
+      const n = rootDegree(c);
+      return Math.sqrt(big * big + (n === 2 ? big : big ** (2 / n)));
     },
     familyPassage: false,
     passageHelp: "",
@@ -2006,31 +2123,88 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     spreadHelp: "",
     sectionDetail: () => "",
     legend: "threads",
-    legendItems: (c) => [
-      { label: "First circuit, 0 ≤ t ≤ 2π", family: 0 },
-      { label: "Second circuit, 2π ≤ t ≤ 4π (dashed)", family: 2 },
-      {
-        label:
-          rootCase(c) === "misses"
-            ? "Axes, branch point, principal cut and the other root's loop (dashed)"
-            : "Axes, branch point and principal cut",
-        family: 3,
-      },
-    ],
+    legendItems: (c) => {
+      const n = rootDegree(c);
+      if (n !== 2)
+        return [
+          ...Array.from({ length: n }, (_, i) => ({
+            label: `Circuit ${i + 1}`,
+            family: 0,
+            roles: ["circuit", "trace"] as Result["paths"][number]["role"][],
+            ink: i,
+          })),
+          {
+            label: rootMisses(c)
+              ? "Axes, branch point, principal cut and the other roots' loops (dashed)"
+              : "Axes, branch point and principal cut",
+            family: 3,
+          },
+        ];
+      return [
+        { label: "First circuit, 0 ≤ t ≤ 2π", family: 0 },
+        { label: "Second circuit, 2π ≤ t ≤ 4π (dashed)", family: 2 },
+        {
+          label:
+            rootCase(c) === "misses"
+              ? "Axes, branch point, principal cut and the other root's loop (dashed)"
+              : "Axes, branch point and principal cut",
+          family: 3,
+        },
+      ];
+    },
     movingLegend: () => "Moving point; the ring marks the start",
     choicesFirst: true,
     choices: [
       {
+        key: "degree",
+        label: "Degree n",
+        help: tiered(
+          "Which root w follows: wⁿ = z, from the square root (2) to 6.",
+          "The journey is n circuits, 0 ≤ t ≤ 2πn. A new degree scales Trace start and Trace end with it, so a whole journey stays whole, and keeps the initial sheet when it is one of the n roots.",
+        ),
+        values: [2, 3, 4, 5, 6].map((n) => ({
+          value: String(n),
+          label: `w${superscript(n)} = z${n === 2 ? " (square root)" : n === 3 ? " (cube root)" : ""}`,
+        })),
+        get: (c) => String(rootDegree(c)),
+        set: (c, value) => withRootDegree(c, Number(value)),
+      },
+      {
         key: "sheet",
         label: "Initial sheet",
-        help: tiered(
-          "Which square root w starts on, at t = 0.",
-          "+√z(0) starts on the principal root; −√z(0) on the other. Either returns after two circuits. Around a circle that misses 0, they trace different ovals.",
-        ),
-        values: [
-          { value: "plus", label: "w(0) = +√z(0)" },
-          { value: "minus", label: "w(0) = −√z(0)" },
-        ],
+        help: (c) =>
+          rootDegree(c) === 2
+            ? tiered(
+                "Which square root w starts on, at t = 0.",
+                "+√z(0) starts on the principal root; −√z(0) on the other. Either returns after two circuits. Around a circle that misses 0, they trace different ovals.",
+              )
+            : tiered(
+                "Which of the n roots w starts on, at t = 0; ω = e^{2πi/n}.",
+                "ⁿ√z(0) is the principal root, with argument Arg z(0)/n; each power of ω turns it a further 1/n turn. Every sheet returns after n circuits. Around a circle that misses 0, each traces its own loop.",
+              ),
+        values: (c) => {
+          const n = rootDegree(c);
+          return n === 2
+            ? [
+                { value: "plus", label: "w(0) = +√z(0)" },
+                { value: "minus", label: "w(0) = −√z(0)" },
+              ]
+            : Array.from({ length: n }, (_, j) => ({
+                value: String(j),
+                label: `w(0) = ${j ? `${omega(j)} ` : ""}${radical(n)}z(0)${j === 0 ? " (principal)" : ""}`,
+              }));
+        },
+        get: (c) =>
+          rootDegree(c) === 2
+            ? rootSheet(c) === 1
+              ? "minus"
+              : "plus"
+            : String(rootSheet(c)),
+        set: (c, value) => {
+          const n = rootDegree(c);
+          const j = n === 2 ? (value === "minus" ? 1 : 0) : Number(value);
+          return { ...c, root: withRootSheet(c.root!, n, j) };
+        },
       },
     ],
     numericFields: [
@@ -2054,28 +2228,35 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         key: "direction",
         label: "Center direction",
-        help: tiered(
-          "Center's angle from the positive real axis: radians, −2π to 2π.",
-          "Turns the whole circle about 0, its start included; w turns by half as much. Only where the circle crosses the principal cut changes.",
-        ),
+        help: (c) =>
+          tiered(
+            "Center's angle from the positive real axis: radians, −2π to 2π.",
+            `Turns the whole circle about 0, its start included; w turns by ${rootDegree(c) === 2 ? "half" : `1/${rootDegree(c)}`} as much. Only where the circle crosses the principal cut changes.`,
+          ),
         fallback: 0,
       },
       {
         key: "from",
         label: "Trace start",
-        help: tiered(
-          "Radians, 0 to 4π (4*pi); t where the trace begins.",
-          "A start after the end traverses in reverse. Values within rounding of 0 or 4π are those ends.",
-        ),
+        help: (c) => {
+          const end = 2 * rootDegree(c);
+          return tiered(
+            `Radians, 0 to ${end}π (${end}*pi); t where the trace begins.`,
+            `A start after the end traverses in reverse. Values within rounding of 0 or ${end}π are those ends.`,
+          );
+        },
         endpoint: true,
       },
       {
         key: "to",
         label: "Trace end",
-        help: tiered(
-          "Radians, 0 to 4π (4*pi); t where the trace ends.",
-          "Only a whole 4π journey returns every view, so only it can loop.",
-        ),
+        help: (c) => {
+          const end = 2 * rootDegree(c);
+          return tiered(
+            `Radians, 0 to ${end}π (${end}*pi); t where the trace ends.`,
+            `Only a whole ${end}π journey returns every view, so only it can loop.`,
+          );
+        },
         endpoint: true,
       },
     ],
@@ -2083,16 +2264,19 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     countFields: () => [
       { key: "samples", label: "Path intervals", min: 64, max: 4096 },
     ],
-    countNote:
-      "Intervals divide 0 ≤ t ≤ 4π, split further near the branch point. Exact points are added at 2π and the moving point.",
+    countNote: (c) =>
+      rootDegree(c) === 2
+        ? "Intervals divide 0 ≤ t ≤ 4π, split further near the branch point. Exact points are added at 2π and the moving point."
+        : `Intervals divide 0 ≤ t ≤ ${2 * rootDegree(c)}π, split further near the branch point. Exact points are added where circuits meet and at the moving point.`,
     layerOptions: (c) => [
       { key: "edges", label: "Circuits, trace and points" },
       {
         key: "guides",
-        label:
-          rootCase(c) === "misses"
+        label: !rootMisses(c)
+          ? "Axes, branch point and principal cut"
+          : rootDegree(c) === 2
             ? "Axes, branch point, principal cut and the other root's loop"
-            : "Axes, branch point and principal cut",
+            : "Axes, branch point, principal cut and the other roots' loops",
       },
     ],
     animationFramingHelp: () =>
@@ -2101,13 +2285,15 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       "1: z and w planes · drag to pan · 2: 4D path · drag to orbit · shift-drag to pan · each view zooms independently",
     // A summary that stays the same through the motion; the circuit is
     // among the readouts.
-    diagnostics: (r) =>
-      r.root
-        ? `Two circuits of z, ${formatCount(r.root.intervals)} intervals over 0 ≤ t ≤ 4π${r.root.refined > r.root.intervals ? `, ${formatCount(r.root.refined)} after refinement near the branch point` : ""}. The bright trace is the last circuit behind the moving point.`
-        : "",
+    diagnostics: (r) => {
+      if (!r.root) return "";
+      const n = r.root.degree ?? 2;
+      return `${circuitWords[n]} circuits of z, ${formatCount(r.root.intervals)} intervals over 0 ≤ t ≤ ${2 * n}π${r.root.refined > r.root.intervals ? `, ${formatCount(r.root.refined)} after refinement near the branch point` : ""}. The bright trace is the last circuit behind the moving point.`;
+    },
     readouts: (r) => {
       const d = r.root;
       if (!d) return [];
+      const degree = d.degree ?? 2;
       // z and w move within the norm bound: live columns, and an axis
       // crossed at a quarter turn reads zero.
       const n = (x: number) =>
@@ -2118,18 +2304,20 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       return [
         {
           label: "Parameter t",
-          value: liveReadout(d.parameter, [0, 4 * Math.PI]),
+          value: liveReadout(d.parameter, [0, 2 * degree * Math.PI]),
         },
         {
           label: "Turns of z",
-          value: liveReadout(d.parameter / (2 * Math.PI), [0, 2]),
+          value: liveReadout(d.parameter / (2 * Math.PI), [0, degree]),
         },
-        { label: "Circuit", value: `${d.circuit} of 2` },
+        { label: "Circuit", value: `${d.circuit} of ${degree}` },
         {
           label: "Winding about 0",
           value:
             d.winding === 1
-              ? "1: w changes sheet each circuit"
+              ? degree === 2
+                ? "1: w changes sheet each circuit"
+                : "1: w moves to the next root"
               : "0: w returns each circuit",
         },
         { label: "Re z", value: n(d.z[0]) },
@@ -2138,11 +2326,21 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         { label: "Im w", value: n(d.w[1]) },
         {
           label: "w as a root of z",
-          value: d.principal > 0 ? "+√z (principal)" : "−√z",
+          value:
+            degree === 2
+              ? d.principal > 0
+                ? "+√z (principal)"
+                : "−√z"
+              : d.index
+                ? `${omega(d.index)} ${radical(degree)}z`
+                : `${radical(degree)}z (principal)`,
         },
         { label: "Closest |z|", value: formatNumber(d.closest) },
         // A rounding-sized bound: two figures say all it means.
-        { label: "Largest |w² − z|", value: formatNumber(d.residual, 2) },
+        {
+          label: `Largest |w${superscript(degree)} − z|`,
+          value: formatNumber(d.residual, 2),
+        },
         // Constant on the origin circle; otherwise it moves with the point.
         {
           label: "Norm |(z, w)|",
@@ -2154,13 +2352,17 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       ];
     },
     colorNote: (c) =>
-      rootCase(c) === "misses"
-        ? "Each circuit has one ink in all three views; the second is dashed. Around a circle that misses 0 the second retraces the first in every view. The bright trace is the last circuit behind the moving point."
-        : "Each circuit has one ink in all three views; the second is dashed. In the z plane they coincide; w and the 4D view separate them. The bright trace is the last circuit behind the moving point.",
+      rootCase(c) === "cycle"
+        ? "Each circuit has its own ink in all three views. In the z plane they coincide; in the w plane and the 4D view each carries w on to the next root, and together they close one loop. The bright trace is the last circuit behind the moving point."
+        : rootCase(c) === "fixed"
+          ? "Each circuit has its own ink in all three views. Around a circle that misses 0 every circuit retraces the first in every view. The bright trace is the last circuit behind the moving point."
+          : rootCase(c) === "misses"
+            ? "Each circuit has one ink in all three views; the second is dashed. Around a circle that misses 0 the second retraces the first in every view. The bright trace is the last circuit behind the moving point."
+            : "Each circuit has one ink in all three views; the second is dashed. In the z plane they coincide; w and the 4D view separate them. The bright trace is the last circuit behind the moving point.",
     explanation: (c) => rootExplanations[rootCase(c)],
     title: (c) => `Tangent Garden — ${rootExplanations[rootCase(c)][0]}`,
     limitations:
-      "one circular source path: radius 0.25 to 4, center offset 0 to 3 radii and at least 0.05 radii from 1; at most 4,096 parameter intervals, refined near the branch point; orthogonal projection after a declared 4D rotation; no surface or general path continuation",
+      "one circular source path: radius 0.25 to 4, center offset 0 to 3 radii and at least 0.05 radii from 1; roots of degree 2 to 6; at most 4,096 parameter intervals over the journey, refined near the branch point; orthogonal projection after a declared 4D rotation; no surface or general path continuation",
     defaults: () => ({
       ...structuredClone(defaultConfig),
       object: "root",
@@ -2170,13 +2372,13 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       root: { radius: 1.6, sheet: "plus", from: 0, to: 4 * Math.PI },
     }),
     motion: "trace",
-    motionChoices: [
+    motionChoices: (c) => [
       {
         value: "trace",
         label: "Follow the root",
         help: tiered(
           "Moves t from Trace start to Trace end, carrying z, w and the 4D point.",
-          "The trace is the last circuit behind the point. After one circuit z returns, and w only if the circle misses 0; a whole 4π journey returns every view, so it can loop.",
+          `The trace is the last circuit behind the point. After one circuit z returns, and w only if the circle misses 0; a whole ${2 * rootDegree(c)}π journey returns every view, so it can loop.`,
         ),
         loops: true,
       },

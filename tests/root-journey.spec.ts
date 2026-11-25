@@ -33,6 +33,8 @@ const open = async (p: Page, label = name) => {
 };
 const missing = "A loop that misses zero";
 const enclosing = "Around an off-center branch point";
+const five = "Five roots trading places";
+const petals = "Five petals, one visited";
 // A marker's center in its pane's 1000 × 760 units.
 const at = async (p: Page, id: string) => {
   const c = p.locator(`[data-marker="${id}"]`);
@@ -380,8 +382,16 @@ test("the still and a link carry both panes and cameras", async ({
   expect(reopened.views).toEqual(live.views);
 });
 
-for (const study of [name, missing])
-  test(`${study}: a decoded looping movie matches direct seeks at 0, 2π and 4π`, async ({
+// Each movie is 2 s at 15 fps: 30 frames, the repeated last left out. The
+// square roots are checked at 0, 2π and 4π (frames 0, 15 and 0 again); the
+// fifth root at 0, its first and third circuit boundaries, 2π and 6π
+// (frames 6 and 18), and 10π.
+for (const [study, seeks] of [
+  [name, [0, 0.5, 1]],
+  [missing, [0, 0.5, 1]],
+  [five, [0, 0.2, 0.6, 1]],
+] as const)
+  test(`${study}: a decoded looping movie matches direct seeks at its start, circuit boundaries and end`, async ({
     page,
   }) => {
     test.slow();
@@ -391,7 +401,7 @@ for (const study of [name, missing])
       .fill("2");
     await playThenPause(page);
     const references: number[][] = [];
-    for (const s of [0, 0.5, 1]) {
+    for (const s of seeks) {
       await scrub(page, s);
       references.push(await raster(page, 1000, 380));
     }
@@ -422,11 +432,9 @@ for (const study of [name, missing])
     expect(
       (await decodeVideo(page, await readFile(path))).duration,
     ).toBeCloseTo(2, 3);
-    for (const [index, reference] of [
-      [0, references[0]],
-      [15, references[1]],
-      [0, references[2]],
-    ] as const) {
+    for (const [index, reference] of seeks.map(
+      (s, i) => [Math.round(s * 30) % 30, references[i]] as const,
+    )) {
       const d = frameDifference(path, 1000, 380, index, reference);
       if (d) {
         expect(d.meanDifference).toBeLessThan(6);
@@ -826,27 +834,306 @@ test("the other root's loop takes the guide ink in drawing, legend and export", 
 test("the atlas reservation covers every refined journey's returned points", async ({
   page,
 }) => {
+  test.slow();
   await open(page, enclosing);
-  for (const [offset, samples] of [
-    ["0.95", "4096"],
-    ["1.05", "4096"],
-    ["0.6", "64"],
-    ["3", "1000"],
-    ["0", "4096"],
-  ]) {
-    await page
-      .getByRole("textbox", { name: "Center offset", exact: true })
-      .fill(offset);
-    await page
-      .getByRole("spinbutton", { name: "Path intervals" })
-      .fill(samples);
-    await settle(page);
-    const m = await meta(page);
-    expect(m.config.root.offset).toBe(Number(offset));
-    expect(m.config.samples).toBe(Number(samples));
-    expect(m.emittedPoints).toBeGreaterThan(0);
-    expect(m.emittedPoints, `${offset} at ${samples}`).toBeLessThanOrEqual(
-      rootAtlasPoints(m.config),
+  for (const degree of ["2", "3", "6"])
+    for (const [offset, samples] of [
+      ["0.95", "4096"],
+      ["1.05", "4096"],
+      ["0.6", "64"],
+      ["3", "1000"],
+      ["0", "4096"],
+    ]) {
+      await page
+        .getByRole("combobox", { name: "Degree n", exact: true })
+        .selectOption(degree);
+      await page
+        .getByRole("textbox", { name: "Center offset", exact: true })
+        .fill(offset);
+      await page
+        .getByRole("spinbutton", { name: "Path intervals" })
+        .fill(samples);
+      await settle(page);
+      const m = await meta(page);
+      expect(m.config.root.degree ?? 2).toBe(Number(degree));
+      expect(m.config.root.offset).toBe(Number(offset));
+      expect(m.config.samples).toBe(Number(samples));
+      expect(m.emittedPoints).toBeGreaterThan(0);
+      expect(
+        m.emittedPoints,
+        `degree ${degree}, ${offset} at ${samples}`,
+      ).toBeLessThanOrEqual(rootAtlasPoints(m.config));
+    }
+});
+
+// Roots of degree n: w⁵ = z over five circuits, 0 ≤ t ≤ 10π.
+// A drawn marker's position about its plane's origin, as an angle and a
+// length in the pane's units (y down).
+const polar = async (p: Page, plane: "source" | "value") => {
+  const [x, y] = await at(p, `root/${plane}/current`);
+  const [ox, oy] = await at(p, `root/${plane}/branch-point`);
+  return [Math.atan2(-(y - oy), x - ox), Math.hypot(x - ox, y - oy)];
+};
+const turn = (a: number, b: number) => {
+  const d = (((b - a) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI);
+  return d - Math.PI;
+};
+
+test("five roots trade places: each circuit moves w to the next root and only the fifth brings it home", async ({
+  page,
+}) => {
+  await open(page, five);
+  await playThenPause(page);
+  await scrub(page, 0);
+  const first = await drawing(page);
+  const [z0, zr] = await polar(page, "source");
+  const [w0, wr] = await polar(page, "value");
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "1: w moves to the next root",
+  );
+  await expect(readout(page, "w as a root of z")).toHaveText("⁵√z (principal)");
+  for (let k = 1; k <= 5; k++) {
+    await scrub(page, k / 5);
+    // z is home after every circuit; w has turned by k fifths of a turn
+    // about 0, at the same distance, and is home only after the fifth.
+    const [z, r] = await polar(page, "source");
+    const [w, s] = await polar(page, "value");
+    expect(Math.abs(turn(z0, z)), `z after ${k}`).toBeLessThan(0.02);
+    expect(Math.abs(r - zr)).toBeLessThan(0.5);
+    expect(Math.abs(s - wr)).toBeLessThan(0.5);
+    const want = turn(0, (2 * Math.PI * k) / 5);
+    expect(Math.abs(turn(want, turn(w0, w))), `w after ${k}`).toBeLessThan(
+      0.02,
+    );
+    await expect(readout(page, "Circuit")).toHaveText(
+      `${k === 5 ? 1 : k + 1} of 5`,
     );
   }
+  // The whole 10π journey ends on the drawing it starts with.
+  expect(await drawing(page)).toBe(first);
+  // Each circuit has one path in each view, and five distinct inks.
+  const inks = new Set<string>();
+  for (let k = 1; k <= 5; k++) {
+    const stroke = await page
+      .locator(`[data-source="root/lifted/circuit/${k}"]`)
+      .getAttribute("stroke");
+    expect(
+      await page
+        .locator(`[data-source="root/value/circuit/${k}"]`)
+        .getAttribute("stroke"),
+    ).toBe(stroke);
+    inks.add(stroke!);
+  }
+  expect(inks.size).toBe(5);
+  await expect(
+    page.locator('[data-source="root/lifted/circuit/6"]'),
+  ).toHaveCount(0);
+  await expect(page.locator(".tesseract-legend")).toContainText("Circuit 5");
+});
+
+test("a fifth root past zero keeps to one petal, home after every circuit, beside the other four", async ({
+  page,
+}) => {
+  await open(page, petals);
+  await playThenPause(page);
+  await scrub(page, 0);
+  const [w0] = await polar(page, "value");
+  for (const k of [1, 3]) {
+    await scrub(page, k / 5);
+    const [w] = await polar(page, "value");
+    expect(Math.abs(turn(w0, w)), `w after ${k}`).toBeLessThan(0.02);
+  }
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "0: w returns each circuit",
+  );
+  for (let m = 1; m < 5; m++)
+    await expect(
+      page.locator(`[data-source="root/value/other-sheet/${m}"]`),
+    ).toHaveAttribute("stroke-dasharray", /\d/);
+  await expect(
+    page.locator('[data-source="root/value/other-sheet/5"]'),
+  ).toHaveCount(0);
+});
+
+test("the degree scales the journey's endpoints and keeps the sheet while it is a root; a link carries both", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page);
+  const degree = page.getByRole("combobox", { name: "Degree n", exact: true });
+  const sheet = page.getByRole("combobox", {
+    name: "Initial sheet",
+    exact: true,
+  });
+  const root = async () => (await meta(page)).config.root;
+  await sheet.selectOption("minus");
+  await degree.selectOption("5");
+  await settle(page);
+  // −√z(0) was the square root's second sheet, ω: the fifth root keeps it.
+  await expect(sheet).toHaveValue("1");
+  await expect(sheet.locator("option:checked")).toHaveText("w(0) = ω ⁵√z(0)");
+  await expect(sheet.locator("option")).toHaveCount(5);
+  expect(await root()).toMatchObject({
+    degree: 5,
+    sheet: "plus",
+    branch: 1,
+    from: 0,
+    to: 10 * Math.PI,
+  });
+  await degree.selectOption("3");
+  await settle(page);
+  // The drawn start turns a third of a turn about 0 from sheet ω to ω².
+  const [before] = await polar(page, "value");
+  await sheet.selectOption("2");
+  await settle(page);
+  expect(await root()).toMatchObject({ degree: 3, branch: 2, to: 6 * Math.PI });
+  const [after] = await polar(page, "value");
+  expect(Math.abs(turn(turn(before, after), (2 * Math.PI) / 3))).toBeLessThan(
+    0.02,
+  );
+  await expect(readout(page, "Circuit")).toHaveText("1 of 3");
+  // Back to the square root: ω² is not one of its sheets, so w starts on
+  // the principal root, and the study is written as square roots were.
+  await degree.selectOption("2");
+  await settle(page);
+  const square = await root();
+  expect(square).toMatchObject({ sheet: "plus", from: 0, to: 4 * Math.PI });
+  expect("degree" in square || "branch" in square).toBe(false);
+  await expect(sheet).toHaveValue("plus");
+  // A partial journey keeps its share of the whole.
+  await page.getByText("Journey endpoints", { exact: true }).click();
+  await page
+    .getByRole("textbox", { name: "Trace start", exact: true })
+    .fill("1");
+  await page
+    .getByRole("textbox", { name: "Trace end", exact: true })
+    .fill("2*pi");
+  await settle(page);
+  await degree.selectOption("4");
+  await settle(page);
+  expect(await root()).toMatchObject({ degree: 4, from: 2, to: 4 * Math.PI });
+  await sheet.selectOption("3");
+  await settle(page);
+  const live = await meta(page);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const url = await page.evaluate(() => navigator.clipboard.readText());
+  await page.goto("about:blank");
+  await page.goto(url.replace(/^https?:\/\/[^/]+/, ""));
+  await settle(page);
+  expect((await meta(page)).config).toEqual(live.config);
+  await expect(sheet).toHaveValue("3");
+  await expect(degree).toHaveValue("4");
+});
+
+// The degree scales the endpoints from the study, so an endpoint the parser
+// is still resolving lands first and is scaled with the other.
+test("a new degree scales an endpoint whose evaluation is still pending", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const Native = window.Worker;
+    window.Worker = class extends Native {
+      postMessage(data: any) {
+        if ((window as any).holdScalar && data.action === "scalars") {
+          (window as any).pendingScalar = true;
+          setTimeout(() => super.postMessage(data), 500);
+        } else super.postMessage(data);
+      }
+    } as any;
+  });
+  await open(page);
+  const degree = page.getByRole("combobox", { name: "Degree n", exact: true });
+  await degree.selectOption("3");
+  await settle(page);
+  await page.getByText("Journey endpoints", { exact: true }).click();
+  await page.evaluate(() => ((window as any).holdScalar = true));
+  // Half of the cube root's 6π journey, still resolving when the degree
+  // changes: the sixth root's half is 6π.
+  await page
+    .getByRole("textbox", { name: "Trace end", exact: true })
+    .fill("3*pi");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).pendingScalar))
+    .toBe(true);
+  await degree.selectOption("6");
+  await page.waitForTimeout(700);
+  await settle(page);
+  expect((await meta(page)).config.root).toMatchObject({
+    degree: 6,
+    from: 0,
+    to: 6 * Math.PI,
+  });
+  // An example chosen while the degree waits replaces the study whole.
+  await page.evaluate(() => ((window as any).pendingScalar = false));
+  await page
+    .getByRole("textbox", { name: "Trace end", exact: true })
+    .fill("4*pi");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).pendingScalar))
+    .toBe(true);
+  await degree.selectOption("4");
+  await choosePreset(page, { label: five });
+  await settle(page);
+  const opened = (await meta(page)).config;
+  await page.waitForTimeout(700);
+  await settle(page);
+  expect((await meta(page)).config).toEqual(opened);
+  expect(opened.root).toMatchObject({ degree: 5, to: 10 * Math.PI });
+});
+
+test("a higher root's circuit inks follow the color scheme in drawing, legend and export", async ({
+  page,
+}) => {
+  await open(page, five);
+  const stroke = (source: string) =>
+    page.locator(`[data-source="${source}"]`).getAttribute("stroke");
+  const css = (c: string) =>
+    page.evaluate((c) => {
+      const d = document.createElement("i");
+      d.style.color = c;
+      document.body.append(d);
+      const v = getComputedStyle(d).color;
+      d.remove();
+      return v;
+    }, c);
+  const swatch = (text: string) =>
+    page
+      .locator(".tesseract-legend span, .tesseract-legend li")
+      .filter({ hasText: text })
+      .locator("i")
+      .evaluate((i) => getComputedStyle(i).backgroundColor);
+  const firsts = new Set<string>();
+  for (const scheme of ["default", "cobalt", "plum", "forest"]) {
+    if (scheme !== "default") {
+      await chooseColorScheme(page, scheme);
+      await settle(page);
+    }
+    const circuits: string[] = [];
+    for (let k = 1; k <= 5; k++) {
+      const ink = (await stroke(`root/lifted/circuit/${k}`))!;
+      expect(await stroke(`root/source/circuit/${k}`)).toBe(ink);
+      expect(await swatch(`Circuit ${k}`)).toBe(await css(ink));
+      circuits.push(ink);
+    }
+    const guide = (await stroke("root/source/axis/re"))!;
+    const current = (await page
+      .locator('[data-marker="root/lifted/current"]')
+      .getAttribute("fill"))!;
+    // Seven distinct roles in every scheme: five circuits, the guides and
+    // the moving point.
+    expect(new Set([...circuits, guide, current]).size, scheme).toBe(7);
+    // The trace takes its circuit's ink: at t = 0 it is the fifth circuit.
+    expect(await stroke("root/lifted/trace/0")).toBe(circuits[4]);
+    firsts.add(circuits[0]);
+    if (scheme === "plum") {
+      const download = page.waitForEvent("download");
+      await exportImage(page, "SVG");
+      const svg = await readFile((await (await download).path())!, "utf8");
+      for (const ink of [...circuits, guide, current])
+        expect(svg).toContain(ink);
+    }
+  }
+  expect(firsts.size).toBe(4);
 });

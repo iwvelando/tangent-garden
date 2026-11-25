@@ -1,5 +1,5 @@
 import { sectionHue, type ColorScheme } from "../color-schemes";
-import { objects } from "./objects";
+import { objects, rootDegree } from "./objects";
 import { axisInks, plotPalette } from "../palette";
 import { svgStroke } from "../line-weight";
 import type { Config, Result, View, Layers, Vec3 } from "./types";
@@ -152,6 +152,9 @@ export function Drawing({
   const curved = descriptor.legend === "sections";
   // Latitude studies share the section key's colors, without its selection.
   const latitudes = descriptor.legend === "latitudes";
+  // A higher root's circuits, and their traces, take the index inks by
+  // circuit; the square root's keep the first and third.
+  const circuitInks = config.object === "root" && rootDegree(config) !== 2;
   const selected = Math.min(
     layers.selectedSection ?? 0,
     result.sections.length - 1,
@@ -400,14 +403,16 @@ export function Drawing({
                 ? movingInk(dark, scheme)
                 : curved || (latitudes && p.sectionId)
                   ? sectionInk(sectionIndex(p.sectionId), dark, scheme)
-                  : colors[p.family]
+                  : circuitInks && (p.role === "circuit" || p.role === "trace")
+                    ? sectionInk(Number(p.branch) - 1, dark, scheme)
+                    : colors[p.family]
             }
             strokeDasharray={
               p.role === "lift"
                 ? "0.1 7"
                 : p.role === "diagonal"
                   ? "5 6"
-                  : p.role === "circuit" && p.branch === "2"
+                  : p.role === "circuit" && p.branch === "2" && !circuitInks
                     ? "7 6"
                     : p.dashed
                       ? "7 5"

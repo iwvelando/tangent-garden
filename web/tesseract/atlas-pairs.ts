@@ -167,16 +167,22 @@ export function weaveAtlasPoints(c: Config): number {
     c.count * (c.weave!.family === "tori" ? 2 * n : n) * (s + 2) + 3 * (s + 1)
   );
 }
-// The origin circle's bound (engine4/root.go rootPoints). Refinement near
+// The origin circle's bound (engine4/root.go rootPoints), for degree d: N
+// intervals divide the d circuits, so a circuit or trace piece of length 2π
+// holds at most N/d + 4 points, and each view draws d circuits, a trace of
+// at most N/d + 6 points in two pieces, and three markers. Refinement near
 // the branch point splits each interval into at most p = ⌈1/|1 − k|⌉
-// parts, since |z| ≥ r|1 − k|, so a piece of a view meeting n/2 + 2
-// intervals holds at most (n/2 + 2)p + 2 points: counting n + 4 intervals
-// covers that. A circle that misses 0 adds the other sheet's loop, one
-// circuit in two views. The engine counts the exact total before
-// evaluating.
+// parts, since |z| ≥ r|1 − k|, so a piece meeting N/d + 2 intervals holds
+// at most (N/d + 2)p + 2 points: counting N + 2d intervals covers that. A
+// circle that misses 0 adds the other d − 1 sheets' loops, one circuit
+// each in two views. At d = 2 this is the square root's bound. The engine
+// counts the exact total before evaluating.
 export const rootAtlasPoints = (c: Config) => {
   const k = c.root?.offset ?? 0;
+  const d = c.root?.degree ?? 2;
   const parts = Math.max(1, Math.ceil(1 / Math.abs(1 - k)));
-  const n = parts === 1 ? c.samples : (c.samples + 4) * parts;
-  return 3 * ((3 * n) / 2 + 17) + 10 + (k > 1 ? 2 * (n / 2 + 4) : 0);
+  const n = parts === 1 ? c.samples : (c.samples + 2 * d) * parts;
+  return (
+    3 * (n + 4 * d + n / d + 9) + 10 + (k > 1 ? 2 * (d - 1) * (n / d + 4) : 0)
+  );
 };

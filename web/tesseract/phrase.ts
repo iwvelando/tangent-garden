@@ -250,12 +250,16 @@ export function constantText(v: number): string {
   return String(v);
 }
 // A starter end value: a quarter turn further for an angle, one turn of
-// the trace, the whole journey, and otherwise three quarters of the value
-// without a binary tail (contributing.md, Generated numeric defaults).
-function starterKey(t: TesseractTarget, start: number): string {
+// the trace, the whole journey of 2πn, and otherwise three quarters of the
+// value without a binary tail (contributing.md, Generated numeric
+// defaults).
+function starterKey(c: Config, t: TesseractTarget, start: number): string {
   if (isAngle(t)) return start === 0 ? "pi/2" : `${constantText(start)} + pi/2`;
   if (t === "weave.trace") return String(start + 1);
-  if (t === "root.t") return start < 2 * Math.PI ? "4*pi" : "0";
+  if (t === "root.t") {
+    const n = c.root!.degree ?? 2;
+    return start < n * Math.PI ? `${2 * n}*pi` : "0";
+  }
   return start === 0
     ? "0.5"
     : String(
@@ -279,7 +283,7 @@ export function defaultTesseractPhrase(
         name: "Move the parameter",
         duration: 4,
         pace: "ease",
-        key: starterKey(target, start),
+        key: starterKey(config, target, start),
       },
       { name: "Hold", duration: 1, pace: "ease" },
       { name: "Return", duration: 4, pace: "ease", key: constantText(start) },

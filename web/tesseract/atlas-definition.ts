@@ -1,7 +1,7 @@
 import { plainSheetValue, type SheetValue } from "../atlas-sheet-notes";
 // All object-specific words, formulas and active fields come from the same
 // descriptor used by the notebook. No parallel switch on object names.
-import { modeLabel, objects } from "./objects";
+import { choiceOptions, choiceValue, modeLabel, objects } from "./objects";
 import type { Config } from "./types";
 
 export function tesseractSheetDefinition(
@@ -28,8 +28,8 @@ export function tesseractSheetDefinition(
       .filter((f) => !f.visible || f.visible(c))
       .map((f) => {
         // An absent choice is its first option, as the notebook shows it.
-        const value = parameters?.[f.key] ?? f.values[0].value;
-        return `${f.label}: ${f.values.find((v) => v.value === value)?.label ?? String(value)}`;
+        const value = choiceValue(c, f);
+        return `${f.label}: ${choiceOptions(c, f).find((v) => v.value === value)?.label ?? String(value)}`;
       }),
     ...d.radiusFields.map((f) => `${f.label} = ${c[f.key]}`),
     ...(d.countFields?.(c) ?? []).map((f) => `${f.label} = ${c[f.key]}`),

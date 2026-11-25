@@ -1468,6 +1468,28 @@ test("fields a link predates take the notebook's defaults", async () => {
     (await readStudyLink(await writeStudyLink("4d", journey))).study,
   ).config.root!;
   assert.equal("offset" in before || "direction" in before, false);
+  // A higher root carries its degree and its sheet's turn; a link made
+  // before higher roots carries neither and opens the square root it drew.
+  const higher: TesseractStudy = {
+    ...translated,
+    config: {
+      ...translated.config,
+      root: {
+        ...translated.config.root!,
+        sheet: "plus",
+        degree: 5,
+        branch: 3,
+        to: 10 * Math.PI,
+      },
+    },
+  };
+  assert.deepEqual(
+    tesseractStudy(
+      (await readStudyLink(await writeStudyLink("4d", higher))).study,
+    ),
+    higher,
+  );
+  assert.equal("degree" in before || "branch" in before, false);
   const bareJourney = structuredClone(journey) as any;
   delete bareJourney.config.root;
   assert.deepEqual(
@@ -1482,6 +1504,10 @@ test("fields a link predates take the notebook's defaults", async () => {
     ["radius", "2"],
     ["offset", "1"],
     ["direction", true],
+    ["degree", 7],
+    ["degree", 1],
+    ["branch", 6],
+    ["branch", -1],
   ] as const) {
     const bad = structuredClone(journey) as any;
     bad.config.root[key] = value;

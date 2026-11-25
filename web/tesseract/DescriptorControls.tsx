@@ -3,21 +3,15 @@
 // options and selection semantics from objects.ts.
 import { Field } from "../Field";
 import type { Help } from "../help";
-import { objects, type ObjectDescriptor } from "./objects";
-import type { Config } from "./types";
+import {
+  choiceOptions,
+  choiceValue,
+  objects,
+  type ObjectDescriptor,
+} from "./objects";
 
 type Choice = NonNullable<ObjectDescriptor["choices"]>[number];
-
-// The choice's current option: the study's value, or the first option for
-// a study that has never set it.
-export function choiceValue(config: Config, choice: Choice): string {
-  const key = objects[config.object].parameterKey!;
-  return (
-    (config[key] as unknown as Record<string, string | undefined>)[
-      choice.key
-    ] ?? choice.values[0].value
-  );
-}
+import type { Config } from "./types";
 
 export function ChoiceField({
   choice,
@@ -36,7 +30,7 @@ export function ChoiceField({
         value={choiceValue(config, choice)}
         onChange={(e) => onChoose(e.target.value)}
       >
-        {choice.values.map((option) => (
+        {choiceOptions(config, choice).map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
