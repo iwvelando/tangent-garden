@@ -1,3 +1,4 @@
+import { researchDisk } from "./disk-research";
 import type { Layers } from "./Plot";
 import type { FamilySettings } from "./planar-family";
 import type { Config } from "./types";
@@ -2078,5 +2079,79 @@ export const presets: {
         ],
       },
     },
-  },
+  }, // #415 research studies, only under ?research=415: Dirichlet modes of
+  // the unit disk, after every public preset so their indices never move.
+  ...(researchDisk() ? diskResearchPresets() : []),
 ];
+
+function diskResearchPresets(): typeof presets {
+  const mode = (
+    order: number,
+    ring: number,
+    a: number,
+    cells: number,
+    family = false,
+  ): Config => ({
+    ...base,
+    curve: {
+      ...base.curve,
+      format: "implicit",
+      a,
+      implicit: {
+        f: "0",
+        level: 0,
+        family: { enabled: family, from: -0.24, to: 0.24, count: 6 },
+        window: { xMin: -1.04, xMax: 1.04, yMin: -1.04, yMax: 1.04 },
+        cells,
+        ...(family && { stableNormals: true }),
+        disk: { order, ring, radius: 1 },
+      },
+    },
+    lines: 24,
+  });
+  // a turns the pattern by a/m, so a full period of a is one seamless
+  // turn through its m-fold symmetry.
+  const turn = (from: string, to: string): PlanarAnimation => ({
+    mode: "parameters",
+    camera: "hold",
+    duration: 16,
+    tracks: [{ target: "a", from, to }],
+    repeat: "loop",
+    pace: "steady",
+    probeMotion: "stays",
+  });
+  return [
+    {
+      title: "A drum's rose (research)",
+      note: "The (5, 3) mode of a round drum: five diameters and two rings stand still",
+      config: mode(5, 3, 0, 160),
+      animation: turn("0", "2*pi"),
+    },
+    {
+      title: "Rings of a struck drum (research)",
+      note: "The round (0, 6) mode: five nodal rings, each at a zero of J₀",
+      config: mode(0, 6, 0, 160, true),
+      animation: {
+        mode: "parameters",
+        camera: "hold",
+        duration: 12,
+        tracks: [{ target: "contourLevel", from: "-0.3", to: "0.3" }],
+        repeat: "back-and-forth",
+        pace: "ease",
+        probeMotion: "stays",
+      },
+    },
+    {
+      title: "Radial lace (research)",
+      note: "The (8, 5) mode among six nearby levels, turning through its eightfold symmetry",
+      config: mode(8, 5, Math.PI / 8, 200, true),
+      animation: turn("pi/8", "17*pi/8"),
+    },
+    {
+      title: "Twelvefold membrane (research)",
+      note: "The largest admitted mode, (12, 10): twelve diameters through nine rings",
+      config: mode(12, 10, 0, 320),
+      animation: turn("0", "2*pi"),
+    },
+  ];
+}

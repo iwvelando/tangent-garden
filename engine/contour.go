@@ -35,6 +35,9 @@ type Implicit struct {
 	Window        Window  `json:"window"`
 	Cells         int     `json:"cells"`
 	StableNormals bool    `json:"stableNormals,omitempty"`
+	// Disk, when set, replaces F by a disk membrane mode and traces it only
+	// inside the disk (#415 research).
+	Disk *Disk `json:"disk,omitempty"`
 	// topology asks for the curve's level set classified (Request.Topology).
 	topology bool
 }
@@ -78,6 +81,9 @@ type ContourResult struct {
 	Nonfinite       int            `json:"nonfinite"`
 	UsesA           bool           `json:"usesA"`
 	Topology        *LevelTopology `json:"topology,omitempty"`
+	// Disk describes a disk mode's boundary and exact nodal set, only for
+	// a disk mode (#415 research).
+	Disk *DiskResult `json:"disk,omitempty"`
 }
 
 const (
@@ -146,6 +152,11 @@ func (v Implicit) validate() error {
 	if !finite(v.Level) {
 		return fieldErr("level", "the level must be finite")
 	}
+	if v.Disk != nil {
+		if err := v.Disk.validate(); err != nil {
+			return err
+		}
+	}
 	if f := v.Family; f.Enabled {
 		if f.Count < 2 || f.Count > 64 {
 			return fieldErr("family.count", "a family of levels has 2–64 levels")
@@ -188,6 +199,8 @@ type sheet struct {
 	usesA bool
 	// The grid edges rejected at the level traced last.
 	lastRejected int
+	// The disk the contours are traced in, or nil for the window alone.
+	domain *diskDomain
 }
 
 func (s *sheet) node(i, j int) Vec {
@@ -207,6 +220,13 @@ func (s *sheet) gradient(p Vec) Vec {
 }
 
 func newSheet(v Implicit, a float64) (*sheet, error) {
+	if d := v.Disk; d != nil {
+		s := sampleIn(d.field(a), v.Window, v.Cells, &diskDomain{R: d.Radius})
+		s.usesA = d.Order > 0
+		s.tolerance = drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
+		s.flatness, s.refresh = drawingBend/8, 5
+		return s, nil
+	}
 	f, uses, err := expr.ParseFieldUses(v.F, a)
 	if err != nil {
 		return nil, fieldErr("f", "F(x, y): %v", err)
@@ -224,16 +244,32 @@ func newSheet(v Implicit, a float64) (*sheet, error) {
 // sample evaluates f on the grid of cells cells along the window's longer
 // side.
 func sample(f func(x, y float64) float64, w Window, cells int) *sheet {
+	return sampleIn(f, w, cells, nil)
+}
+
+// sampleIn is sample, restricted to a disk when dom is set: F continues
+// across the circle by reflection within a band two cell diagonals wide,
+// and grid points beyond it are outside, not undefined.
+func sampleIn(f func(x, y float64) float64, w Window, cells int, dom *diskDomain) *sheet {
 	width, height := w.XMax-w.XMin, w.YMax-w.YMin
 	s := &sheet{f: f, w: w, rejected: map[int]Vec{}}
 	s.nx, s.ny = gridShape(w, cells)
 	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
+	if dom != nil {
+		dom.band = 2 * math.Hypot(s.hx, s.hy)
+		s.f, s.domain = dom.extend(f), dom
+	}
 	s.tolerance, s.flatness, s.refresh = contourTolerance*math.Min(s.hx, s.hy), math.Inf(1), 1
 	s.scale = math.Max(width, height) + math.Max(math.Max(math.Abs(w.XMin), math.Abs(w.XMax)), math.Max(math.Abs(w.YMin), math.Abs(w.YMax)))
 	s.values = make([]float64, (s.nx+1)*(s.ny+1))
 	for j := 0; j <= s.ny; j++ {
 		for i := 0; i <= s.nx; i++ {
-			g := s.at(s.node(i, j))
+			p := s.node(i, j)
+			if s.domain != nil && s.domain.outside(p) {
+				s.values[j*(s.nx+1)+i] = math.NaN()
+				continue
+			}
+			g := s.at(p)
 			if !finite(g) {
 				g = math.NaN()
 				s.nonfinite++
@@ -664,6 +700,13 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 	for k := range out.Family {
 		s.refine(&out.Family[k])
 	}
+	if s.domain != nil {
+		s.domain.clip(&out.Curve)
+		for k := range out.Family {
+			s.domain.clip(&out.Family[k])
+		}
+		out.Disk = v.Disk.result(a)
+	}
 	if s.truncated {
 		warnings = append(warnings, fmt.Sprintf("Contours stopped being refined at %d points; they are drawn with straighter chords.", maxContourPoints))
 	}
@@ -673,6 +716,15 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 		out.Normals = s.normals(out.Curve, lines)
 	}
 	out.Discontinuities = s.discontinuities()
+	if s.domain != nil {
+		kept := []Vec{}
+		for _, p := range out.Discontinuities {
+			if s.domain.inside(p) {
+				kept = append(kept, p)
+			}
+		}
+		out.Discontinuities = kept
+	}
 	out.Nonfinite = s.nonfinite
 	out.UsesA = s.usesA
 	if v.topology {

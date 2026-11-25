@@ -58,7 +58,9 @@ export function planarSheetDefinition(
       ];
     case "implicit":
       return [
-        `F(x, y) = ${c.implicit.f}`,
+        c.implicit.disk
+          ? `F = disk mode (m, k) = (${c.implicit.disk.order}, ${c.implicit.disk.ring}), R = ${c.implicit.disk.radius}`
+          : `F(x, y) = ${c.implicit.f}`,
         `F(x, y) = c; c = ${value(["curve", "implicit", "level"], c.implicit.level)}; a = ${value(["curve", "a"], c.a)}`,
         ...(c.implicit.family.enabled
           ? [

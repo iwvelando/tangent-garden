@@ -1327,6 +1327,7 @@ self.onmessage = async ({
             implicit.level,
             implicit.cells,
             ...Object.values(implicit.window),
+            ...(implicit.disk ? Object.values(implicit.disk) : []),
             ...(implicit.family.enabled
               ? [
                   implicit.family.from,
@@ -1368,6 +1369,14 @@ self.onmessage = async ({
         "curve.implicit.cells",
         "Grid cells and the level count must be whole numbers.",
       );
+    // A disk mode's indices (#415 research).
+    if (implicit?.disk)
+      for (const field of ["order", "ring"] as const)
+        if (!Number.isInteger(implicit.disk[field]))
+          throw fieldError(
+            `curve.implicit.disk.${field}`,
+            "The disk mode's order m and ring k must be whole numbers.",
+          );
     if (
       implicit &&
       implicit.family.enabled &&

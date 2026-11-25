@@ -90,7 +90,9 @@ export function atlasFacts(
     usesA:
       frame?.result.contours?.usesA === true &&
       frame.config.curve.format === "implicit" &&
-      frame.config.curve.implicit.f === config.curve.implicit.f,
+      frame.config.curve.implicit.f === config.curve.implicit.f &&
+      JSON.stringify(frame.config.curve.implicit.disk) ===
+        JSON.stringify(config.curve.implicit.disk),
   };
 }
 
