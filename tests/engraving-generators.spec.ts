@@ -146,7 +146,8 @@ for (const [format, target, field] of cases)
           const config = structuredClone(s.config);
           (config.curve[format] as any)[field] = [0.25, 0.5, 0.75][i];
           const reply: any = await new Promise((resolve) => {
-            worker.onmessage = (e) => resolve(e.data);
+            worker.onmessage = (e) =>
+              resolve((window as any).restoreLifted(e.data));
             worker.postMessage({
               ...log.requests[i].data,
               config,

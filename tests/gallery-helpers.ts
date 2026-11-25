@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { wireStudy } from "./study-link-wire";
 import { examplesButton } from "./helpers";
+import { installLiftedRestore } from "./lifted-page";
 
 // Shared by gallery.spec.ts (the gallery and its atlas) and journeys.spec.ts,
 // split so that no one file holds a CI shard near its time limit
@@ -58,6 +59,9 @@ export async function copiedStudy(page: Page) {
 // Records every worker's compute requests and replies in window.atlasWorkers;
 // replies from workers after the notebook's own arrive delay ms late.
 export async function observeAtlasWorkers(page: Page, delay = 0) {
+  // Replies are logged as the engine client reads them, lifted arrays
+  // restored (in a copy, so the page's own reply is untouched).
+  await installLiftedRestore(page);
   await page.addInitScript(
     ({ delay }) => {
       const Native = window.Worker;
@@ -97,7 +101,9 @@ export async function observeAtlasWorkers(page: Page, delay = 0) {
               if (request) {
                 this.log.active--;
                 this.log.replies.push({
-                  data: structuredClone(event.data),
+                  data: (window as any).restoreLifted(
+                    structuredClone(event.data),
+                  ),
                   took: performance.now() - request.started,
                 });
               }

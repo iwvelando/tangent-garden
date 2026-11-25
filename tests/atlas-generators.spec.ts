@@ -568,7 +568,8 @@ for (const [pair, title, labels, entered] of [
                 else config.samples = size === 3 ? 2000 : 1000;
               }
               const expected: any = await new Promise((resolve) => {
-                ordinary.onmessage = (e) => resolve(e.data);
+                ordinary.onmessage = (e) =>
+                  resolve((window as any).restoreLifted(e.data));
                 ordinary.postMessage({
                   id: 10000 + i,
                   action: "compute",
