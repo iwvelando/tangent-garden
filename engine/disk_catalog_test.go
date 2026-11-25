@@ -80,7 +80,7 @@ func TestDiskCatalogDrawsItsModes(t *testing.T) {
 				}
 				for _, c := range set.Contours {
 					for _, x := range c.Points {
-						if math.Abs(u(x)-set.Level) > 5e-12 {
+						if math.Abs(u(x)-set.Level) > 2e-14 {
 							t.Fatalf("%s, a = %g: u − c = %.3g at a vertex of level %g", p.Title, a, u(x)-set.Level, set.Level)
 						}
 						if set.Level == 0 && x.Norm() > center && own.dist(x) > bound {
@@ -178,5 +178,91 @@ func TestDiskCatalogConvergesAtCenterAndBoundary(t *testing.T) {
 			t.Errorf("%s: center %.3g then %.3g from the diameters", p.Title, centerErr[0], centerErr[1])
 		}
 		t.Logf("%s: ends %.2g → %.2g, center %.2g → %.2g", p.Title, endErr[0], endErr[1], centerErr[0], centerErr[1])
+	}
+}
+
+// ringCrests returns the signed height, as a fraction of the peak, of
+// J_m's extremum in each of the mode's k rings, from the reference series.
+func ringCrests(m, k int) []float64 {
+	z := zerosOf(m)
+	var out []float64
+	lo := 0.0
+	for l := 0; l < k; l++ {
+		best := 0.0
+		for i := 0; i <= 400; i++ {
+			x := lo + (z[l]-lo)*float64(i)/400
+			if v := refBessel(m, x); math.Abs(v) > math.Abs(best) {
+				best = v
+			}
+		}
+		out = append(out, best/besselPeaks[m])
+		lo = z[l]
+	}
+	return out
+}
+
+// Every level a curated study rests on stays clear of its rings' crests:
+// a level just under a crest draws loops a cell or two across, which a
+// turning grid resolves differently every frame. So none lies within 0.04
+// below a crest it can reach, and every loop of a nonzero level is at
+// least three cells across, at its opening and through its turn.
+func TestDiskCatalogLevelsClearTheCrests(t *testing.T) {
+	// The levels a study's motion rests on besides its opening, from
+	// web/presets.ts: Rings sweeps its level between −0.35 and 0.35.
+	rests := map[string][]float64{"Rings of a struck drum": {-0.35, 0.35}}
+	for _, p := range diskPresets(t) {
+		v := p.Config.Curve.Implicit
+		d := *v.Disk
+		levels := append([]float64{v.Level}, rests[p.Title]...)
+		if v.Family.Enabled {
+			for i := range v.Family.Count {
+				u := float64(i) / float64(v.Family.Count-1)
+				levels = append(levels, v.Family.From*(1-u)+v.Family.To*u)
+			}
+		}
+		for _, c := range levels {
+			for _, crest := range ringCrests(d.Order, d.Ring) {
+				// A turning mode has crests of both signs in every ring.
+				for _, h := range []float64{crest, -crest} {
+					if d.Order == 0 && h != crest {
+						continue
+					}
+					if gap := math.Abs(h) - math.Abs(c); c*h > 0 && gap >= 0 && gap < 0.04 {
+						t.Errorf("%s: level %g is %.3f under a crest of %.3f", p.Title, c, gap, h)
+					}
+				}
+			}
+		}
+		h := (v.Window.XMax - v.Window.XMin) / float64(v.Cells)
+		for _, rest := range levels[:1+len(rests[p.Title])] {
+			w := v
+			w.Level = rest
+			for _, a := range []float64{0, 0.2, 0.41} {
+				res, _, err := w.contours(a, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, set := range append([]LevelSet{res.Curve}, res.Family...) {
+					// Level 0's closed pieces are cut by crossing nodal
+					// lines, not loops round a crest.
+					if set.Level == 0 {
+						continue
+					}
+					for _, c := range set.Contours {
+						if !c.Closed {
+							continue
+						}
+						lo, hi := c.Points[0], c.Points[0]
+						for _, q := range c.Points {
+							lo = Vec{math.Min(lo.X, q.X), math.Min(lo.Y, q.Y)}
+							hi = Vec{math.Max(hi.X, q.X), math.Max(hi.Y, q.Y)}
+						}
+						if span := math.Min(hi.X-lo.X, hi.Y-lo.Y); span < 3*h {
+							t.Errorf("%s, a = %g: a loop of level %g is %.1f cells across", p.Title, a, set.Level, span/h)
+						}
+					}
+				}
+			}
+		}
 	}
 }

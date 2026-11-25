@@ -27,7 +27,7 @@ func zerosOf(m int) []float64 {
 	return z
 }
 
-// ownMode evaluates the mode independently of the engine: math.Jn, the
+// ownMode evaluates the mode independently of the engine: ownJ, the
 // test's zeros, and the angle from atan2. Its scale is the engine's peak,
 // which TestBesselPeaksBoundEveryValue checks separately.
 func ownMode(m, k int, R, a float64) func(p Vec) float64 {
@@ -38,7 +38,7 @@ func ownMode(m, k int, R, a float64) func(p Vec) float64 {
 		if m > 0 {
 			angular = math.Cos(float64(m)*math.Atan2(p.Y, p.X) - a)
 		}
-		return math.Jn(m, j*r/R) / peak * angular
+		return ownJ(m, j*r/R) / peak * angular
 	}
 }
 
@@ -207,7 +207,7 @@ func TestDiskModeSolvesTheBoundaryValueProblem(t *testing.T) {
 				if res := math.Abs(lap + λ*at(p)); res > 1e-5*λ {
 					t.Fatalf("(%d, %d), R = %g: −Δu − λu = %.3g at %v, λ = %g", m, k, R, res, p, λ)
 				}
-				if diff := math.Abs(at(p) - own(p)); diff > 2e-12 {
+				if diff := math.Abs(at(p) - own(p)); diff > 2e-14 {
 					t.Fatalf("(%d, %d), R = %g: u = %.17g at %v, independently %.17g", m, k, R, at(p), p, own(p))
 				}
 			}
@@ -538,7 +538,7 @@ func TestDiskContoursFollowTheExactNodalSet(t *testing.T) {
 							if p.Norm() > R*(1+1e-12) {
 								t.Fatalf("%+v at %d cells: a vertex at r = %.17g beyond R", md, cells, p.Norm())
 							}
-							if math.Abs(u(p)) > 5e-12 {
+							if math.Abs(u(p)) > 2e-14 {
 								t.Fatalf("%+v at %d cells: u = %.3g at a vertex %v", md, cells, u(p), p)
 							}
 							// Near the boundary only on a diameter: never
@@ -647,7 +647,7 @@ func TestDiskFamilyAndWindows(t *testing.T) {
 		}
 		for _, c := range set.Contours {
 			for _, p := range c.Points {
-				if p.Norm() > 1+1e-12 || math.Abs(u(p)-set.Level) > 5e-12 {
+				if p.Norm() > 1+1e-12 || math.Abs(u(p)-set.Level) > 2e-14 {
 					t.Fatalf("level %g: a vertex at r = %.17g has u = %.17g", set.Level, p.Norm(), u(p))
 				}
 			}

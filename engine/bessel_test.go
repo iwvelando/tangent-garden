@@ -140,14 +140,46 @@ func TestBesselZerosAreEveryZeroInOrder(t *testing.T) {
 	}
 }
 
+// ownJ is J_m(x) = (1/2π) ∫ cos(mτ − x sin τ) dτ over a period, by the
+// midpoint rule, which is exact to rounding for a smooth periodic integrand
+// once the nodes outnumber x + m by a margin: within 1.8·10⁻¹⁵ of refBessel
+// for every admitted order and x ≤ 50 (measured). It shares nothing with
+// the engine's series, recurrence or tables, and is cheap enough for every
+// vertex of a drawing. (Go's math.Jn is not used: its forward recurrence
+// loses accuracy near zeros of J₀, by 2·10⁻¹² for J₆ at j₀,₂, and returns
+// +Inf for J₃ at j₀,₁.)
+func ownJ(m int, x float64) float64 {
+	const n = 160
+	s := 0.0
+	for i := range n {
+		τ := 2 * math.Pi * (float64(i) + 0.5) / n
+		s += math.Cos(float64(m)*τ - x*math.Sin(τ))
+	}
+	return s / n
+}
+
+func TestOwnBesselMatchesTheSeries(t *testing.T) {
+	for m := 0; m <= maxDiskOrder; m++ {
+		xs := []float64{0, 2.404825557695773, 5.520078110286311, 5.520083487674464}
+		for i := 0; i <= 500; i++ {
+			xs = append(xs, 50*float64(i)/500+0.0031)
+		}
+		for _, x := range xs {
+			if e := math.Abs(ownJ(m, x) - refBessel(m, x)); e > 4e-15 {
+				t.Fatalf("ownJ(%d, %g) is %.3g from the series", m, x, e)
+			}
+		}
+	}
+}
+
 func TestBesselPeaksBoundEveryValue(t *testing.T) {
 	for m := 0; m <= maxDiskOrder; m++ {
-		// math.Jn, another independent evaluation, is within 3·10⁻¹³ of
-		// J over this range (measured against refBessel).
+		// ownJ, another independent evaluation, is within a few 10⁻¹⁵ of
+		// J over this range (TestOwnBesselMatchesTheSeries).
 		peak, seen := besselPeaks[m], 0.0
 		for i := 0; i <= 64000; i++ {
-			v := math.Abs(math.Jn(m, maxBesselArg*float64(i)/64000))
-			if v > peak+3e-13 {
+			v := math.Abs(ownJ(m, maxBesselArg*float64(i)/64000))
+			if v > peak+1e-14 {
 				t.Fatalf("|J_%d| reaches %.17g above its peak %.17g", m, v, peak)
 			}
 			seen = math.Max(seen, v)

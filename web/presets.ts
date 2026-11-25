@@ -112,7 +112,9 @@ const base: Config = {
   lines: 48,
 };
 // A round drum's standing waves: the mode (m, k) of the unit disk, alone or
-// among nearby levels.
+// among nearby levels. The studies open with construction lines hidden: as
+// a pure mode turns, its nodal pieces reconnect by rounding at their
+// crossings, and the gradient arrows on them jump from frame to frame.
 const diskMode = (
   order: number,
   ring: number,
@@ -2127,17 +2129,22 @@ export const presets: {
     title: "A drum's rose",
     note: "The (5, 3) mode of a round drum: five diameters and two rings stand still",
     config: diskMode(5, 3, 0, 160),
+    layers: { lines: false },
     animation: diskTurn("0", "2*pi"),
   },
   {
     title: "Rings of a struck drum",
     note: "The round (0, 6) mode: five nodal rings, each at a zero of J₀",
-    config: diskMode(0, 6, 0, 160, nearbyLevels),
+    // Its nearby levels and the sweep's ends stay clear of every ring's
+    // crest (1, −0.403, 0.300, −0.250, 0.218, −0.196 of the peak), where a
+    // level would draw a loop too thin for the grid.
+    config: diskMode(0, 6, 0, 160, { from: -0.15, to: 0.15, count: 6 }),
+    layers: { lines: false },
     animation: {
       mode: "parameters",
       camera: "hold",
       duration: 12,
-      tracks: [{ target: "contourLevel", from: "-0.3", to: "0.3" }],
+      tracks: [{ target: "contourLevel", from: "-0.35", to: "0.35" }],
       repeat: "back-and-forth",
       pace: "ease",
       probeMotion: "stays",
@@ -2147,18 +2154,21 @@ export const presets: {
     title: "Radial lace",
     note: "The (8, 5) mode among six nearby levels, turning through its eightfold symmetry",
     config: diskMode(8, 5, 0, 200, nearbyLevels),
+    layers: { lines: false },
     animation: diskTurn("0", "2*pi"),
   },
   {
     title: "Twelvefold membrane",
     note: "The largest admitted mode, (12, 10): twelve diameters through nine rings",
     config: diskMode(12, 10, 0, 320),
+    layers: { lines: false },
     animation: diskTurn("0", "2*pi"),
   },
   {
     title: "A drum's engraving breathes",
     note: "Eight levels of the (3, 4) mode, nested over every crest, gather onto its nodal lines and spread again",
     config: diskMode(3, 4, 0, 160, { from: -0.32, to: 0.32, count: 8 }),
+    layers: { lines: false },
     animation: {
       mode: "parameters",
       camera: "hold",
@@ -2175,7 +2185,11 @@ export const presets: {
   {
     title: "A drum's contour map",
     note: "The (6, 3) mode drawn as a map of its own heights: nested loops over every crest and trough, turning",
-    config: diskMode(6, 3, 0, 160, { from: -0.9, to: 0.9, count: 10 }),
+    // The levels stay clear of the rings' crests (1, 0.706 and 0.600 of
+    // the peak): a level just under one draws loops a cell or two across,
+    // which the turning grid resolves differently every frame.
+    config: diskMode(6, 3, 0, 160, { from: -0.8, to: 0.8, count: 10 }),
+    layers: { lines: false },
     animation: diskTurn("0", "2*pi"),
   },
 ];
