@@ -388,8 +388,8 @@ func TestRootPathDrawsOnlyTheUnvisitedSheets(t *testing.T) {
 }
 
 // The closest approach is bracketed: the certified bound at least the
-// clearance r/20 and at most the true minimum, the readout at least the
-// true minimum and within the drawing's tolerance of it.
+// clearance r/20 and at most the true minimum, and the readout a value of
+// |z| within 10⁻⁹ of the true minimum.
 func TestRootPathClosestApproachIsCertified(t *testing.T) {
 	for _, c := range pathCases {
 		t.Run(c.name, func(t *testing.T) {
@@ -399,7 +399,7 @@ func TestRootPathClosestApproachIsCertified(t *testing.T) {
 			if d.ClosestBound < c.p.Radius/20 || d.ClosestBound > least*(1+1e-12) {
 				t.Fatalf("certified bound %v, clearance %v, true minimum about %v", d.ClosestBound, c.p.Radius/20, least)
 			}
-			if d.Closest < least*(1-1e-12) || d.Closest > least+d.Tolerance {
+			if d.Closest < least*(1-1e-12) || d.Closest > least*(1+1e-9) {
 				t.Fatalf("closest %v, true minimum about %v, tolerance %v", d.Closest, least, d.Tolerance)
 			}
 		})
@@ -545,57 +545,67 @@ func TestRootPathCircleMatchesTheClosedForm(t *testing.T) {
 func TestRootPathRefusesByField(t *testing.T) {
 	base := pathCases[0]
 	for _, tc := range []struct {
-		edit  func(*RootParameters)
-		field string
-		says  string
+		edit    func(*RootParameters)
+		field   string
+		says    string
+		samples int
 	}{
-		{func(p *RootParameters) { p.Path = "spiral" }, "root.path", ""},
-		{func(p *RootParameters) { p.Ripple = -0.1 }, "root.ripple", ""},
-		{func(p *RootParameters) { p.Ripple = 3.5 }, "root.ripple", ""},
-		{func(p *RootParameters) { p.Ripple = math.NaN() }, "root.ripple", ""},
-		{func(p *RootParameters) { p.Frequency = 2.5 }, "root.frequency", ""},
-		{func(p *RootParameters) { p.Frequency = 13 }, "root.frequency", ""},
-		{func(p *RootParameters) { p.Frequency = math.Inf(-1) }, "root.frequency", ""},
+		{func(p *RootParameters) { p.Path = "spiral" }, "root.path", "", 0},
+		{func(p *RootParameters) { p.Ripple = -0.1 }, "root.ripple", "", 0},
+		{func(p *RootParameters) { p.Ripple = 3.5 }, "root.ripple", "", 0},
+		{func(p *RootParameters) { p.Ripple = math.NaN() }, "root.ripple", "", 0},
+		{func(p *RootParameters) { p.Frequency = 2.5 }, "root.frequency", "", 0},
+		{func(p *RootParameters) { p.Frequency = 13 }, "root.frequency", "", 0},
+		{func(p *RootParameters) { p.Frequency = math.Inf(-1) }, "root.frequency", "", 0},
 		// Through the branch point at t = π: z = e^{it}(1 + e^{it}).
-		{func(p *RootParameters) { p.Ripple = 1 }, "root.offset", "r/20"},
-		{func(p *RootParameters) { *p = fourier(1, 0, 0, nil, 2, "plus", 0) }, "root.terms", ""},
-		{func(p *RootParameters) { *p = fourier(1, 0, 0, make([]RootTerm, 17), 2, "plus", 0) }, "root.terms", ""},
+		{func(p *RootParameters) { p.Ripple = 1 }, "root.offset", "passes within", 0},
+		{func(p *RootParameters) { *p = fourier(1, 0, 0, nil, 2, "plus", 0) }, "root.terms", "", 0},
+		{func(p *RootParameters) { *p = fourier(1, 0, 0, make([]RootTerm, 17), 2, "plus", 0) }, "root.terms", "", 0},
 		{func(p *RootParameters) {
 			*p = fourier(1, 0, 0, []RootTerm{{1, 1, 0}, {0.5, 0.1, 0}}, 2, "plus", 0)
-		}, "root.terms.1.frequency", ""},
+		}, "root.terms.1.frequency", "", 0},
 		{func(p *RootParameters) {
 			*p = fourier(1, 0, 0, []RootTerm{{1, 1, 0}, {65, 0.1, 0}}, 2, "plus", 0)
-		}, "root.terms.1.frequency", ""},
+		}, "root.terms.1.frequency", "", 0},
 		{func(p *RootParameters) {
 			*p = fourier(1, 0, 0, []RootTerm{{1, -1, 0}}, 2, "plus", 0)
-		}, "root.terms.0.radius", ""},
+		}, "root.terms.0.radius", "", 0},
 		{func(p *RootParameters) {
 			*p = fourier(1, 0, 0, []RootTerm{{1, 1, math.NaN()}}, 2, "plus", 0)
-		}, "root.terms.0.phase", ""},
+		}, "root.terms.0.phase", "", 0},
 		// A path that does not move.
 		{func(p *RootParameters) {
 			*p = fourier(1, 0.5, 0, []RootTerm{{0, 1, 0}, {3, 0, 0}}, 2, "plus", 0)
-		}, "root.terms", ""},
+		}, "root.terms", "", 0},
 		// Within the clearance: a circle at k = 1.04 comes within 0.04 r.
 		{func(p *RootParameters) {
 			*p = fourier(1, 1.04, 0, []RootTerm{{1, 1, 0.3}}, 2, "plus", 0)
-		}, "root.offset", "r/20"},
+		}, "root.offset", "passes within", 0},
+		// Within the clearance only between the coarsest grid's nodes:
+		// bisection finds the witness.
+		{func(p *RootParameters) {
+			*p = fourier(1, 1.04, 0, []RootTerm{{1, 1, 0.3}}, 2, "plus", 0)
+		}, "root.offset", "passes within", 64},
+		{func(p *RootParameters) { p.Ripple = 3.0001 }, "root.ripple", "", 0},
 		// Exactly at the clearance, nearest off the sampled grid: never
 		// certified, never witnessed.
 		{func(p *RootParameters) {
 			*p = fourier(1, 1.05, 0, []RootTerm{{1, 1, 0.3}}, 2, "plus", 0)
-		}, "root.offset", "certif"},
+		}, "root.offset", "certif", 0},
 		// Too many points: a frequency-64 ripple of large amplitude at
 		// degree 6 and the largest count.
 		{func(p *RootParameters) {
 			*p = fourier(1, 0, 0, []RootTerm{{1, 1, 0}, {64, 0.5, 0}}, 6, "plus", 0)
-		}, "samples", ""},
+		}, "samples", "", 0},
 	} {
 		q := pathRequest(base, 0, base.period(), 0)
 		tc.edit(q.Root)
 		q.Root.To = 2 * math.Pi * float64(degreeOf(*q.Root))
 		if tc.field == "samples" {
 			q.Samples = 4096
+		}
+		if tc.samples != 0 {
+			q.Samples = tc.samples
 		}
 		_, err := Compute(q)
 		var fe *FieldError
@@ -604,6 +614,28 @@ func TestRootPathRefusesByField(t *testing.T) {
 		}
 		if tc.says != "" && !strings.Contains(fe.Error(), tc.says) {
 			t.Fatalf("%+v: %q does not say %q", *q.Root, fe.Error(), tc.says)
+		}
+	}
+}
+
+// The ranges' edges are admitted.
+func TestRootPathAdmitsTheRangesEdges(t *testing.T) {
+	many := make([]RootTerm, 16)
+	many[0] = RootTerm{Frequency: 1, Radius: 1}
+	for i := 1; i < 16; i++ {
+		many[i] = RootTerm{Frequency: float64(4 * i), Radius: 0.001, Phase: -1e6}
+	}
+	many[15].Frequency = -64
+	for _, p := range []RootParameters{
+		ripple(1, 0, 0, 3, 2, 2, "plus", 0),
+		ripple(0.5, 0, 0, 0.2, 12, 3, "plus", 2),
+		ripple(0.5, 0, 0, 0.2, -12, 3, "plus", 2),
+		fourier(1, 0, 0, many, 2, "minus", 0),
+		fourier(1, 0, 0, []RootTerm{{1, 1, 1e6}, {64, 0.001, 0}}, 6, "plus", 5),
+	} {
+		c := pathCase{p: p, samples: 1024}
+		if _, err := Compute(pathRequest(c, 0, c.period(), 0)); err != nil {
+			t.Fatalf("%+v refused: %v", p, err)
 		}
 	}
 }

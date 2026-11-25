@@ -2189,7 +2189,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         ),
         values: [
           { value: "circle", label: "Circle" },
-          { value: "ripple", label: "Ripple: e^{it} + a e^{imt}" },
+          { value: "ripple", label: "Ripple: eⁱᵗ + a eⁱᵐᵗ" },
           { value: "fourier", label: "Fourier loop (the example leaf)" },
         ],
         visible: (c) => researchRoots() || !!rootPath(c),
@@ -2304,10 +2304,16 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         key: "offset",
         label: "Center offset",
-        help: tiered(
-          "Center's distance from 0, in radii: 0 to 3.",
-          "Below 1 the circle encloses the branch point z = 0, and w changes sheet each circuit; above 1 it misses it, and w returns. Within 0.05 of 1 the circle passes too near the branch point and is refused.",
-        ),
+        help: (c) =>
+          rootPath(c)
+            ? tiered(
+                "Center's distance from 0, in radii: 0 to 3.",
+                "The path must stay at least r/20 from the branch point z = 0, certified from its formula; nearer, or too near the clearance to decide, it is refused.",
+              )
+            : tiered(
+                "Center's distance from 0, in radii: 0 to 3.",
+                "Below 1 the circle encloses the branch point z = 0, and w changes sheet each circuit; above 1 it misses it, and w returns. Within 0.05 of 1 the circle passes too near the branch point and is refused.",
+              ),
         fallback: 0,
       },
       {
