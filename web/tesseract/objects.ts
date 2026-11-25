@@ -2327,6 +2327,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           "Above 1 the ripple can wind z about 0 more than once, or backward when m is negative.",
         ),
         visible: (c) => rootPath(c) === "ripple",
+        // The worker draws an absent ripple and frequency with these same
+        // values (engine.worker.ts), so a sparse link shows what it draws.
         fallback: 0.5,
       },
       {

@@ -663,8 +663,8 @@ self.onmessage = async ({
           ["root.to", "Trace end", root.to],
           ...(root.path === "ripple"
             ? [
-                ["root.ripple", "Ripple a", root.ripple ?? 0],
-                ["root.frequency", "Frequency m", root.frequency ?? 2],
+                ["root.ripple", "Ripple a", root.ripple ?? 0.5],
+                ["root.frequency", "Frequency m", root.frequency ?? 3],
               ]
             : []),
           ...(root.path === "fourier"
@@ -874,11 +874,13 @@ self.onmessage = async ({
                 to: root.to,
                 trace: root.trace ?? 0,
                 // A noncircular path: only its own fields,
-                // so a circle's request is unchanged.
+                // so a circle's request is unchanged. A ripple's absent
+                // fields take the values its controls show (the root
+                // descriptor's fallbacks in tesseract/objects.ts).
                 ...(root.path === "ripple" && {
                   path: root.path,
-                  ripple: root.ripple ?? 0,
-                  frequency: root.frequency ?? 2,
+                  ripple: root.ripple ?? 0.5,
+                  frequency: root.frequency ?? 3,
                 }),
                 ...(root.path === "fourier" && {
                   path: root.path,

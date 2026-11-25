@@ -306,6 +306,23 @@ test("a link carries a path's fields, older links open the circle, and a term's 
   });
   await expect(source(page)).toHaveValue("circle");
   await expect(page.locator(".stale-study")).toHaveCount(0);
+  // A ripple whose link leaves out its fields draws what its controls
+  // show, as the same link with those values written in does.
+  await openLink(page, (c) => {
+    const { ripple, frequency, terms, ...rest } = c.root;
+    c.root = { ...rest, path: "ripple" };
+  });
+  await expect(textbox(page, "Ripple a")).toHaveValue("0.5");
+  await expect(spin(page, "Frequency m")).toHaveValue("3");
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "1: w turns by ω each circuit",
+  );
+  const sparse = await drawing(page);
+  await openLink(page, (c) => {
+    const { terms, ...rest } = c.root;
+    c.root = { ...rest, path: "ripple", ripple: 0.5, frequency: 3 };
+  });
+  expect(sparse).toBe(await drawing(page));
   await openLink(page, (c) => {
     c.root = {
       ...c.root,
