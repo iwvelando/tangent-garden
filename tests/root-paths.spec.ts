@@ -474,6 +474,36 @@ test("Draw a new loop goes to Draw a loop and back: canceling keeps the journey,
   expect(await drawing(page)).not.toBe(markup);
 });
 
+test("Draw a loop opened from the journey rings the branch point where the loop's own coordinates put z = 0", async ({
+  page,
+}) => {
+  await open(page, "A drawn leaf around zero");
+  await textbox(page, "Center offset").fill("0.4");
+  await textbox(page, "Center direction").fill("1");
+  await settle(page);
+  await page.getByRole("button", { name: "Draw a new loop…" }).click();
+  const f = fitDialog(page);
+  await expect(f).toBeVisible();
+  // z = r e^{iφ}(k + s) vanishes at s = −k, whatever r and φ: drawn y is
+  // flipped, so the ring stands at (−0.4, 0) in both panes.
+  const rings = f.locator("circle.fit-branch-point");
+  await expect(rings).toHaveCount(1);
+  await f
+    .getByRole("button", { name: "Use current loop", exact: true })
+    .click();
+  await expect(rings).toHaveCount(2);
+  for (const ring of await rings.all()) {
+    expect(Number(await ring.getAttribute("cx"))).toBeCloseTo(-0.4, 12);
+    expect(Number(await ring.getAttribute("cy"))).toBe(0);
+  }
+  await expect(f.getByText(/The ring marks z = 0/)).toBeVisible();
+  // Draw a loop opened from the 2D notebook has no branch point to mark.
+  await f.getByRole("button", { name: "Cancel drawing" }).click();
+  await chooseNotebook(page, "2d");
+  const plain = await leafFit(page, 8);
+  await expect(plain.locator("circle.fit-branch-point")).toHaveCount(0);
+});
+
 // Each movie is 2 s at 15 fps: 30 frames, the repeated last left out. The
 // whole journey closes: frame 0 stands for both t = 0 and its end.
 for (const [study, seeks, frames] of [

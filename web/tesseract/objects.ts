@@ -267,6 +267,9 @@ export type ObjectDescriptor = {
     note: (c: Config) => string;
     terms: (c: Config) => RootTerm[];
     apply: (c: Config, terms: RootTerm[]) => Config;
+    // The branch point in the loop's own coordinates, where Draw a loop
+    // rings it.
+    zero: (c: Config) => { x: number; y: number };
   };
   choicesFirst?: boolean;
   choices?: {
@@ -2208,6 +2211,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           : `Your loop, ${formatCount(terms.length)} ${terms.length === 1 ? "term" : "terms"}.`;
       },
       terms: (c) => structuredClone(c.root?.terms ?? [...exampleLeafTerms]),
+      // z = r e^{iφ}(k + s) vanishes at s = −k, whatever r and φ.
+      zero: (c) => ({ x: -(c.root?.offset ?? 0), y: 0 }),
       apply: (c, terms) => ({
         ...c,
         root: {

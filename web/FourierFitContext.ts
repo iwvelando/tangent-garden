@@ -3,6 +3,7 @@ import type { JourneyVia } from "./JourneyContext";
 import type { PlanarStudy } from "./planar-link";
 import type { LaceEntry } from "./lace/Context";
 import type { ShortenEntry } from "./shorten/Context";
+import type { Vec } from "./types";
 
 export type FourierFitRequest = {
   study: PlanarStudy;
@@ -16,8 +17,9 @@ export type FourierFitRequest = {
   shorten?: ShortenEntry;
   // Opened from the 4D root journey to redraw its source loop. The study is
   // then that loop as a Fourier curve, and the journey stays as it was
-  // beneath until its roots are followed.
-  root?: true;
+  // beneath until its roots are followed. `zero` is where the journey's
+  // placement puts z = 0 in the loop's own coordinates, ringed as a guide.
+  root?: { zero: Vec };
 };
 export const FourierFitContext = createContext<{
   begin: (request: FourierFitRequest) => void;

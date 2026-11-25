@@ -693,6 +693,14 @@ export function FourierFitPreview({
       ) : (
         <polyline points={path(reference ? targetPoints : visiblePoints)} />
       )}
+      {!reference && request.root && (
+        <circle
+          className="fit-branch-point"
+          cx={request.root.zero.x}
+          cy={-request.root.zero.y}
+          r={6 / inputScale}
+        />
+      )}
       {!reference && editable && chosen && (
         <>
           {state.editing?.changed && (
@@ -754,7 +762,7 @@ export function FourierFitPreview({
           : fromShorten
             ? "Draw a new outline or start with the example leaf, then close it. Or use the current loop's fit; the smoothing study stays as it was until you smooth a new loop."
             : fromRoot
-              ? "Draw a new outline or start with the example leaf, then close it. Or use the root journey's current loop; the journey stays as it was until you follow the new loop's roots."
+              ? "Draw a new outline or start with the example leaf, then close it. Or use the root journey's current loop; the journey stays as it was until you follow the new loop's roots. The ring marks z = 0, the branch point: a loop around it makes the roots trade places."
               : "Draw your own outline or start with the example leaf, then close it. Or use your current base curve; your original study stays here until adoption."}
       </p>
       <div className="fit-layout">
@@ -1003,6 +1011,25 @@ export function FourierFitPreview({
                 />
               )}
               {reference && isClosed && outline(true)}
+              {request.root && shown && (
+                <svg
+                  className="fit-reference"
+                  viewBox={viewBoxOf(previewView)}
+                  aria-hidden="true"
+                  style={
+                    {
+                      "--outline-unit": `${(0.015 * (1000 / 6)) / previewView.scale}px`,
+                    } as CSSProperties
+                  }
+                >
+                  <circle
+                    className="fit-branch-point"
+                    cx={request.root.zero.x}
+                    cy={-request.root.zero.y}
+                    r={6 / previewView.scale}
+                  />
+                </svg>
+              )}
             </div>
             <div
               className="fit-playback"

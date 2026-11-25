@@ -997,7 +997,7 @@ export default function TesseractApp({
                     fitOwner.begin({
                       study: fittedStudy(descriptor.loop!.terms(config)),
                       via: e.detail === 0 ? "keyboard" : "pointer",
-                      root: true,
+                      root: { zero: descriptor.loop!.zero(config) },
                       restoreFocus: (via) => {
                         if (via === "pointer") loopQuiet.onPointerDown();
                         else loopQuiet.onKeyDownCapture();
