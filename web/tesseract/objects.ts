@@ -268,7 +268,9 @@ export type ObjectDescriptor = {
       | { value: string; label: string }[]
       | ((c: Config) => { value: string; label: string }[]);
     // A choice stored other than as its option's text in its key, such as
-    // a number, or in more than one field: how to read and apply it.
+    // a number, or in more than one field: how to read and apply it. The
+    // notebook applies set only after pending numeric evaluations land, so
+    // it may compute from those fields.
     get?: (c: Config) => string;
     set?: (c: Config, value: string) => Config;
     visible?: (c: Config) => boolean;

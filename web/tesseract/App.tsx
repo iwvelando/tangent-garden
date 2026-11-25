@@ -925,13 +925,22 @@ export default function TesseractApp({
           choice={choice}
           config={config}
           help={choiceHelp(config, choice)}
-          onChoose={(value) =>
+          onChoose={async (value) => {
+            // A choice with its own set hook may compute from numeric
+            // fields (the root's degree scales the endpoints), so
+            // evaluations still pending for them land first; a preset or
+            // object chosen meanwhile wins.
+            if (choice.set) {
+              const token = generation.current;
+              await Promise.allSettled([...jobs.current]);
+              if (token !== generation.current) return;
+            }
             update((c) =>
               (descriptor.reconcile ?? ((c) => c))(
                 applyChoice(c, choice, value),
               ),
-            )
-          }
+            );
+          }}
         />
       ));
   const choices = choiceFields(false);

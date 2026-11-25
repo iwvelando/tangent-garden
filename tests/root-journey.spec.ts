@@ -1027,6 +1027,62 @@ test("the degree scales the journey's endpoints and keeps the sheet while it is 
   await expect(degree).toHaveValue("4");
 });
 
+// The degree scales the endpoints from the study, so an endpoint the parser
+// is still resolving lands first and is scaled with the other.
+test("a new degree scales an endpoint whose evaluation is still pending", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const Native = window.Worker;
+    window.Worker = class extends Native {
+      postMessage(data: any) {
+        if ((window as any).holdScalar && data.action === "scalars") {
+          (window as any).pendingScalar = true;
+          setTimeout(() => super.postMessage(data), 500);
+        } else super.postMessage(data);
+      }
+    } as any;
+  });
+  await open(page);
+  const degree = page.getByRole("combobox", { name: "Degree n", exact: true });
+  await degree.selectOption("3");
+  await settle(page);
+  await page.getByText("Journey endpoints", { exact: true }).click();
+  await page.evaluate(() => ((window as any).holdScalar = true));
+  // Half of the cube root's 6π journey, still resolving when the degree
+  // changes: the sixth root's half is 6π.
+  await page
+    .getByRole("textbox", { name: "Trace end", exact: true })
+    .fill("3*pi");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).pendingScalar))
+    .toBe(true);
+  await degree.selectOption("6");
+  await page.waitForTimeout(700);
+  await settle(page);
+  expect((await meta(page)).config.root).toMatchObject({
+    degree: 6,
+    from: 0,
+    to: 6 * Math.PI,
+  });
+  // An example chosen while the degree waits replaces the study whole.
+  await page.evaluate(() => ((window as any).pendingScalar = false));
+  await page
+    .getByRole("textbox", { name: "Trace end", exact: true })
+    .fill("4*pi");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).pendingScalar))
+    .toBe(true);
+  await degree.selectOption("4");
+  await choosePreset(page, { label: five });
+  await settle(page);
+  const opened = (await meta(page)).config;
+  await page.waitForTimeout(700);
+  await settle(page);
+  expect((await meta(page)).config).toEqual(opened);
+  expect(opened.root).toMatchObject({ degree: 5, to: 10 * Math.PI });
+});
+
 test("a higher root's circuit inks follow the color scheme in drawing, legend and export", async ({
   page,
 }) => {

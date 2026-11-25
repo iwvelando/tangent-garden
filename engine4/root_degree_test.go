@@ -231,7 +231,7 @@ func TestRootDegreeIsResolvedNearTheBranchPoint(t *testing.T) {
 // in the direction of travel, in pieces that keep their circuit.
 func TestRootDegreeTraceMarkersAndReverseTraversal(t *testing.T) {
 	c := degreeCase{5, 1.2, 0.85, 0.6, "plus", 1, 1000}
-	for _, e := range [][3]float64{{0, 10 * math.Pi, 0.37}, {10 * math.Pi, 0, 0.37}, {1, 9, 0.5}, {9.5 * math.Pi, 0.2, 0.9}, {0, 10 * math.Pi, 0.05}} {
+	for _, e := range [][3]float64{{0, 10 * math.Pi, 0.37}, {10 * math.Pi, 0, 0.37}, {1, 9, 0.5}, {9.5 * math.Pi, 0.2, 0.9}, {0, 10 * math.Pi, 0.05}, {10 * math.Pi, 0, 0.1}, {9.5 * math.Pi, 1, 0.05}} {
 		from, to, p := e[0], e[1], e[2]
 		res := c.compute(t, from, to, p)
 		now := from*(1-p) + to*p

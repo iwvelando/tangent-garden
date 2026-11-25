@@ -416,7 +416,7 @@ func rootJourney(q Request, r Result) (Result, error) {
 	} else if above := circuitOf(s); above < degree {
 		pieces = [][2]float64{{s, boundary(above)}, {boundary(above), s + 2*math.Pi}}
 	} else {
-		pieces = [][2]float64{{s, period}, {0, s - 2*math.Pi}}
+		pieces = [][2]float64{{s, period}, {0, s - boundary(degree-1)}}
 	}
 	var traced [][2]float64
 	for _, piece := range pieces {
