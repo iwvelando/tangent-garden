@@ -147,6 +147,55 @@ const cases: Case[] = [
     },
     "Trace end",
   ],
+  // A noncircular source path: its own fields, its terms under Source
+  // path, a pass through 0 under Center offset and a journey over budget
+  // under Path intervals.
+  [
+    "root.frequency",
+    object("root"),
+    (c) => Object.assign(c.root!, { path: "ripple", frequency: 2.5 }),
+    "Frequency m",
+  ],
+  [
+    "root.offset",
+    object("root"),
+    (c) => Object.assign(c.root!, { path: "ripple", ripple: 1, frequency: 2 }),
+    "Center offset",
+  ],
+  [
+    "root.terms",
+    object("root"),
+    (c) => Object.assign(c.root!, { path: "fourier", terms: [] }),
+    "Source path",
+  ],
+  [
+    "root.terms.1.frequency",
+    object("root"),
+    (c) =>
+      Object.assign(c.root!, {
+        path: "fourier",
+        terms: [
+          { frequency: 1, radius: 1, phase: 0 },
+          { frequency: 0.5, radius: 0.2, phase: 0 },
+        ],
+      }),
+    "Source path",
+  ],
+  [
+    "samples",
+    object("root"),
+    (c) => {
+      c.samples = 4096;
+      Object.assign(c.root!, {
+        path: "fourier",
+        terms: [
+          { frequency: 1, radius: 1, phase: 0 },
+          { frequency: 64, radius: 0.5, phase: 0 },
+        ],
+      });
+    },
+    "Path intervals",
+  ],
   ["samples", object("root"), (c) => (c.samples = 63), "Path intervals"],
   ["samples", object("root"), (c) => (c.samples = 64.5), "Path intervals"],
   [

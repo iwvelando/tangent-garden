@@ -156,7 +156,7 @@ export async function checkFitAdoptionVisibility(page: Page) {
     await expect(adopt).toBeInViewport({ ratio: 1 });
     await expect(
       dialog.getByText(
-        "Adopting replaces your current study; weaving or smoothing keeps it.",
+        "Adopting replaces your study.",
         { exact: true },
       ),
     ).toBeInViewport({ ratio: 1 });
@@ -187,6 +187,15 @@ export async function checkFitAdoptionVisibility(page: Page) {
             where,
           );
         await expect(adopt).toBeInViewport({ ratio: 1 });
+        // The quieter actions share the footer's row and stay whole too.
+        for (const name of [
+          "Smooth into a circle",
+          "Weave into lace",
+          "Follow its roots",
+        ])
+          await expect(
+            dialog.getByRole("button", { name, exact: true }),
+          ).toBeInViewport({ ratio: 1 });
         const footerGap = await dialog.evaluate((e) => {
           const box = e.getBoundingClientRect(),
             footer = e.querySelector("footer")!.getBoundingClientRect();

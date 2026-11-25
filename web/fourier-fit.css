@@ -216,6 +216,14 @@
 .fit-footer-two .fit-adopt-copy {
   flex: 1 1 200px;
 }
+/* Four actions take more of the row, so their labels wrap to two lines
+   rather than three; the shorter copy beside them takes the rest. */
+.fit-footer-two:has(.fit-roots) .fit-adopt-copy {
+  flex-basis: 130px;
+}
+.fit-footer-actions:has(.fit-roots) {
+  flex-basis: 380px;
+}
 .fit-footer {
   position: sticky;
   bottom: calc(-1 * var(--fit-dialog-padding));

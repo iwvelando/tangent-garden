@@ -2707,6 +2707,30 @@ For a radius `0.25 ≤ r ≤ 4`, a center offset `0 ≤ k ≤ 3` in radii, a cen
 
 **Whole-scene closure.** Only a whole 2πn journey returns every view, including the trace's circuit ink and the circuit readout, so only it can loop. A 2π journey of a missing circle returns z, w and the 4D point, but its trace changes circuit, and the drawing-based loop check refuses it.
 
+**Noncircular source paths.** The source may instead be a smooth loop placed as the circle is, `z(t) = r e^{iφ}(k + s(t))`, each circuit `0 ≤ t ≤ 2π`, with the same radius, offset, direction, degree, sheet, endpoints and intervals:
+- a ripple, `s = e^{it} + a e^{imt}`, with `0 ≤ a ≤ 3` and a whole frequency `−12 ≤ m ≤ 12`;
+- a Fourier loop, `s = Σ ρⱼ e^{i(fⱼt + ψⱼ)}`, 1 to 16 terms, each of whole frequency `|fⱼ| ≤ 64`, radius `0 ≤ ρⱼ ≤ 1000` and phase `|ψⱼ| ≤ 10⁶`: the terms Draw a loop fits.
+
+A ripple is the Fourier loop with terms `(1, 1, 0)` and `(m, a, 0)`. A loop that does not move, with no term of nonzero frequency and positive radius, is refused. Without a path the source is the circle above, whose arithmetic, requests and results are unchanged.
+
+**Certified clearance.** `L = rΣρⱼ|fⱼ|` bounds `|z'|` and `M = rΣρⱼfⱼ²` bounds `|z''|`, so on a parameter interval of length h the arc stays within `Mh²/8` of its chord. When the chord's distance from 0 exceeds that, a convex neighborhood of the chord holds the arc and excludes 0, and the difference bounds |z| below on the interval. Each circuit's `⌈N/n⌉` base intervals are bisected, evaluating z at each midpoint, until one of three outcomes:
+- every interval's lower bound reaches `r/20`, the circle's clearance in the path's own radius: the path is admitted;
+- a sampled z falls within `r/20`: the path is refused under **Center offset**, naming that |z| and t;
+- an interval reaches 12 bisections, or the study `2²⁰` evaluations of z: the path is refused under **Center offset** as too near `r/20` to decide.
+
+No quadrature or root finding decides admission.
+
+**Lift and winding.** Within a certified interval the arc lies in a convex set excluding 0, so the argument of z changes there by less than π and equals the principal `Arg(z(s)/z(a))` exactly. θ, the continuous argument of z from `Arg z(0)`, is the sum of these increments, and `w = σωᵇ|z|^{1/n}e^{iθ/n}`. The winding W is θ's change over one circuit, divided by 2π; it must be a whole number. Circuit c is the first circuit's w times `ω^{W(c−1)}`, so consecutive circuits meet exactly, and `w(2πc) = ω^{Wc} w(0)`. w is home after `n/gcd(n, W)` circuits, and the sheets it visits are `ω^{j·gcd(n, W)}` times its start. Every other sheet m, not a multiple of `gcd(n, W)`, carries the never-visited loop `(z, ωᵐw)`, drawn over one circuit as a dashed guide. W may be any whole number, including 0 and negative windings, where the sheets are visited in reverse. A circle written as the path `(1, 1, 0)` has W = 1 inside and 0 outside, and its sheets and guides match the closed form's.
+
+**Error control.** A certified interval of length `h_l`, on which `|z| ≥ δ`, is split into equal parts, the largest of three counts:
+- `⌈L_l h_l/(δh)⌉`, with `h = 2π/⌈N/n⌉` and the local speed bound `L_l = min(L, |z'(mid)| + Mh_l/2)`, so that w turns at most `2π/N` per part, as on the circle;
+- `⌈h_l √(M/(8 tol))⌉`, so that the z polyline stays within tol of the path;
+- `⌈h_l √(W₂/(8 tol))⌉`, with `W₂ = M/(nδ^{1−1/n}) + (n − 1)L_l²/(n²δ^{2−1/n}) ≥ |w''|`, so that the w polyline stays within tol.
+
+The tolerance is fixed: `tol = 2·10⁻⁴ max(R, R^{1/n})`, where `R = r(k + Σρⱼ) ≥ max |z|` also replaces `r(1 + k)` as the framing radius. The returned points are counted from the refined grid before the lift is evaluated. A path needing more than 65,536 is refused under **Path intervals**, never drawn coarser: fewer intervals help where the turn bound sets the count, and a lower degree or a smoother loop where the tolerance does.
+
+**Diagnostics.** A path's diagnostics add the path, the period `n/gcd(n, W)`, the tolerance, and the certified lower bound on |z| beside the closest approach. The closest approach is the least sampled |z|, refined by golden-section search about it: an upper bound on the true closest approach.
+
 **Checks.** Engine tests use only returned geometry and elementary complex arithmetic (`math/cmplx`), never the engine's lift:
 - `w² = z` and the norm on every returned 4D point; z on its circle and w on its Cassini oval;
 - rotate-then-drop against an independent inverse rotation;
@@ -2720,6 +2744,19 @@ For a radius `0.25 ≤ r ≤ 4`, a center offset `0 ≤ k ≤ 3` in radii, a cen
 - the origin circle's original checks: exchange at 2π and return at 4π, rounded and arbitrary endpoints, a non-grid t, the trace's circuit identity, length and direction, the diagram's plane offsets and the principal readout;
 - for every degree from 3 to 6, on origin, enclosing and missing circles, both sides of the band and odd counts: `|wⁿ − z|`, the circle and `|w| = |z|^{1/n}` on every returned point; `w(0) = σω^b` times `cmplx.Pow(z(0), 1/n)`; `w(2πc) = ω^{cW} w(0)` at every circuit's end, circuits meeting exactly at `2πc` and none beyond n; winding summed from each circuit's own z; w turning at most 2π/N per segment at the band's edges and the coarsest count; the moving point against an independent continuation by nearest roots, forward, reversed and partial; the trace's pieces and length; `t = 2πn` drawing `t = 0`; the n − 1 other loops as `(z, ω^m w)`, closed, only over missing circles; the index readout against the principal root; framing `√(R² + R^{2/n})` and plane centers;
 - degree 2, given or absent, identical to the square root, whose results stay bit for bit those of the square root before higher roots on arm64 and amd64; refusals of degree, turn, the minus sign at odd degree and endpoints past 2πn by field; every degree within the point budget at the band's edges.
+
+For noncircular paths, a separate check list (`engine4/root_path_test.go`) uses returned geometry and the path's own formula, never the engine's lift:
+- `|wⁿ − z|` and z against the formula at every returned point;
+- the moving point, trace and returned points against a dense nearest-root continuation, forward, reversed and partial;
+- the winding against the argument principle, by quadrature of `z'/z`, and `w(2πc) = ω^{Wc}w(0)` at every circuit's end, for windings −1, 1, 2, 3 and −2 and one of 64;
+- guides for exactly the unvisited sheets;
+- the certified bound between `r/20` and the true closest approach, found independently by dense sampling and ternary search, and the reported closest approach within a relative 10⁻⁹ of it;
+- the measured deviation of both polylines within the tolerance, and w turning at most `2π/N` per segment;
+- circles written as paths matching the closed form;
+- refusals by field, including a witness found only by bisection, an unresolved path exactly at the clearance, and the budget; range edges admitted;
+- bounded certification work, and convergence as the intervals grow.
+
+Their targeted mutations are detected: no tube margin, a looser clearance, no midpoint witness, the winding ignored, a wrong circuit factor, a principal argument per point, each refinement rule dropped, a global speed bound, guides only at W = 0, framing by the circle's radius, no closest-approach refinement, the initial sheet's turn ignored, unchecked ranges and no depth cap.
 
 Targeted mutations are detected: reduction modulo 2π, no 4π reduction, principal-root evaluation, a flipped trace, the plane offset, the readout and the endpoint interpolation; and for translated circles, a principal root of z per frame, no refinement, refinement without its Lipschitz margin, a looser or stricter clearance, an unmatched sheet sign, a missing circle ignoring direction, framing that ignores the offset, an inverted winding, a wrong closest approach, unchecked offset and direction ranges, and an enclosing circle evaluated by the missing circle's factorization.
 

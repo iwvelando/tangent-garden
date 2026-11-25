@@ -217,6 +217,28 @@ test("a path through zero, a range error and a fractional frequency are refused 
   });
 });
 
+test("the grazing ripple is refused while it passes too near zero, and winds twice once it has crossed", async ({
+  page,
+}) => {
+  await open(page, "A ripple that grazes zero");
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "1: w turns by ω each circuit",
+  );
+  const a = textbox(page, "Ripple a");
+  await a.fill("0.7");
+  await settle(page);
+  await expect(textbox(page, "Center offset")).toHaveAccessibleDescription(
+    /passes within r\/20 of the branch point/,
+  );
+  await a.fill("0.76");
+  await settle(page);
+  await expect(page.locator(".stale-study")).toHaveCount(0);
+  await expect(readout(page, "Winding about 0")).toHaveText(
+    "2: w turns by ω² each circuit",
+  );
+  await expect(readout(page, "w home after")).toHaveText("3 circuits");
+});
+
 test("a path needing more than 65,536 points is refused under Path intervals, and fewer intervals recover it", async ({
   page,
 }) => {

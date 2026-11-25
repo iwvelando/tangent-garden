@@ -830,11 +830,11 @@ export const tesseractPresets: {
     },
   ),
   // One of six ripples passes just outside the clearance r/20 from zero,
-  // where w turns fastest. At Ripple a above about 0.7 it crosses zero and
-  // the loop winds twice.
+  // where w turns fastest. From 0.65 to 0.75 it passes too near zero and is
+  // refused; at Ripple a 0.76 it has crossed zero and the loop winds twice.
   rootPathPreset(
     "A ripple that grazes zero",
-    "One of six ripples passes just outside zero, where the cube root swings fastest. Raise Ripple a past 0.7 and the loop crosses zero: then it winds twice.",
+    "One of six ripples passes just outside zero, where the cube root swings fastest. Raise Ripple a to 0.76 and the ripple has crossed zero: now the loop winds twice.",
     {
       path: "ripple",
       radius: 1,

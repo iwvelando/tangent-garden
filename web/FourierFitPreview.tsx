@@ -1150,7 +1150,7 @@ export function FourierFitPreview({
             {!onAdopt
               ? "Replaces the root journey’s source path."
               : onWeave || onShorten || onRoots
-                ? "Adopting replaces your current study; the other actions keep it."
+                ? "Adopting replaces your study."
                 : "Replaces your current study."}
           </span>
         </p>
