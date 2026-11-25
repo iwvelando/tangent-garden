@@ -53,6 +53,13 @@ type RootParameters struct {
 	To     float64 `json:"to"`
 	// Progress from From to To, which only playback sets.
 	Trace float64 `json:"trace,omitempty"`
+	// A noncircular source path (#413 research, root_path.go): absent for
+	// the circle; "ripple" with Ripple a and Frequency m; or "fourier" with
+	// Terms. Each is placed as the circle is, z = r e^{iφ}(k + s(t)).
+	Path      string     `json:"path,omitempty"`
+	Ripple    float64    `json:"ripple,omitempty"`
+	Frequency float64    `json:"frequency,omitempty"`
+	Terms     []RootTerm `json:"terms,omitempty"`
 }
 
 type RootDiagnostics struct {
@@ -86,10 +93,17 @@ type RootDiagnostics struct {
 	Center float64 `json:"center"`
 	// The degree n and w's index m, w = ω^m ⁿ√z with the principal root;
 	// both absent for the square root, whose Principal says the same.
-	Degree     int    `json:"degree,omitempty"`
-	Index      int    `json:"index,omitempty"`
-	Projection string `json:"projection"`
-	Diagram    string `json:"diagram"`
+	Degree int `json:"degree,omitempty"`
+	Index  int `json:"index,omitempty"`
+	// For a noncircular path only: its name; the circuits until w is home,
+	// n/gcd(n, W); a certified lower bound on min |z| (Closest is then a
+	// sampled upper bound); and the drawing's tolerance.
+	Path         string  `json:"path,omitempty"`
+	Period       int     `json:"period,omitempty"`
+	ClosestBound float64 `json:"closestBound,omitempty"`
+	Tolerance    float64 `json:"tolerance,omitempty"`
+	Projection   string  `json:"projection"`
+	Diagram      string  `json:"diagram"`
 }
 
 // rootPoints bounds the returned points of the origin circle's three views,
@@ -266,7 +280,7 @@ func rootJourney(q Request, r Result) (Result, error) {
 	if !finite(p.Offset) || p.Offset < 0 || p.Offset > rootMaxOffset {
 		return r, fieldErr("root.offset", "Center offset must be between 0 and 3 radii")
 	}
-	if math.Abs(1-p.Offset) < rootClearance {
+	if p.Path == "" && math.Abs(1-p.Offset) < rootClearance {
 		return r, fieldErr("root.offset", "Center offset must stay at least 0.05 from 1: nearer, the circle passes too close to the branch point z = 0")
 	}
 	if !finite(p.Direction) || math.Abs(p.Direction) > 2*math.Pi+rootTolerance {
@@ -325,10 +339,29 @@ func rootJourney(q Request, r Result) (Result, error) {
 	}
 
 	n, rad, k := q.Samples, p.Radius, p.Offset
-	circle := newRootCircle(rad, k, p.Direction, sigma, degree, int(p.Branch))
-	grid := circle.grid(n)
-	h := period / float64(n)
+	var path *rootLoop
+	var evaluate func(float64) Vec4
+	var grid []float64
 	big := rad * (1 + k)
+	winding := 0
+	if k < 1 {
+		winding = 1
+	}
+	if p.Path != "" {
+		terms, err := rootShape(p)
+		if err != nil {
+			return r, err
+		}
+		path = newRootPath(p, terms, degree, sigma)
+		if err := path.certify(n); err != nil {
+			return r, err
+		}
+		evaluate, grid, big, winding = path.at, path.journeyGrid(), path.reach, path.winding
+	} else {
+		circle := newRootCircle(rad, k, p.Direction, sigma, degree, int(p.Branch))
+		evaluate, grid = circle.at, circle.grid(n)
+	}
+	h := period / float64(n)
 	// |w| = |z|^{1/n} ≤ R^{1/n}, so |q|² ≤ R² + R^{2/n}. Only the root
 	// depends on the degree before the planes are placed, and the square
 	// root's bound keeps its own expression, which arm64 may fuse.
@@ -339,14 +372,10 @@ func rootJourney(q Request, r Result) (Result, error) {
 	larger := math.Max(big, root)
 	center, reach := 1.25*larger, 1.15*larger
 	bound := math.Sqrt(big*big + rad*(1+k))
-	if degree != 2 {
+	if degree != 2 || path != nil {
 		bound = math.Sqrt(big*big + math.Pow(big, 2/float64(degree)))
 	}
 	now := from*(1-p.Trace) + to*p.Trace
-	winding := 0
-	if k < 1 {
-		winding = 1
-	}
 	diag := &RootDiagnostics{Parameter: now, Intervals: n, Refined: len(grid), Center: center, NormBound: bound,
 		Offset: k, Winding: winding, Closest: rad * math.Abs(1-k),
 		Projection: "declared 4D rotation R of q = (Re z, Im z, Re w, Im w), then drop the fourth coordinate: P = (Rq)_xyz, |P| ≤ |q| ≤ √(R² + R), R = max |z| = r(1 + k)",
@@ -355,13 +384,19 @@ func rootJourney(q Request, r Result) (Result, error) {
 		diag.Projection = fmt.Sprintf("declared 4D rotation R of q = (Re z, Im z, Re w, Im w), then drop the fourth coordinate: P = (Rq)_xyz, |P| ≤ |q| ≤ √(R² + R^{2/%d}), R = max |z| = r(1 + k)", degree)
 		diag.Diagram = fmt.Sprintf("z plane centered at (−c, 0) and w plane at (+c, 0), one scale; c = 1.25 max(R, R^{1/%d})", degree)
 	}
+	if path != nil {
+		diag.Path, diag.Period = p.Path, degree/gcdInt(degree, winding)
+		diag.Closest, diag.ClosestBound, diag.Tolerance = path.closest, path.closestBound, path.tol
+		diag.Projection = fmt.Sprintf("declared 4D rotation R of q = (Re z, Im z, Re w, Im w), then drop the fourth coordinate: P = (Rq)_xyz, |P| ≤ |q| ≤ √(R² + R^{2/%d}), R = r(k + Σρ) ≥ max |z|", degree)
+		diag.Diagram = fmt.Sprintf("z plane centered at (−c, 0) and w plane at (+c, 0), one scale; c = 1.25 max(R, R^{1/%d})", degree)
+	}
 	r.Root, r.Radius, r.Operation = diag, bound, "orthographic"
 	d := Result{Object: "root", Operation: "diagram", Paths: []Path{}, Faces: []Face{}, Points: []Vec3{},
 		Sections: []Section{}, Radius: 1.5 * larger}
 
 	at := func(t float64) Vec4 {
 		r.Evaluations++
-		return circle.at(t)
+		return evaluate(t)
 	}
 	lifted := func(v Vec4) Vec3 {
 		u := rotate(v, q.Angles)
@@ -436,10 +471,20 @@ func rootJourney(q Request, r Result) (Result, error) {
 	for _, piece := range append(circuits[:degree:degree], traced...) {
 		points += 3 * len(parameters(piece[0], piece[1]))
 	}
-	if winding == 0 {
-		points += 2 * (degree - 1) * len(parameters(0, 2*math.Pi))
+	// The sheets the permutation never visits: ω^m w for m not a multiple
+	// of gcd(n, W). For a circle, all others when it misses 0, else none.
+	orbit := gcdInt(degree, winding)
+	unvisited := 0
+	for m := 1; m < degree; m++ {
+		if m%orbit != 0 {
+			unvisited++
+		}
 	}
+	points += 2 * unvisited * len(parameters(0, 2*math.Pi))
 	if points > maxPoints {
+		if path != nil {
+			return r, fieldErr("samples", "this path needs more than 65,536 points: use fewer path intervals")
+		}
 		return r, fmt.Errorf("root journey exceeds budget: at most 65,536 points")
 	}
 
@@ -478,7 +523,10 @@ func rootJourney(q Request, r Result) (Result, error) {
 	// are quiet guides in the w plane and the 4D view; the z plane already
 	// shows their circle. Over an enclosing circle every sheet lies on the
 	// one loop the circuits draw.
-	for m := 1; winding == 0 && m < degree; m++ {
+	for m := 1; m < degree; m++ {
+		if m%orbit == 0 {
+			continue
+		}
 		id, turn := "other-sheet", unity(degree, m)
 		if degree != 2 {
 			id = fmt.Sprintf("other-sheet/%d", m)

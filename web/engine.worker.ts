@@ -661,6 +661,23 @@ self.onmessage = async ({
           ["root.direction", "Center direction", root.direction ?? 0],
           ["root.from", "Trace start", root.from],
           ["root.to", "Trace end", root.to],
+          ...(root.path === "ripple"
+            ? [
+                ["root.ripple", "Ripple a", root.ripple ?? 0],
+                ["root.frequency", "Ripple frequency m", root.frequency ?? 2],
+              ]
+            : []),
+          ...(root.path === "fourier"
+            ? (root.terms ?? []).flatMap((t, i) => [
+                [
+                  `root.terms.${i}.frequency`,
+                  `Term ${i + 1}'s frequency`,
+                  t.frequency,
+                ],
+                [`root.terms.${i}.radius`, `Term ${i + 1}'s radius`, t.radius],
+                [`root.terms.${i}.phase`, `Term ${i + 1}'s phase`, t.phase],
+              ])
+            : []),
         ] as [string, string, number][])
           if (!Number.isFinite(value))
             throw fieldError(field, `${label} must be a finite constant.`);
@@ -856,6 +873,17 @@ self.onmessage = async ({
                 from: root.from,
                 to: root.to,
                 trace: root.trace ?? 0,
+                // A noncircular path (#413 research): only its own fields,
+                // so a circle's request is unchanged.
+                ...(root.path === "ripple" && {
+                  path: root.path,
+                  ripple: root.ripple ?? 0,
+                  frequency: root.frequency ?? 2,
+                }),
+                ...(root.path === "fourier" && {
+                  path: root.path,
+                  terms: root.terms ?? [],
+                }),
               },
               samples: q.samples,
             }
