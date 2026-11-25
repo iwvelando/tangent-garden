@@ -19,6 +19,7 @@ import {
 import { tiered, withMore, type Help } from "../help";
 import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import { cellOf } from "./polytope";
+import { exampleLeafTerms } from "../example-leaf";
 import { polygonDefaults, type PolygonVertex } from "../sphere-polygon";
 import {
   defaultAzimuthal,
@@ -38,6 +39,7 @@ import type {
   Bypass,
   Weave,
   Root,
+  RootTerm,
   TesseractTarget,
 } from "./types";
 export const modes = {
@@ -256,6 +258,19 @@ export type ObjectDescriptor = {
   // Keeps a study valid after a count or choice changes, such as a
   // selection beyond a reduced count, or a polygon chosen without vertices.
   reconcile?: (c: Config) => Config;
+  // A source loop that Draw a loop can redraw, offered beside the choice
+  // `after` while `visible`: the note naming the current loop, its terms
+  // (Draw a loop's format) and the study with a drawn loop in its place.
+  loop?: {
+    after: string;
+    visible: (c: Config) => boolean;
+    note: (c: Config) => string;
+    terms: (c: Config) => RootTerm[];
+    apply: (c: Config, terms: RootTerm[]) => Config;
+    // The branch point in the loop's own coordinates, where Draw a loop
+    // rings it.
+    zero: (c: Config) => { x: number; y: number };
+  };
   choicesFirst?: boolean;
   choices?: {
     key:
@@ -616,7 +631,37 @@ const rootCase = (
   if (rootDegree(c) !== 2) return k < 1 ? "cycle" : "fixed";
   return k === 0 ? "origin" : k < 1 ? "encloses" : "misses";
 };
-const rootMisses = (c: Config) => (c.root?.offset ?? 0) > 1;
+const rootMisses = (c: Config) => !c.root?.path && (c.root?.offset ?? 0) > 1;
+// A noncircular source path, absent for the circle.
+const rootPath = (c: Config) => c.root?.path;
+// R = r(k + Σρ) ≥ max |z|: the shape's terms' radii, 1 for the circle and
+// 1 + a for the ripple.
+const rootReach = (c: Config) => {
+  const { radius, offset = 0, path, ripple = 0, terms = [] } = c.root!;
+  const sum =
+    path === "ripple"
+      ? 1 + ripple
+      : path === "fourier"
+        ? terms.reduce((a, t) => a + t.radius, 0)
+        : 1;
+  return radius * (offset + sum);
+};
+// Whether a Fourier path's terms are still Draw a loop's example leaf.
+const isExampleLeaf = (terms: readonly RootTerm[]) =>
+  terms.length === exampleLeafTerms.length &&
+  terms.every(
+    (t, i) =>
+      t.frequency === exampleLeafTerms[i].frequency &&
+      t.radius === exampleLeafTerms[i].radius &&
+      t.phase === exampleLeafTerms[i].phase,
+  );
+const pathExplanation = (c: Config): Explanation => [
+  c.root?.path === "ripple" ? "A rippled path" : "A loop of any shape",
+  "z follows a smooth loop, winding W times about the branch point z = 0 each circuit, as the readout counts. Each circuit turns w by ω^W, ω = e^{2πi/n}, so w is home after n/gcd(n, W) circuits; a loop that winds backward runs the cycle the other way. Every sheet the cycle never reaches has its loop drawn dashed. The winding is counted from the path itself, never from the drawing.",
+  c.root?.path === "ripple"
+    ? "z = r e^{iφ}(k + e^{it} + a e^{imt}),   wⁿ = z,   w(2π) = ω^W w(0),   0 ≤ t ≤ 2πn"
+    : "z = r e^{iφ}(k + Σ ρⱼ e^{i(fⱼ t + ψⱼ)}),   wⁿ = z,   w(2π) = ω^W w(0),   0 ≤ t ≤ 2πn",
+];
 const rootFormula =
   "z = r e^{iφ}(k + e^{it}),   c = k r e^{iφ},   w² = z,   |w² − c| = r,   0 ≤ t ≤ 4π";
 const higherRootFormula =
@@ -2113,7 +2158,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     radiusFields: [],
     // |q|² = |z|² + |z|^{2/n} ≤ R² + R^{2/n}, with R = max |z| = r(1 + k).
     support: (c) => {
-      const big = c.root!.radius * (1 + (c.root!.offset ?? 0));
+      const big = rootReach(c);
       const n = rootDegree(c);
       return Math.sqrt(big * big + (n === 2 ? big : big ** (2 / n)));
     },
@@ -2134,9 +2179,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
             ink: i,
           })),
           {
-            label: rootMisses(c)
-              ? "Axes, branch point, principal cut and the other roots' loops (dashed)"
-              : "Axes, branch point and principal cut",
+            label: rootPath(c)
+              ? "Axes, branch point, principal cut and any unvisited roots' loops (dashed)"
+              : rootMisses(c)
+                ? "Axes, branch point, principal cut and the other roots' loops (dashed)"
+                : "Axes, branch point and principal cut",
             family: 3,
           },
         ];
@@ -2144,8 +2191,9 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         { label: "First circuit, 0 ≤ t ≤ 2π", family: 0 },
         { label: "Second circuit, 2π ≤ t ≤ 4π (dashed)", family: 2 },
         {
-          label:
-            rootCase(c) === "misses"
+          label: rootPath(c)
+            ? "Axes, branch point, principal cut and any unvisited root's loop (dashed)"
+            : rootCase(c) === "misses"
               ? "Axes, branch point, principal cut and the other root's loop (dashed)"
               : "Axes, branch point and principal cut",
           family: 3,
@@ -2153,8 +2201,71 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       ];
     },
     movingLegend: () => "Moving point; the ring marks the start",
+    loop: {
+      after: "path",
+      visible: (c) => rootPath(c) === "fourier",
+      note: (c) => {
+        const terms = c.root?.terms ?? [];
+        return isExampleLeaf(terms)
+          ? `The example leaf, ${formatCount(terms.length)} terms, until you draw a loop.`
+          : `Your loop, ${formatCount(terms.length)} ${terms.length === 1 ? "term" : "terms"}.`;
+      },
+      terms: (c) => structuredClone(c.root?.terms ?? [...exampleLeafTerms]),
+      // z = r e^{iφ}(k + s) vanishes at s = −k, whatever r and φ.
+      zero: (c) => ({ x: -(c.root?.offset ?? 0), y: 0 }),
+      apply: (c, terms) => ({
+        ...c,
+        root: {
+          ...c.root!,
+          path: "fourier",
+          terms: terms.map(({ frequency, radius, phase }) => ({
+            frequency,
+            radius,
+            phase,
+          })),
+        },
+      }),
+    },
     choicesFirst: true,
     choices: [
+      {
+        key: "path",
+        label: "Source path",
+        help: tiered(
+          "The loop z travels: a circle, a ripple eⁱᵗ + a eⁱᵐᵗ, or a loop from Draw a loop.",
+          "A path must stay at least r/20 from z = 0, proved from its formula, or is refused under Center offset, as is one too near r/20 to decide. A Fourier loop has 1 to 16 terms of frequency within ±64. A path needing over 65,536 points to draw within 0.02% of its size is refused.",
+        ),
+        values: [
+          { value: "circle", label: "Circle" },
+          { value: "ripple", label: "Ripple: eⁱᵗ + a eⁱᵐᵗ" },
+          { value: "fourier", label: "Fourier loop" },
+        ],
+        get: (c) => rootPath(c) ?? "circle",
+        // The other paths' fields stay in the study while one is chosen.
+        set: (c, value) => {
+          const { path: _, ...root } = c.root!;
+          if (value === "ripple")
+            return {
+              ...c,
+              root: {
+                ...root,
+                path: "ripple",
+                ripple: root.ripple ?? 0.5,
+                frequency: root.frequency ?? 3,
+              },
+            };
+          if (value === "fourier")
+            return {
+              ...c,
+              root: {
+                ...root,
+                path: "fourier",
+                terms: root.terms ?? exampleLeafTerms.map((t) => ({ ...t })),
+              },
+            };
+          return { ...c, root };
+        },
+      },
       {
         key: "degree",
         label: "Degree n",
@@ -2209,6 +2320,29 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     ],
     numericFields: [
       {
+        key: "ripple",
+        label: "Ripple a",
+        help: tiered(
+          "The ripple's amplitude, from 0 to 3, in radii.",
+          "Above 1 the ripple can wind z about 0 more than once, or backward when m is negative.",
+        ),
+        visible: (c) => rootPath(c) === "ripple",
+        // The worker draws an absent ripple and frequency with these same
+        // values (engine.worker.ts), so a sparse link shows what it draws.
+        fallback: 0.5,
+      },
+      {
+        key: "frequency",
+        label: "Frequency m",
+        help: tiered(
+          "Ripples per circuit, a whole number from −12 to 12.",
+          "Negative m turns the ripple against the circle.",
+        ),
+        visible: (c) => rootPath(c) === "ripple",
+        fallback: 3,
+        whole: { min: -12, max: 12 },
+      },
+      {
         key: "radius",
         label: "Radius r",
         help: tiered(
@@ -2219,10 +2353,16 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       {
         key: "offset",
         label: "Center offset",
-        help: tiered(
-          "Center's distance from 0, in radii: 0 to 3.",
-          "Below 1 the circle encloses the branch point z = 0, and w changes sheet each circuit; above 1 it misses it, and w returns. Within 0.05 of 1 the circle passes too near the branch point and is refused.",
-        ),
+        help: (c) =>
+          rootPath(c)
+            ? tiered(
+                "Center's distance from 0, in radii: 0 to 3.",
+                "The path must stay at least r/20 from the branch point z = 0, certified from its formula; nearer, or too near the clearance to decide, it is refused.",
+              )
+            : tiered(
+                "Center's distance from 0, in radii: 0 to 3.",
+                "Below 1 the circle encloses the branch point z = 0, and w changes sheet each circuit; above 1 it misses it, and w returns. Within 0.05 of 1 the circle passes too near the branch point and is refused.",
+              ),
         fallback: 0,
       },
       {
@@ -2265,18 +2405,22 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       { key: "samples", label: "Path intervals", min: 64, max: 4096 },
     ],
     countNote: (c) =>
-      rootDegree(c) === 2
-        ? "Intervals divide 0 ≤ t ≤ 4π, split further near the branch point. Exact points are added at 2π and the moving point."
-        : `Intervals divide 0 ≤ t ≤ ${2 * rootDegree(c)}π, split further near the branch point. Exact points are added where circuits meet and at the moving point.`,
+      rootPath(c)
+        ? `Intervals divide 0 ≤ t ≤ ${2 * rootDegree(c)}π, split further near the branch point and where the path curves, so every view is drawn within 0.02% of its scale.`
+        : rootDegree(c) === 2
+          ? "Intervals divide 0 ≤ t ≤ 4π, split further near the branch point. Exact points are added at 2π and the moving point."
+          : `Intervals divide 0 ≤ t ≤ ${2 * rootDegree(c)}π, split further near the branch point. Exact points are added where circuits meet and at the moving point.`,
     layerOptions: (c) => [
       { key: "edges", label: "Circuits, trace and points" },
       {
         key: "guides",
-        label: !rootMisses(c)
-          ? "Axes, branch point and principal cut"
-          : rootDegree(c) === 2
-            ? "Axes, branch point, principal cut and the other root's loop"
-            : "Axes, branch point, principal cut and the other roots' loops",
+        label: rootPath(c)
+          ? "Axes, branch point, principal cut and any unvisited roots' loops"
+          : !rootMisses(c)
+            ? "Axes, branch point and principal cut"
+            : rootDegree(c) === 2
+              ? "Axes, branch point, principal cut and the other root's loop"
+              : "Axes, branch point, principal cut and the other roots' loops",
       },
     ],
     animationFramingHelp: () =>
@@ -2288,6 +2432,8 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     diagnostics: (r) => {
       if (!r.root) return "";
       const n = r.root.degree ?? 2;
+      if (r.root.path)
+        return `${circuitWords[n]} circuits of z, ${formatCount(r.root.intervals)} intervals over 0 ≤ t ≤ ${2 * n}π, ${formatCount(r.root.refined)} after refinement, drawn within ${formatNumber(r.root.tolerance ?? 0, 2)}. The bright trace is the last circuit behind the moving point.`;
       return `${circuitWords[n]} circuits of z, ${formatCount(r.root.intervals)} intervals over 0 ≤ t ≤ ${2 * n}π${r.root.refined > r.root.intervals ? `, ${formatCount(r.root.refined)} after refinement near the branch point` : ""}. The bright trace is the last circuit behind the moving point.`;
     },
     readouts: (r) => {
@@ -2313,13 +2459,26 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         { label: "Circuit", value: `${d.circuit} of ${degree}` },
         {
           label: "Winding about 0",
-          value:
-            d.winding === 1
+          value: d.path
+            ? d.winding === 0
+              ? "0: w returns each circuit"
+              : // ω^W, with a raised minus sign backward: as short
+                // as the forward readout, so it fits its column.
+                `${d.winding < 0 ? "−" : ""}${Math.abs(d.winding)}: w turns by ω${d.winding < 0 ? "⁻" : ""}${d.winding === 1 ? "" : superscript(Math.abs(d.winding))} each circuit`
+            : d.winding === 1
               ? degree === 2
                 ? "1: w changes sheet each circuit"
                 : "1: w moves to the next root"
               : "0: w returns each circuit",
         },
+        ...(d.path
+          ? [
+              {
+                label: "w home after",
+                value: `${d.period} ${d.period === 1 ? "circuit" : "circuits"}`,
+              },
+            ]
+          : []),
         { label: "Re z", value: n(d.z[0]) },
         { label: "Im z", value: n(d.z[1]) },
         { label: "Re w", value: n(d.w[0]) },
@@ -2335,7 +2494,14 @@ export const objects: Record<Object4, ObjectDescriptor> = {
                 ? `${omega(d.index)} ${radical(degree)}z`
                 : `${radical(degree)}z (principal)`,
         },
-        { label: "Closest |z|", value: formatNumber(d.closest) },
+        ...(d.path
+          ? [
+              {
+                label: "Closest |z|",
+                value: `${formatNumber(d.closest)}, certified ≥ ${formatNumber(d.closestBound ?? 0)}`,
+              },
+            ]
+          : [{ label: "Closest |z|", value: formatNumber(d.closest) }]),
         // A rounding-sized bound: two figures say all it means.
         {
           label: `Largest |w${superscript(degree)} − z|`,
@@ -2352,17 +2518,23 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       ];
     },
     colorNote: (c) =>
-      rootCase(c) === "cycle"
-        ? "Each circuit has its own ink in all three views. In the z plane they coincide; in the w plane and the 4D view each carries w on to the next root, and together they close one loop. The bright trace is the last circuit behind the moving point."
-        : rootCase(c) === "fixed"
-          ? "Each circuit has its own ink in all three views. Around a circle that misses 0 every circuit retraces the first in every view. The bright trace is the last circuit behind the moving point."
-          : rootCase(c) === "misses"
-            ? "Each circuit has one ink in all three views; the second is dashed. Around a circle that misses 0 the second retraces the first in every view. The bright trace is the last circuit behind the moving point."
-            : "Each circuit has one ink in all three views; the second is dashed. In the z plane they coincide; w and the 4D view separate them. The bright trace is the last circuit behind the moving point.",
-    explanation: (c) => rootExplanations[rootCase(c)],
-    title: (c) => `Tangent Garden — ${rootExplanations[rootCase(c)][0]}`,
+      rootPath(c)
+        ? rootDegree(c) === 2
+          ? "Each circuit has one ink in all three views; the second is dashed. Where w returns each circuit the second retraces the first. The bright trace is the last circuit behind the moving point."
+          : "Each circuit has its own ink in all three views. In the z plane they coincide; in the w plane and the 4D view each carries w on by ω^W, and circuits that bring w home retrace the first. The bright trace is the last circuit behind the moving point."
+        : rootCase(c) === "cycle"
+          ? "Each circuit has its own ink in all three views. In the z plane they coincide; in the w plane and the 4D view each carries w on to the next root, and together they close one loop. The bright trace is the last circuit behind the moving point."
+          : rootCase(c) === "fixed"
+            ? "Each circuit has its own ink in all three views. Around a circle that misses 0 every circuit retraces the first in every view. The bright trace is the last circuit behind the moving point."
+            : rootCase(c) === "misses"
+              ? "Each circuit has one ink in all three views; the second is dashed. Around a circle that misses 0 the second retraces the first in every view. The bright trace is the last circuit behind the moving point."
+              : "Each circuit has one ink in all three views; the second is dashed. In the z plane they coincide; w and the 4D view separate them. The bright trace is the last circuit behind the moving point.",
+    explanation: (c) =>
+      rootPath(c) ? pathExplanation(c) : rootExplanations[rootCase(c)],
+    title: (c) =>
+      `Tangent Garden — ${(rootPath(c) ? pathExplanation(c) : rootExplanations[rootCase(c)])[0]}`,
     limitations:
-      "one circular source path: radius 0.25 to 4, center offset 0 to 3 radii and at least 0.05 radii from 1; roots of degree 2 to 6; at most 4,096 parameter intervals over the journey, refined near the branch point; orthogonal projection after a declared 4D rotation; no surface or general path continuation",
+      "one source loop, a circle, a ripple or a Fourier loop of 1 to 16 terms: radius 0.25 to 4, center offset 0 to 3 radii; a circle at least 0.05 radii from 1, any other loop certified at least r/20 from z = 0; roots of degree 2 to 6; at most 4,096 parameter intervals over the journey, refined near the branch point, and another loop refined to 0.02% of its size within 65,536 points; orthogonal projection after a declared 4D rotation; one branch point, no surface continuation",
     defaults: () => ({
       ...structuredClone(defaultConfig),
       object: "root",

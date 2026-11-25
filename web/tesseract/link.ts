@@ -144,6 +144,24 @@ const root = {
     from: "number",
     to: "number",
     trace: { optional: { range: [0, 0] } },
+    // A noncircular source path and its fields. Older links have none and
+    // open the circle; each path's fields stay while another is chosen.
+    // The worker refuses fractional frequencies by name.
+    path: { optional: { options: { ripple: true, fourier: true } } },
+    ripple: { optional: { range: [0, 3] } },
+    frequency: { optional: { range: [-12, 12] } },
+    terms: {
+      optional: {
+        list: {
+          fields: {
+            frequency: { range: [-64, 64] },
+            radius: { range: [0, 1000] },
+            phase: { range: [-1e6, 1e6] },
+          },
+        },
+        max: 16,
+      },
+    },
   },
 } satisfies SchemaOf<Root>;
 // The 24-cell: its selected cell, counted from 0, and how much it draws.

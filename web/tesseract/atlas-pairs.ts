@@ -178,6 +178,9 @@ export function weaveAtlasPoints(c: Config): number {
 // each in two views. At d = 2 this is the square root's bound. The engine
 // counts the exact total before evaluating.
 export const rootAtlasPoints = (c: Config) => {
+  // A noncircular path is refined by its own curvature,
+  // counted only by the engine: reserve the whole budget.
+  if (c.root?.path) return 65536;
   const k = c.root?.offset ?? 0;
   const d = c.root?.degree ?? 2;
   const parts = Math.max(1, Math.ceil(1 / Math.abs(1 - k)));

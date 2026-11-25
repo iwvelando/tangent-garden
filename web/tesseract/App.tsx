@@ -2,11 +2,14 @@ import { distinctReadouts } from "../number-format";
 import { focusPlayWhenReady } from "../atlas-dialog";
 import { Icon } from "../icons";
 import { AtlasContext } from "../AtlasContext";
+import { FourierFitContext } from "../FourierFitContext";
+import { fittedStudy } from "../fourier-fit";
 import type { JourneyVia } from "../JourneyContext";
 import { useQuietFocus } from "../quiet-focus";
 import { tesseractAtlasBudget, tesseractAtlasEntryHelp } from "./atlas";
 import {
   cloneElement,
+  Fragment,
   useContext,
   useCallback,
   useEffect,
@@ -76,6 +79,7 @@ import {
   type Result,
   type Layers,
   type Motion,
+  type RootTerm,
   type View,
 } from "./types";
 import {
@@ -142,14 +146,22 @@ const angleHelp = tiered(
   "Radians; pi/2 is a quarter turn.",
   "Each angle stays within ±1000000. Turns apply in order xy, xz, yz, xw, yw, zw, each carrying its first axis toward its second.",
 );
+// A loop drawn in Draw a loop, to become the source loop of `object`.
+export type DrawnLoop = {
+  object: Config["object"];
+  terms: RootTerm[];
+  id: number;
+};
 export default function TesseractApp({
   active = true,
   shared,
   adoption,
+  drawnLoop,
 }: {
   active?: boolean;
   shared?: SharedStudy;
   adoption?: AdoptedJourney;
+  drawnLoop?: DrawnLoop;
 }) {
   const theme = useTheme(),
     narrow = useMediaQuery("(max-width: 700px)"),
@@ -551,6 +563,11 @@ export default function TesseractApp({
   const atlasButton = useRef<HTMLButtonElement>(null);
   const atlasQuiet = useQuietFocus(atlasEntry);
   const atlasHelp = useHelp();
+  // Draw a loop, opened over this study to redraw a source loop.
+  const fitOwner = useContext(FourierFitContext);
+  const loopEntry = useRef<HTMLParagraphElement>(null);
+  const loopButton = useRef<HTMLButtonElement>(null);
+  const loopQuiet = useQuietFocus(loopEntry);
   const atlasRequested = atlasWaiting !== null;
 
   // Still images use the custom export callback below, independently of
@@ -563,6 +580,27 @@ export default function TesseractApp({
       imageGeneration.current++;
     };
   }, [journey.requested, atlasRequested]);
+  const chooseObject = (object: Config["object"]) => {
+    // An object replacement invalidates scalar jobs from the previous definition.
+    stop();
+    generation.current++;
+    setScalars({});
+    setMotion(objects[object].motion);
+    // A phrase names the values of one object.
+    setPhrase(undefined);
+    update((c) => {
+      const saved = remembered.current[object];
+      if (saved) return structuredClone(saved);
+      return objects[object].defaults(c);
+    });
+  };
+  // A loop from Draw a loop replaces only the source loop of an open
+  // study; another object is first chosen as the object menu would.
+  useEffect(() => {
+    if (!drawnLoop) return;
+    if (config.object !== drawnLoop.object) chooseObject(drawnLoop.object);
+    update((c) => objects[drawnLoop.object].loop!.apply(c, drawnLoop.terms));
+  }, [drawnLoop?.id]);
   useEffect(() => {
     if (adoption?.notebook !== "4d") return;
     if (!adoption.edit)
@@ -920,28 +958,60 @@ export default function TesseractApp({
           (!choice.visible || choice.visible(config)),
       )
       .map((choice) => (
-        <ChoiceField
-          key={choice.key}
-          choice={choice}
-          config={config}
-          help={choiceHelp(config, choice)}
-          onChoose={async (value) => {
-            // A choice with its own set hook may compute from numeric
-            // fields (the root's degree scales the endpoints), so
-            // evaluations still pending for them land first; a preset or
-            // object chosen meanwhile wins.
-            if (choice.set) {
-              const token = generation.current;
-              await Promise.allSettled([...jobs.current]);
-              if (token !== generation.current) return;
-            }
-            update((c) =>
-              (descriptor.reconcile ?? ((c) => c))(
-                applyChoice(c, choice, value),
-              ),
-            );
-          }}
-        />
+        <Fragment key={choice.key}>
+          <ChoiceField
+            choice={choice}
+            config={config}
+            help={choiceHelp(config, choice)}
+            onChoose={async (value) => {
+              // A choice with its own set hook may compute from numeric
+              // fields (the root's degree scales the endpoints), so
+              // evaluations still pending for them land first; a preset or
+              // object chosen meanwhile wins.
+              if (choice.set) {
+                const token = generation.current;
+                await Promise.allSettled([...jobs.current]);
+                if (token !== generation.current) return;
+              }
+              update((c) =>
+                (descriptor.reconcile ?? ((c) => c))(
+                  applyChoice(c, choice, value),
+                ),
+              );
+            }}
+          />
+          {descriptor.loop?.after === choice.key &&
+            descriptor.loop.visible(config) && (
+              <p
+                className="note loop-entry"
+                ref={loopEntry}
+                onPointerDown={loopQuiet.onPointerDown}
+                onKeyDownCapture={loopQuiet.onKeyDownCapture}
+              >
+                {descriptor.loop.note(config)}{" "}
+                <button
+                  ref={loopButton}
+                  type="button"
+                  className="text-button"
+                  onClick={(e) =>
+                    fitOwner.begin({
+                      study: fittedStudy(descriptor.loop!.terms(config)),
+                      via: e.detail === 0 ? "keyboard" : "pointer",
+                      root: { zero: descriptor.loop!.zero(config) },
+                      restoreFocus: (via) => {
+                        if (via === "pointer") loopQuiet.onPointerDown();
+                        else loopQuiet.onKeyDownCapture();
+                        loopQuiet.quiet();
+                        loopButton.current?.focus({ preventScroll: true });
+                      },
+                    })
+                  }
+                >
+                  Draw a new loop…
+                </button>
+              </p>
+            )}
+        </Fragment>
       ));
   const choices = choiceFields(false);
   const info = descriptor.explanation(config);
@@ -1202,21 +1272,9 @@ export default function TesseractApp({
                 <Field label={labels.object} help={objectHelp(config)}>
                   <select
                     value={config.object}
-                    onChange={(e) => {
-                      const object = e.target.value as Config["object"];
-                      // An object replacement invalidates scalar jobs from the previous definition.
-                      stop();
-                      generation.current++;
-                      setScalars({});
-                      setMotion(objects[object].motion);
-                      // A phrase names the values of one object.
-                      setPhrase(undefined);
-                      update((c) => {
-                        const saved = remembered.current[object];
-                        if (saved) return structuredClone(saved);
-                        return objects[object].defaults(c);
-                      });
-                    }}
+                    onChange={(e) =>
+                      chooseObject(e.target.value as Config["object"])
+                    }
                   >
                     {Object.entries(objects).map(([key, object]) => (
                       <option key={key} value={key}>

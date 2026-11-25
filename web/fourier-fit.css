@@ -177,29 +177,33 @@
   flex: 0 0 auto;
   gap: 8px;
 }
-/* Three actions (adopting, weaving and smoothing) keep one row, beside the
-   copy where it fits and below it on a narrow phone: their labels wrap
-   rather than the row, so the footer is no taller than with two. */
-.fit-footer-actions:has(.fit-shorten) {
+/* Three or four actions (adopting, weaving, smoothing and following the
+   roots) keep one row, beside the copy where it fits and below it on a
+   narrow phone: their labels wrap rather than the row, so the footer is no
+   taller than with two. */
+.fit-footer-actions:has(.fit-shorten, .fit-roots) {
   flex: 1 1 260px;
   justify-content: flex-end;
   min-width: 0;
 }
-.fit-footer-actions:has(.fit-shorten) button {
+.fit-footer-actions:has(.fit-shorten, .fit-roots) button {
   flex: 0 1 auto;
   min-width: 0;
   white-space: normal;
   line-height: 1.15;
   padding: 4px 8px;
 }
-/* Weaving and smoothing keep the study, so they are quieter than adopting. */
+/* Weaving, smoothing and following the roots keep the study, so they are
+   quieter than adopting. */
 .fit-footer button.fit-weave,
-.fit-footer button.fit-shorten {
+.fit-footer button.fit-shorten,
+.fit-footer button.fit-roots {
   background: transparent;
   color: var(--base-ink);
 }
 .fit-footer button.fit-weave:hover:not(:disabled),
-.fit-footer button.fit-shorten:hover:not(:disabled) {
+.fit-footer button.fit-shorten:hover:not(:disabled),
+.fit-footer button.fit-roots:hover:not(:disabled) {
   background: transparent;
   filter: none;
   color: var(--text);
@@ -211,6 +215,14 @@
 }
 .fit-footer-two .fit-adopt-copy {
   flex: 1 1 200px;
+}
+/* Four actions take more of the row, so their labels wrap to two lines
+   rather than three; the shorter copy beside them takes the rest. */
+.fit-footer-two:has(.fit-roots) .fit-adopt-copy {
+  flex-basis: 130px;
+}
+.fit-footer-actions:has(.fit-roots) {
+  flex-basis: 380px;
 }
 .fit-footer {
   position: sticky;
@@ -327,6 +339,14 @@ html.fourier-fit-open body {
   stroke: var(--derived-ink);
   stroke-dasharray: calc(var(--outline-unit) * 3) calc(var(--outline-unit) * 2);
   opacity: 0.65;
+  pointer-events: none;
+}
+/* z = 0 of the root journey Draw a loop was opened from: a guide in the
+   text ink, never captured or fitted. */
+.fit-branch-point {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: var(--outline-unit);
   pointer-events: none;
 }
 .fit-edit-handle {

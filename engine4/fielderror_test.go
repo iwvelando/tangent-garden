@@ -32,6 +32,40 @@ func TestValidationNamesItsField(t *testing.T) {
 		{"root branch", "root.branch", func() Request { q := root(); q.Root.Branch = 2; return q }},
 		{"root start", "root.from", func() Request { q := root(); q.Root.From = -1; return q }},
 		{"root end", "root.to", func() Request { q := root(); q.Root.To = 13; return q }},
+		{"root path", "root.path", func() Request { q := root(); q.Root.Path = "spiral"; return q }},
+		{"root ripple", "root.ripple", func() Request { q := root(); q.Root.Path, q.Root.Ripple = "ripple", 3.5; return q }},
+		{"root frequency", "root.frequency", func() Request {
+			q := root()
+			q.Root.Path, q.Root.Ripple, q.Root.Frequency = "ripple", 0.5, 2.5
+			return q
+		}},
+		{"root path through zero", "root.offset", func() Request {
+			q := root()
+			q.Root.Path, q.Root.Ripple, q.Root.Frequency = "ripple", 1, 2
+			return q
+		}},
+		{"root terms", "root.terms", func() Request { q := root(); q.Root.Path = "fourier"; return q }},
+		{"root term frequency", "root.terms.1.frequency", func() Request {
+			q := root()
+			q.Root.Path, q.Root.Terms = "fourier", []RootTerm{{1, 1, 0}, {0.5, 0.2, 0}}
+			return q
+		}},
+		{"root term radius", "root.terms.0.radius", func() Request {
+			q := root()
+			q.Root.Path, q.Root.Terms = "fourier", []RootTerm{{1, 1001, 0}}
+			return q
+		}},
+		{"root term phase", "root.terms.0.phase", func() Request {
+			q := root()
+			q.Root.Path, q.Root.Terms = "fourier", []RootTerm{{1, 1, nan}}
+			return q
+		}},
+		{"root path over budget", "samples", func() Request {
+			q := root()
+			q.Samples = 4096
+			q.Root.Path, q.Root.Terms = "fourier", []RootTerm{{1, 1, 0}, {64, 0.5, 0}}
+			return q
+		}},
 		{"root samples", "samples", func() Request { q := root(); q.Samples = 63; return q }},
 		{"root angle", "angles.2", func() Request { q := root(); q.Angles[2] = nan; return q }},
 		{"root mode", "mode", func() Request { q := root(); q.Mode = "stereo"; return q }},

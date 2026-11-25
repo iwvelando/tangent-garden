@@ -773,9 +773,20 @@ details p,
   display: none;
 }
 .help-more {
+  display: inline-grid;
   font-size: inherit;
   line-height: inherit;
   white-space: nowrap;
+}
+/* The label shown, over the other one held invisible for its width. An
+   atomic inline box does not pass its underline on, so each label takes
+   it explicitly. */
+.help-more > span {
+  grid-area: 1 / 1;
+  text-decoration: inherit;
+}
+.help-more > span[aria-hidden] {
+  visibility: hidden;
 }
 .layer-grid {
   display: grid;

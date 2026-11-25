@@ -92,7 +92,12 @@ export function HelpText({
           aria-controls={more}
           onClick={help.toggleMore}
         >
-          {help.more ? "Show less" : "Show more"}
+          {/* Both labels share one cell, so the toggle keeps the wider's
+              width and never rewraps the essentials beside it. */}
+          <span>{help.more ? "Show less" : "Show more"}</span>
+          <span aria-hidden="true">
+            {help.more ? "Show more" : "Show less"}
+          </span>
         </button>
       </p>
       <p className="hint-more" id={more} hidden={!help.more}>

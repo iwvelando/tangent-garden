@@ -56,6 +56,9 @@ export function fieldLabel(c: Config, path: string): string | undefined {
   m = /^(\w+)\.vertices\.(\d+)\.([uv])$/.exec(path);
   if (m && m[1] === d.parameterKey && d.vertexList)
     return vertexLabel(+m[2] + 1, m[3] as "u" | "v");
+  // A Fourier path's terms are shown under its choice.
+  if (d.parameterKey === "root" && /^root\.terms(\.\d+\.\w+)?$/.test(path))
+    return d.choices?.find((f) => f.key === "path")?.label;
   m = /^(lift|bypass|weave|cell24|cell16|root)\.(\w+)(?:\.(\d))?$/.exec(path);
   if (!m || m[1] !== d.parameterKey) return undefined;
   if (m[2] === "selected") return d.selection?.label;

@@ -41,7 +41,17 @@ export type Root = {
   to: number;
   // Progress from `from` to `to`, which only the sampler below sets.
   trace?: number;
+  // A noncircular source path (docs/mathematics.md, root journey), placed as
+  // the circle is: z = r e^{iφ}(k + s(t)). Absent for the circle. A ripple
+  // s = e^{it} + a e^{imt}; a Fourier loop s = Σ ρ e^{i(f t + ψ)}.
+  path?: "ripple" | "fourier";
+  ripple?: number;
+  frequency?: number;
+  terms?: RootTerm[];
 };
+// One term ρ e^{i(f t + ψ)} of a Fourier source path, as Draw a loop
+// writes it.
+export type RootTerm = { frequency: number; radius: number; phase: number };
 // A dual pair, the 24-cell (cell24) or the tesseract and its 16-cell
 // (cell16): the selected primal cell (counted from 0), which is also the
 // ID of its center, a vertex of the dual, and how much to draw.
@@ -343,9 +353,18 @@ export type Result = {
     refined: number;
     // The center offset k in radii, 0 for the origin circle.
     offset: number;
-    // Winding of z about 0 over one circuit, and min |z| = r|1 − k|.
-    winding: 0 | 1;
+    // Winding of z about 0 over one circuit, and min |z| = r|1 − k|. A
+    // noncircular path may wind any whole number of times; its closest is
+    // a sampled upper bound.
+    winding: number;
     closest: number;
+    // A noncircular path only: its name, the circuits until w is home,
+    // n/gcd(n, W), the certified lower bound on min |z|, and the drawing's
+    // tolerance.
+    path?: "ripple" | "fourier";
+    period?: number;
+    closestBound?: number;
+    tolerance?: number;
     center: number;
     projection: string;
     diagram: string;

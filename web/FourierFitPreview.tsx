@@ -133,15 +133,19 @@ export function FourierFitPreview({
   onAdopt,
   onWeave,
   onShorten,
+  onRoots,
 }: {
   request: FourierFitRequest;
   onReturn: (via: JourneyVia) => void;
-  onAdopt: (study: PlanarStudy, via: JourneyVia) => void;
+  // Absent when opened from the root journey, whose loop is all it takes.
+  onAdopt?: (study: PlanarStudy, via: JourneyVia) => void;
   // Opens hyperbolic lace with the fitted loop as its motif.
   onWeave?: (terms: Term[], via: JourneyVia) => void;
   // Opens curves that smooth themselves with this loop, its fitted terms
   // and the outline they were fitted to.
   onShorten?: (terms: Term[], points: Vec[] | null, via: JourneyVia) => void;
+  // Opens the root journey with the fitted loop as z's source path.
+  onRoots?: (terms: Term[], via: JourneyVia) => void;
 }) {
   const theme = useTheme(),
     title = useId();
@@ -299,10 +303,12 @@ export function FourierFitPreview({
         "Stroke interrupted. The visible draft is kept open; redraw or explicitly close it.",
       );
   }
-  function finish(action: "return" | "adopt" | "weave" | "shorten" = "return") {
+  function finish(
+    action: "return" | "adopt" | "weave" | "shorten" | "roots" = "return",
+  ) {
     const study = action === "adopt" ? engine.current?.candidate() : null;
     const terms =
-      action === "weave" || action === "shorten"
+      action === "weave" || action === "shorten" || action === "roots"
         ? engine.current?.candidateTerms()
         : null;
     const points =
@@ -312,9 +318,11 @@ export function FourierFitPreview({
     engine.current?.cancel();
     setPlaying(false);
     dialog.current?.close();
-    if (study) onAdopt(study, via.current);
+    if (study && onAdopt) onAdopt(study, via.current);
     else if (terms && action === "shorten" && onShorten)
       onShorten(terms, points, via.current);
+    else if (terms && action === "roots" && onRoots)
+      onRoots(terms, via.current);
     else if (terms && onWeave) onWeave(terms, via.current);
     else onReturn(via.current);
   }
@@ -322,6 +330,7 @@ export function FourierFitPreview({
   // source is that study's loop.
   const fromLace = !!request.lace;
   const fromShorten = !!request.shorten;
+  const fromRoot = !!request.root;
   const viewHint = useMemo(
     () =>
       matchMedia("(pointer: coarse)").matches
@@ -684,6 +693,14 @@ export function FourierFitPreview({
       ) : (
         <polyline points={path(reference ? targetPoints : visiblePoints)} />
       )}
+      {!reference && request.root && (
+        <circle
+          className="fit-branch-point"
+          cx={request.root.zero.x}
+          cy={-request.root.zero.y}
+          r={6 / inputScale}
+        />
+      )}
       {!reference && editable && chosen && (
         <>
           {state.editing?.changed && (
@@ -744,7 +761,9 @@ export function FourierFitPreview({
           ? "Draw a new outline or start with the example leaf, then close it. Or use the lace's current loop; the lace stays as it was until you weave."
           : fromShorten
             ? "Draw a new outline or start with the example leaf, then close it. Or use the current loop's fit; the smoothing study stays as it was until you smooth a new loop."
-            : "Draw your own outline or start with the example leaf, then close it. Or use your current base curve; your original study stays here until adoption."}
+            : fromRoot
+              ? "Draw a new outline or start with the example leaf, then close it. Or use the root journey's current loop; the journey stays as it was until you follow the new loop's roots. The ring marks z = 0, the branch point: a loop around it makes the roots trade places."
+              : "Draw your own outline or start with the example leaf, then close it. Or use your current base curve; your original study stays here until adoption."}
       </p>
       <div className="fit-layout">
         <section className="fit-draft" aria-label="Outline input">
@@ -791,7 +810,7 @@ export function FourierFitPreview({
                     engine.current?.useCurve(request.study);
                   }}
                 >
-                  {fromLace || fromShorten
+                  {fromLace || fromShorten || fromRoot
                     ? "Use current loop"
                     : "Use current curve"}
                 </button>
@@ -992,6 +1011,25 @@ export function FourierFitPreview({
                 />
               )}
               {reference && isClosed && outline(true)}
+              {request.root && shown && (
+                <svg
+                  className="fit-reference"
+                  viewBox={viewBoxOf(previewView)}
+                  aria-hidden="true"
+                  style={
+                    {
+                      "--outline-unit": `${(0.015 * (1000 / 6)) / previewView.scale}px`,
+                    } as CSSProperties
+                  }
+                >
+                  <circle
+                    className="fit-branch-point"
+                    cx={request.root.zero.x}
+                    cy={-request.root.zero.y}
+                    r={6 / previewView.scale}
+                  />
+                </svg>
+              )}
             </div>
             <div
               className="fit-playback"
@@ -1098,11 +1136,13 @@ export function FourierFitPreview({
                 : "Draw your own shape or use the example leaf.")}
       </p>
       <div className="fit-notes">
-        <p className="note">
-          Adoption replaces your study with editable Fourier terms. A short
-          offset is ready to show under Layers; reveal animation starts only
-          when played.
-        </p>
+        {onAdopt && (
+          <p className="note">
+            Adoption replaces your study with editable Fourier terms. A short
+            offset is ready to show under Layers; reveal animation starts only
+            when played.
+          </p>
+        )}
         <p className="note">
           Links and exports preserve the fitted study, never the raw outline.
           The reference and correction history are discarded when you leave.
@@ -1119,6 +1159,13 @@ export function FourierFitPreview({
             every tile, keeping your study.
           </p>
         )}
+        {onRoots && (
+          <p className="note">
+            {fromRoot
+              ? "Follow its roots makes this loop the root journey’s source path; the journey keeps its other settings."
+              : "Follow its roots opens the root journey in the 4D notebook with this loop as the source path z, keeping your study."}
+          </p>
+        )}
       </div>
       <footer
         className="fit-footer fit-footer-two"
@@ -1127,9 +1174,11 @@ export function FourierFitPreview({
         <p className="fit-adopt-copy">
           <strong>Use the fitted loop</strong>
           <span id={`${title}-adopt-note`}>
-            {onWeave || onShorten
-              ? "Adopting replaces your current study; weaving or smoothing keeps it."
-              : "Replaces your current study."}
+            {!onAdopt
+              ? "Replaces the root journey’s source path."
+              : onWeave || onShorten || onRoots
+                ? "Adopting replaces your study."
+                : "Replaces your current study."}
           </span>
         </p>
         <div className="fit-footer-actions">
@@ -1161,15 +1210,33 @@ export function FourierFitPreview({
               Weave into lace
             </button>
           )}
-          <button
-            type="button"
-            aria-describedby={`${title}-adopt-note`}
-            aria-busy={state.pending && !!state.frame}
-            disabled={!state.frame || state.pending || !!state.error || drawing}
-            onClick={() => finish("adopt")}
-          >
-            Adopt fitted study
-          </button>
+          {onRoots && (
+            <button
+              type="button"
+              className={onAdopt ? "fit-roots" : undefined}
+              aria-describedby={`${title}-adopt-note`}
+              aria-busy={state.pending && !!state.frame}
+              disabled={
+                !state.frame || state.pending || !!state.error || drawing
+              }
+              onClick={() => finish("roots")}
+            >
+              Follow its roots
+            </button>
+          )}
+          {onAdopt && (
+            <button
+              type="button"
+              aria-describedby={`${title}-adopt-note`}
+              aria-busy={state.pending && !!state.frame}
+              disabled={
+                !state.frame || state.pending || !!state.error || drawing
+              }
+              onClick={() => finish("adopt")}
+            >
+              Adopt fitted study
+            </button>
+          )}
         </div>
       </footer>
     </dialog>
