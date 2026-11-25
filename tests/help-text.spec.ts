@@ -85,6 +85,7 @@ import { rideHelp } from "../web/spatial/ride";
 import { sightHelp } from "../web/spatial/sight";
 import { surfaceShape } from "../web/spatial/surface";
 import {
+  choiceHelp,
   defaultConfig as tesseractDefaults,
   objectHelp,
   objects,
@@ -379,7 +380,7 @@ test("every help a setting reveals keeps to the same limits", () => {
           : object.selection.help,
       );
     for (const choice of object.choices ?? [])
-      add(`${name} ${choice.label}`, choice.help);
+      add(`${name} ${choice.label}`, choiceHelp(config, choice));
     for (const field of object.radiusFields)
       add(`${name} ${field.label}`, field.help);
     add(`${name} slice`, object.sliceHelp);

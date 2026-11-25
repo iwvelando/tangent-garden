@@ -10,6 +10,7 @@ import { tesseractPresets } from "./tesseract/presets";
 import { fieldLabel as shapeFieldLabel } from "./tesseract/fields";
 import { objects, type ObjectDescriptor } from "./tesseract/objects";
 import { motions } from "./tesseract/types";
+import { applyChoice, choiceOptions } from "./tesseract/objects";
 import { fieldLabel as spatialFieldLabel } from "./spatial/fields";
 import {
   presetStudy as tesseractStudy,
@@ -164,18 +165,16 @@ function shapeEdit(
     const choice = descriptor.choices!.find((c) => c.key === control.key)!;
     if (
       typeof value !== "string" ||
-      !choice.values.some((option) => option.value === value)
+      !choiceOptions(study.config, choice).some(
+        (option) => option.value === value,
+      )
     )
       throw new RangeError(
         `${choice.label} offers no option ${JSON.stringify(value)}.`,
       );
-    const key = descriptor.parameterKey!;
     return reconcileShapeStudy({
       ...study,
-      config: {
-        ...study.config,
-        [key]: { ...study.config[key], [control.key]: value },
-      },
+      config: applyChoice(study.config, choice, value),
     });
   }
   const selection = descriptor.selection!;

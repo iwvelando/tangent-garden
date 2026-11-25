@@ -19,16 +19,23 @@ export type Object4 =
   | "cell24"
   | "cell16"
   | "root";
-// The square-root journey (engine4/root.go): the circle
-// z = r e^{iφ}(k + e^{it}) and its continuously followed root w, for
-// 0 ≤ t ≤ 4π. k = 0 is the origin circle, w = ±√r e^{it/2}.
+// The root journey (engine4/root.go): the circle z = r e^{iφ}(k + e^{it})
+// and its continuously followed n-th root w, wⁿ = z, for 0 ≤ t ≤ 2πn.
+// k = 0 is the origin circle; n = 2, the square root, w = ±√r e^{it/2}.
 export type Root = {
   radius: number;
   // The center c = k r e^{iφ}: offset k in radii, direction φ in radians.
   // Absent in older links, which open the origin circle.
   offset?: number;
   direction?: number;
+  // The degree n, a whole number from 2 to 6; absent in older links, and
+  // for the square root, which is 2.
+  degree?: number;
+  // w(0) = σ ω^b ⁿ√z(0), ω = e^{2πi/n}: the sign σ, and the turn b, absent
+  // (0) at n = 2, where the sign alone names the sheet (rootSheet in
+  // ./objects.ts).
   sheet: "plus" | "minus";
+  branch?: number;
   // Radians: where the trace motion begins and ends.
   from: number;
   to: number;
@@ -175,7 +182,7 @@ export type Result = {
       | "cell"
       | "diagonal"
       | "spoke"
-      // The square-root journey's circuits, trace and principal cut.
+      // The root journey's circuits, trace and principal cut.
       | "circuit"
       | "trace"
       | "cut";
@@ -318,10 +325,15 @@ export type Result = {
   };
   root?: {
     parameter: number;
-    circuit: 1 | 2;
+    // 1 to n: c while 2π(c − 1) ≤ t mod 2πn < 2πc.
+    circuit: number;
     z: [number, number];
     w: [number, number];
     principal: 1 | -1;
+    // For n ≥ 3, the degree and w's index m, w = ω^m ⁿ√z with the
+    // principal root (absent for 0); both absent for the square root.
+    degree?: number;
+    index?: number;
     residual: number;
     normBound: number;
     // |(z, w)| at the moving point.

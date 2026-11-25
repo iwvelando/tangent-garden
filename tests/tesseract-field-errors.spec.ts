@@ -117,6 +117,36 @@ const cases: Case[] = [
   ],
   ["root.from", object("root"), (c) => (c.root!.from = -1), "Trace start"],
   ["root.to", object("root"), (c) => (c.root!.to = 13), "Trace end"],
+  // A higher root: a fractional degree, a turn beyond its roots, the minus
+  // sheet at odd degree (not a root there) and an end past 2πn.
+  ["root.degree", object("root"), (c) => (c.root!.degree = 2.5), "Degree n"],
+  [
+    "root.branch",
+    object("root"),
+    (c) => {
+      c.root!.degree = 3;
+      c.root!.branch = 4;
+    },
+    "Initial sheet",
+  ],
+  [
+    "root.sheet",
+    object("root"),
+    (c) => {
+      c.root!.degree = 3;
+      c.root!.sheet = "minus";
+    },
+    "Initial sheet",
+  ],
+  [
+    "root.to",
+    object("root"),
+    (c) => {
+      c.root!.degree = 3;
+      c.root!.to = 7 * Math.PI;
+    },
+    "Trace end",
+  ],
   ["samples", object("root"), (c) => (c.samples = 63), "Path intervals"],
   ["samples", object("root"), (c) => (c.samples = 64.5), "Path intervals"],
   [

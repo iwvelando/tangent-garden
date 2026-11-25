@@ -743,4 +743,52 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
+  // Opens at t = 0 on a circle that encloses zero, off center, at degree 5:
+  // each circuit, in its own ink, carries w on to the next fifth root, and
+  // the five join into one five-lobed loop in the w plane and one coiled
+  // closed curve in 4D. Follow the root loops over the whole 10π journey.
+  {
+    name: "Five roots trading places",
+    detail:
+      "Each circuit of z moves its fifth root on to the next of the five roots. Only after five circuits is it home, and the five stretches close into one flower.",
+    config: {
+      ...objects.root.defaults(base),
+      samples: 2048,
+      root: {
+        radius: 0.6,
+        offset: 0.85,
+        direction: 0.4,
+        degree: 5,
+        sheet: "plus",
+        from: 0,
+        to: 10 * Math.PI,
+      },
+    },
+    motion: "trace",
+    repeat: "loop",
+  },
+  // Opens at t = 0 on a circle that misses zero at degree 5: w keeps to one
+  // of five petals and comes home after every circuit; the other four are
+  // dashed guides. Follow the root loops over 10π.
+  {
+    name: "Five petals, one visited",
+    detail:
+      "The circle passes zero by, so its fifth root comes home after every circuit, keeping to one of five petals; the other four are never visited.",
+    config: {
+      ...objects.root.defaults(base),
+      samples: 2048,
+      angles: [0, 0, -1, 0, 0.8, 0.6],
+      root: {
+        radius: 0.5,
+        offset: 1.08,
+        direction: 2.5,
+        degree: 5,
+        sheet: "plus",
+        from: 0,
+        to: 10 * Math.PI,
+      },
+    },
+    motion: "trace",
+    repeat: "loop",
+  },
 ];

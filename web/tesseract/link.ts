@@ -126,7 +126,7 @@ const weave = {
     phase: { optional: "number" },
   },
 } satisfies SchemaOf<Weave>;
-// The square-root journey. Only playback moves the point, so a link
+// The root journey. Only playback moves the point, so a link
 // carries no progress: 0 is the only value it accepts.
 const root = {
   fields: {
@@ -135,6 +135,11 @@ const root = {
     // circles, which open the origin circle they drew.
     offset: { optional: "number" },
     direction: { optional: "number" },
+    // The degree and the initial sheet's turn, absent in links made before
+    // higher roots, which open the square root they drew. The worker
+    // refuses a fractional degree or turn, or a turn of n or more, by name.
+    degree: { optional: { range: [2, 6] } },
+    branch: { optional: { range: [0, 5] } },
     sheet: { options: { plus: true, minus: true } },
     from: "number",
     to: "number",

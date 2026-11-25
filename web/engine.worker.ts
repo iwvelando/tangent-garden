@@ -647,7 +647,7 @@ self.onmessage = async ({
       }
       const root = q.object === "root" ? q.root : undefined;
       if (q.object === "root" && !root)
-        throw new Error("Enter square-root journey parameters.");
+        throw new Error("Enter root journey parameters.");
       if (root) {
         for (const [i, value] of q.angles.entries())
           if (!Number.isFinite(value))
@@ -849,6 +849,10 @@ self.onmessage = async ({
                 offset: root.offset ?? 0,
                 direction: root.direction ?? 0,
                 sheet: root.sheet,
+                // Absent for the square root, as before higher roots, so
+                // its requests are unchanged.
+                ...(root.degree !== undefined && { degree: root.degree }),
+                ...(root.branch !== undefined && { branch: root.branch }),
                 from: root.from,
                 to: root.to,
                 trace: root.trace ?? 0,

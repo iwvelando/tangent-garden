@@ -78,7 +78,14 @@ import {
   type Motion,
   type View,
 } from "./types";
-import { objects, modeLabel, objectHelp, viewHelp } from "./objects";
+import {
+  applyChoice,
+  choiceHelp,
+  objects,
+  modeLabel,
+  objectHelp,
+  viewHelp,
+} from "./objects";
 import { axes, fieldLabel, labels } from "./fields";
 import { LinkNotice, ShareLink } from "../ShareLink";
 import { LinkError, type SharedStudy } from "../study-link";
@@ -917,16 +924,12 @@ export default function TesseractApp({
           key={choice.key}
           choice={choice}
           config={config}
-          help={choice.help}
+          help={choiceHelp(config, choice)}
           onChoose={(value) =>
             update((c) =>
-              (descriptor.reconcile ?? ((c) => c))({
-                ...c,
-                [parameterKey]: {
-                  ...c[parameterKey],
-                  [choice.key]: value,
-                },
-              }),
+              (descriptor.reconcile ?? ((c) => c))(
+                applyChoice(c, choice, value),
+              ),
             )
           }
         />
@@ -1833,8 +1836,9 @@ export default function TesseractApp({
                             label: ["x", "y", "z", "w"][i],
                             family: i,
                             roles: undefined,
+                            ink: undefined,
                           }))
-                        ).map(({ label, family, roles }) => ({
+                        ).map(({ label, family, roles, ink }) => ({
                           key: label,
                           shown:
                             !drawn ||
@@ -1848,7 +1852,10 @@ export default function TesseractApp({
                             <>
                               <i
                                 style={{
-                                  background: inks(dark, scheme)[family],
+                                  background:
+                                    ink === undefined
+                                      ? inks(dark, scheme)[family]
+                                      : sectionInk(ink, dark, scheme),
                                 }}
                               />
                               {label}
