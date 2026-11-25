@@ -41,7 +41,7 @@ export type Root = {
   to: number;
   // Progress from `from` to `to`, which only the sampler below sets.
   trace?: number;
-  // A noncircular source path (#413 research, ./research.ts), placed as
+  // A noncircular source path (docs/mathematics.md, root journey), placed as
   // the circle is: z = r e^{iφ}(k + s(t)). Absent for the circle. A ripple
   // s = e^{it} + a e^{imt}; a Fourier loop s = Σ ρ e^{i(f t + ψ)}.
   path?: "ripple" | "fourier";

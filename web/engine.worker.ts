@@ -873,7 +873,7 @@ self.onmessage = async ({
                 from: root.from,
                 to: root.to,
                 trace: root.trace ?? 0,
-                // A noncircular path (#413 research): only its own fields,
+                // A noncircular path: only its own fields,
                 // so a circle's request is unchanged.
                 ...(root.path === "ripple" && {
                   path: root.path,

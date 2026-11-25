@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// Noncircular source paths for the root journey (#413 research): the
+// Noncircular source paths for the root journey: the
 // ripple s = e^{it} + a e^{imt} and Fourier loops s = Σ ρ e^{i(f t + ψ)},
 // placed as the circle is, z(t) = r e^{iφ}(k + s(t)). Every check reads
 // returned geometry and compares it with references computed here: the
@@ -681,5 +681,63 @@ func TestRootPathConvergesWithIntervals(t *testing.T) {
 	t.Logf("deviation %v, closest gap %v", deviation, gap)
 	if !(deviation[2] < deviation[1] && deviation[1] < deviation[0]) || gap[2] > gap[0] {
 		t.Fatalf("deviation %v and closest gap %v do not fall with N", deviation, gap)
+	}
+}
+
+// Refusals name their numbers as the interface's readouts do: three
+// significant digits, no floating-point tail, a true minus sign and
+// e−5 rather than e-05.
+func TestRootReadout(t *testing.T) {
+	for _, tc := range []struct {
+		v    float64
+		want string
+	}{
+		{0, "0"},
+		{0.047186, "0.0472"},
+		{3.1170489, "3.12"},
+		{0.05, "0.05"},
+		{2, "2"},
+		{6.2831853, "6.28"},
+		{999.6, "1e3"},
+		{1234, "1.23e3"},
+		{0.00012345, "0.000123"},
+		{0.000012345, "1.23e−5"},
+		{-0.5, "−0.5"},
+		{-0.000012, "−1.2e−5"},
+	} {
+		if got := rootReadout(tc.v, 3); got != tc.want {
+			t.Errorf("rootReadout(%v, 3) = %q, want %q", tc.v, got, tc.want)
+		}
+	}
+}
+
+// The circle z = 1.04 + e^{it}, with 512 base intervals per circuit
+// (h = 2π/512): |z|² = 2.0816 + 2.08 cos t first falls below (r/20)² at
+// the node t = 254h ≈ 3.117, where |z| ≈ 0.04719.
+func TestRootWitnessReadsAsTheInterfaceDoes(t *testing.T) {
+	c := pathCase{p: fourier(1, 1.04, 0, []RootTerm{{1, 1, 0}}, 2, "plus", 0), samples: 1024}
+	_, err := Compute(pathRequest(c, 0, c.period(), 0))
+	want := "Center offset: the path passes within r/20 of the branch point z = 0 (|z| = 0.0472 at t = 3.12); move it farther from 0 or across it"
+	if err == nil || err.Error() != want {
+		t.Fatalf("refusal = %v, want %q", err, want)
+	}
+}
+
+// Over budget, refinement and the returned journey name the same remedies:
+// fewer intervals help where the interval count sets the points, a lower
+// degree or a smoother path where the tolerance does.
+func TestRootPathBudgetNamesItsRemedies(t *testing.T) {
+	want := "This path needs more than 65,536 points to be drawn within 0.02% of its size: use fewer path intervals, a lower degree or a smoother path"
+	for _, c := range []pathCase{
+		// Refinement alone passes the budget.
+		{p: fourier(1, 0, 0, []RootTerm{{1, 1, 0}, {64, 0.5, 0}}, 6, "plus", 0), samples: 4096},
+		// The refined journey, with its exact joins, passes it.
+		{p: fourier(1, 0, 0, []RootTerm{{1, 1, 0}, {64, 0.25, 0}}, 2, "plus", 0), samples: 1024},
+	} {
+		_, err := Compute(pathRequest(c, 0, c.period(), 0))
+		var fe *FieldError
+		if !errors.As(err, &fe) || fe.Field != "samples" || fe.Message != want {
+			t.Errorf("n=%d N=%d: refusal = %#v, want samples: %q", degreeOf(c.p), c.samples, err, want)
+		}
 	}
 }

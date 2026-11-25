@@ -1,5 +1,5 @@
 import type { Config, Motion, Root, View } from "./types";
-import { leafTerms, researchRoots } from "./research";
+import { exampleLeafTerms } from "../example-leaf";
 import type { TesseractPhrase } from "./phrase";
 import type { Pace, Repeat } from "../timing";
 import { defaultConfig, objects } from "./objects";
@@ -792,87 +792,93 @@ export const tesseractPresets: {
     motion: "trace",
     repeat: "loop",
   },
-  // #413 research studies, only under ?research=413: noncircular source
-  // paths. Each loops over its whole journey.
-  ...(researchRoots() ? researchRootPresets() : []),
+  // Noncircular source paths. Each opens at t = 0 with the whole journey
+  // drawn, and Follow the root loops over it.
+  // A ripple that winds z twice about zero each circuit: the cube root
+  // moves two roots on per circuit and still needs all three to come home.
+  rootPathPreset(
+    "Twice around zero",
+    "A rippled loop winds twice about zero each circuit, so its cube root skips a root every time and still needs three circuits to come home.",
+    { path: "ripple", radius: 0.8, ripple: 2, frequency: 2, degree: 3 },
+  ),
+  // Winding −2 at degree 5: the roots are visited in star order, two steps
+  // back each circuit.
+  rootPathPreset(
+    "Roots in star order",
+    "The loop winds backward twice each circuit, so the five fifth roots are visited in star order, two steps back at a time.",
+    {
+      path: "ripple",
+      radius: 0.7,
+      ripple: 1.4,
+      frequency: -2,
+      degree: 5,
+      direction: 0.3,
+    },
+  ),
+  // Twelve ripples on a circle that encloses zero: each curls into a small
+  // loop the cube root follows.
+  rootPathPreset(
+    "Twelve ripples",
+    "Twelve ripples on a circle around zero curl into small loops, and the cube root follows every one of them.",
+    {
+      path: "ripple",
+      radius: 1,
+      offset: 0.3,
+      ripple: 0.3,
+      frequency: 12,
+      degree: 3,
+    },
+  ),
+  // One of six ripples passes just outside the clearance r/20 from zero,
+  // where w turns fastest. At Ripple a above about 0.7 it crosses zero and
+  // the loop winds twice.
+  rootPathPreset(
+    "A ripple that grazes zero",
+    "One of six ripples passes just outside zero, where the cube root swings fastest. Raise Ripple a past 0.7 and the loop crosses zero: then it winds twice.",
+    {
+      path: "ripple",
+      radius: 1,
+      offset: 0.3,
+      ripple: 0.64,
+      frequency: 6,
+      direction: 0.5,
+      degree: 3,
+    },
+  ),
+  // Draw a loop's example leaf, drawn clockwise about zero: winding −1, so
+  // the cube roots trade places backward.
+  rootPathPreset(
+    "A drawn leaf around zero",
+    "Draw a loop's example leaf circles zero clockwise, so its cube roots trade places backward. Draw your own loop to replace it.",
+    {
+      path: "fourier",
+      radius: 1,
+      terms: exampleLeafTerms.map((t) => ({ ...t })),
+      degree: 3,
+    },
+  ),
 ];
 
-function researchRootPresets(): typeof tesseractPresets {
-  const study = (
-    name: string,
-    detail: string,
-    root: Partial<Root>,
-    samples = 2048,
-  ) => ({
-    name: `Research: ${name}`,
+function rootPathPreset(
+  name: string,
+  detail: string,
+  root: Partial<Root>,
+): (typeof tesseractPresets)[number] {
+  return {
+    name,
     detail,
     config: {
       ...objects.root.defaults(base),
-      samples,
+      samples: 2048,
       root: {
         radius: 1,
-        sheet: "plus" as const,
+        sheet: "plus",
         from: 0,
         to: 2 * Math.PI * (root.degree ?? 2),
         ...root,
       },
     },
-    motion: "trace" as const,
-    repeat: "loop" as const,
-  });
-  return [
-    study(
-      "twice around zero",
-      "A ripple winds z twice about zero each circuit, so its cube root skips a root every circuit and still needs all three to come home.",
-      { path: "ripple", radius: 0.8, ripple: 2, frequency: 2, degree: 3 },
-    ),
-    study(
-      "roots in star order",
-      "z winds backward twice each circuit, so the five fifth roots are visited in star order, two steps back at a time.",
-      {
-        path: "ripple",
-        radius: 0.7,
-        ripple: 1.4,
-        frequency: -2,
-        degree: 5,
-        direction: 0.3,
-      },
-    ),
-    study(
-      "twelve ripples",
-      "Twelve ripples on a circle that encloses zero: the path curls into small loops, and the cube root follows every one.",
-      {
-        path: "ripple",
-        radius: 1,
-        offset: 0.3,
-        ripple: 0.3,
-        frequency: 12,
-        degree: 3,
-      },
-    ),
-    study(
-      "the example leaf around zero",
-      "Draw a loop's example leaf, drawn clockwise about zero: the cube roots trade places backward.",
-      { path: "fourier", radius: 1, terms: leafTerms, degree: 3 },
-    ),
-    study(
-      "a ripple that grazes zero",
-      "Six ripples, one passing just outside the clearance from zero, where the cube root turns fastest. Raise Ripple a past 0.7 and the path crosses zero: then it winds twice.",
-      {
-        path: "ripple",
-        radius: 1,
-        offset: 0.3,
-        ripple: 0.64,
-        frequency: 6,
-        direction: 0.5,
-        degree: 3,
-      },
-    ),
-    study(
-      "a ripple through zero (refused)",
-      "This ripple passes through zero, where no root can be followed: refused under Center offset.",
-      { path: "ripple", radius: 1, ripple: 1, frequency: 2 },
-      1024,
-    ),
-  ];
+    motion: "trace",
+    repeat: "loop",
+  };
 }

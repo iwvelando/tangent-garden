@@ -53,7 +53,7 @@ type RootParameters struct {
 	To     float64 `json:"to"`
 	// Progress from From to To, which only playback sets.
 	Trace float64 `json:"trace,omitempty"`
-	// A noncircular source path (#413 research, root_path.go): absent for
+	// A noncircular source path (root_path.go): absent for
 	// the circle; "ripple" with Ripple a and Frequency m; or "fourier" with
 	// Terms. Each is placed as the circle is, z = r e^{iφ}(k + s(t)).
 	Path      string     `json:"path,omitempty"`
@@ -483,7 +483,7 @@ func rootJourney(q Request, r Result) (Result, error) {
 	points += 2 * unvisited * len(parameters(0, 2*math.Pi))
 	if points > maxPoints {
 		if path != nil {
-			return r, fieldErr("samples", "this path needs more than 65,536 points: use fewer path intervals")
+			return r, fieldErr("samples", "%s", rootBudgetMessage)
 		}
 		return r, fmt.Errorf("root journey exceeds budget: at most 65,536 points")
 	}

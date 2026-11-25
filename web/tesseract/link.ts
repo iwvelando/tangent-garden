@@ -9,7 +9,6 @@ import {
 } from "../study-link";
 import { objects, defaultConfig } from "./objects";
 import { tesseractPresets } from "./presets";
-import { researchRoots } from "./research";
 import { lineWeightSchema } from "../line-weight";
 import { maxPhases, maxPhraseTracks } from "../phrase-timeline";
 import { maxPolygonVertices } from "../sphere-polygon";
@@ -145,9 +144,9 @@ const root = {
     from: "number",
     to: "number",
     trace: { optional: { range: [0, 0] } },
-    // A noncircular path, only under #413's research parameter; elsewhere
-    // a link naming one is refused below. The worker refuses fractional
-    // frequencies by name.
+    // A noncircular source path and its fields. Older links have none and
+    // open the circle; each path's fields stay while another is chosen.
+    // The worker refuses fractional frequencies by name.
     path: { optional: { options: { ripple: true, fourier: true } } },
     ripple: { optional: { range: [0, 3] } },
     frequency: { optional: { range: [-12, 12] } },
@@ -414,11 +413,6 @@ export function tesseractStudy(value: unknown): TesseractStudy {
   const descriptor = objects[object];
   const defaults = descriptor.defaults(defaultConfig);
   const read = conform(raw.config, config, defaults, "config");
-  if (read.root?.path && !researchRoots())
-    throw new LinkError(
-      "config.root.path",
-      "This link names a research source path, which opens only in the research preview.",
-    );
   const key = descriptor.parameterKey;
   if (key && !read[key])
     Object.assign(read, { [key]: structuredClone(defaults[key]) });

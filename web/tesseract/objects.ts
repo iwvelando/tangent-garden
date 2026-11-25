@@ -19,7 +19,7 @@ import {
 import { tiered, withMore, type Help } from "../help";
 import { backAndForthHelp, onceHelp, type Repeat } from "../timing";
 import { cellOf } from "./polytope";
-import { leafTerms, researchRoots } from "./research";
+import { exampleLeafTerms } from "../example-leaf";
 import { polygonDefaults, type PolygonVertex } from "../sphere-polygon";
 import {
   defaultAzimuthal,
@@ -39,6 +39,7 @@ import type {
   Bypass,
   Weave,
   Root,
+  RootTerm,
   TesseractTarget,
 } from "./types";
 export const modes = {
@@ -257,6 +258,16 @@ export type ObjectDescriptor = {
   // Keeps a study valid after a count or choice changes, such as a
   // selection beyond a reduced count, or a polygon chosen without vertices.
   reconcile?: (c: Config) => Config;
+  // A source loop that Draw a loop can redraw, offered beside the choice
+  // `after` while `visible`: the note naming the current loop, its terms
+  // (Draw a loop's format) and the study with a drawn loop in its place.
+  loop?: {
+    after: string;
+    visible: (c: Config) => boolean;
+    note: (c: Config) => string;
+    terms: (c: Config) => RootTerm[];
+    apply: (c: Config, terms: RootTerm[]) => Config;
+  };
   choicesFirst?: boolean;
   choices?: {
     key:
@@ -618,7 +629,7 @@ const rootCase = (
   return k === 0 ? "origin" : k < 1 ? "encloses" : "misses";
 };
 const rootMisses = (c: Config) => !c.root?.path && (c.root?.offset ?? 0) > 1;
-// A noncircular source path (#413 research), absent for the circle.
+// A noncircular source path, absent for the circle.
 const rootPath = (c: Config) => c.root?.path;
 // R = r(k + Σρ) ≥ max |z|: the shape's terms' radii, 1 for the circle and
 // 1 + a for the ripple.
@@ -632,6 +643,15 @@ const rootReach = (c: Config) => {
         : 1;
   return radius * (offset + sum);
 };
+// Whether a Fourier path's terms are still Draw a loop's example leaf.
+const isExampleLeaf = (terms: readonly RootTerm[]) =>
+  terms.length === exampleLeafTerms.length &&
+  terms.every(
+    (t, i) =>
+      t.frequency === exampleLeafTerms[i].frequency &&
+      t.radius === exampleLeafTerms[i].radius &&
+      t.phase === exampleLeafTerms[i].phase,
+  );
 const pathExplanation = (c: Config): Explanation => [
   c.root?.path === "ripple" ? "A rippled path" : "A loop of any shape",
   "z follows a smooth loop, winding W times about the branch point z = 0 each circuit, as the readout counts. Each circuit turns w by ω^W, ω = e^{2πi/n}, so w is home after n/gcd(n, W) circuits; a loop that winds backward runs the cycle the other way. Every sheet the cycle never reaches has its loop drawn dashed. The winding is counted from the path itself, never from the drawing.",
@@ -2178,21 +2198,43 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       ];
     },
     movingLegend: () => "Moving point; the ring marks the start",
+    loop: {
+      after: "path",
+      visible: (c) => rootPath(c) === "fourier",
+      note: (c) => {
+        const terms = c.root?.terms ?? [];
+        return isExampleLeaf(terms)
+          ? `The example leaf, ${formatCount(terms.length)} terms, until you draw a loop.`
+          : `Your loop, ${formatCount(terms.length)} ${terms.length === 1 ? "term" : "terms"}.`;
+      },
+      terms: (c) => structuredClone(c.root?.terms ?? [...exampleLeafTerms]),
+      apply: (c, terms) => ({
+        ...c,
+        root: {
+          ...c.root!,
+          path: "fourier",
+          terms: terms.map(({ frequency, radius, phase }) => ({
+            frequency,
+            radius,
+            phase,
+          })),
+        },
+      }),
+    },
     choicesFirst: true,
     choices: [
       {
         key: "path",
-        label: "Source path (research)",
+        label: "Source path",
         help: tiered(
-          "The loop z travels: a circle, a rippled circle or a Fourier loop.",
-          "Each is placed by Radius r, Center offset and Center direction. A path must stay at least r/20 from z = 0, certified from the path's own formula; one that cannot be certified either way is refused as unresolved.",
+          "The loop z travels: a circle, a ripple eⁱᵗ + a eⁱᵐᵗ, or a loop from Draw a loop.",
+          "A path must stay at least r/20 from z = 0, proved from its formula, or is refused under Center offset, as is one too near r/20 to decide. A Fourier loop has 1 to 16 terms of frequency within ±64. A path needing over 65,536 points to draw within 0.02% of its size is refused.",
         ),
         values: [
           { value: "circle", label: "Circle" },
           { value: "ripple", label: "Ripple: eⁱᵗ + a eⁱᵐᵗ" },
-          { value: "fourier", label: "Fourier loop (the example leaf)" },
+          { value: "fourier", label: "Fourier loop" },
         ],
-        visible: (c) => researchRoots() || !!rootPath(c),
         get: (c) => rootPath(c) ?? "circle",
         // The other paths' fields stay in the study while one is chosen.
         set: (c, value) => {
@@ -2213,7 +2255,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
               root: {
                 ...root,
                 path: "fourier",
-                terms: root.terms ?? structuredClone(leafTerms),
+                terms: root.terms ?? exampleLeafTerms.map((t) => ({ ...t })),
               },
             };
           return { ...c, root };
@@ -2483,7 +2525,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     title: (c) =>
       `Tangent Garden — ${(rootPath(c) ? pathExplanation(c) : rootExplanations[rootCase(c)])[0]}`,
     limitations:
-      "one circular source path: radius 0.25 to 4, center offset 0 to 3 radii and at least 0.05 radii from 1; roots of degree 2 to 6; at most 4,096 parameter intervals over the journey, refined near the branch point; orthogonal projection after a declared 4D rotation; no surface or general path continuation",
+      "one source loop, a circle, a ripple or a Fourier loop of 1 to 16 terms: radius 0.25 to 4, center offset 0 to 3 radii; a circle at least 0.05 radii from 1, any other loop certified at least r/20 from z = 0; roots of degree 2 to 6; at most 4,096 parameter intervals over the journey, refined near the branch point, and another loop refined to 0.02% of its size within 65,536 points; orthogonal projection after a declared 4D rotation; one branch point, no surface continuation",
     defaults: () => ({
       ...structuredClone(defaultConfig),
       object: "root",

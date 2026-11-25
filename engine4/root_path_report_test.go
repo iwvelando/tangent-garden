@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// The #413 research evidence, reproducible with
+// The noncircular paths' evidence (first gathered for #413), reproducible with
 //
 //	ROOT_PATH_REPORT=1 go test ./engine4 -run TestRootPathReport -v
 //

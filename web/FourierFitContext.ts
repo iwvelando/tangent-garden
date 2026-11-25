@@ -14,6 +14,10 @@ export type FourierFitRequest = {
   // Opened from curves that smooth themselves to redraw its loop, likewise:
   // the study to return to, as it stood.
   shorten?: ShortenEntry;
+  // Opened from the 4D root journey to redraw its source loop. The study is
+  // then that loop as a Fourier curve, and the journey stays as it was
+  // beneath until its roots are followed.
+  root?: true;
 };
 export const FourierFitContext = createContext<{
   begin: (request: FourierFitRequest) => void;

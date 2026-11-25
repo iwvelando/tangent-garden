@@ -39,6 +39,7 @@ import { createRoot } from "react-dom/client";
 import { presets } from "./presets";
 import { FourierFitPreview } from "./FourierFitPreview";
 import { FourierFitContext, type FourierFitRequest } from "./FourierFitContext";
+import type { DrawnLoop } from "./tesseract/App";
 import {
   HarmonicFitContext,
   type HarmonicFitEntry,
@@ -3408,6 +3409,8 @@ function Notebook() {
     Partial<Record<NotebookKind, AdoptedJourney>>
   >({});
   const adoptionId = useRef(0);
+  // A loop from Draw a loop for the 4D root journey's source path.
+  const [drawnLoop, setDrawnLoop] = useState<DrawnLoop | undefined>();
   const restoreFocus = useRef<(() => void) | null>(null);
   useLayoutEffect(() => {
     if (!overlay && restoreFocus.current) {
@@ -3733,75 +3736,110 @@ function Notebook() {
                     else if (fit.shorten) setShorten({ ...fit.shorten, via });
                     else restoreFocus.current = () => fit.restoreFocus(via);
                   }}
+                  // The 4D root journey with the fitted loop as its source
+                  // path. Opened from the journey, only its path changes
+                  // and focus returns to where Draw a loop was opened;
+                  // otherwise the 4D notebook opens on it, and the 2D study
+                  // stays as it was.
+                  onRoots={(terms, via) => {
+                    links.current++;
+                    setShared((s) => ({ ...s, "4d": undefined }));
+                    setDrawnLoop({
+                      object: "root",
+                      terms,
+                      id: ++adoptionId.current,
+                    });
+                    setFit(null);
+                    if (fit.root)
+                      restoreFocus.current = () => fit.restoreFocus(via);
+                    else choose("4d", via);
+                  }}
                   // Hyperbolic lace with the fitted loop as its motif: the
                   // lace it was opened from, or the default lace over the
-                  // notebook's study, which stays as it was.
-                  onWeave={(terms, via) => {
-                    const base = fit.lace ?? {
-                      study: {
-                        ...(fit.shorten?.study ?? fit.study),
-                        lace: defaultLace,
-                      },
-                      restoreFocus:
-                        fit.shorten?.restoreFocus ?? fit.restoreFocus,
-                    };
-                    setFit(null);
-                    setLace({
-                      ...base,
-                      via,
-                      study: {
-                        ...base.study,
-                        lace: {
-                          ...structuredClone(base.study.lace ?? defaultLace),
-                          motifKind: drawnMotif.id,
-                          loopTerms: terms,
-                        },
-                      },
-                    });
-                  }}
+                  // notebook's study, which stays as it was. Weaving,
+                  // smoothing and adopting belong to the 2D notebook, so
+                  // Draw a loop opened from the root journey offers none.
+                  onWeave={
+                    fit.root
+                      ? undefined
+                      : (terms, via) => {
+                          const base = fit.lace ?? {
+                            study: {
+                              ...(fit.shorten?.study ?? fit.study),
+                              lace: defaultLace,
+                            },
+                            restoreFocus:
+                              fit.shorten?.restoreFocus ?? fit.restoreFocus,
+                          };
+                          setFit(null);
+                          setLace({
+                            ...base,
+                            via,
+                            study: {
+                              ...base.study,
+                              lace: {
+                                ...structuredClone(
+                                  base.study.lace ?? defaultLace,
+                                ),
+                                motifKind: drawnMotif.id,
+                                loopTerms: terms,
+                              },
+                            },
+                          });
+                        }
+                  }
                   // Curves that smooth themselves with the fitted loop and the
                   // outline it was fitted to: the study it was opened from,
                   // keeping its other settings, or the default study over
                   // the notebook's study, which stays as it was.
-                  onShorten={(terms, points, via) => {
-                    const base = fit.shorten ?? {
-                      study: { ...(fit.lace?.study ?? fit.study) },
-                      restoreFocus: fit.lace?.restoreFocus ?? fit.restoreFocus,
-                    };
-                    const { loopPoints: _, ...kept } = structuredClone(
-                      base.study.shorten ?? defaultShorten,
-                    );
-                    setFit(null);
-                    setShorten({
-                      ...base,
-                      via,
-                      study: {
-                        ...base.study,
-                        shorten: {
-                          ...kept,
-                          family: "loop",
-                          loopTerms: terms,
-                          ...(points && { loopPoints: points }),
-                        },
-                      },
-                    });
-                  }}
-                  onAdopt={(study, via) => {
-                    links.current++;
-                    setShared((s) => ({ ...s, "2d": undefined }));
-                    setAdoptions((a) => ({
-                      ...a,
-                      "2d": {
-                        notebook: "2d",
-                        study,
-                        custom: true,
-                        preset: 0,
-                        id: ++adoptionId.current,
-                      },
-                    }));
-                    restoreFocus.current = () => fit.restoreFocus(via);
-                    setFit(null);
-                  }}
+                  onShorten={
+                    fit.root
+                      ? undefined
+                      : (terms, points, via) => {
+                          const base = fit.shorten ?? {
+                            study: { ...(fit.lace?.study ?? fit.study) },
+                            restoreFocus:
+                              fit.lace?.restoreFocus ?? fit.restoreFocus,
+                          };
+                          const { loopPoints: _, ...kept } = structuredClone(
+                            base.study.shorten ?? defaultShorten,
+                          );
+                          setFit(null);
+                          setShorten({
+                            ...base,
+                            via,
+                            study: {
+                              ...base.study,
+                              shorten: {
+                                ...kept,
+                                family: "loop",
+                                loopTerms: terms,
+                                ...(points && { loopPoints: points }),
+                              },
+                            },
+                          });
+                        }
+                  }
+                  onAdopt={
+                    fit.root
+                      ? undefined
+                      : (study, via) => {
+                          links.current++;
+                          setShared((s) => ({ ...s, "2d": undefined }));
+                          setAdoptions((a) => ({
+                            ...a,
+                            "2d": {
+                              notebook: "2d",
+                              study,
+                              custom: true,
+                              preset: 0,
+                              id: ++adoptionId.current,
+                            },
+                          }));
+                          restoreFocus.current = () => fit.restoreFocus(via);
+                          setFit(null);
+                        }
+                  }
                 />
               </div>
             )}
@@ -4041,6 +4079,7 @@ function Notebook() {
                     active={mode === "4d"}
                     shared={shared["4d"]}
                     adoption={adoptions["4d"]}
+                    drawnLoop={drawnLoop}
                   />
                 </Suspense>
               </div>

@@ -5,9 +5,11 @@ import (
 	"math"
 	"math/cmplx"
 	"sort"
+	"strconv"
+	"strings"
 )
 
-// Noncircular source paths for the root journey (#413 research). A path is
+// Noncircular source paths for the root journey. A path is
 // placed as the circle is, z(t) = r e^{iφ}(k + s(t)), with the shape
 //
 //	ripple:  s(t) = e^{it} + a e^{imt}, 0 ≤ a ≤ 3, m whole within ±12;
@@ -183,7 +185,7 @@ func (c *rootLoop) certify(intervals int) error {
 	z0 := c.z(0)
 	c.evaluations++
 	witness := func(z complex128, s float64) error {
-		return fieldErr("root.offset", "Center offset: the path passes within r/20 of the branch point z = 0 (|z| = %.3g at t = %.4g); move it farther from 0 or across it", cmplx.Abs(z), s)
+		return fieldErr("root.offset", "Center offset: the path passes within r/20 of the branch point z = 0 (|z| = %s at t = %s); move it farther from 0 or across it", rootReadout(cmplx.Abs(z), 3), rootReadout(s, 3))
 	}
 	if cmplx.Abs(z0) < clearance {
 		return witness(z0, 0)
@@ -248,12 +250,12 @@ func (c *rootLoop) certify(intervals int) error {
 		m = math.Max(m, math.Ceil(hl*math.Sqrt(c.m/(8*c.tol))))
 		m = math.Max(m, math.Ceil(hl*math.Sqrt(w2/(8*c.tol))))
 		if m*float64(3*c.n) > maxPoints {
-			return fieldErr("samples", "this path needs more than 65,536 points to be drawn within its tolerance")
+			return fieldErr("samples", "%s", rootBudgetMessage)
 		}
 		parts[i] = int(m)
 		total += parts[i]
 		if 3*c.n*total > maxPoints {
-			return fieldErr("samples", "this path needs more than 65,536 points to be drawn within its tolerance")
+			return fieldErr("samples", "%s", rootBudgetMessage)
 		}
 	}
 
@@ -379,3 +381,32 @@ func gcdInt(a, b int) int {
 	}
 	return a
 }
+
+// rootReadout writes v as the interface's readouts do (web/number-format.ts
+// readout): digits significant digits without a floating-point tail or
+// trailing zeros, plain from 1e-4 up to 10^digits and scientific (1.2e−5)
+// elsewhere, with a true minus sign. v must be finite.
+func rootReadout(v float64, digits int) string {
+	if v == 0 {
+		return "0"
+	}
+	rounded, _ := strconv.ParseFloat(strconv.FormatFloat(v, 'g', digits, 64), 64)
+	a := math.Abs(rounded)
+	var text string
+	if a >= 1e-4 && a < math.Pow(10, float64(digits)) {
+		text = strconv.FormatFloat(a, 'f', -1, 64)
+	} else {
+		mantissa, exponent, _ := strings.Cut(strconv.FormatFloat(a, 'e', -1, 64), "e")
+		e, _ := strconv.Atoi(exponent)
+		text = mantissa + "e" + strconv.Itoa(e)
+	}
+	if rounded < 0 {
+		text = "-" + text
+	}
+	return strings.ReplaceAll(text, "-", "−")
+}
+
+// The refusal of a path over the point budget, from refinement or the
+// returned journey: fewer intervals help where the interval count sets
+// the points, a lower degree or a smoother path where the tolerance does.
+const rootBudgetMessage = "This path needs more than 65,536 points to be drawn within 0.02% of its size: use fewer path intervals, a lower degree or a smoother path"
