@@ -144,6 +144,19 @@ func (m similarity) copyOf(q Request) (Request, bool) {
 		}
 		c.Field.Escape *= m.s
 	case "implicit":
+		// A disk mode lies about the origin: a translation has no such
+		// study, and a scaling scales its radius, within its range.
+		if d := c.Implicit.Disk; d != nil {
+			if translated {
+				return q, false
+			}
+			scaled := *d
+			scaled.Radius *= m.s
+			if scaled.validate() != nil {
+				return q, false
+			}
+			c.Implicit.Disk = &scaled
+		}
 		c.Implicit.F = m.pullback(c.Implicit.F)
 		w := c.Implicit.Window
 		lo, hi := m.at(Vec{w.XMin, w.YMin}), m.at(Vec{w.XMax, w.YMax})

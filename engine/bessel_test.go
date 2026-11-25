@@ -158,3 +158,51 @@ func TestBesselPeaksBoundEveryValue(t *testing.T) {
 		}
 	}
 }
+
+// The disk modes read J_m from Chebyshev pieces of g_m(x) = J_m(x)/x^m,
+// held to besselJ's accuracy against the independent series: absolute
+// everywhere, and relative below the order. The derivative is checked
+// against (J_{m−1} − J_{m+1})/2 from the same series.
+func TestBesselTableMatchesAnIndependentSeries(t *testing.T) {
+	worst, worstPrime := 0.0, 0.0
+	for m := 0; m <= maxDiskOrder; m++ {
+		tab := besselTableOf(m)
+		xs := []float64{0, 1e-12, 1e-6, 1e-3, 0.5, float64(m), maxBesselArg}
+		for i := 0; i <= maxBesselArg; i++ {
+			xs = append(xs, float64(i), math.Nextafter(float64(i), 0), math.Nextafter(float64(i), maxBesselArg))
+		}
+		for i := 0; i <= 1024; i++ {
+			xs = append(xs, maxBesselArg*float64(i)/1024+0.0071)
+		}
+		for _, x := range xs {
+			if !(x >= 0 && x <= maxBesselArg) {
+				continue
+			}
+			g, gp := tab.at(x)
+			xm := math.Pow(x, float64(m))
+			got, want := xm*g, refBessel(m, x)
+			err := math.Abs(got - want)
+			worst = math.Max(worst, err)
+			if err > 1e-15 {
+				t.Fatalf("table J_%d(%g) = %.17g, want %.17g (error %.2g)", m, x, got, want, err)
+			}
+			if x <= float64(m) && want != 0 && err > 1e-13*math.Abs(want) {
+				t.Fatalf("table J_%d(%g) = %.17g, want %.17g: relative error %.2g", m, x, got, want, err/math.Abs(want))
+			}
+			// J′ = m x^{m−1} g + x^m g′.
+			prime := xm * gp
+			if m > 0 {
+				prime += float64(m) * math.Pow(x, float64(m-1)) * g
+			}
+			wantPrime := -refBessel(1, x)
+			if m > 0 {
+				wantPrime = (refBessel(m-1, x) - refBessel(m+1, x)) / 2
+			}
+			worstPrime = math.Max(worstPrime, math.Abs(prime-wantPrime))
+			if math.Abs(prime-wantPrime) > 1e-12 {
+				t.Fatalf("table J′_%d(%g) = %.17g, want %.17g", m, x, prime, wantPrime)
+			}
+		}
+	}
+	t.Logf("largest error %.2g, derivative %.2g", worst, worstPrime)
+}

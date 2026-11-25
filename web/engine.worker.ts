@@ -16,7 +16,9 @@ declare const Go: new () => {
   exited: boolean;
   _makeFuncWrapper(id: number): (...args: unknown[]) => unknown;
 };
-declare const tangentGardenCompute: (json: string) => string;
+declare const tangentGardenCompute: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenTrack: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
@@ -1415,15 +1417,22 @@ self.onmessage = async ({
       self.postMessage({ id: data.id, ...reply });
       return;
     }
+    // A result's large arrays arrive lifted, beside its JSON; a refusal,
+    // or an engine from before lifting, is JSON alone.
+    const raw = tangentGardenCompute(request);
+    const lifted = typeof raw === "string" ? undefined : raw.lifted;
     const result: import("./types").Result | { error: string } = JSON.parse(
-      tangentGardenCompute(request),
+      typeof raw === "string" ? raw : raw.json,
     );
     if (!("error" in result) && result.sourcePosition)
       config.source.position = result.sourcePosition;
-    self.postMessage({
-      id: data.id,
-      ...("error" in result ? result : { result, config }),
-    });
+    self.postMessage(
+      {
+        id: data.id,
+        ...("error" in result ? result : { result, config, lifted }),
+      },
+      lifted ? [lifted.floats.buffer] : [],
+    );
   } catch (error) {
     self.postMessage({
       id: data.id,

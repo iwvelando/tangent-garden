@@ -236,6 +236,165 @@ func TestDiskModeSolvesTheBoundaryValueProblem(t *testing.T) {
 	}
 }
 
+// The gradient evaluated with the value is the value's own gradient: the
+// value is the field's bit for bit, and the gradient agrees with central
+// differences of the independent evaluation.
+func TestDiskModeGradientIsTheFieldsOwn(t *testing.T) {
+	for _, mk := range [][2]int{{0, 1}, {0, 6}, {1, 1}, {2, 3}, {5, 3}, {8, 5}, {12, 10}} {
+		m, k := mk[0], mk[1]
+		for _, R := range []float64{1, 0.01, 250} {
+			for _, a := range []float64{0, 0.37, 2, 7} {
+				d := Disk{m, k, R}
+				u, ug := d.field(a), d.fieldGradient(a)
+				own := ownMode(m, k, R, a)
+				scale := zerosOf(m)[k-1] / R
+				h := 1e-6 * R
+				pts := []Vec{{0, 0}, {R, 0}, {0, -R}, {R * 0.6, R * 0.8}}
+				for i := range 80 {
+					r := R * math.Sqrt(float64(i)+0.5) / math.Sqrt(80)
+					θ := 2.399963 * float64(i)
+					pts = append(pts, Vec{r * math.Cos(θ), r * math.Sin(θ)})
+				}
+				for _, p := range pts {
+					v, g := ug(p.X, p.Y)
+					if want := u(p.X, p.Y); v != want && !(math.IsNaN(v) && math.IsNaN(want)) {
+						t.Fatalf("(%d, %d), R = %g: value %.17g at %v, the field's %.17g", m, k, R, v, p, want)
+					}
+					// Central differences, kept inside the disk.
+					q := p.Mul(math.Min(1, (R-2*h)/math.Max(p.Norm(), 1e-300)))
+					num := Vec{
+						(own(q.Add(Vec{h, 0})) - own(q.Sub(Vec{h, 0}))) / (2 * h),
+						(own(q.Add(Vec{0, h})) - own(q.Sub(Vec{0, h}))) / (2 * h),
+					}
+					_, gq := ug(q.X, q.Y)
+					if diff := gq.Sub(num).Norm(); diff > 1e-6*scale {
+						t.Fatalf("(%d, %d), R = %g, a = %g: gradient %v at %v, central differences %v", m, k, R, a, gq, q, num)
+					}
+					if !g.Valid() {
+						t.Fatalf("(%d, %d): gradient %v at %v", m, k, g, p)
+					}
+				}
+				if v, _ := ug(2*R, 0); !math.IsNaN(v) {
+					t.Errorf("(%d, %d): value %g outside the disk, want NaN", m, k, v)
+				}
+			}
+		}
+	}
+}
+
+// The edge root on a disk sheet ends, as bisection does, at adjacent
+// floating-point numbers between which F − c changes sign, or where it is
+// zero, so every crossing lies on its level to rounding.
+func TestDiskRootsAreBracketedToAdjacentFloats(t *testing.T) {
+	for _, mk := range [][2]int{{0, 6}, {5, 3}, {8, 5}, {12, 10}} {
+		v := diskStudy(mk[0], mk[1], 1, 120)
+		s, err := newSheet(v, 0.37)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked := 0
+		for _, c := range []float64{0, 0.24, -0.6} {
+			for e := 0; e < 2*(s.nx+1)*(s.ny+1); e++ {
+				if e%2 == 0 && e/2%(s.nx+1) == s.nx || e%2 == 1 && e/2/(s.nx+1) == s.ny {
+					continue
+				}
+				a, b, fa, fb := s.ends(e)
+				if math.IsNaN(fa) || math.IsNaN(fb) || (fa-c >= 0) == (fb-c >= 0) {
+					continue
+				}
+				p, ok := s.root(e, c)
+				if !ok {
+					t.Fatalf("%v: edge %d rejected at level %g", mk, e, c)
+				}
+				g := s.at(p) - c
+				if g == 0 {
+					checked++
+					continue
+				}
+				// The next float from p toward b.
+				q := p
+				if a.X != b.X {
+					q.X = math.Nextafter(p.X, b.X)
+				} else {
+					q.Y = math.Nextafter(p.Y, b.Y)
+				}
+				if gq := s.at(q) - c; gq != 0 && (gq > 0) == (g > 0) {
+					t.Fatalf("%v: root %v of edge %d at level %g: F − c is %.3g there and %.3g at the next float", mk, p, e, c, g, gq)
+				}
+				checked++
+			}
+		}
+		if checked < 500 {
+			t.Fatalf("%v: only %d crossings checked", mk, checked)
+		}
+	}
+}
+
+// Screening chords by the first-order distance keeps exactly the chords
+// that projecting every midpoint keeps, over modes, levels and angles.
+func TestDiskScreeningKeepsWhatProjectionKeeps(t *testing.T) {
+	for _, mk := range [][2]int{{0, 6}, {1, 2}, {5, 3}, {8, 5}, {12, 10}} {
+		for _, cells := range []int{80, 200} {
+			for _, a := range []float64{0, 0.37, 2.1} {
+				v := diskStudy(mk[0], mk[1], 1, cells)
+				v.Family = Levels{Enabled: true, From: -0.6, To: 0.6, Count: 7}
+				trace := func(screen bool) (*ContourResult, int) {
+					s, err := newSheet(v, a)
+					if err != nil {
+						t.Fatal(err)
+					}
+					s.screen = screen
+					res, _, err := v.traceOn(s, a, 24)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return res, s.evaluations
+				}
+				got, fewer := trace(true)
+				want, more := trace(false)
+				for k, set := range append([]LevelSet{want.Curve}, want.Family...) {
+					other := append([]LevelSet{got.Curve}, got.Family...)[k]
+					if len(other.Contours) != len(set.Contours) {
+						t.Fatalf("%v, %d cells, a = %g, level %g: %d contours screened, %d projected", mk, cells, a, set.Level, len(other.Contours), len(set.Contours))
+					}
+					for i, c := range set.Contours {
+						if len(other.Contours[i].Points) != len(c.Points) {
+							t.Fatalf("%v, %d cells, a = %g, level %g: contour %d has %d points screened, %d projected", mk, cells, a, set.Level, i, len(other.Contours[i].Points), len(c.Points))
+						}
+						for j, p := range c.Points {
+							if other.Contours[i].Points[j] != p {
+								t.Fatalf("%v, %d cells, a = %g, level %g: contour %d point %d is %v screened, %v projected", mk, cells, a, set.Level, i, j, other.Contours[i].Points[j], p)
+							}
+						}
+					}
+				}
+				if !(fewer < more) {
+					t.Fatalf("%v: %d evaluations screened, %d projected", mk, fewer, more)
+				}
+			}
+		}
+	}
+}
+
+// Radial lace, the heaviest catalog frame, stays within a fixed number of
+// field evaluations: the #415 prototype took 2.2 million.
+func TestDiskFrameIsFrugal(t *testing.T) {
+	v := diskStudy(8, 5, 1, 200)
+	v.Family = Levels{Enabled: true, From: -0.24, To: 0.24, Count: 6}
+	v.StableNormals = true
+	s, err := newSheet(v, 0.37)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := v.traceOn(s, 0.37, 24); err != nil {
+		t.Fatal(err)
+	}
+	if s.evaluations > 500000 {
+		t.Fatalf("%d field evaluations for one frame", s.evaluations)
+	}
+	t.Logf("%d field evaluations", s.evaluations)
+}
+
 func TestDiskModeCenterAngleAndScale(t *testing.T) {
 	for m := 0; m <= maxDiskOrder; m++ {
 		for _, k := range []int{1, 4, 10} {
@@ -446,13 +605,15 @@ func TestDiskContoursFollowTheExactNodalSet(t *testing.T) {
 		}
 	}
 	// The center's deviation converges with the cell: in cells it stays
-	// bounded, so in length it shrinks fourfold from 80 to 320 cells.
+	// bounded, so in length it shrinks fourfold from 80 to 320 cells,
+	// unless it is already at rounding, as where the diameters run through
+	// grid nodes.
 	for _, md := range corpus {
 		if md.m < 2 {
 			continue
 		}
 		c80, c320 := worst[[2]int{md.m, 80}].center*2.08/80, worst[[2]int{md.m, 320}].center*2.08/320
-		if !(c320 <= 0.3*c80) {
+		if !(c320 <= 0.3*c80 || c80 <= 1e-12) {
 			t.Errorf("(%d, %d): the center's deviation falls from %.3g to %.3g only", md.m, md.k, c80, c320)
 		}
 	}

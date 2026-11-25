@@ -1,4 +1,3 @@
-import { researchDisk } from "./disk-research";
 import type { Layers } from "./Plot";
 import type { FamilySettings } from "./planar-family";
 import type { Config } from "./types";
@@ -112,6 +111,48 @@ const base: Config = {
   samples: 1000,
   lines: 48,
 };
+// A round drum's standing waves: the mode (m, k) of the unit disk, alone or
+// among nearby levels.
+const diskMode = (
+  order: number,
+  ring: number,
+  a: number,
+  cells: number,
+  family?: { from: number; to: number; count: number },
+): Config => ({
+  ...base,
+  curve: {
+    ...base.curve,
+    format: "implicit",
+    a,
+    implicit: {
+      f: "0",
+      level: 0,
+      family: family
+        ? { enabled: true, ...family }
+        : { enabled: false, from: -0.24, to: 0.24, count: 6 },
+      window: { xMin: -1.04, xMax: 1.04, yMin: -1.04, yMax: 1.04 },
+      cells,
+      ...(family && { stableNormals: true }),
+      disk: { order, ring, radius: 1 },
+    },
+  },
+  lines: 24,
+});
+const nearbyLevels = { from: -0.24, to: 0.24, count: 6 };
+// a turns the pattern by a/m, so a full period of a is one seamless
+// turn through its m-fold symmetry. Each turn starts at a = 0: the engine
+// reduces a exactly, so 2π ends on the start bit for bit.
+const diskTurn = (from: string, to: string): PlanarAnimation => ({
+  mode: "parameters",
+  camera: "hold",
+  duration: 16,
+  tracks: [{ target: "a", from, to }],
+  repeat: "loop",
+  pace: "steady",
+  probeMotion: "stays",
+});
+
 // A preset may bring its own animation setup, such as a seamless loop;
 // others leave the setup as it was and play once, steadily.
 export const presets: {
@@ -2079,80 +2120,62 @@ export const presets: {
         ],
       },
     },
-  }, // #415 research studies, only under ?research=415: Dirichlet modes of
-  // the unit disk, after every public preset so their indices never move.
-  ...(researchDisk() ? diskResearchPresets() : []),
+  },
+  // Dirichlet modes of the unit disk (docs/mathematics.md, Disk membrane
+  // modes), after the other presets so their indices never move.
+  {
+    title: "A drum's rose",
+    note: "The (5, 3) mode of a round drum: five diameters and two rings stand still",
+    config: diskMode(5, 3, 0, 160),
+    animation: diskTurn("0", "2*pi"),
+  },
+  {
+    title: "Rings of a struck drum",
+    note: "The round (0, 6) mode: five nodal rings, each at a zero of J₀",
+    config: diskMode(0, 6, 0, 160, nearbyLevels),
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 12,
+      tracks: [{ target: "contourLevel", from: "-0.3", to: "0.3" }],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "Radial lace",
+    note: "The (8, 5) mode among six nearby levels, turning through its eightfold symmetry",
+    config: diskMode(8, 5, 0, 200, nearbyLevels),
+    animation: diskTurn("0", "2*pi"),
+  },
+  {
+    title: "Twelvefold membrane",
+    note: "The largest admitted mode, (12, 10): twelve diameters through nine rings",
+    config: diskMode(12, 10, 0, 320),
+    animation: diskTurn("0", "2*pi"),
+  },
+  {
+    title: "A drum's engraving breathes",
+    note: "Eight levels of the (3, 4) mode, nested over every crest, gather onto its nodal lines and spread again",
+    config: diskMode(3, 4, 0, 160, { from: -0.32, to: 0.32, count: 8 }),
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 10,
+      tracks: [
+        { target: "levelsFrom", from: "-0.32", to: "-0.03" },
+        { target: "levelsTo", from: "0.32", to: "0.03" },
+      ],
+      repeat: "back-and-forth",
+      pace: "ease",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "A drum's contour map",
+    note: "The (6, 3) mode drawn as a map of its own heights: nested loops over every crest and trough, turning",
+    config: diskMode(6, 3, 0, 160, { from: -0.9, to: 0.9, count: 10 }),
+    animation: diskTurn("0", "2*pi"),
+  },
 ];
-
-function diskResearchPresets(): typeof presets {
-  const mode = (
-    order: number,
-    ring: number,
-    a: number,
-    cells: number,
-    family = false,
-  ): Config => ({
-    ...base,
-    curve: {
-      ...base.curve,
-      format: "implicit",
-      a,
-      implicit: {
-        f: "0",
-        level: 0,
-        family: { enabled: family, from: -0.24, to: 0.24, count: 6 },
-        window: { xMin: -1.04, xMax: 1.04, yMin: -1.04, yMax: 1.04 },
-        cells,
-        ...(family && { stableNormals: true }),
-        disk: { order, ring, radius: 1 },
-      },
-    },
-    lines: 24,
-  });
-  // a turns the pattern by a/m, so a full period of a is one seamless
-  // turn through its m-fold symmetry. Each turn starts at a = 0: the engine
-  // reduces a exactly, so 2π ends on the start bit for bit.
-  const turn = (from: string, to: string): PlanarAnimation => ({
-    mode: "parameters",
-    camera: "hold",
-    duration: 16,
-    tracks: [{ target: "a", from, to }],
-    repeat: "loop",
-    pace: "steady",
-    probeMotion: "stays",
-  });
-  return [
-    {
-      title: "A drum's rose (research)",
-      note: "The (5, 3) mode of a round drum: five diameters and two rings stand still",
-      config: mode(5, 3, 0, 160),
-      animation: turn("0", "2*pi"),
-    },
-    {
-      title: "Rings of a struck drum (research)",
-      note: "The round (0, 6) mode: five nodal rings, each at a zero of J₀",
-      config: mode(0, 6, 0, 160, true),
-      animation: {
-        mode: "parameters",
-        camera: "hold",
-        duration: 12,
-        tracks: [{ target: "contourLevel", from: "-0.3", to: "0.3" }],
-        repeat: "back-and-forth",
-        pace: "ease",
-        probeMotion: "stays",
-      },
-    },
-    {
-      title: "Radial lace (research)",
-      note: "The (8, 5) mode among six nearby levels, turning through its eightfold symmetry",
-      config: mode(8, 5, 0, 200, true),
-      animation: turn("0", "2*pi"),
-    },
-    {
-      title: "Twelvefold membrane (research)",
-      note: "The largest admitted mode, (12, 10): twelve diameters through nine rings",
-      config: mode(12, 10, 0, 320),
-      animation: turn("0", "2*pi"),
-    },
-  ];
-}

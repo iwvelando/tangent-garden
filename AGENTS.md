@@ -59,7 +59,7 @@ If codebase-memory-mcp is available, prefer `search_graph`, `trace_path`, `get_c
 - Mathematical evaluation and numerical algorithms belong in Go, with no UI dependency.
 - The parser must remain bounded and must never evaluate user input as executable code.
 - `cmd/wasm` is transport only. Keep Go and TypeScript request/result fields synchronized.
-- A spatial or 4D result's large arrays must not travel as JSON numbers. A mesh goes in the typed mesh reply (`cmd/wasm/mesh.go`); other bulk geometry must be a kind `cmd/wasm/lift` moves out of the JSON. A slice of structs of numbers, or a new bridge function that returns plain JSON, puts the cost back.
+- A planar, spatial or 4D result's large arrays must not travel as JSON numbers. A mesh goes in the typed mesh reply (`cmd/wasm/mesh.go`); other bulk geometry must be a kind `cmd/wasm/lift` moves out of the JSON. A slice of structs of numbers, or a new bridge function that returns plain JSON, puts the cost back.
 - Time a transport or engine change against the deployed site, never by headless frame rate. Keep every preset's result bit for bit identical unless a change is intended, with refinement on and off. On an arm64 machine, run a borderline numerical change's Go tests under `GOARCH=amd64` too. The commands are in `docs/contributing.md`, **Transport and performance**.
 - React manages controls; SVG manages the planar drawing. Preserve equal axis scale.
 - Format interface numbers with `web/number-format.ts`; the guard in `tests/number-format.spec.ts` enforces the exclusions in [Displayed numbers](docs/contributing.md#displayed-numbers).

@@ -68,8 +68,7 @@ import {
   defaultDisk,
   diskLimits,
   diskNote,
-  researchDisk,
-} from "./disk-research";
+} from "./disk-mode";
 import {
   gardenExamples,
   laceExamples,
@@ -1208,9 +1207,9 @@ function App({
         construction applies; the normals show F&rsquo;s gradient, pointing
         toward larger values.
       </p>
-      {(researchDisk() || disk) && (
+      {
         <Field
-          label="Field (research)"
+          label="Field"
           topic="field"
           help={tiered(
             "An expression F(x, y), or a vibrating disk's standing wave.",
@@ -1225,7 +1224,7 @@ function App({
             <option value="disk">Disk membrane mode</option>
           </select>
         </Field>
-      )}
+      }
       {disk ? (
         <>
           <div className="pair">

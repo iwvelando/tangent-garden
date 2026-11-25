@@ -6,6 +6,7 @@ import { fitFrame, framingPoints, type Layers } from "../web/Plot";
 import { presets } from "../web/presets";
 import { sampleProbe } from "../web/planar-probe";
 import { viewZoom } from "../web/refinement";
+import { restore } from "../web/lifted";
 import type { Config, Result, Vec } from "../web/types";
 
 // A 2D study and its image under a similarity p ↦ s·p + c draw the same
@@ -33,7 +34,9 @@ const copies: Similarity[] = [
 // drawing writes them to a thousandth of a page unit.
 const tolerance = 0.002;
 
-let compute: (json: string) => string;
+let compute: (
+  json: string,
+) => string | { json: string; lifted: import("../web/lifted").Lifted };
 let plotMarkup: typeof import("./plot-markup").plotMarkup;
 test.beforeAll(async () => {
   const vite = await createServer({
@@ -66,8 +69,11 @@ test.beforeAll(async () => {
 // A preset's result as the worker returns it, with its configuration.
 function study(config: Config, extra: object = {}) {
   config = structuredClone(config);
-  const result = JSON.parse(
-    compute(JSON.stringify({ ...config, ...extra })),
+  const raw = compute(JSON.stringify({ ...config, ...extra }));
+  const result = (
+    typeof raw === "string"
+      ? JSON.parse(raw)
+      : restore(JSON.parse(raw.json), raw.lifted)
   ) as Result & { error?: string };
   expect(result.error).toBeUndefined();
   if (result.sourcePosition) config.source.position = result.sourcePosition;

@@ -1,4 +1,10 @@
-import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import {
+  test,
+  expect,
+  type Page,
+  type TestInfo,
+  type Worker,
+} from "@playwright/test";
 import {
   openAnimation,
   exportImage,
@@ -7,6 +13,7 @@ import {
 } from "./helpers";
 import { applyTracks, reveal } from "../web/animation";
 import { presets } from "../web/presets";
+import { restore } from "../web/lifted";
 import type { Result } from "../web/types";
 import {
   presetStudy as planarPreset,
@@ -17,6 +24,28 @@ import { watchEngines, engines } from "./engines";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Plot, fitFrame, pathData } from "../web/Plot";
+
+// The engine's planar result, computed in the page's worker and restored
+// as the page restores it: its large arrays arrive lifted (web/lifted.ts).
+async function computeIn(worker: Worker, config: any) {
+  const raw = await worker.evaluate((config) => {
+    const r = (globalThis as any).tangentGardenCompute(JSON.stringify(config));
+    return typeof r === "string"
+      ? { json: r }
+      : {
+          json: r.json as string,
+          floats: Array.from(r.lifted.floats as Float64Array),
+          places: r.lifted.places as string,
+        };
+  }, config);
+  const result = JSON.parse(raw.json);
+  return raw.floats
+    ? restore(result, {
+        floats: Float64Array.from(raw.floats),
+        places: raw.places!,
+      })
+    : result;
+}
 
 async function ready(page: Page, preset = "1") {
   await page.goto("/");
@@ -1731,13 +1760,7 @@ test("fresh absolute samples and backward UI seeks agree around every unequal ph
   const worker = page.workers().find((w) => w.url().includes("engine.worker"))!;
   const engine = {
     compute: async (config: any) => {
-      const result = await worker.evaluate(
-        (config) =>
-          JSON.parse(
-            (globalThis as any).tangentGardenCompute(JSON.stringify(config)),
-          ),
-        config,
-      );
+      const result = await computeIn(worker, config);
       expect(result.error).toBeUndefined();
       return { config, result };
     },
@@ -3017,14 +3040,7 @@ test("authored phrase resolves the visible caustic branches through its first in
   await ready(page, String(index));
   const study = planarPreset(index);
   const worker = page.workers().find((w) => w.url().includes("engine.worker"))!;
-  const compute = async (config: any) =>
-    worker.evaluate(
-      (config) =>
-        JSON.parse(
-          (globalThis as any).tangentGardenCompute(JSON.stringify(config)),
-        ),
-      config,
-    );
+  const compute = (config: any) => computeIn(worker, config);
   const original = await compute(study.config);
   const view = fitFrame(original, study.config);
   const { compilePhrase, phraseAt } = await import("../web/phrase");

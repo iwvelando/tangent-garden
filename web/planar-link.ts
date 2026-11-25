@@ -26,7 +26,7 @@ import {
   type LaceMotifId,
 } from "./lace/motifs";
 import { planarStoryIds, type PlanarStoryId } from "./planar-story";
-import { diskLimits, researchDisk } from "./disk-research";
+import { diskLimits } from "./disk-mode";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
   gardenLimits,
@@ -578,11 +578,6 @@ export function planarStudy(value: unknown): PlanarStudy {
     )
       throw new LinkError(key, `${key} is not a known field.`);
   const conformed = conform(raw.config, config, presets[0].config, "config");
-  if (conformed.curve.implicit.disk && !researchDisk())
-    throw new LinkError(
-      "config.curve.implicit.disk",
-      "This link's disk mode is a research preview: open it with ?research=415.",
-    );
   // A polar source's radius or angle that the link leaves out reads as 0, as
   // its field shows it and as Go takes it; a Cartesian source keeps them
   // absent.

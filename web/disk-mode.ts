@@ -1,11 +1,7 @@
-// #415 research: Dirichlet modes of a circular membrane as implicit
-// curves, shown only with ?research=415. Nothing here is a public contract.
+// Dirichlet modes of a circular membrane as an implicit study's field
+// (docs/mathematics.md, Disk membrane modes).
 import type { DiskMode, DiskResult } from "./types";
 import { readout } from "./number-format";
-
-export const researchDisk = () =>
-  typeof location !== "undefined" &&
-  new URLSearchParams(location.search).getAll("research").includes("415");
 
 // The engine's admitted indices and radius (engine/bessel.go,
 // engine/disk_mode.go).

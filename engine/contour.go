@@ -201,17 +201,59 @@ type sheet struct {
 	lastRejected int
 	// The disk the contours are traced in, or nil for the window alone.
 	domain *diskDomain
+	// F with its exact gradient, defined inside the domain and NaN beyond
+	// it, when known; nil otherwise.
+	fg func(x, y float64) (float64, Vec)
+	// Evaluations of F so far, with or without its gradient.
+	evaluations int
+	// Whether refinement screens chords with fg before projecting.
+	screen bool
+	// The last point valueGradient evaluated with fg, and its results.
+	lastAt    Vec
+	lastValue float64
+	lastGrad  Vec
 }
 
 func (s *sheet) node(i, j int) Vec {
 	return Vec{s.w.XMin + (s.w.XMax-s.w.XMin)*float64(i)/float64(s.nx), s.w.YMin + (s.w.YMax-s.w.YMin)*float64(j)/float64(s.ny)}
 }
 
-func (s *sheet) at(p Vec) float64 { return s.f(p.X, p.Y) }
+func (s *sheet) at(p Vec) float64 {
+	s.evaluations++
+	return s.f(p.X, p.Y)
+}
 
-// gradient differentiates F with a five-point stencil a thousandth of a
-// cell wide.
+// valueGradient returns F and its exact gradient at p from fg, or, where
+// fg is unset or undefined, as in a disk's mirrored band, F and the
+// stencil's gradient.
+func (s *sheet) valueGradient(p Vec) (float64, Vec) {
+	if s.fg != nil {
+		// Projection starts where screening evaluated last.
+		if p == s.lastAt && s.evaluations > 0 {
+			return s.lastValue, s.lastGrad
+		}
+		s.evaluations++
+		if v, d := s.fg(p.X, p.Y); !math.IsNaN(v) {
+			s.lastAt, s.lastValue, s.lastGrad = p, v, d
+			return v, d
+		}
+	}
+	return s.at(p), s.stencil(p)
+}
+
+// gradient returns F's gradient at p: exact where fg gives it, otherwise
+// from the stencil.
 func (s *sheet) gradient(p Vec) Vec {
+	if s.fg != nil {
+		_, d := s.valueGradient(p)
+		return d
+	}
+	return s.stencil(p)
+}
+
+// stencil differentiates F with a five-point stencil a thousandth of a
+// cell wide.
+func (s *sheet) stencil(p Vec) Vec {
 	h := 1e-3 * math.Min(s.hx, s.hy)
 	d := func(e Vec) float64 {
 		return (s.at(p.Sub(e.Mul(2*h))) - 8*s.at(p.Sub(e.Mul(h))) + 8*s.at(p.Add(e.Mul(h))) - s.at(p.Add(e.Mul(2*h)))) / (12 * h)
@@ -221,7 +263,9 @@ func (s *sheet) gradient(p Vec) Vec {
 
 func newSheet(v Implicit, a float64) (*sheet, error) {
 	if d := v.Disk; d != nil {
-		s := sampleIn(d.field(a), v.Window, v.Cells, &diskDomain{R: d.Radius})
+		dom := &diskDomain{R: d.Radius, mode: d.evaluator(a)}
+		s := sampleIn(dom.value, v.Window, v.Cells, dom)
+		s.fg, s.screen = dom.valueGradient, true
 		s.usesA = d.Order > 0
 		s.tolerance = drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
 		s.flatness, s.refresh = drawingBend/8, 5
@@ -247,9 +291,10 @@ func sample(f func(x, y float64) float64, w Window, cells int) *sheet {
 	return sampleIn(f, w, cells, nil)
 }
 
-// sampleIn is sample, restricted to a disk when dom is set: F continues
-// across the circle by reflection within a band two cell diagonals wide,
-// and grid points beyond it are outside, not undefined.
+// sampleIn is sample, restricted to a disk when dom is set: f, dom's
+// value, continues F across the circle by reflection within a band two
+// cell diagonals wide, set here, and grid points beyond it are outside,
+// not undefined.
 func sampleIn(f func(x, y float64) float64, w Window, cells int, dom *diskDomain) *sheet {
 	width, height := w.XMax-w.XMin, w.YMax-w.YMin
 	s := &sheet{f: f, w: w, rejected: map[int]Vec{}}
@@ -257,7 +302,7 @@ func sampleIn(f func(x, y float64) float64, w Window, cells int, dom *diskDomain
 	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
 	if dom != nil {
 		dom.band = 2 * math.Hypot(s.hx, s.hy)
-		s.f, s.domain = dom.extend(f), dom
+		s.domain = dom
 	}
 	s.tolerance, s.flatness, s.refresh = contourTolerance*math.Min(s.hx, s.hy), math.Inf(1), 1
 	s.scale = math.Max(width, height) + math.Max(math.Max(math.Abs(w.XMin), math.Abs(w.XMax)), math.Max(math.Abs(w.YMin), math.Abs(w.YMax)))
@@ -334,6 +379,11 @@ func (s *sheet) ends(e int) (Vec, Vec, float64, float64) {
 // bracket, as at a pole or a jump, or is not a number. The point is then
 // where that happens.
 func (s *sheet) root(e int, c float64) (Vec, bool) {
+	if s.fg != nil {
+		if p, ok, done := s.newtonRoot(e, c); done {
+			return p, ok
+		}
+	}
 	a, b, fa, fb := s.ends(e)
 	ga, gb := fa-c, fb-c
 	if ga == 0 {
@@ -373,6 +423,118 @@ func (s *sheet) root(e int, c float64) (Vec, bool) {
 		return lo, false
 	}
 	return lo, true
+}
+
+// newtonRoot finds edge e's crossing of F = c as root does, ending at
+// adjacent floating-point numbers between which F − c changes sign, or
+// where it is zero. Newton's method on F's exact gradient comes within
+// F's rounding of the crossing, falling back to bisection (as in rtsafe)
+// when a step leaves the bracket or is not half as long as the one before.
+// There F − c is only noise over a few ulps, so the bracket is then closed
+// by stepping from the end last moved toward the other, in steps doubling
+// from twice Newton's last step, until F − c changes sign, and bisecting
+// what remains. It
+// reports done false, leaving the edge to root's bisection, where F's
+// exact gradient is not defined along the edge.
+func (s *sheet) newtonRoot(e int, c float64) (Vec, bool, bool) {
+	a, b, fa, fb := s.ends(e)
+	ga, gb := fa-c, fb-c
+	if ga == 0 || gb == 0 || s.domain != nil && !(s.domain.within(a) && s.domain.within(b)) {
+		return Vec{}, false, false
+	}
+	// The edge runs along one axis: u is the coordinate that varies, and
+	// lo keeps the sign of F − c at a.
+	vertical := a.X == b.X
+	at := func(u float64) Vec {
+		if vertical {
+			return Vec{a.X, u}
+		}
+		return Vec{u, a.Y}
+	}
+	lo, hi := a.X, b.X
+	if vertical {
+		lo, hi = a.Y, b.Y
+	}
+	glo, width := ga, math.Abs(hi-lo)
+	// sample evaluates F − c at u and moves the bracket's end on its side,
+	// reporting whether u is a zero, and whether it moved lo.
+	sample := func(u float64) (float64, Vec, bool, bool) {
+		v, d := s.valueGradient(at(u))
+		g := v - c
+		if g == 0 || !finite(g) {
+			return g, d, true, false
+		}
+		if (g >= 0) == (glo >= 0) {
+			lo, glo = u, g
+			return g, d, false, true
+		}
+		hi = u
+		return g, d, false, false
+	}
+	// The first guess is the chord's crossing.
+	u, last, step := lo+(hi-lo)*ga/(ga-gb), width, 0.0
+	for range 60 {
+		g, d, stop, _ := sample(u)
+		if !finite(g) {
+			return Vec{}, false, false
+		}
+		if stop {
+			return at(u), true, true
+		}
+		if math.Nextafter(lo, hi) == hi {
+			return at(lo), true, true
+		}
+		slope := d.X
+		if vertical {
+			slope = d.Y
+		}
+		step = g / slope
+		if math.Abs(step) <= 0x1p-40*width {
+			break
+		}
+		next := u - step
+		if !(next > lo && next < hi || next < lo && next > hi) || !(math.Abs(step) <= last/2) {
+			next, step = lo+(hi-lo)/2, (hi-lo)/2
+		}
+		u, last = next, math.Abs(step)
+	}
+	// Close the bracket from the end u moved, first by twice the last
+	// step, which measures how far the crossing still is.
+	near, far, nearLo := hi, lo, u == lo
+	if nearLo {
+		near, far = lo, hi
+	}
+	for δ := math.Max(math.Abs(math.Nextafter(near, far)-near), 2*math.Abs(step)); ; δ *= 2 {
+		next := near + math.Copysign(δ, far-near)
+		if !(math.Abs(next-near) < math.Abs(far-near)) {
+			break
+		}
+		g, _, stop, movedLo := sample(next)
+		if !finite(g) {
+			return Vec{}, false, false
+		}
+		if stop {
+			return at(next), true, true
+		}
+		if movedLo == nearLo {
+			near = next
+		} else {
+			break
+		}
+	}
+	for {
+		mid := lo + (hi-lo)/2
+		if mid == lo || mid == hi {
+			return at(lo), true, true
+		}
+		g, _, stop, _ := sample(mid)
+		if !finite(g) {
+			return Vec{}, false, false
+		}
+		if stop {
+			return at(mid), true, true
+		}
+	}
 }
 
 // Local cell geometry, counterclockwise from the lower left: corners and
@@ -534,11 +696,19 @@ func (s *sheet) project(x Vec, c float64) (Vec, bool) {
 	var d Vec
 	var n float64
 	for i := range 30 {
-		g := s.at(x) - c
+		var g float64
+		if s.fg != nil {
+			// The exact gradient comes with the value at every step.
+			var v float64
+			v, d = s.valueGradient(x)
+			g, n = v-c, d.Dot(d)
+		} else {
+			g = s.at(x) - c
+		}
 		if g == 0 {
 			return x, true
 		}
-		if i%s.refresh == 0 {
+		if s.fg == nil && i%s.refresh == 0 {
 			d = s.gradient(x)
 			n = d.Dot(d)
 		}
@@ -561,9 +731,28 @@ func (s *sheet) project(x Vec, c float64) (Vec, bool) {
 // tol away, or far enough that the curve bends more than the sheet allows
 // across it, between p and q and within half the chord, so refinement never
 // crosses to another piece of the level set.
+//
+// With screen set, F's exact gradient first estimates the midpoint's
+// distance from the curve as |F − c|/|∇F|, Newton's first step; a chord
+// whose estimate is under half the distance that would halve it is kept
+// without projecting. The estimate is within a few percent of the
+// distance on the sheets that set it, so the chords kept are those
+// projection keeps.
 func (s *sheet) subdivide(out []Vec, p, q Vec, c, tol float64, depth int) []Vec {
 	if depth > 0 {
 		mid, chord := p.Add(q).Mul(.5), q.Sub(p)
+		if s.screen {
+			// Squared, as Go's WebAssembly calls math.Hypot and math.Min.
+			limit, length2 := tol, chord.Dot(chord)
+			if length2 > tol*tol {
+				if bend := s.flatness * math.Sqrt(length2); bend < tol {
+					limit = bend
+				}
+			}
+			if v, d := s.valueGradient(mid); finite(v) && (v-c)*(v-c) < 0.81*limit*limit*d.Dot(d) {
+				return append(out, q)
+			}
+		}
 		r, ok := s.project(mid, c)
 		along := r.Sub(p).Dot(chord) / chord.Dot(chord)
 		d := r.Sub(mid).Norm()
@@ -673,6 +862,11 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 	if err != nil {
 		return nil, nil, err
 	}
+	return v.traceOn(s, a, lines)
+}
+
+// traceOn traces the curve and its family on the sheet s of v at a.
+func (v Implicit) traceOn(s *sheet, a float64, lines int) (*ContourResult, []string, error) {
 	var warnings []string
 	out := &ContourResult{Window: v.Window, Columns: s.nx, Rows: s.ny, Family: []LevelSet{}, Normals: []Normal{}}
 	var ok bool

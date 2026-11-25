@@ -963,8 +963,16 @@ for (const theme of ["light", "dark"] as const) {
   }
 }
 
-// #415 research: disk membrane modes, only with ?research=415.
-const rose = "A drum's rose (research)";
+// Disk membrane modes (docs/mathematics.md, Disk membrane modes).
+const rose = "A drum's rose";
+const diskStudies = [
+  rose,
+  "Rings of a struck drum",
+  "Radial lace",
+  "Twelvefold membrane",
+  "A drum's engraving breathes",
+  "A drum's contour map",
+];
 // Open contours' ends on the drawn boundary circle, in screen units.
 async function boundaryEnds(page: Page) {
   const circle = page.getByTestId("disk-boundary");
@@ -978,41 +986,41 @@ async function boundaryEnds(page: Page) {
   return { onCircle: ends.filter((d) => d < 0.5).length, all: ends.length };
 }
 
-test("disk modes are a research preview: absent from the app and refused in links without the parameter", async ({
+test("every implicit study offers the disk field: an edited expression switches to a valid mode and back", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
   const titles = await exampleTitles(page);
-  expect(titles.some((t) => t.includes("(research)"))).toBe(false);
+  for (const t of diskStudies) expect(titles).toContain(t);
   await choosePreset(page, { label: cassini });
   await settled(page);
-  await expect(page.getByLabel("Field (research)")).toHaveCount(0);
-  // A link carrying a disk mode opens only under the parameter.
-  await page.goto("/?research=415");
-  await choosePreset(page, { label: rose });
+  const field = page.getByLabel("Field", { exact: true });
+  await expect(field).toHaveValue("expression");
+  const f = await page.getByRole("textbox", { name: "F(x, y)" }).inputValue();
+  // From an edited level, the default mode draws in the window kept.
+  await input(page, "Level c").fill("0.1");
   await settled(page);
-  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-  await page.getByRole("button", { name: "Copy link", exact: true }).click();
-  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
-  const link = await page.evaluate(() => navigator.clipboard.readText());
-  expect(new URL(link).searchParams.getAll("research")).toEqual(["415"]);
-  const plain = new URL(link);
-  plain.searchParams.delete("research");
-  const other = await page.context().newPage();
-  await other.goto(plain.toString());
-  await expect(
-    other.getByText(
-      "This link's disk mode is a research preview: open it with ?research=415.",
-    ),
-  ).toBeVisible();
-  await other.close();
+  const before = await definition(page);
+  await field.selectOption("disk");
+  await settled(page);
+  await expect(note(page)).toContainText("Disk mode (m, k) = (5, 3)");
+  await expect(page.getByTestId("disk-boundary")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const disk = await definition(page);
+  expect(disk.curve.implicit.disk).toEqual({ order: 5, ring: 3, radius: 1 });
+  expect(disk.curve.implicit.level).toBe(0.1);
+  expect(disk.curve.implicit.window).toEqual(before.curve.implicit.window);
+  await field.selectOption("expression");
+  await settled(page);
+  await expect(page.getByRole("textbox", { name: "F(x, y)" })).toHaveValue(f);
+  expect(await definition(page)).toEqual(before);
 });
 
-test("a disk research study draws its nodal lines to an analytic boundary, edits by field, keeps drafts, and shares", async ({
+test("a disk study draws its nodal lines to an analytic boundary, edits by field, keeps drafts, and shares", async ({
   page,
 }) => {
-  await page.goto("/?research=415");
+  await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
   await choosePreset(page, { label: rose });
   await settled(page);
@@ -1029,7 +1037,7 @@ test("a disk research study draws its nodal lines to an analytic boundary, edits
     6,
   );
   expect(await boundaryEnds(page)).toEqual({ onCircle: 10, all: 10 });
-  const field = page.getByLabel("Field (research)");
+  const field = page.getByLabel("Field", { exact: true });
   await expect(field).toHaveValue("disk");
   await expect(page.getByRole("textbox", { name: "F(x, y)" })).toHaveCount(0);
   // Edits by field, a refusal under its own control, and recovery.
@@ -1073,7 +1081,7 @@ test("a disk research study draws its nodal lines to an analytic boundary, edits
     ring: 4,
     radius: 0.5,
   });
-  // A copied link reopens the same mode under the parameter.
+  // A copied link reopens the same mode.
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy link", exact: true }).click();
   await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
@@ -1091,12 +1099,12 @@ test("a disk research study draws its nodal lines to an analytic boundary, edits
   await other.close();
 });
 
-test("a disk research still export keeps the boundary and the traced paths", async ({
+test("a disk still export keeps the boundary and the traced paths", async ({
   page,
 }) => {
-  await page.goto("/?research=415");
+  await page.goto("/");
   await expect(page.locator("#artwork")).toBeVisible();
-  await choosePreset(page, { label: "Radial lace (research)" });
+  await choosePreset(page, { label: "Radial lace" });
   await settled(page);
   const live = await page
     .locator("#artwork path")

@@ -123,7 +123,7 @@ export type Config = {
       // Absent retains the original arc-length origin of the normals.
       stableNormals?: boolean;
       // A disk membrane mode replacing f, traced only inside the disk
-      // (#415 research, web/disk-research.ts); absent for an expression.
+      // (web/disk-mode.ts); absent for an expression.
       disk?: DiskMode;
     };
     // An iterated map's orbit from start: the first `discard` iterates
