@@ -155,10 +155,7 @@ export async function checkFitAdoptionVisibility(page: Page) {
     await expect(adopt).toBeDisabled();
     await expect(adopt).toBeInViewport({ ratio: 1 });
     await expect(
-      dialog.getByText(
-        "Adopting replaces your study.",
-        { exact: true },
-      ),
+      dialog.getByText("Adopting replaces your study.", { exact: true }),
     ).toBeInViewport({ ratio: 1 });
   }
   await dialog
