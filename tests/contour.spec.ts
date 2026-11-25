@@ -1102,6 +1102,33 @@ test("a disk study draws its nodal lines to an analytic boundary, edits by field
   await other.close();
 });
 
+// A preset replaces the whole study: a mode edited in the previous study
+// and set aside for its expression does not return in the next one.
+test("a disk mode set aside in one study does not carry into the next", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await choosePreset(page, { label: rose });
+  await settled(page);
+  await input(page, "Order m").fill("7");
+  await settled(page);
+  await expect(note(page)).toContainText("(m, k) = (7, 3)");
+  const field = page.getByLabel("Field", { exact: true });
+  await field.selectOption("expression");
+  await settled(page);
+  await choosePreset(page, { label: cassini });
+  await settled(page);
+  await field.selectOption("disk");
+  await settled(page);
+  await expect(note(page)).toContainText("Disk mode (m, k) = (5, 3)");
+  expect((await definition(page)).curve.implicit.disk).toEqual({
+    order: 5,
+    ring: 3,
+    radius: 1,
+  });
+});
+
 test("a disk still export keeps the boundary and the traced paths", async ({
   page,
 }) => {

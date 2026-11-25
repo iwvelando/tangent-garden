@@ -1371,7 +1371,7 @@ self.onmessage = async ({
         "curve.implicit.cells",
         "Grid cells and the level count must be whole numbers.",
       );
-    // A disk mode's indices (#415 research).
+    // A disk mode's indices.
     if (implicit?.disk)
       for (const field of ["order", "ring"] as const)
         if (!Number.isInteger(implicit.disk[field]))

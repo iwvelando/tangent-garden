@@ -3,7 +3,7 @@ package engine
 import "math"
 
 // Disk is a Dirichlet eigenmode of the disk of radius Radius about the
-// origin (#415 research): the membrane's standing wave
+// origin: the membrane's standing wave
 //
 //	u(r, θ) = J_m(j_{m,k} r/R)/P_m · (cos a cos mθ + sin a sin mθ),
 //

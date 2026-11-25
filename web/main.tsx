@@ -1152,7 +1152,7 @@ function App({
       curve: { ...c.curve, implicit: { ...c.curve.implicit, ...patch } },
     }));
   const levels = config.curve.implicit.family;
-  // A disk mode (#415 research) replaces F; its last values are kept while
+  // A disk mode replaces F; its last values are kept while
   // the expression is chosen, and the expression's text while it is not.
   const disk = config.curve.implicit.disk;
   const diskDraft = useRef<DiskMode>(defaultDisk);
@@ -1680,6 +1680,8 @@ function App({
     setAtlasWaiting(null);
     setAtlasNotice("");
     touched.current = null;
+    // A mode set aside for the previous study's expression stays with it.
+    diskDraft.current = defaultDisk;
     setPreset(preset);
     scalarGeneration.current++;
     setPoleKind(study.poleKind);

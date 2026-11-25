@@ -36,7 +36,7 @@ type Implicit struct {
 	Cells         int     `json:"cells"`
 	StableNormals bool    `json:"stableNormals,omitempty"`
 	// Disk, when set, replaces F by a disk membrane mode and traces it only
-	// inside the disk (#415 research).
+	// inside the disk.
 	Disk *Disk `json:"disk,omitempty"`
 	// topology asks for the curve's level set classified (Request.Topology).
 	topology bool
@@ -82,7 +82,7 @@ type ContourResult struct {
 	UsesA           bool           `json:"usesA"`
 	Topology        *LevelTopology `json:"topology,omitempty"`
 	// Disk describes a disk mode's boundary and exact nodal set, only for
-	// a disk mode (#415 research).
+	// a disk mode.
 	Disk *DiskResult `json:"disk,omitempty"`
 }
 

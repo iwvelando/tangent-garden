@@ -276,8 +276,7 @@ const config: SchemaOf<Config> = {
             window,
             cells: "number",
             stableNormals: { optional: "boolean" },
-            // A disk mode (#415 research); planarStudy refuses it without
-            // the research parameter, and the worker whole indices.
+            // A disk mode; the worker refuses fractional indices.
             disk: {
               optional: {
                 fields: {

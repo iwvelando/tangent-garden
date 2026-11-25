@@ -8,7 +8,7 @@ export function contourNote(result: ContourResult) {
   const contours = result.curve.contours;
   const closed = contours.filter((c) => c.closed).length;
   const open = contours.length - closed;
-  // A disk mode's open contours end on its boundary (#415 research).
+  // A disk mode's open contours end on its boundary.
   const cut = result.disk
     ? "ending on the disk's boundary or the window's edge"
     : "cut off at the window's edge or beside cells left out";

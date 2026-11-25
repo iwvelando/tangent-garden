@@ -65,7 +65,7 @@ export class EngineClient {
       this.pending.delete(data.id);
       if (data.error) task.reject(new EngineError(data.error, data.field));
       else {
-        // A spatial or 4D result's large arrays arrive beside it.
+        // A planar, spatial or 4D result's large arrays arrive beside it.
         restore(data.result, data.lifted);
         task.resolve(data);
       }

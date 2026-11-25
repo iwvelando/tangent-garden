@@ -421,7 +421,7 @@ export type FieldResult = {
   grid: { spacing: number; points: { point: Vec; velocity: Vec }[] };
 };
 
-// A Dirichlet mode of the disk of radius R about the origin (#415 research):
+// A Dirichlet mode of the disk of radius R about the origin:
 // J_m(j_{m,k} r/R)/P_m (cos a cos mθ + sin a sin mθ), m = order (0–12),
 // k = ring (1–10).
 export type DiskMode = { order: number; ring: number; radius: number };
@@ -462,7 +462,7 @@ export type ContourResult = {
   nonfinite: number;
   usesA: boolean;
   topology?: LevelTopology;
-  // Present only for a disk mode (#415 research).
+  // Present only for a disk mode.
   disk?: DiskResult;
 };
 // The curve's level set by its loops' nesting (engine.LevelTopology): per

@@ -1372,7 +1372,7 @@ export function Plot({
               />
             ))}
           {layers.base && contours?.disk && (
-            // A disk mode's boundary (#415 research), drawn from its
+            // A disk mode's boundary, drawn from its
             // equation r = R, never extracted from the grid.
             <circle
               data-testid="disk-boundary"
