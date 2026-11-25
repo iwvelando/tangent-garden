@@ -19,10 +19,15 @@ export type Object4 =
   | "cell24"
   | "cell16"
   | "root";
-// The square-root journey (engine4/root.go): z = r e^{it} and its
-// continuously followed root w = ±√r e^{it/2}, for 0 ≤ t ≤ 4π.
+// The square-root journey (engine4/root.go): the circle
+// z = r e^{iφ}(k + e^{it}) and its continuously followed root w, for
+// 0 ≤ t ≤ 4π. k = 0 is the origin circle, w = ±√r e^{it/2}.
 export type Root = {
   radius: number;
+  // The center c = k r e^{iφ}: offset k in radii, direction φ in radians.
+  // Absent in older links, which open the origin circle.
+  offset?: number;
+  direction?: number;
   sheet: "plus" | "minus";
   // Radians: where the trace motion begins and ends.
   from: number;
@@ -319,7 +324,16 @@ export type Result = {
     principal: 1 | -1;
     residual: number;
     normBound: number;
+    // |(z, w)| at the moving point.
+    norm: number;
     intervals: number;
+    // Intervals after refinement near the branch point.
+    refined: number;
+    // The center offset k in radii, 0 for the origin circle.
+    offset: number;
+    // Winding of z about 0 over one circuit, and min |z| = r|1 − k|.
+    winding: 0 | 1;
+    closest: number;
     center: number;
     projection: string;
     diagram: string;

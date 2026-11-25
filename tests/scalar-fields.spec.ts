@@ -1457,6 +1457,8 @@ test("square-root journey fields share scalar parsing, preserve overlapping edit
   await page.getByText("Journey endpoints", { exact: true }).click();
   for (const [name, text, key, value] of [
     ["Radius r", "phi", "radius", phi],
+    ["Center offset", "phi/2", "offset", phi / 2],
+    ["Center direction", "-pi/3", "direction", -Math.PI / 3],
     ["Trace start", "pi/4", "from", Math.PI / 4],
     ["Trace end", "3*pi", "to", 3 * Math.PI],
   ] as const) {
@@ -1480,6 +1482,8 @@ test("square-root journey fields share scalar parsing, preserve overlapping edit
   await settle();
   expect((await config()).root).toEqual({
     radius: Math.SQRT2,
+    offset: phi / 2,
+    direction: -Math.PI / 3,
     sheet: "plus",
     from: Math.PI / 3,
     to: 3 * Math.PI,
@@ -1488,7 +1492,9 @@ test("square-root journey fields share scalar parsing, preserve overlapping edit
     (await page.locator("#tesseract-orthographic > desc").textContent())!,
   ).root;
   expect(drawn.parameter).toBe(Math.PI / 3);
-  expect(drawn.normBound).toBeCloseTo(Math.sqrt(2 + Math.SQRT2), 12);
+  // R = max |z| = r(1 + k) frames the norm, √(R² + R).
+  const far = Math.SQRT2 * (1 + phi / 2);
+  expect(drawn.normBound).toBeCloseTo(Math.sqrt(far * far + far), 12);
   expect(drawn.intervals).toBe(129);
 
   await field(page, "Radius r").fill("e");

@@ -657,6 +657,8 @@ self.onmessage = async ({
             );
         for (const [field, label, value] of [
           ["root.radius", "Radius r", root.radius],
+          ["root.offset", "Center offset", root.offset ?? 0],
+          ["root.direction", "Center direction", root.direction ?? 0],
           ["root.from", "Trace start", root.from],
           ["root.to", "Trace end", root.to],
         ] as [string, string, number][])
@@ -843,6 +845,9 @@ self.onmessage = async ({
           ? {
               root: {
                 radius: root.radius,
+                // Absent in older links: the origin circle.
+                offset: root.offset ?? 0,
+                direction: root.direction ?? 0,
                 sheet: root.sheet,
                 from: root.from,
                 to: root.to,

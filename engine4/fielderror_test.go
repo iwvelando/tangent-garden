@@ -23,6 +23,9 @@ func TestValidationNamesItsField(t *testing.T) {
 		build func() Request
 	}{
 		{"root radius", "root.radius", func() Request { q := root(); q.Root.Radius = 5; return q }},
+		{"root offset", "root.offset", func() Request { q := root(); q.Root.Offset = 3.5; return q }},
+		{"root offset near the branch point", "root.offset", func() Request { q := root(); q.Root.Offset = 1.02; return q }},
+		{"root direction", "root.direction", func() Request { q := root(); q.Root.Direction = 7; return q }},
 		{"root sheet", "root.sheet", func() Request { q := root(); q.Root.Sheet = "other"; return q }},
 		{"root start", "root.from", func() Request { q := root(); q.Root.From = -1; return q }},
 		{"root end", "root.to", func() Request { q := root(); q.Root.To = 13; return q }},

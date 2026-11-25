@@ -541,6 +541,32 @@ function pairEnterMode(spreadMax: number, sliceMax: number, spread: number) {
           }
         : { ...c, mode };
 }
+// Which square-root journey a study draws: the origin circle, or a
+// translated one that encloses or misses the branch point z = 0.
+const rootCase = (c: Config): "origin" | "encloses" | "misses" => {
+  const k = c.root?.offset ?? 0;
+  return k === 0 ? "origin" : k < 1 ? "encloses" : "misses";
+};
+const rootFormula =
+  "z = r e^{iφ}(k + e^{it}),   c = k r e^{iφ},   w² = z,   |w² − c| = r,   0 ≤ t ≤ 4π";
+const rootExplanations: Record<ReturnType<typeof rootCase>, Explanation> = {
+  origin: [
+    "The second time around",
+    "Follow z once around the origin and z is home, but its square root w has only gone halfway: it ends at −w. A second circuit brings w home. The z plane cannot tell the circuits apart; the pair (z, w) in four dimensions can. Turned and projected into space, it is one closed curve whose two passes over each z stay apart. The principal root's cut on the negative real axis is a naming convention only: the path crosses it without a break.",
+    "z = r e^{it},   w = ±√r e^{it/2},   w² = z,   0 ≤ t ≤ 4π,   P = (R(Re z, Im z, Re w, Im w))_xyz",
+  ],
+  encloses: [
+    "Around an off-center branch point",
+    "The circle is off center but still encloses the branch point z = 0, so z winds once about it each circuit, and w changes sheet just as before: after one circuit it is −w(0), after two it is home. Off center, w traces one Cassini oval, |w − √c||w + √c| = r, pinched toward 0 where z passes nearest. In four dimensions the two circuits are one closed curve.",
+    rootFormula,
+  ],
+  misses: [
+    "A loop that misses zero",
+    "The circle misses the branch point z = 0, so z winds about it zero times, and w comes home after a single circuit: the second retraces the first in every view. w keeps to one of two Cassini ovals, |w − √c||w + √c| = r, about +√c or −√c; the other sheet's oval is never visited. Where the circle crosses the principal cut, only the ±√z label changes.",
+    rootFormula,
+  ],
+};
+
 export const objects: Record<Object4, ObjectDescriptor> = {
   tesseract: {
     atlas: {
@@ -1942,7 +1968,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     name: "Square-root journey",
     noun: "square-root journey",
     about:
-      "Not a solid but a journey. A point circles zero twice, and its square root follows smoothly. The root needs both circuits to come home, and the pair of numbers, four coordinates in all, traces one closed curve in four dimensions.",
+      "Not a solid but a journey. A point circles a loop twice, around zero or past it, and its square root follows smoothly. Around zero the root needs both circuits to come home; past it, one suffices. The pair of numbers, four coordinates in all, traces a closed curve in four dimensions.",
     controls: "root",
     playbackEngines: 1,
     parameterKey: "root",
@@ -1950,7 +1976,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     modeLabels: { paired: "Source, value and lift" },
     viewAbout: {
       paired:
-        "Three linked pictures: the point z circling zero, its square root w, and the pair (z, w) as one path in four dimensions, turned and with its fourth coordinate dropped. That path shows why two circuits are needed.",
+        "Three linked pictures: the point z circling its loop, its square root w, and the pair (z, w) as one path in four dimensions, turned and with its fourth coordinate dropped. That path shows whether two circuits are needed.",
     },
     // The 4D curve is the result; its companion is one flat diagram that
     // holds the z and w planes side by side.
@@ -1969,9 +1995,10 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       "Flat z and w planes · the 4D path turned, then its fourth coordinate dropped",
     constructionNumber: "03",
     radiusFields: [],
+    // |q|² = |z|² + |z| ≤ R² + R, with R = max |z| = r(1 + k).
     support: (c) => {
-      const r = c.root!.radius;
-      return Math.sqrt(r * r + r);
+      const big = c.root!.radius * (1 + (c.root!.offset ?? 0));
+      return Math.sqrt(big * big + big);
     },
     familyPassage: false,
     passageHelp: "",
@@ -1979,10 +2006,16 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     spreadHelp: "",
     sectionDetail: () => "",
     legend: "threads",
-    legendItems: [
+    legendItems: (c) => [
       { label: "First circuit, 0 ≤ t ≤ 2π", family: 0 },
       { label: "Second circuit, 2π ≤ t ≤ 4π (dashed)", family: 2 },
-      { label: "Axes, branch point and principal cut", family: 3 },
+      {
+        label:
+          rootCase(c) === "misses"
+            ? "Axes, branch point, principal cut and the other root's loop (dashed)"
+            : "Axes, branch point and principal cut",
+        family: 3,
+      },
     ],
     movingLegend: () => "Moving point; the ring marks the start",
     choicesFirst: true,
@@ -1992,11 +2025,11 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         label: "Initial sheet",
         help: tiered(
           "Which square root w starts on, at t = 0.",
-          "+√r starts on the principal root; −√r on the other. Either returns after two circuits.",
+          "+√z(0) starts on the principal root; −√z(0) on the other. Either returns after two circuits. Around a circle that misses 0, they trace different ovals.",
         ),
         values: [
-          { value: "plus", label: "w(0) = +√r" },
-          { value: "minus", label: "w(0) = −√r" },
+          { value: "plus", label: "w(0) = +√z(0)" },
+          { value: "minus", label: "w(0) = −√z(0)" },
         ],
       },
     ],
@@ -2005,9 +2038,27 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         key: "radius",
         label: "Radius r",
         help: tiered(
-          "|z| = r, from 0.25 to 4.",
-          "The path keeps away from the branch point z = 0, drawn separately. |w| = √r, at one scale with z.",
+          "The source circle's radius, from 0.25 to 4.",
+          "w is drawn at one scale with z, so |w| = √|z| reads directly. The branch point z = 0 is drawn separately.",
         ),
+      },
+      {
+        key: "offset",
+        label: "Center offset",
+        help: tiered(
+          "Center's distance from 0, in radii: 0 to 3.",
+          "Below 1 the circle encloses the branch point z = 0, and w changes sheet each circuit; above 1 it misses it, and w returns. Within 0.05 of 1 the circle passes too near the branch point and is refused.",
+        ),
+        fallback: 0,
+      },
+      {
+        key: "direction",
+        label: "Center direction",
+        help: tiered(
+          "Center's angle from the positive real axis: radians, −2π to 2π.",
+          "Turns the whole circle about 0, its start included; w turns by half as much. Only where the circle crosses the principal cut changes.",
+        ),
+        fallback: 0,
       },
       {
         key: "from",
@@ -2033,10 +2084,16 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       { key: "samples", label: "Path intervals", min: 64, max: 4096 },
     ],
     countNote:
-      "Intervals divide 0 ≤ t ≤ 4π. Exact points are added at 2π and the moving point.",
-    layerOptions: () => [
+      "Intervals divide 0 ≤ t ≤ 4π, split further near the branch point. Exact points are added at 2π and the moving point.",
+    layerOptions: (c) => [
       { key: "edges", label: "Circuits, trace and points" },
-      { key: "guides", label: "Axes, branch point and principal cut" },
+      {
+        key: "guides",
+        label:
+          rootCase(c) === "misses"
+            ? "Axes, branch point, principal cut and the other root's loop"
+            : "Axes, branch point and principal cut",
+      },
     ],
     animationFramingHelp: () =>
       "All views share one parameter. Orbit the 4D view, or pan and zoom the planes, before playback; animation holds both.",
@@ -2046,7 +2103,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
     // among the readouts.
     diagnostics: (r) =>
       r.root
-        ? `Two circuits of z, ${formatCount(r.root.intervals)} intervals over 0 ≤ t ≤ 4π. The bright trace is the last circuit behind the moving point.`
+        ? `Two circuits of z, ${formatCount(r.root.intervals)} intervals over 0 ≤ t ≤ 4π${r.root.refined > r.root.intervals ? `, ${formatCount(r.root.refined)} after refinement near the branch point` : ""}. The bright trace is the last circuit behind the moving point.`
         : "",
     readouts: (r) => {
       const d = r.root;
@@ -2068,6 +2125,13 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           value: liveReadout(d.parameter / (2 * Math.PI), [0, 2]),
         },
         { label: "Circuit", value: `${d.circuit} of 2` },
+        {
+          label: "Winding about 0",
+          value:
+            d.winding === 1
+              ? "1: w changes sheet each circuit"
+              : "0: w returns each circuit",
+        },
         { label: "Re z", value: n(d.z[0]) },
         { label: "Im z", value: n(d.z[1]) },
         { label: "Re w", value: n(d.w[0]) },
@@ -2076,21 +2140,27 @@ export const objects: Record<Object4, ObjectDescriptor> = {
           label: "w as a root of z",
           value: d.principal > 0 ? "+√z (principal)" : "−√z",
         },
+        { label: "Closest |z|", value: formatNumber(d.closest) },
         // A rounding-sized bound: two figures say all it means.
         { label: "Largest |w² − z|", value: formatNumber(d.residual, 2) },
-        { label: "Norm |(z, w)|", value: formatNumber(d.normBound) },
+        // Constant on the origin circle; otherwise it moves with the point.
+        {
+          label: "Norm |(z, w)|",
+          value:
+            d.offset === 0
+              ? formatNumber(d.normBound)
+              : liveReadout(d.norm, [0, d.normBound]),
+        },
       ];
     },
-    colorNote: () =>
-      "Each circuit has one ink in all three views; the second is dashed. In the z plane they coincide; w and the 4D view separate them. The bright trace is the last circuit behind the moving point.",
-    explanation: () => [
-      "The second time around",
-      "Follow z once around the origin and z is home, but its square root w has only gone halfway: it ends at −w. A second circuit brings w home. The z plane cannot tell the circuits apart; the pair (z, w) in four dimensions can. Turned and projected into space, it is one closed curve whose two passes over each z stay apart. The principal root's cut on the negative real axis is a naming convention only: the path crosses it without a break.",
-      "z = r e^{it},   w = ±√r e^{it/2},   w² = z,   0 ≤ t ≤ 4π,   P = (R(Re z, Im z, Re w, Im w))_xyz",
-    ],
-    title: () => "Tangent Garden — The second time around",
+    colorNote: (c) =>
+      rootCase(c) === "misses"
+        ? "Each circuit has one ink in all three views; the second is dashed. Around a circle that misses 0 the second retraces the first in every view. The bright trace is the last circuit behind the moving point."
+        : "Each circuit has one ink in all three views; the second is dashed. In the z plane they coincide; w and the 4D view separate them. The bright trace is the last circuit behind the moving point.",
+    explanation: (c) => rootExplanations[rootCase(c)],
+    title: (c) => `Tangent Garden — ${rootExplanations[rootCase(c)][0]}`,
     limitations:
-      "one circular source path, r from 0.25 to 4; at most 4,096 parameter intervals; orthogonal projection after a declared 4D rotation; no surface or general path continuation",
+      "one circular source path: radius 0.25 to 4, center offset 0 to 3 radii and at least 0.05 radii from 1; at most 4,096 parameter intervals, refined near the branch point; orthogonal projection after a declared 4D rotation; no surface or general path continuation",
     defaults: () => ({
       ...structuredClone(defaultConfig),
       object: "root",
@@ -2106,7 +2176,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
         label: "Follow the root",
         help: tiered(
           "Moves t from Trace start to Trace end, carrying z, w and the 4D point.",
-          "The trace is the last circuit behind the point. After one circuit z returns but w is opposite; a whole 4π journey returns every view, so it can loop.",
+          "The trace is the last circuit behind the point. After one circuit z returns, and w only if the circle misses 0; a whole 4π journey returns every view, so it can loop.",
         ),
         loops: true,
       },

@@ -5067,6 +5067,60 @@ console.log("Curved sections WASM contract passed");
   );
 }
 
+// The largest translated journey: a circle that just misses the branch
+// point, refined near it, with the other sheet's loop as a guide. Every
+// 4D source, guides included, travels in the typed buffer and keeps
+// w² = z, and the refined count stays within the point budget.
+{
+  const request = {
+    object: "root",
+    mode: "paired",
+    samples: 4096,
+    angles: [0, 0, -1, 0, 0.8, 0.6],
+    root: {
+      radius: 4,
+      offset: 1.05,
+      direction: 0,
+      sheet: "plus",
+      from: 0,
+      to: 4 * Math.PI,
+      trace: 0.3,
+    },
+  };
+  const times = [];
+  let reply, result;
+  for (let i = 0; i < 5; i++) {
+    const start = performance.now();
+    reply = tangentGardenTesseract(JSON.stringify(request));
+    result = hyperResult(reply);
+    times.push(performance.now() - start);
+  }
+  assert.notEqual(typeof reply, "string");
+  assert.ok(
+    Buffer.byteLength(reply.json) < 20000,
+    "bulk arrays leave the JSON",
+  );
+  const sources = result.paths.filter((p) => p.fourPoints?.length);
+  assert.deepEqual(
+    sources.filter((p) => p.guide).map((p) => p.source),
+    ["root/lifted/other-sheet"],
+  );
+  for (const p of sources)
+    for (const [x, y, u, v] of p.fourPoints)
+      assert.ok(Math.hypot(u * u - v * v - x, 2 * u * v - y) < 1e-13 * 8.2);
+  const counted = [result, result.companion].reduce(
+    (n, r) =>
+      n + r.markers.length + r.paths.reduce((m, p) => m + p.points.length, 0),
+    0,
+  );
+  assert.equal(result.emittedPoints, counted);
+  assert.ok(result.root.refined > 4096 && counted <= 65536);
+  times.sort((a, b) => a - b);
+  console.log(
+    `Translated square-root journey WASM, offset 1.05 at 4,096 intervals: ${result.root.refined} refined intervals, ${result.emittedPoints} points in three views; median ${times[2].toFixed(1)} ms including parse; ${replyBytes(reply)} bytes sent`,
+  );
+}
+
 // The self-dual 24-cell: its vertex arrays travel in the typed buffer and
 // its incidence as small index lists.
 {
