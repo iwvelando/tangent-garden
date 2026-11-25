@@ -178,7 +178,7 @@ test("sheet definitions describe the active curve and descriptor-owned 4D object
   );
   root.root!.sheet = "minus";
   const rootText = tesseractSheetDefinition(root).join(" ");
-  expect(rootText).toContain("w(0) = −√r");
+  expect(rootText).toContain("w(0) = −√z(0)");
   expect(rootText).not.toContain("Trace start");
 });
 
