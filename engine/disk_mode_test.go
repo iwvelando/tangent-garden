@@ -541,3 +541,25 @@ func TestDiskModeWorkStaysBounded(t *testing.T) {
 		t.Fatalf("%d points beyond the budget", points)
 	}
 }
+
+// A full period of a gives the same field and so the same drawing, bit for
+// bit: a pure mode's crossings are exact, so the pieces there are decided
+// by rounding, and a seamless loop must end on exactly its start.
+func TestDiskModePeriodIsExact(t *testing.T) {
+	for _, mk := range [][2]int{{5, 3}, {8, 5}, {12, 10}} {
+		v := diskStudy(mk[0], mk[1], 1, 160)
+		v.Family = Levels{Enabled: true, From: -0.24, To: 0.24, Count: 6}
+		start, _, _ := v.contours(0, 24)
+		end, _, _ := v.contours(2*math.Pi, 24)
+		if len(start.Curve.Contours) != len(end.Curve.Contours) {
+			t.Fatalf("%v: %d pieces at a = 0, %d at a = 2π", mk, len(start.Curve.Contours), len(end.Curve.Contours))
+		}
+		for i, c := range start.Curve.Contours {
+			for j, p := range c.Points {
+				if q := end.Curve.Contours[i].Points[j]; p != q {
+					t.Fatalf("%v: piece %d point %d is %v at a = 0, %v at a = 2π", mk, i, j, p, q)
+				}
+			}
+		}
+	}
+}

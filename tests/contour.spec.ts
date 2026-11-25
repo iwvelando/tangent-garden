@@ -15,6 +15,7 @@ import {
   exportImage,
   openAnimation,
   choosePreset,
+  exampleTitles,
   openExportSettings,
   chooseColorScheme,
   imageButton,
@@ -961,3 +962,157 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+// #415 research: disk membrane modes, only with ?research=415.
+const rose = "A drum's rose (research)";
+// Open contours' ends on the drawn boundary circle, in screen units.
+async function boundaryEnds(page: Page) {
+  const circle = page.getByTestId("disk-boundary");
+  const [cx, cy, r] = await Promise.all(
+    ["cx", "cy", "r"].map(async (a) => Number(await circle.getAttribute(a))),
+  );
+  const ends = (await drawn(page))
+    .filter((c) => !c.closed)
+    .flatMap((c) => [c.points[0], c.points.at(-1)!])
+    .map(([x, y]) => Math.abs(Math.hypot(x - cx, y - cy) - r));
+  return { onCircle: ends.filter((d) => d < 0.5).length, all: ends.length };
+}
+
+test("disk modes are a research preview: absent from the app and refused in links without the parameter", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  const titles = await exampleTitles(page);
+  expect(titles.some((t) => t.includes("(research)"))).toBe(false);
+  await choosePreset(page, { label: cassini });
+  await settled(page);
+  await expect(page.getByLabel("Field (research)")).toHaveCount(0);
+  // A link carrying a disk mode opens only under the parameter.
+  await page.goto("/?research=415");
+  await choosePreset(page, { label: rose });
+  await settled(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  expect(new URL(link).searchParams.getAll("research")).toEqual(["415"]);
+  const plain = new URL(link);
+  plain.searchParams.delete("research");
+  const other = await page.context().newPage();
+  await other.goto(plain.toString());
+  await expect(
+    other.getByText(
+      "This link's disk mode is a research preview: open it with ?research=415.",
+    ),
+  ).toBeVisible();
+  await other.close();
+});
+
+test("a disk research study draws its nodal lines to an analytic boundary, edits by field, keeps drafts, and shares", async ({
+  page,
+}) => {
+  await page.goto("/?research=415");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await choosePreset(page, { label: rose });
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "Disk mode (m, k) = (5, 3): 5 nodal diameters and 2 nodal circles inside the boundary",
+  );
+  await expect(note(page)).toContainText("ending on the disk's boundary");
+  // The boundary is drawn from r = R; every open contour ends on it, two
+  // per diameter, and none runs along it.
+  const circle = page.getByTestId("disk-boundary");
+  await expect(circle).toHaveCount(1);
+  expect(Number(await circle.getAttribute("r"))).toBeCloseTo(
+    await scale(page),
+    6,
+  );
+  expect(await boundaryEnds(page)).toEqual({ onCircle: 10, all: 10 });
+  const field = page.getByLabel("Field (research)");
+  await expect(field).toHaveValue("disk");
+  await expect(page.getByRole("textbox", { name: "F(x, y)" })).toHaveCount(0);
+  // Edits by field, a refusal under its own control, and recovery.
+  await input(page, "Order m").fill("3");
+  await settled(page);
+  await expect(note(page)).toContainText("(m, k) = (3, 3)");
+  expect(await boundaryEnds(page)).toEqual({ onCircle: 6, all: 6 });
+  await input(page, "Order m").fill("13");
+  await expect(page.getByRole("alert")).toContainText(
+    "the angular order m is a whole number from 0 to 12",
+  );
+  await input(page, "Order m").fill("0");
+  await input(page, "Ring k").fill("4");
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "no nodal diameters and 3 nodal circles inside the boundary",
+  );
+  await expect(note(page)).toContainText("The curve has 3 closed contours.");
+  await expect(circle).toHaveCount(1);
+  await input(page, "Radius R").fill("1/2");
+  await settled(page);
+  expect((await definition(page)).curve.implicit.disk).toEqual({
+    order: 0,
+    ring: 4,
+    radius: 0.5,
+  });
+  expect(Number(await circle.getAttribute("r"))).toBeCloseTo(
+    (await scale(page)) / 2,
+    6,
+  );
+  // The expression and the mode keep their own values.
+  await field.selectOption("expression");
+  await settled(page);
+  await expect(circle).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "F(x, y)" })).toHaveValue("0");
+  expect((await definition(page)).curve.implicit.disk).toBeUndefined();
+  await field.selectOption("disk");
+  await settled(page);
+  expect((await definition(page)).curve.implicit.disk).toEqual({
+    order: 0,
+    ring: 4,
+    radius: 0.5,
+  });
+  // A copied link reopens the same mode under the parameter.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const config = await definition(page);
+  const other = await page.context().newPage();
+  await other.goto(link);
+  await expect(other.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  expect(
+    JSON.parse((await other.locator("#artwork desc").textContent())!),
+  ).toEqual(config);
+  await other.close();
+});
+
+test("a disk research still export keeps the boundary and the traced paths", async ({
+  page,
+}) => {
+  await page.goto("/?research=415");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await choosePreset(page, { label: "Radial lace (research)" });
+  await settled(page);
+  const live = await page
+    .locator("#artwork path")
+    .evaluateAll((all) => all.map((p) => p.getAttribute("d")));
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const saved = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    return {
+      paths: [...doc.querySelectorAll("path")].map((p) => p.getAttribute("d")),
+      circles: doc.querySelectorAll("[data-testid=disk-boundary]").length,
+      text: doc.querySelectorAll("text").length,
+    };
+  }, svg);
+  expect(saved.paths).toEqual(live);
+  expect(saved.circles).toBe(1);
+  expect(saved.text).toBe(0);
+});

@@ -2110,7 +2110,8 @@ function diskResearchPresets(): typeof presets {
     lines: 24,
   });
   // a turns the pattern by a/m, so a full period of a is one seamless
-  // turn through its m-fold symmetry.
+  // turn through its m-fold symmetry. Each turn starts at a = 0: the engine
+  // reduces a exactly, so 2π ends on the start bit for bit.
   const turn = (from: string, to: string): PlanarAnimation => ({
     mode: "parameters",
     camera: "hold",
@@ -2144,8 +2145,8 @@ function diskResearchPresets(): typeof presets {
     {
       title: "Radial lace (research)",
       note: "The (8, 5) mode among six nearby levels, turning through its eightfold symmetry",
-      config: mode(8, 5, Math.PI / 8, 200, true),
-      animation: turn("pi/8", "17*pi/8"),
+      config: mode(8, 5, 0, 200, true),
+      animation: turn("0", "2*pi"),
     },
     {
       title: "Twelvefold membrane (research)",

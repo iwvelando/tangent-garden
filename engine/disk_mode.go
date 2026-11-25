@@ -52,6 +52,11 @@ func (d Disk) validate() error {
 func (d Disk) field(a float64) func(x, y float64) float64 {
 	m := d.Order
 	j, peak, R := besselZeros[m][d.Ring-1], besselPeaks[m], d.Radius
+	// a is reduced exactly (fmod is exact) before its cosine and sine, so
+	// a + 2π gives the same field bit for bit. A pure mode's nodal lines
+	// cross exactly, where the tracer's choice of pieces rests on rounding:
+	// without this, a seamless loop would not end on its start.
+	a = math.Mod(a, 2*math.Pi)
 	ca, sa := math.Cos(a), math.Sin(a)
 	return func(x, y float64) float64 {
 		r := math.Hypot(x, y)
