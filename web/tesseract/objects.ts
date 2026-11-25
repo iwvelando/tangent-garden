@@ -2284,7 +2284,7 @@ export const objects: Record<Object4, ObjectDescriptor> = {
       },
       {
         key: "frequency",
-        label: "Ripple frequency m",
+        label: "Frequency m",
         help: tiered(
           "Ripples per circuit, a whole number from −12 to 12.",
           "Negative m turns the ripple against the circle.",

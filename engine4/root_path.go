@@ -83,7 +83,7 @@ func rootShape(p RootParameters) ([]RootTerm, error) {
 			return nil, fieldErr("root.ripple", "Ripple a must be between 0 and 3")
 		}
 		if !finite(p.Frequency) || p.Frequency != math.Trunc(p.Frequency) || math.Abs(p.Frequency) > rootMaxRippleFrequency {
-			return nil, fieldErr("root.frequency", "Ripple frequency m must be a whole number from −12 to 12")
+			return nil, fieldErr("root.frequency", "Frequency m must be a whole number from −12 to 12")
 		}
 		return []RootTerm{{Frequency: 1, Radius: 1}, {Frequency: p.Frequency, Radius: p.Ripple}}, nil
 	case "fourier":

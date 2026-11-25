@@ -664,7 +664,7 @@ self.onmessage = async ({
           ...(root.path === "ripple"
             ? [
                 ["root.ripple", "Ripple a", root.ripple ?? 0],
-                ["root.frequency", "Ripple frequency m", root.frequency ?? 2],
+                ["root.frequency", "Frequency m", root.frequency ?? 2],
               ]
             : []),
           ...(root.path === "fourier"
