@@ -213,8 +213,12 @@ func TestDiskModeSolvesTheBoundaryValueProblem(t *testing.T) {
 			}
 			for i := range 64 {
 				θ := 2 * math.Pi * float64(i) / 64
-				if v := u(R*math.Cos(θ), R*math.Sin(θ)); math.Abs(v) > 1e-14 {
-					t.Fatalf("(%d, %d), R = %g: u = %.3g on the boundary at θ = %g", m, k, R, v, θ)
+				// On the boundary, and within the rounding admitted
+				// beyond it, where the argument stays at the zero.
+				for _, r := range []float64{R, R * (1 + 4e-13)} {
+					if v := u(r*math.Cos(θ), r*math.Sin(θ)); math.Abs(v) > 1e-14 {
+						t.Fatalf("(%d, %d), R = %g: u = %.3g at r = %.17g, θ = %g", m, k, R, v, r, θ)
+					}
 				}
 			}
 			if v := u(2*R, 0); !math.IsNaN(v) {

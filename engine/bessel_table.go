@@ -49,20 +49,11 @@ func newBesselTable(m int) *besselTable {
 		}
 		c := &t.g[i]
 		for j := range n {
-			// The sum is compensated (Ogita, Rump and Oishi's Dot2):
-			// plainly summed, its rounding would leave the small trailing
-			// coefficients as noise of 10⁻¹⁶.
-			var sum, carry float64
+			sum := 0.0
 			for k := range n {
-				w := cosHalfTurns(j*(2*k+1), 2*n)
-				p := values[k] * w
-				perr := math.FMA(values[k], w, -p)
-				t := sum + p
-				z := t - sum
-				carry += (sum - (t - z)) + (p - z) + perr
-				sum = t
+				sum += values[k] * cosHalfTurns(j*(2*k+1), 2*n)
 			}
-			c[j] = 2 * (sum + carry) / n
+			c[j] = 2 * sum / n
 		}
 		c[0] /= 2
 		// The derivative's series, d/dx = 2·besselPerUnit d/dt:
@@ -79,9 +70,10 @@ func newBesselTable(m int) *besselTable {
 	return t
 }
 
-// cosHalfTurns returns cos(πl/d) for whole l ≥ 0 and even d > 0, reduced
-// exactly to an angle of at most π/4 first, so its rounding stays below an
-// ulp, where cos of the unreduced angle would carry its argument's.
+// cosHalfTurns returns cos(πl/d) for whole l ≥ 0 and d > 0, reduced
+// exactly to an angle of at most π/2 first, so its rounding stays near an
+// ulp, where cos of the unreduced angle, up to 4π here, would carry its
+// argument's.
 func cosHalfTurns(l, d int) float64 {
 	l %= 2 * d
 	if l > d {
@@ -90,10 +82,6 @@ func cosHalfTurns(l, d int) float64 {
 	sign := 1.0
 	if 2*l > d {
 		l, sign = d-l, -1
-	}
-	// Now 0 ≤ πl/d ≤ π/2.
-	if 4*l > d {
-		return sign * math.Sin(math.Pi*float64(d-2*l)/float64(2*d))
 	}
 	return sign * math.Cos(math.Pi*float64(l)/float64(d))
 }

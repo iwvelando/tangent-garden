@@ -893,9 +893,7 @@ const config = {
   samples: 1000,
   lines: 30,
 };
-const result = planar(
-  globalThis.tangentGardenCompute(JSON.stringify(config)),
-);
+const result = planar(globalThis.tangentGardenCompute(JSON.stringify(config)));
 assert.equal(result.base.length, 1000);
 assert.ok(Math.abs(result.derived[0].x + 2.5) < 1e-5);
 assert.equal(result.rays.length, 30);
@@ -921,10 +919,7 @@ const planarRefused = planar(
 );
 assert.match(planarRefused.error, /greater than domain end/);
 assert.equal(planarRefused.field, "curve.max");
-assert.equal(
-  "field" in planar(globalThis.tangentGardenCompute("{")),
-  false,
-);
+assert.equal("field" in planar(globalThis.tangentGardenCompute("{")), false);
 // The probe between samples: the ellipse (2 cos t, 3 sin t) at t = 0.3,
 // off its samples, with curvature 6/(4 sin² t + 9 cos² t)^{3/2}; the probe
 // alone is the full study's probe, and a malformed one is refused.

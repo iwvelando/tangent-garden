@@ -89,6 +89,20 @@ func TestDiskCatalogDrawsItsModes(t *testing.T) {
 					}
 				}
 			}
+			// The normals point along the independent mode's gradient.
+			if len(cr.Normals) < 12 {
+				t.Fatalf("%s: %d normals", p.Title, len(cr.Normals))
+			}
+			for _, n := range cr.Normals {
+				e := 1e-6 * R
+				own := Vec{
+					(u(n.Point.Add(Vec{e, 0})) - u(n.Point.Sub(Vec{e, 0}))) / (2 * e),
+					(u(n.Point.Add(Vec{0, e})) - u(n.Point.Sub(Vec{0, e}))) / (2 * e),
+				}
+				if n.Gradient.Sub(own).Norm() > 1e-5*own.Norm()+1e-9 {
+					t.Fatalf("%s, a = %g: normal at %v has gradient %v, independently %v", p.Title, a, n.Point, n.Gradient, own)
+				}
+			}
 			// Symmetry: turning by π/m carries level c onto level −c.
 			if m == 0 {
 				continue

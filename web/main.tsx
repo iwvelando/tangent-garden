@@ -64,11 +64,7 @@ import {
 import type { AdoptedJourney, JourneyAdoption } from "./journeys";
 import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
-import {
-  defaultDisk,
-  diskLimits,
-  diskNote,
-} from "./disk-mode";
+import { defaultDisk, diskLimits, diskNote } from "./disk-mode";
 import {
   gardenExamples,
   laceExamples,
@@ -1201,30 +1197,36 @@ function App({
       : undefined;
   const implicitControls = (
     <>
-      <p className="note">
-        The curve is every point of the window where F(x, y) = c. Use{" "}
-        <var>x</var>, <var>y</var> and <var>a</var>. It has no parameter, so no
-        construction applies; the normals show F&rsquo;s gradient, pointing
-        toward larger values.
-      </p>
-      {
-        <Field
-          label="Field"
-          topic="field"
-          help={tiered(
-            "An expression F(x, y), or a vibrating disk's standing wave.",
-            "A disk mode is J_m(j r/R)/P (cos a cos mθ + sin a sin mθ), scaled so its peak is 1, and traced only inside the disk r ≤ R about the origin. j is the k-th zero of J_m, so the boundary is still.",
-          )}
+      {disk ? (
+        <p className="note">
+          The curve is every point of the disk where the mode u = c. It has no
+          parameter, so no construction applies; the normals show u&rsquo;s
+          gradient, pointing toward larger values.
+        </p>
+      ) : (
+        <p className="note">
+          The curve is every point of the window where F(x, y) = c. Use{" "}
+          <var>x</var>, <var>y</var> and <var>a</var>. It has no parameter, so
+          no construction applies; the normals show F&rsquo;s gradient, pointing
+          toward larger values.
+        </p>
+      )}
+      <Field
+        label="Field"
+        topic="field"
+        help={tiered(
+          "An expression F(x, y), or a vibrating disk's standing wave.",
+          "A disk mode is J_m(j r/R)/P (cos a cos mθ + sin a sin mθ), scaled so its peak is 1, and traced only inside the disk r ≤ R about the origin. j is the k-th zero of J_m, so the boundary is still.",
+        )}
+      >
+        <select
+          value={disk ? "disk" : "expression"}
+          onChange={(e) => chooseField(e.target.value)}
         >
-          <select
-            value={disk ? "disk" : "expression"}
-            onChange={(e) => chooseField(e.target.value)}
-          >
-            <option value="expression">Expression F(x, y)</option>
-            <option value="disk">Disk membrane mode</option>
-          </select>
-        </Field>
-      }
+          <option value="expression">Expression F(x, y)</option>
+          <option value="disk">Disk membrane mode</option>
+        </select>
+      </Field>
       {disk ? (
         <>
           <div className="pair">

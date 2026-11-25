@@ -102,6 +102,11 @@ const lengths = new Set([
 // leaves alone. Every number of a result is one of these, a length, a
 // curvature or a window's edge: anything new must be placed here.
 const unchanged = new Set([
+  "order",
+  "ring",
+  "zero",
+  "peak",
+  "angles",
   "sampleIndex",
   "breaks",
   "inserted",
@@ -167,6 +172,8 @@ function mapResult(value: any, m: Similarity, key = "", body = false): any {
   if (typeof value === "boolean") return value;
   if (lengths.has(key)) return value * m.s;
   if (key === "curvature") return value / m.s;
+  // A disk mode's eigenvalue, (j/R)².
+  if (key === "eigenvalue") return value / (m.s * m.s);
   if (unchanged.has(key)) return value;
   throw new Error(`Place the result's ${key} in planar-rebase.spec.ts`);
 }
@@ -186,14 +193,19 @@ function mapStudy(config: Config, result: Result, m: Similarity) {
   copy.source.position = at(config.source.position);
   copy.curve.field.seeds = config.curve.field.seeds.map(at);
   copy.curve.field.escape = config.curve.field.escape * m.s;
+  const disk = config.curve.implicit.disk;
+  if (disk) copy.curve.implicit.disk = { ...disk, radius: disk.radius * m.s };
   return { config: copy, result: mapped };
 }
 
 // A roulette's fixed circle or line and a field's escape circle are drawn
 // about the origin by their definitions, which a translation cannot carry
-// (the engine rewrites such a translated study as a parametric curve).
+// (the engine rewrites such a translated study as a parametric curve), and
+// a disk mode lies about the origin.
 const translatable = (config: Config) =>
-  config.curve.format !== "roulette" && config.curve.format !== "field";
+  config.curve.format !== "roulette" &&
+  config.curve.format !== "field" &&
+  !config.curve.implicit.disk;
 
 const layers: Layers = {
   base: true,

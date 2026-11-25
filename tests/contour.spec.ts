@@ -19,6 +19,7 @@ import {
   openExportSettings,
   chooseColorScheme,
   imageButton,
+  playAndPause,
 } from "./helpers";
 import { wireStudy } from "./study-link-wire";
 
@@ -100,7 +101,7 @@ test("three nodal studies carry literal equal-eigenvalue modes and full-period a
     [2, 3],
     [3, 5],
   ];
-  expect(presets).toHaveLength(78);
+  expect(presets).toHaveLength(84);
   for (const [i, title] of nodalTitles.entries()) {
     const p = presets.find((p) => p.title === title);
     expect(p, title).toBeDefined();
@@ -1123,4 +1124,51 @@ test("a disk still export keeps the boundary and the traced paths", async ({
   expect(saved.paths).toEqual(live);
   expect(saved.circles).toBe(1);
   expect(saved.text).toBe(0);
+});
+
+test("every disk study plays its own motion from its opening view, with its family and anchored normals on", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  const paths = () =>
+    page
+      .locator("#artwork path")
+      .evaluateAll((all) => all.map((p) => p.getAttribute("d")).join("|"));
+  for (const title of diskStudies) {
+    const preset = presets.find((p) => p.title === title)!;
+    await choosePreset(page, { label: title });
+    await settled(page);
+    const opening = await definition(page);
+    expect(opening).toEqual(preset.config);
+    const before = await paths();
+    await openAnimation(page);
+    await playAndPause(page);
+    const slider = page.getByRole("slider", { name: "Animation progress" });
+    await slider.evaluate((el: HTMLInputElement) => {
+      const set = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      set.call(el, "0.3");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await expect.poll(paths).not.toBe(before);
+    await settled(page);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByTestId("disk-boundary")).toHaveCount(1);
+    const frame = await definition(page);
+    const track = preset.animation!.tracks[0].target;
+    if (track === "a") expect(frame.curve.a).toBeGreaterThan(0);
+    else if (track === "contourLevel")
+      expect(frame.curve.implicit.level).not.toBe(opening.curve.implicit.level);
+    else
+      expect(frame.curve.implicit.family.from).toBeGreaterThan(
+        opening.curve.implicit.family.from,
+      );
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await settled(page);
+    expect(await paths()).toBe(before);
+  }
 });
