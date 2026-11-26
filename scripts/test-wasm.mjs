@@ -28,6 +28,8 @@ function lifted(reply) {
 }
 const hyperResult = (reply) =>
   typeof reply === "string" ? JSON.parse(reply) : lifted(reply);
+// A planar reply likewise: a refusal is JSON alone, a result lifted.
+const planar = hyperResult;
 // The bytes a reply sends to the page.
 const replyBytes = (reply) =>
   typeof reply === "string"
@@ -891,26 +893,33 @@ const config = {
   samples: 1000,
   lines: 30,
 };
-const result = JSON.parse(
-  globalThis.tangentGardenCompute(JSON.stringify(config)),
-);
+const result = planar(globalThis.tangentGardenCompute(JSON.stringify(config)));
 assert.equal(result.base.length, 1000);
 assert.ok(Math.abs(result.derived[0].x + 2.5) < 1e-5);
 assert.equal(result.rays.length, 30);
-assert.ok(JSON.parse(globalThis.tangentGardenCompute("{")).error);
+// A contour study's points leave the JSON as floats.
+{
+  const { config: engraving } = presets.find(
+    (p) => p.title === "An engraving of standing waves",
+  );
+  const raw = globalThis.tangentGardenCompute(JSON.stringify(engraving));
+  assert.equal(typeof raw, "object");
+  assert.ok(replyBytes(raw) < 1.5 * raw.lifted.floats.byteLength);
+  const r = lifted(raw);
+  assert.equal(r.contours.family.length, 6);
+  assert.ok(r.contours.curve.contours[0].points[0].x > 0);
+}
+assert.ok(planar(globalThis.tangentGardenCompute("{")).error);
 // A validation error names the field it is about, for the notebook to show
 // beside that control; an error about the whole study names none.
-const planarRefused = JSON.parse(
+const planarRefused = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({ ...config, curve: { ...config.curve, max: -1 } }),
   ),
 );
 assert.match(planarRefused.error, /greater than domain end/);
 assert.equal(planarRefused.field, "curve.max");
-assert.equal(
-  "field" in JSON.parse(globalThis.tangentGardenCompute("{")),
-  false,
-);
+assert.equal("field" in planar(globalThis.tangentGardenCompute("{")), false);
 // The probe between samples: the ellipse (2 cos t, 3 sin t) at t = 0.3,
 // off its samples, with curvature 6/(4 sin² t + 9 cos² t)^{3/2}; the probe
 // alone is the full study's probe, and a malformed one is refused.
@@ -920,7 +929,7 @@ const probeOnly = JSON.parse(
     JSON.stringify({ ...config, probe: { t: probeT } }),
   ),
 );
-const probeFull = JSON.parse(
+const probeFull = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({ ...config, probe: { t: probeT } }),
   ),
@@ -948,7 +957,7 @@ assert.ok(
 // unit circle to the circle through the origin with center (0, 25). The
 // refined image stays on it, joined, and reaches its far point (0, 50).
 const planarNearMiss = (adaptive) =>
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         kind: "inversion",
@@ -976,7 +985,7 @@ assert.ok(Math.max(...planarImage.points.map((p) => p.y)) > 49.99);
 // large as the study, or one that is not a rectangle, is refused or
 // changes nothing.
 const planarView = (view) =>
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         kind: "inversion",
@@ -1006,7 +1015,7 @@ assert.deepEqual(
 assert.match(planarView({ x0: 1, y0: 0, x1: 0, y1: 1 }).error, /view/);
 // Each member of an offset stack is refined on its own: the unit circle's
 // offsets toward its center by 0.2 and 0.5 are circles of radius 0.8 and 0.5.
-const planarStack = JSON.parse(
+const planarStack = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1030,7 +1039,7 @@ for (const [k, radius] of [0.8, 0.5].entries()) {
 // A refined caustic carries whether each point is virtual: the nephroid,
 // parallel light reflected in the unit circle, is virtual on the half
 // x < 0 of the circle, its points with x < 0 on that half.
-const planarNephroid = JSON.parse(
+const planarNephroid = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1053,7 +1062,7 @@ assert.ok(
 // A refined involute of the unit circle, unwound from t = 0 with string
 // offset ½, lies on (cos t + (t + ½) sin t, sin t − (t + ½) cos t), whose
 // distance from the center is √(1 + (t + ½)²).
-const planarInvolute = JSON.parse(
+const planarInvolute = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1081,7 +1090,7 @@ assert.ok(
 console.log("Planar refinement WASM bridge passed.");
 // The probe's diagnostics: a circle of radius 2 turning left has κ = ½ and
 // its center at the origin at every sample, and a quarter turn's length π.
-const planarProbe = JSON.parse(
+const planarProbe = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1104,7 +1113,7 @@ assert.deepEqual(scalars.values, [2 * Math.PI, (1 + Math.sqrt(5)) / 2, 1]);
 assert.ok(JSON.parse(globalThis.tangentGardenScalars('["t"]')).error);
 assert.ok(JSON.parse(globalThis.tangentGardenScalars('["1/0"]')).error);
 assert.equal(result.rays.at(-1).sampleIndex, 999);
-const pedal = JSON.parse(
+const pedal = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1130,7 +1139,7 @@ for (const i of [0, 249, 500, 999]) {
 const family = Object.fromEntries(
   ["contrapedal", "orthotomic"].map((kind) => [
     kind,
-    JSON.parse(
+    planar(
       globalThis.tangentGardenCompute(
         JSON.stringify({
           ...config,
@@ -1155,7 +1164,7 @@ for (const i of [0, 249, 500, 999]) {
 assert.equal(family.contrapedal.invalid, 0);
 assert.equal(family.orthotomic.rays.length, config.lines);
 assert.ok(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({ ...config, kind: "orthotomic", pole: { x: "a", y: 0 } }),
     ),
@@ -1169,7 +1178,7 @@ for (const [distance, radius] of [
   [2, 0],
   [undefined, 2],
 ]) {
-  const offset = JSON.parse(
+  const offset = planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1188,7 +1197,7 @@ for (const [distance, radius] of [
   }
 }
 assert.ok(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({ ...config, kind: "offset", distance: "1" }),
     ),
@@ -1196,7 +1205,7 @@ assert.ok(
 );
 // A stack of offsets of a radius-2 circle is three concentric circles, with
 // generating circles of the largest distance centered on the curve.
-const stack = JSON.parse(
+const stack = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1227,7 +1236,7 @@ for (const [i, circle] of stack.circles.entries()) {
   assert.ok(Math.abs(Math.hypot(circle.center.x, circle.center.y) - 2) < 1e-9);
 }
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1240,7 +1249,7 @@ assert.match(
 );
 // A rim point of a circle rolling inside one four times its size traces an
 // astroid, which closes after one turn with four cusps.
-const roulette = JSON.parse(
+const roulette = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1275,11 +1284,11 @@ for (const s of roulette.roulette.positions) {
   assert.deepEqual(s.point, roulette.base[s.sampleIndex]);
 }
 assert.equal(
-  JSON.parse(globalThis.tangentGardenCompute(JSON.stringify(config))).roulette,
+  planar(globalThis.tangentGardenCompute(JSON.stringify(config))).roulette,
   undefined,
 );
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1295,7 +1304,7 @@ assert.match(
 );
 // A circle of radius 1 rolling outside a circle of radius 3 traces the
 // three-cusped epicycloid (4cos t − cos 4t, 4sin t − sin 4t).
-const rolling = JSON.parse(
+const rolling = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1316,7 +1325,7 @@ rolling.derived.forEach((p, j) => {
   );
 });
 // Refined between 64 samples, the epicycloid stays on its closed form.
-const refinedRolling = JSON.parse(
+const refinedRolling = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1343,7 +1352,7 @@ assert.ok(
 // Refined between 64 samples, a sliding ladder's chords envelope the
 // astroid (cos³ t, sin³ t) through its cusps, and circles of radius 0.9 on
 // an ellipse envelope its offsets ±0.9, a refined path for each branch.
-const ladder = JSON.parse(
+const ladder = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1366,7 +1375,7 @@ assert.ok(
     );
   }),
 );
-const ringed = JSON.parse(
+const ringed = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1405,7 +1414,7 @@ rolling.rolling.forEach((s, k) => {
 });
 assert.deepEqual(result.rolling, []);
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1418,7 +1427,7 @@ assert.match(
 );
 // An ellipse rolling outside a congruent ellipse from matching vertices: its
 // focus stays 2a = 4 from the fixed ellipse's far focus (−1.6, 0).
-const moving = JSON.parse(
+const moving = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1456,7 +1465,7 @@ moving.moving.positions.forEach((s) => {
 });
 assert.equal(result.moving, undefined);
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1474,7 +1483,7 @@ assert.match(
 );
 // Chords from t to 2t on the unit circle envelope the cardioid
 // (2e^{it} + e^{2it})/3, touching each chord a third of the way along.
-const chords = JSON.parse(
+const chords = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1513,7 +1522,7 @@ chords.rays.forEach((ray) => {
 });
 assert.equal(result.second, undefined);
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1526,7 +1535,7 @@ assert.match(
 );
 // Circles centered on the parabola 4y = x² through its focus: the right
 // branch is the directrix y = −1, the left collapses to the focus.
-const rings = JSON.parse(
+const rings = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1560,7 +1569,7 @@ rings.circles.forEach((c) => {
   assert.ok(Math.abs(c.radius - (t * t) / 4 - 1) < 1e-12);
 });
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1575,7 +1584,7 @@ assert.match(
 // circle passes through the center; the pedal of an ellipse about its center
 // inverts into the reciprocal ellipse a²x² + b²y² = 1.
 const inversion = { center: { x: 0, y: 0 }, radius: 2 };
-const inverted = JSON.parse(
+const inverted = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1596,7 +1605,7 @@ inverted.rays.forEach((ray) => {
   assert.deepEqual(ray.origin, inverted.base[ray.sampleIndex]);
   assert.deepEqual(ray.target, inverted.derived[ray.sampleIndex]);
 });
-const reciprocal = JSON.parse(
+const reciprocal = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1613,7 +1622,7 @@ reciprocal.derived.forEach((p) =>
   assert.ok(Math.abs(4 * p.x * p.x + 1.21 * p.y * p.y - 1) < 1e-9),
 );
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1628,7 +1637,7 @@ assert.match(
 // ellipse's evolute, starting with the radius of curvature at the domain
 // start, retraces the ellipse. An evolute cannot feed a second-order
 // construction.
-const involute = JSON.parse(
+const involute = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1652,7 +1661,7 @@ involute.derived.forEach((p, j) => {
   assert.ok(Math.hypot(p.x - 2 * Math.cos(t), p.y - Math.sin(t)) < 1e-6);
 });
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({ ...config, kind: "evolute", input: "evolute" }),
     ),
@@ -1661,7 +1670,7 @@ assert.match(
 );
 // The deltoid 2e^{it} + e^{-2it} closes after 2π, with its epicycles chained
 // from the origin; a Lissajous 3:2 figure projects from its two guides.
-const deltoid = JSON.parse(
+const deltoid = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1685,7 +1694,7 @@ for (const s of deltoid.harmonic.positions) {
   assert.ok(Math.abs(Math.hypot(s.joints[1].x, s.joints[1].y) - 2) < 1e-12);
   assert.deepEqual(s.point, deltoid.base[s.sampleIndex]);
 }
-const lissajous = JSON.parse(
+const lissajous = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1711,7 +1720,7 @@ for (const s of lissajous.harmonic.positions) {
   assert.ok(Math.abs(s.joints[1].y - s.point.y) < 1e-12);
 }
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1728,7 +1737,7 @@ const heptagon = Array.from({ length: 7 }, (_, j) => ({
   y: Math.sin((2 * Math.PI * j) / 7),
   speed: 1,
 }));
-const chase = JSON.parse(
+const chase = planar(
   globalThis.tangentGardenCompute(
     JSON.stringify({
       ...config,
@@ -1759,7 +1768,7 @@ for (const polygon of chase.pursuit.polygons) {
 }
 assert.equal(chase.pursuit.paths[3].at(-1), null);
 assert.match(
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1777,7 +1786,7 @@ assert.match(
 // seed outside the escape circle has none, and one field of expressions in
 // x, y, and t carries the error.
 const field = (f) =>
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1834,7 +1843,7 @@ assert.match(field({ y: "x*z" }).error, /dy\/dt: unknown name "z"/);
 // two at b < a and join into one at b > a; a family of levels comes back
 // beside them, and the gradient at representative points.
 const cassini = (implicit) =>
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,
@@ -1910,7 +1919,7 @@ assert.equal(cassini({ f: "atan(y/x)-x^2" }).contours.usesA, false);
 // counts. Its first iterates follow the map; a Hénon orbit that leaves
 // ±100000 stops there.
 const iterated = (attractor) =>
-  JSON.parse(
+  planar(
     globalThis.tangentGardenCompute(
       JSON.stringify({
         ...config,

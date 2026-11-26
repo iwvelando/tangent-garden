@@ -287,7 +287,11 @@ export function phraseTargets(config: Config): Target[] {
         : c.format === "polar"
           ? [c.r]
           : c.format === "implicit"
-            ? [c.implicit.f]
+            ? c.implicit.disk
+              ? c.implicit.disk.order > 0
+                ? ["a"]
+                : []
+              : [c.implicit.f]
             : c.format === "field"
               ? [c.field.x, c.field.y]
               : [];

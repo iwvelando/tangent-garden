@@ -26,6 +26,7 @@ import {
   type LaceMotifId,
 } from "./lace/motifs";
 import { planarStoryIds, type PlanarStoryId } from "./planar-story";
+import { diskLimits } from "./disk-mode";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
 import {
   gardenLimits,
@@ -275,6 +276,16 @@ const config: SchemaOf<Config> = {
             window,
             cells: "number",
             stableNormals: { optional: "boolean" },
+            // A disk mode; the worker refuses fractional indices.
+            disk: {
+              optional: {
+                fields: {
+                  order: { range: [...diskLimits.order] },
+                  ring: { range: [...diskLimits.ring] },
+                  radius: { range: [...diskLimits.radius] },
+                },
+              },
+            },
           },
         },
         attractor: {

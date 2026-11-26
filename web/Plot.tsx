@@ -1371,6 +1371,19 @@ export function Plot({
                 strokeLinejoin="round"
               />
             ))}
+          {layers.base && contours?.disk && (
+            // A disk mode's boundary, drawn from its
+            // equation r = R, never extracted from the grid.
+            <circle
+              data-testid="disk-boundary"
+              cx={xy({ x: 0, y: 0 }).x}
+              cy={xy({ x: 0, y: 0 }).y}
+              r={contours.disk.radius * scale}
+              fill="none"
+              stroke={palette.line}
+              {...stroke(1.6)}
+            />
+          )}
           {layers.base &&
             contours?.curve.contours.map((c, k) => (
               <path

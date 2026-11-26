@@ -64,6 +64,7 @@ import {
 import type { AdoptedJourney, JourneyAdoption } from "./journeys";
 import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
+import { defaultDisk, diskLimits, diskNote } from "./disk-mode";
 import {
   gardenExamples,
   laceExamples,
@@ -107,6 +108,7 @@ import {
   type Kind,
   type PoleKind,
   type AttractorMap,
+  type DiskMode,
   type Roll,
   type Vec,
   type ViewRect,
@@ -1150,6 +1152,36 @@ function App({
       curve: { ...c.curve, implicit: { ...c.curve.implicit, ...patch } },
     }));
   const levels = config.curve.implicit.family;
+  // A disk mode replaces F; its last values are kept while
+  // the expression is chosen, and the expression's text while it is not.
+  const disk = config.curve.implicit.disk;
+  const diskDraft = useRef<DiskMode>(defaultDisk);
+  const chooseField = (kind: string) =>
+    update((c) => {
+      const { disk: current, ...rest } = c.curve.implicit;
+      if (current) diskDraft.current = current;
+      return {
+        curve: {
+          ...c.curve,
+          implicit:
+            kind === "disk" ? { ...rest, disk: diskDraft.current } : rest,
+        },
+      };
+    });
+  const toDisk = (patch: Partial<DiskMode>) =>
+    update((c) =>
+      c.curve.implicit.disk
+        ? {
+            curve: {
+              ...c.curve,
+              implicit: {
+                ...c.curve.implicit,
+                disk: { ...c.curve.implicit.disk, ...patch },
+              },
+            },
+          }
+        : {},
+    );
   // While its story applies, the note reads the displayed frame, as
   // playback and seeks move the level; otherwise the study's own.
   const shownFrame = animation?.frame ?? frame;
@@ -1165,19 +1197,71 @@ function App({
       : undefined;
   const implicitControls = (
     <>
-      <p className="note">
-        The curve is every point of the window where F(x, y) = c. Use{" "}
-        <var>x</var>, <var>y</var> and <var>a</var>. It has no parameter, so no
-        construction applies; the normals show F&rsquo;s gradient, pointing
-        toward larger values.
-      </p>
-      <Field label="F(x, y)" className="equation">
-        <input
-          value={config.curve.implicit.f}
-          onChange={(e) => toImplicit({ f: e.target.value })}
-          spellCheck={false}
-        />
+      {disk ? (
+        <p className="note">
+          The curve is every point of the disk where the mode u = c. It has no
+          parameter, so no construction applies; the normals show u&rsquo;s
+          gradient, pointing toward larger values.
+        </p>
+      ) : (
+        <p className="note">
+          The curve is every point of the window where F(x, y) = c. Use{" "}
+          <var>x</var>, <var>y</var> and <var>a</var>. It has no parameter, so
+          no construction applies; the normals show F&rsquo;s gradient, pointing
+          toward larger values.
+        </p>
+      )}
+      <Field
+        label="Field"
+        topic="field"
+        help={tiered(
+          "An expression F(x, y), or a vibrating disk's standing wave.",
+          "A disk mode is J_m(j r/R)/P (cos a cos mθ + sin a sin mθ), scaled so its peak is 1, and traced only inside the disk r ≤ R about the origin. j is the k-th zero of J_m, so the boundary is still.",
+        )}
+      >
+        <select
+          value={disk ? "disk" : "expression"}
+          onChange={(e) => chooseField(e.target.value)}
+        >
+          <option value="expression">Expression F(x, y)</option>
+          <option value="disk">Disk membrane mode</option>
+        </select>
       </Field>
+      {disk ? (
+        <>
+          <div className="pair">
+            {number("Order m", disk.order, (n) => toDisk({ order: n }), {
+              step: 1,
+              min: diskLimits.order[0],
+              max: diskLimits.order[1],
+              topic: "order m",
+              help: "Whole numbers 0–12: the nodal diameters.",
+            })}
+            {number("Ring k", disk.ring, (n) => toDisk({ ring: n }), {
+              step: 1,
+              min: diskLimits.ring[0],
+              max: diskLimits.ring[1],
+              topic: "ring k",
+              help: "Whole numbers 1–10: the boundary and k − 1 nodal circles.",
+            })}
+          </div>
+          {scalar("Radius R", ["curve", "implicit", "disk", "radius"], {
+            topic: "radius R",
+            help: tiered(
+              "The disk's radius, from 0.001 to 10,000, about the origin.",
+              "a turns the pattern by a/m; a full turn of a restores it. With m = 0 the mode is round and a does nothing.",
+            ),
+          })}
+        </>
+      ) : (
+        <Field label="F(x, y)" className="equation">
+          <input
+            value={config.curve.implicit.f}
+            onChange={(e) => toImplicit({ f: e.target.value })}
+            spellCheck={false}
+          />
+        </Field>
+      )}
       {scalar("Level c", ["curve", "implicit", "level"], {
         topic: "level c",
         help: "The curve is F = c. Its pieces split or join as c passes a saddle of F.",
@@ -1263,7 +1347,7 @@ function App({
           : storyNoteFrame
             ? `${planarStoryNote(drawnStory!.story, storyNoteFrame.config.curve.implicit.level, storyNoteFrame.result.contours!)} ${contourNote(storyNoteFrame.result.contours!)}`
             : levelSets
-              ? contourNote(levelSets)
+              ? `${levelSets.disk ? `${diskNote(levelSets.disk)} ` : ""}${contourNote(levelSets)}`
               : "Tracing…"}
       </p>
     </>
@@ -1596,6 +1680,8 @@ function App({
     setAtlasWaiting(null);
     setAtlasNotice("");
     touched.current = null;
+    // A mode set aside for the previous study's expression stays with it.
+    diskDraft.current = defaultDisk;
     setPreset(preset);
     scalarGeneration.current++;
     setPoleKind(study.poleKind);
@@ -1784,6 +1870,8 @@ function App({
       : familyFrame
     : shown;
   const drawnFormat = (displayFrame?.config ?? config).curve.format;
+  // A disk mode replaces F: its curve is the level set of u.
+  const drawnDisk = !!(displayFrame?.config ?? config).curve.implicit.disk;
   const drawn = displayFrame
     ? legendGeometry(
         displayFrame.result,
@@ -3307,7 +3395,9 @@ function App({
                         <>
                           <span className="base-dot" />
                           {drawnFormat === "implicit"
-                            ? "Curve F = c"
+                            ? drawnDisk
+                              ? "Curve u = c"
+                              : "Curve F = c"
                             : drawnFormat === "attractor"
                               ? "Visit density"
                               : "Base curve"}

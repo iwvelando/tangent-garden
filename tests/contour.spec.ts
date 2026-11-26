@@ -15,9 +15,11 @@ import {
   exportImage,
   openAnimation,
   choosePreset,
+  exampleTitles,
   openExportSettings,
   chooseColorScheme,
   imageButton,
+  playAndPause,
 } from "./helpers";
 import { wireStudy } from "./study-link-wire";
 
@@ -99,7 +101,7 @@ test("three nodal studies carry literal equal-eigenvalue modes and full-period a
     [2, 3],
     [3, 5],
   ];
-  expect(presets).toHaveLength(78);
+  expect(presets).toHaveLength(84);
   for (const [i, title] of nodalTitles.entries()) {
     const p = presets.find((p) => p.title === title);
     expect(p, title).toBeDefined();
@@ -961,3 +963,241 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+// Disk membrane modes (docs/mathematics.md, Disk membrane modes).
+const rose = "A drum's rose";
+const diskStudies = [
+  rose,
+  "Rings of a struck drum",
+  "Radial lace",
+  "Twelvefold membrane",
+  "A drum's engraving breathes",
+  "A drum's contour map",
+];
+// Open contours' ends on the drawn boundary circle, in screen units.
+async function boundaryEnds(page: Page) {
+  const circle = page.getByTestId("disk-boundary");
+  const [cx, cy, r] = await Promise.all(
+    ["cx", "cy", "r"].map(async (a) => Number(await circle.getAttribute(a))),
+  );
+  const ends = (await drawn(page))
+    .filter((c) => !c.closed)
+    .flatMap((c) => [c.points[0], c.points.at(-1)!])
+    .map(([x, y]) => Math.abs(Math.hypot(x - cx, y - cy) - r));
+  return { onCircle: ends.filter((d) => d < 0.5).length, all: ends.length };
+}
+
+test("every implicit study offers the disk field: an edited expression switches to a valid mode and back", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  const titles = await exampleTitles(page);
+  for (const t of diskStudies) expect(titles).toContain(t);
+  await choosePreset(page, { label: cassini });
+  await settled(page);
+  const field = page.getByLabel("Field", { exact: true });
+  await expect(field).toHaveValue("expression");
+  const f = await page.getByRole("textbox", { name: "F(x, y)" }).inputValue();
+  // From an edited level, the default mode draws in the window kept.
+  await input(page, "Level c").fill("0.1");
+  await settled(page);
+  const before = await definition(page);
+  await field.selectOption("disk");
+  await settled(page);
+  await expect(note(page)).toContainText("Disk mode (m, k) = (5, 3)");
+  await expect(page.getByTestId("disk-boundary")).toHaveCount(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  const disk = await definition(page);
+  expect(disk.curve.implicit.disk).toEqual({ order: 5, ring: 3, radius: 1 });
+  expect(disk.curve.implicit.level).toBe(0.1);
+  expect(disk.curve.implicit.window).toEqual(before.curve.implicit.window);
+  await field.selectOption("expression");
+  await settled(page);
+  await expect(page.getByRole("textbox", { name: "F(x, y)" })).toHaveValue(f);
+  expect(await definition(page)).toEqual(before);
+});
+
+test("a disk study draws its nodal lines to an analytic boundary, edits by field, keeps drafts, and shares", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await choosePreset(page, { label: rose });
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "Disk mode (m, k) = (5, 3): 5 nodal diameters and 2 nodal circles inside the boundary",
+  );
+  await expect(note(page)).toContainText("ending on the disk's boundary");
+  // The legend names the mode's level set, not F's.
+  await expect(page.locator(".legend")).toHaveText("Curve u = c Other levels");
+  // The boundary is drawn from r = R; every open contour ends on it, two
+  // per diameter, and none runs along it.
+  const circle = page.getByTestId("disk-boundary");
+  await expect(circle).toHaveCount(1);
+  expect(Number(await circle.getAttribute("r"))).toBeCloseTo(
+    await scale(page),
+    6,
+  );
+  expect(await boundaryEnds(page)).toEqual({ onCircle: 10, all: 10 });
+  const field = page.getByLabel("Field", { exact: true });
+  await expect(field).toHaveValue("disk");
+  await expect(page.getByRole("textbox", { name: "F(x, y)" })).toHaveCount(0);
+  // Edits by field, a refusal under its own control, and recovery.
+  await input(page, "Order m").fill("3");
+  await settled(page);
+  await expect(note(page)).toContainText("(m, k) = (3, 3)");
+  expect(await boundaryEnds(page)).toEqual({ onCircle: 6, all: 6 });
+  await input(page, "Order m").fill("13");
+  await expect(page.getByRole("alert")).toContainText(
+    "the angular order m is a whole number from 0 to 12",
+  );
+  await input(page, "Order m").fill("0");
+  await input(page, "Ring k").fill("4");
+  await settled(page);
+  await expect(note(page)).toContainText(
+    "no nodal diameters and 3 nodal circles inside the boundary",
+  );
+  await expect(note(page)).toContainText("The curve has 3 closed contours.");
+  await expect(circle).toHaveCount(1);
+  await input(page, "Radius R").fill("1/2");
+  await settled(page);
+  expect((await definition(page)).curve.implicit.disk).toEqual({
+    order: 0,
+    ring: 4,
+    radius: 0.5,
+  });
+  expect(Number(await circle.getAttribute("r"))).toBeCloseTo(
+    (await scale(page)) / 2,
+    6,
+  );
+  // The expression and the mode keep their own values.
+  await field.selectOption("expression");
+  await settled(page);
+  await expect(circle).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "F(x, y)" })).toHaveValue("0");
+  expect((await definition(page)).curve.implicit.disk).toBeUndefined();
+  await field.selectOption("disk");
+  await settled(page);
+  expect((await definition(page)).curve.implicit.disk).toEqual({
+    order: 0,
+    ring: 4,
+    radius: 0.5,
+  });
+  // A copied link reopens the same mode.
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const config = await definition(page);
+  const other = await page.context().newPage();
+  await other.goto(link);
+  await expect(other.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  expect(
+    JSON.parse((await other.locator("#artwork desc").textContent())!),
+  ).toEqual(config);
+  await other.close();
+});
+
+// A preset replaces the whole study: a mode edited in the previous study
+// and set aside for its expression does not return in the next one.
+test("a disk mode set aside in one study does not carry into the next", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await choosePreset(page, { label: rose });
+  await settled(page);
+  await input(page, "Order m").fill("7");
+  await settled(page);
+  await expect(note(page)).toContainText("(m, k) = (7, 3)");
+  const field = page.getByLabel("Field", { exact: true });
+  await field.selectOption("expression");
+  await settled(page);
+  await choosePreset(page, { label: cassini });
+  await settled(page);
+  await field.selectOption("disk");
+  await settled(page);
+  await expect(note(page)).toContainText("Disk mode (m, k) = (5, 3)");
+  expect((await definition(page)).curve.implicit.disk).toEqual({
+    order: 5,
+    ring: 3,
+    radius: 1,
+  });
+});
+
+test("a disk still export keeps the boundary and the traced paths", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  await choosePreset(page, { label: "Radial lace" });
+  await settled(page);
+  const live = await page
+    .locator("#artwork path")
+    .evaluateAll((all) => all.map((p) => p.getAttribute("d")));
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const saved = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    return {
+      paths: [...doc.querySelectorAll("path")].map((p) => p.getAttribute("d")),
+      circles: doc.querySelectorAll("[data-testid=disk-boundary]").length,
+      text: doc.querySelectorAll("text").length,
+    };
+  }, svg);
+  expect(saved.paths).toEqual(live);
+  expect(saved.circles).toBe(1);
+  expect(saved.text).toBe(0);
+});
+
+test("every disk study plays its own motion from its opening view, with its family and anchored normals on", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  const paths = () =>
+    page
+      .locator("#artwork path")
+      .evaluateAll((all) => all.map((p) => p.getAttribute("d")).join("|"));
+  for (const title of diskStudies) {
+    const preset = presets.find((p) => p.title === title)!;
+    await choosePreset(page, { label: title });
+    await settled(page);
+    const opening = await definition(page);
+    expect(opening).toEqual(preset.config);
+    const before = await paths();
+    await openAnimation(page);
+    await playAndPause(page);
+    const slider = page.getByRole("slider", { name: "Animation progress" });
+    await slider.evaluate((el: HTMLInputElement) => {
+      const set = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      set.call(el, "0.3");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await expect.poll(paths).not.toBe(before);
+    await settled(page);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByTestId("disk-boundary")).toHaveCount(1);
+    const frame = await definition(page);
+    const track = preset.animation!.tracks[0].target;
+    if (track === "a") expect(frame.curve.a).toBeGreaterThan(0);
+    else if (track === "contourLevel")
+      expect(frame.curve.implicit.level).not.toBe(opening.curve.implicit.level);
+    else
+      expect(frame.curve.implicit.family.from).toBeGreaterThan(
+        opening.curve.implicit.family.from,
+      );
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await settled(page);
+    expect(await paths()).toBe(before);
+  }
+});

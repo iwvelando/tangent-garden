@@ -100,11 +100,9 @@ func main() {
 		if err != nil {
 			return refusal(err)
 		}
-		b, err := json.Marshal(result)
-		if err != nil {
-			return `{"error":"non-finite numerical result"}`
-		}
-		return string(b)
+		// A planar result's points, contours and normals leave the JSON:
+		// a contour study's run to megabytes of text.
+		return liftReply(&result, `{"error":"non-finite numerical result"}`, nil, nil, map[string]map[string]any{})
 	})
 	js.Global().Set("tangentGardenCompute", fn)
 	probe := js.FuncOf(func(this js.Value, args []js.Value) any {

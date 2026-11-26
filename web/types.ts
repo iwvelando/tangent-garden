@@ -122,6 +122,9 @@ export type Config = {
       cells: number;
       // Absent retains the original arc-length origin of the normals.
       stableNormals?: boolean;
+      // A disk membrane mode replacing f, traced only inside the disk
+      // (web/disk-mode.ts); absent for an expression.
+      disk?: DiskMode;
     };
     // An iterated map's orbit from start: the first `discard` iterates
     // (0–1,000,000) are dropped and the next `iterates` (0–5,000,000) counted
@@ -418,6 +421,20 @@ export type FieldResult = {
   grid: { spacing: number; points: { point: Vec; velocity: Vec }[] };
 };
 
+// A Dirichlet mode of the disk of radius R about the origin:
+// J_m(j_{m,k} r/R)/P_m (cos a cos mθ + sin a sin mθ), m = order (0–12),
+// k = ring (1–10).
+export type DiskMode = { order: number; ring: number; radius: number };
+// The traced mode: its boundary radius, zero j_{m,k}, eigenvalue
+// (j_{m,k}/R)², peak P_m, and exact nodal set: diameters at angles
+// (radians, [0, π)) and circles of radii.
+export type DiskResult = DiskMode & {
+  zero: number;
+  eigenvalue: number;
+  peak: number;
+  angles: number[];
+  radii: number[];
+};
 // The rectangle an implicit curve is sought in.
 export type Window = { xMin: number; xMax: number; yMin: number; yMax: number };
 // One connected piece of a level set, running with larger F on its left. An
@@ -445,6 +462,8 @@ export type ContourResult = {
   nonfinite: number;
   usesA: boolean;
   topology?: LevelTopology;
+  // Present only for a disk mode.
+  disk?: DiskResult;
 };
 // The curve's level set by its loops' nesting (engine.LevelTopology): per
 // contour, the smallest closed one enclosing it (−1 for none) and whether F

@@ -16,7 +16,9 @@ declare const Go: new () => {
   exited: boolean;
   _makeFuncWrapper(id: number): (...args: unknown[]) => unknown;
 };
-declare const tangentGardenCompute: (json: string) => string;
+declare const tangentGardenCompute: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenTrack: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
@@ -1327,6 +1329,7 @@ self.onmessage = async ({
             implicit.level,
             implicit.cells,
             ...Object.values(implicit.window),
+            ...(implicit.disk ? Object.values(implicit.disk) : []),
             ...(implicit.family.enabled
               ? [
                   implicit.family.from,
@@ -1368,6 +1371,14 @@ self.onmessage = async ({
         "curve.implicit.cells",
         "Grid cells and the level count must be whole numbers.",
       );
+    // A disk mode's indices.
+    if (implicit?.disk)
+      for (const field of ["order", "ring"] as const)
+        if (!Number.isInteger(implicit.disk[field]))
+          throw fieldError(
+            `curve.implicit.disk.${field}`,
+            "The disk mode's order m and ring k must be whole numbers.",
+          );
     if (
       implicit &&
       implicit.family.enabled &&
@@ -1406,15 +1417,22 @@ self.onmessage = async ({
       self.postMessage({ id: data.id, ...reply });
       return;
     }
+    // A result's large arrays arrive lifted, beside its JSON; a refusal,
+    // or an engine from before lifting, is JSON alone.
+    const raw = tangentGardenCompute(request);
+    const lifted = typeof raw === "string" ? undefined : raw.lifted;
     const result: import("./types").Result | { error: string } = JSON.parse(
-      tangentGardenCompute(request),
+      typeof raw === "string" ? raw : raw.json,
     );
     if (!("error" in result) && result.sourcePosition)
       config.source.position = result.sourcePosition;
-    self.postMessage({
-      id: data.id,
-      ...("error" in result ? result : { result, config }),
-    });
+    self.postMessage(
+      {
+        id: data.id,
+        ...("error" in result ? result : { result, config, lifted }),
+      },
+      lifted ? [lifted.floats.buffer] : [],
+    );
   } catch (error) {
     self.postMessage({
       id: data.id,

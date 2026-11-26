@@ -229,7 +229,7 @@ for (const [width, height] of [
   });
 
 for (const [path, count] of [
-  ["/", 78],
+  ["/", 84],
   ["/?study=3d", 166],
   ["/?study=4d", 39],
 ] as const)
@@ -727,7 +727,8 @@ test("atlas geometry and resolved parameters match ordinary WASM requests in eve
     for (let i = 0; i < 9; i++) {
       const request = grid.requests[i].data;
       const data: any = await new Promise((resolve) => {
-        ordinary.onmessage = (e) => resolve(e.data);
+        ordinary.onmessage = (e) =>
+          resolve((window as any).restoreLifted(e.data));
         ordinary.postMessage({ ...request, id: i + 100 });
       });
       const actual = grid.replies[i].data;
@@ -2223,7 +2224,8 @@ for (const [pair, title] of [
             nonempty = true;
           for (const request of requests) {
             const expected: any = await new Promise((resolve) => {
-              ordinary.onmessage = (e) => resolve(e.data);
+              ordinary.onmessage = (e) =>
+                resolve((window as any).restoreLifted(e.data));
               ordinary.postMessage({
                 ...request.data,
                 id: 10000 + request.data.id,
@@ -3423,7 +3425,8 @@ test("lamp lace production WASM members match standalone geometry at their displ
     const members = [];
     for (const [i, item] of family.requests.entries()) {
       const expected: any = await new Promise((resolve) => {
-        ordinary.onmessage = (e) => resolve(e.data);
+        ordinary.onmessage = (e) =>
+          resolve((window as any).restoreLifted(e.data));
         ordinary.postMessage({ ...item.data, id: i + 100 });
       });
       const actual = family.replies[i].data;
@@ -3557,7 +3560,8 @@ for (const target of [
       const checks = [];
       for (const [i, call] of family.requests.entries()) {
         const data: any = await new Promise((resolve) => {
-          ordinary.onmessage = (e) => resolve(e.data);
+          ordinary.onmessage = (e) =>
+            resolve((window as any).restoreLifted(e.data));
           ordinary.postMessage({ ...call.data, id: 100 + i });
         });
         checks.push({
@@ -5063,7 +5067,8 @@ for (const [pair, title] of [
                   });
               }
               const expected: any = await new Promise((resolve) => {
-                ordinary.onmessage = (e) => resolve(e.data);
+                ordinary.onmessage = (e) =>
+                  resolve((window as any).restoreLifted(e.data));
                 ordinary.postMessage({
                   id: 10000 + i,
                   action: "compute",

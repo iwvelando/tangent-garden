@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"tangentgarden/engine"
 	"tangentgarden/engine3"
 	"tangentgarden/engine4"
 )
@@ -666,5 +667,46 @@ func TestSurfaceTopologyLeavesJSON(t *testing.T) {
 	}
 	if len(metadata)+len(text)+8*len(floats) > len(whole)/3 {
 		t.Fatal("packed reply did not shrink")
+	}
+}
+
+// Every planar preset's result travels lifted and comes back exactly as
+// its JSON: curves with gaps, contour points, normals and family levels.
+// The contour studies leave most of their bytes in the float buffer.
+func TestPlanarPresetsRoundTrip(t *testing.T) {
+	b, err := os.ReadFile("../../../engine/testdata/presets.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var all []struct {
+		Title  string          `json:"title"`
+		Config json.RawMessage `json:"config"`
+	}
+	if err := json.Unmarshal(b, &all); err != nil {
+		t.Fatal(err)
+	}
+	contours, computed := 0, 0
+	for _, p := range all {
+		var q engine.Request
+		if err := json.Unmarshal(p.Config, &q); err != nil {
+			t.Fatalf("%s: %v", p.Title, err)
+		}
+		result, err := engine.Compute(q)
+		if err != nil {
+			continue
+		}
+		computed++
+		places, whole, rest := roundTrip(t, &result)
+		got := paths(places)
+		if _, ok := got["contours.curve.contours.0.points"]; ok {
+			contours++
+			if share := float64(rest) / float64(whole); share > 0.2 {
+				t.Errorf("%s: the JSON left is %.0f%% of %d bytes", p.Title, 100*share, whole)
+			}
+		}
+	}
+	t.Logf("%d of %d presets computed, %d contour studies", computed, len(all), contours)
+	if contours < 8 || computed < len(all)*9/10 {
+		t.Fatalf("%d of %d presets computed, %d contour studies lifted their points", computed, len(all), contours)
 	}
 }
