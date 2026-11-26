@@ -898,3 +898,41 @@ func TestDiskMixCoarseGridKeepsExteriorOutOfDiagnostics(t *testing.T) {
 		t.Fatal("a disk smaller than a cell should stay finite and leave its unresolved interior undrawn")
 	}
 }
+
+// The reply's eigenvalues are (j/R)² for the study's own radius, and the
+// weighted field keeps unit peaks as the disk is scaled.
+func TestDiskMixScalesWithItsRadius(t *testing.T) {
+	firstZero, secondZero := zerosOf(3)[0], zerosOf(0)[1]
+	ratio := secondZero / firstZero
+	for _, R := range []float64{0.001, 2.5, 10000} {
+		v := diskMixture(t, fmt.Sprintf(`{"radius":%g,"motion":"oscillation","position":0.125,"first":0.8,"second":-0.6}`, R))
+		v.Window = Window{-1.04 * R, 1.04 * R, -1.04 * R, 1.04 * R}
+		v.Cells = 40
+		result, _, err := v.contours(0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mix := result.DiskMix
+		if mix == nil || mix.Radius != R {
+			t.Fatalf("R = %g: expected the mixture's radius, got %+v", R, mix)
+		}
+		wantA, wantB := .8*math.Cos(math.Pi/4), -.6*math.Cos(math.Pi/4*ratio)
+		for i, zero := range []float64{firstZero, secondZero} {
+			c, eigen := mix.Components[i], (zero/R)*(zero/R)
+			if math.Abs(c.Eigenvalue-eigen) > 1e-14*eigen {
+				t.Fatalf("R = %g, component %d: eigenvalue %.17g, expected %.17g", R, i, c.Eigenvalue, eigen)
+			}
+		}
+		s, err := newSheet(v, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, second := ownMode(3, 1, R, 0), ownMode(0, 2, R, 0)
+		for _, p := range []Vec{{.23 * R, .37 * R}, {-.6 * R, .1 * R}} {
+			want := wantA*first(p) + wantB*second(p)
+			if f := s.f(p.X, p.Y); math.Abs(f-want) > 1e-14 {
+				t.Fatalf("R = %g: field at %v is %.17g, expected %.17g", R, p, f, want)
+			}
+		}
+	}
+}
