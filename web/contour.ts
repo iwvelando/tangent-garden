@@ -9,12 +9,15 @@ export function contourNote(result: ContourResult) {
   const closed = contours.filter((c) => c.closed).length;
   const open = contours.length - closed;
   // A disk mode's open contours end on its boundary.
-  const cut = result.disk
-    ? "ending on the disk's boundary or the window's edge"
-    : "cut off at the window's edge or beside cells left out";
+  const cut =
+    result.disk || result.diskMix
+      ? "ending on the disk's boundary or the window's edge"
+      : "cut off at the window's edge or beside cells left out";
   const shape =
     contours.length === 0
-      ? "F does not cross the level anywhere in the window, so there is no curve here. A level F only touches, at an isolated point or along a fold, is not drawn."
+      ? result.diskMix
+        ? "No one-dimensional contour is traced at this level."
+        : "F does not cross the level anywhere in the window, so there is no curve here. A level F only touches, at an isolated point or along a fold, is not drawn."
       : contours.length === 1
         ? closed
           ? "The curve is one closed contour."

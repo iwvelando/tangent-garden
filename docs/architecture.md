@@ -359,6 +359,7 @@ Implicit curves (`engine/contour.go`) are defined by `curve.format: "implicit"` 
 - `cells`: the grid's cells along the window's longer side;
 - `stableNormals` (optional): spaces the normals along each contour from its own origin (an open contour's start, a closed contour's lower centroid-centerline crossing) instead of along all contours in turn from their first grid edges; false or absent retains the original placement;
 - `disk` (optional): `{order, ring, radius}`, a disk membrane mode (`engine/disk_mode.go`) that replaces `f`, whose text is then ignored, traced only inside the disk; absent for an expression, as in every older link. Order 0–12 and ring 1–10 are whole numbers (the worker refuses fractions), radius 0.001–10,000, each refused under its own field (`curve.implicit.disk.order`, `ring`, `radius`). See [Disk membrane modes](mathematics.md#disk-membrane-modes).
+- `diskMix` (optional): `{radius, motion, first, second, position}` selects a [disk mode superposition](mathematics.md#disk-mode-superposition). This field replaces `f` and is exclusive with `disk`. Motion is `sweep` (position 0–1) or `oscillation` (0–4 cycles of the first mode). Radius is 0.001–10,000 and each initial amplitude is in [−1, 1]. The worker and Go report invalid values by field. Older studies omit this field.
 
 A level set has no parameter, so `Compute` returns before any construction: `base`, `derived`, and `virtual` are empty, the request's `kind` is ignored, and the domain bounds are not checked. `Result.contours` carries:
 
@@ -369,6 +370,7 @@ A level set has no parameter, so `Compute` returns before any construction: `bas
 - `nonfinite`: the number of grid points where F is not finite;
 - `usesA`: whether F's text reads the shape parameter `a` (`expr.ParseFieldUses`), so a caller can tell an active `a` from a dormant one without parsing F itself; for a disk mode, whether its order is above 0;
 - `disk` (a disk mode only): `order`, `ring`, `radius`, `zero` (j_{m,k}), `eigenvalue` ((j/R)²), `peak` (P_m), and the exact nodal set's diameter `angles` (radians in [0, π)) and circle `radii`. The renderer draws the boundary circle from `radius`, in the construction color and kept when construction lines are hidden (`data-testid="disk-boundary"`).
+- `diskMix` (a superposition only): `radius` for the same analytic boundary renderer and two `components` carrying `order`, `ring`, `zero`, `eigenvalue` and the instantaneous `coefficient`. `usesA` is false. The parameter player and phrase sampler set the position via the link-saved `diskMixBlend` or `diskMixTime` target before each worker request. Still and motion export use the same renderer.
 
 In the UI the construction tabs are disabled and every construction section is hidden while the format is implicit, and the animation targets are the level, window edges, family, grid cells, `a`, and the number of normals; `kind` stays in the configuration for when another format is chosen. The worker checks the implicit fields are finite and the counts whole. Reveal draws each contour along by the same fraction of its points, open until complete, and the normals in order. The renderer draws:
 

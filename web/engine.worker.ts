@@ -1379,6 +1379,13 @@ self.onmessage = async ({
             `curve.implicit.disk.${field}`,
             "The disk mode's order m and ring k must be whole numbers.",
           );
+    if (implicit?.diskMix)
+      for (const field of ["radius", "first", "second", "position"] as const)
+        if (!Number.isFinite(implicit.diskMix[field]))
+          throw fieldError(
+            `curve.implicit.diskMix.${field}`,
+            "Enter a finite number.",
+          );
     if (
       implicit &&
       implicit.family.enabled &&

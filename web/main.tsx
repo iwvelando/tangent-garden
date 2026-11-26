@@ -64,7 +64,14 @@ import {
 import type { AdoptedJourney, JourneyAdoption } from "./journeys";
 import { getIn, setIn } from "./config-path";
 import { ExampleGallery } from "./ExampleGallery";
-import { defaultDisk, diskLimits, diskNote } from "./disk-mode";
+import {
+  defaultDisk,
+  defaultDiskMix,
+  diskLimits,
+  diskMixMotions,
+  diskMixNote,
+  diskNote,
+} from "./disk-mode";
 import {
   gardenExamples,
   laceExamples,
@@ -109,6 +116,7 @@ import {
   type PoleKind,
   type AttractorMap,
   type DiskMode,
+  type DiskMix,
   type Roll,
   type Vec,
   type ViewRect,
@@ -1152,22 +1160,58 @@ function App({
       curve: { ...c.curve, implicit: { ...c.curve.implicit, ...patch } },
     }));
   const levels = config.curve.implicit.family;
-  // A disk mode replaces F; its last values are kept while
-  // the expression is chosen, and the expression's text while it is not.
-  const disk = config.curve.implicit.disk;
+  // Each field keeps its own values while set aside within this study.
+  const { disk, diskMix } = config.curve.implicit;
   const diskDraft = useRef<DiskMode>(defaultDisk);
+  const diskMixDraft = useRef<DiskMix>(defaultDiskMix);
+  const afterScalarEdits = async (change: () => void) => {
+    const generation = scalarGeneration.current;
+    await scalarStatus.resolved();
+    if (generation === scalarGeneration.current) change();
+  };
   const chooseField = (kind: string) =>
-    update((c) => {
-      const { disk: current, ...rest } = c.curve.implicit;
-      if (current) diskDraft.current = current;
-      return {
-        curve: {
-          ...c.curve,
-          implicit:
-            kind === "disk" ? { ...rest, disk: diskDraft.current } : rest,
-        },
-      };
-    });
+    afterScalarEdits(() =>
+      update((c) => {
+        const {
+          disk: current,
+          diskMix: currentMix,
+          ...rest
+        } = c.curve.implicit;
+        if (current) diskDraft.current = current;
+        if (currentMix) diskMixDraft.current = currentMix;
+        return {
+          curve: {
+            ...c.curve,
+            implicit:
+              kind === "diskMix"
+                ? { ...rest, diskMix: diskMixDraft.current }
+                : kind === "disk"
+                  ? { ...rest, disk: diskDraft.current }
+                  : rest,
+          },
+        };
+      }),
+    );
+  const chooseDiskMixMotion = (motion: DiskMix["motion"]) =>
+    afterScalarEdits(() =>
+      update((c) => {
+        const { implicit } = c.curve;
+        if (!implicit.diskMix || implicit.diskMix.motion === motion) return {};
+        return {
+          curve: {
+            ...c.curve,
+            implicit: {
+              ...implicit,
+              diskMix: {
+                ...implicit.diskMix,
+                motion,
+                position: motion === "sweep" ? defaultDiskMix.position : 0,
+              },
+            },
+          },
+        };
+      }),
+    );
   const toDisk = (patch: Partial<DiskMode>) =>
     update((c) =>
       c.curve.implicit.disk
@@ -1195,9 +1239,20 @@ function App({
     frame?.config.curve.format === "implicit"
       ? frame.result.contours
       : undefined;
+  const shownMix = shownFrame?.config.curve.implicit.diskMix;
+  const shownMixContours = shownFrame?.result.contours;
+  const mixNote =
+    diskMix && shownMix && shownMixContours?.diskMix
+      ? `${diskMixNote(shownMix, shownMixContours.diskMix)} ${contourNote(shownMixContours)}`
+      : null;
   const implicitControls = (
     <>
-      {disk ? (
+      {diskMix ? (
+        <p className="note">
+          Amplitude A weights the three-diameter mode (3, 1). Amplitude B
+          weights the circular mode (0, 2). Both vanish at the boundary.
+        </p>
+      ) : disk ? (
         <p className="note">
           The curve is every point of the disk where the mode u = c. It has no
           parameter, so no construction applies; the normals show u&rsquo;s
@@ -1215,19 +1270,73 @@ function App({
         label="Field"
         topic="field"
         help={tiered(
-          "An expression F(x, y), or a vibrating disk's standing wave.",
-          "A disk mode is J_m(j r/R)/P (cos a cos mθ + sin a sin mθ), scaled so its peak is 1, and traced only inside the disk r ≤ R about the origin. j is the k-th zero of J_m, so the boundary is still.",
+          "Choose an expression, a single disk mode, or a superposition.",
+          "A single disk mode turns as a changes. A superposition combines two modes with different eigenvalues. Both disk fields draw inside the circle about the origin.",
         )}
       >
         <select
-          value={disk ? "disk" : "expression"}
+          value={diskMix ? "diskMix" : disk ? "disk" : "expression"}
           onChange={(e) => chooseField(e.target.value)}
         >
           <option value="expression">Expression F(x, y)</option>
           <option value="disk">Disk membrane mode</option>
+          <option value="diskMix">Disk mode superposition</option>
         </select>
       </Field>
-      {disk ? (
+      {diskMix ? (
+        <>
+          <Field
+            label="Superposition motion"
+            topic="superposition motion"
+            help={tiered(
+              "Blend the two shapes or follow an ideal membrane released from rest.",
+              "The artistic sweep trades A's weight for B's. In membrane oscillation each amplitude follows a cosine at its mode's frequency, proportional to the Bessel zero divided by the shared radius.",
+            )}
+          >
+            <select
+              value={diskMix.motion}
+              onChange={(e) =>
+                chooseDiskMixMotion(e.target.value as DiskMix["motion"])
+              }
+            >
+              <option value="sweep">{diskMixMotions.sweep.name}</option>
+              <option value="oscillation">
+                {diskMixMotions.oscillation.name}
+              </option>
+            </select>
+          </Field>
+          {scalar("Radius R", ["curve", "implicit", "diskMix", "radius"], {
+            topic: "radius R",
+            help: "The shared disk radius about the origin, from 0.001 to 10,000.",
+          })}
+          <div className="pair">
+            {scalar("Amplitude A", ["curve", "implicit", "diskMix", "first"], {
+              topic: "Amplitude A",
+              help: "Weight of the three-diameter mode, from −1 to 1.",
+            })}
+            {scalar("Amplitude B", ["curve", "implicit", "diskMix", "second"], {
+              topic: "Amplitude B",
+              help: "Weight of the circular mode, from −1 to 1.",
+            })}
+          </div>
+          <div key={diskMix.motion}>
+            {scalar(
+              diskMixMotions[diskMix.motion].position,
+              ["curve", "implicit", "diskMix", "position"],
+              {
+                topic: diskMixMotions[diskMix.motion].position,
+                help:
+                  diskMix.motion === "sweep"
+                    ? "From 0 (only A) to 1 (only B)."
+                    : tiered(
+                        "Time from 0 to 4 cycles of mode A.",
+                        "Mode B oscillates at its own relative frequency. Animation duration sets playback speed.",
+                      ),
+              },
+            )}
+          </div>
+        </>
+      ) : disk ? (
         <>
           <div className="pair">
             {number("Order m", disk.order, (n) => toDisk({ order: n }), {
@@ -1346,9 +1455,10 @@ function App({
           ? "Inspect an engraving member below; disable it to inspect the source level."
           : storyNoteFrame
             ? `${planarStoryNote(drawnStory!.story, storyNoteFrame.config.curve.implicit.level, storyNoteFrame.result.contours!)} ${contourNote(storyNoteFrame.result.contours!)}`
-            : levelSets
-              ? `${levelSets.disk ? `${diskNote(levelSets.disk)} ` : ""}${contourNote(levelSets)}`
-              : "Tracing…"}
+            : (mixNote ??
+              (levelSets
+                ? `${levelSets.disk ? `${diskNote(levelSets.disk)} ` : ""}${contourNote(levelSets)}`
+                : "Tracing…"))}
       </p>
     </>
   );
@@ -1682,6 +1792,7 @@ function App({
     touched.current = null;
     // A mode set aside for the previous study's expression stays with it.
     diskDraft.current = defaultDisk;
+    diskMixDraft.current = defaultDiskMix;
     setPreset(preset);
     scalarGeneration.current++;
     setPoleKind(study.poleKind);
@@ -1871,7 +1982,8 @@ function App({
     : shown;
   const drawnFormat = (displayFrame?.config ?? config).curve.format;
   // A disk mode replaces F: its curve is the level set of u.
-  const drawnDisk = !!(displayFrame?.config ?? config).curve.implicit.disk;
+  const drawnImplicit = (displayFrame?.config ?? config).curve.implicit;
+  const drawnDisk = !!(drawnImplicit.disk || drawnImplicit.diskMix);
   const drawn = displayFrame
     ? legendGeometry(
         displayFrame.result,
@@ -2416,6 +2528,7 @@ function App({
                   </div>
                 )}
                 {config.curve.format !== "roulette" &&
+                  !(config.curve.format === "implicit" && diskMix) &&
                   !ownsShape(config.curve.format) &&
                   scalar(
                     <>

@@ -422,6 +422,7 @@ export function Plot({
     );
   };
   const contours = result.contours;
+  const diskBoundary = contours?.disk ?? contours?.diskMix;
   const attractor = result.attractor;
   const { kind, optical, extended, rings, dashed } = drawnKind(result, config);
   // The circle of inversion, the curve inverted when it is derived, and where
@@ -1371,14 +1372,14 @@ export function Plot({
                 strokeLinejoin="round"
               />
             ))}
-          {layers.base && contours?.disk && (
-            // A disk mode's boundary, drawn from its
+          {layers.base && diskBoundary && (
+            // A disk field's boundary, drawn from its
             // equation r = R, never extracted from the grid.
             <circle
               data-testid="disk-boundary"
               cx={xy({ x: 0, y: 0 }).x}
               cy={xy({ x: 0, y: 0 }).y}
-              r={contours.disk.radius * scale}
+              r={diskBoundary.radius * scale}
               fill="none"
               stroke={palette.line}
               {...stroke(1.6)}

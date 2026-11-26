@@ -101,7 +101,7 @@ test("three nodal studies carry literal equal-eigenvalue modes and full-period a
     [2, 3],
     [3, 5],
   ];
-  expect(presets).toHaveLength(84);
+  expect(presets).toHaveLength(86);
   for (const [i, title] of nodalTitles.entries()) {
     const p = presets.find((p) => p.title === title);
     expect(p, title).toBeDefined();
@@ -1200,4 +1200,284 @@ test("every disk study plays its own motion from its opening view, with its fami
     await settled(page);
     expect(await paths()).toBe(before);
   }
+});
+
+const diskMixStudies = ["A rose meets a ring", "Two rhythms in a round drum"];
+
+test("the disk superposition keeps its source draft, field errors, and shared still", async ({
+  page,
+}) => {
+  await ready(page, cassini);
+  const field = input(page, "Field");
+  const source = page.getByRole("textbox", { name: "F(x, y)" });
+  await source.fill("x^2 + y^2 - 1");
+  await input(page, "Level c").fill("0");
+  await settled(page);
+  await expect(field.locator("option[value=diskMix]")).toHaveCount(1, {
+    timeout: 1500,
+  });
+  await field.selectOption("diskMix");
+  await settled(page);
+  await expect(note(page)).toContainText("Artistic coefficient sweep");
+  await expect(
+    input(page, "Superposition motion").locator('option[value="oscillation"]'),
+  ).toHaveText("Membrane oscillation", { timeout: 1500 });
+  await input(page, "Amplitude B").fill("-sqrt(1/4)");
+  await input(page, "Blend fraction").fill("1/2");
+  await settled(page);
+  const mixed = await definition(page);
+  expect(mixed.curve.implicit.diskMix).toEqual({
+    radius: 1,
+    motion: "sweep",
+    first: 1,
+    second: -0.5,
+    position: 0.5,
+  });
+  const live = await curves(page).evaluateAll((paths) =>
+    paths.map((p) => p.getAttribute("d")),
+  );
+  expect(live.length).toBeGreaterThan(0);
+  await input(page, "Amplitude B").fill("-2");
+  await expect(page.getByRole("alert")).toContainText(
+    "amplitude B must be from −1 to 1",
+  );
+  await input(page, "Amplitude B").fill("-sqrt(1/4)");
+  await settled(page);
+  await field.selectOption("expression");
+  await settled(page);
+  await expect(source).toHaveValue("x^2 + y^2 - 1");
+  await field.selectOption("diskMix");
+  await settled(page);
+  expect(await definition(page)).toEqual(mixed);
+  await expect(input(page, "Amplitude B")).toHaveValue("-0.5");
+
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const saved = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    return {
+      config: JSON.parse(doc.querySelector("desc")!.textContent!),
+      paths: [...doc.querySelectorAll("[data-testid=contour-path]")].map((p) =>
+        p.getAttribute("d"),
+      ),
+      circles: doc.querySelectorAll("[data-testid=disk-boundary]").length,
+      text: doc.querySelectorAll("text").length,
+    };
+  }, svg);
+  expect(saved).toEqual({ config: mixed, paths: live, circles: 1, text: 0 });
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  await page.goto(link);
+  await expect(page).not.toHaveURL(/#s=/);
+  await settled(page);
+  expect(await definition(page)).toEqual(mixed);
+  await expect(input(page, "Amplitude B")).toHaveValue("-0.5");
+  await field.selectOption("expression");
+  await settled(page);
+  await choosePreset(page, { label: rose });
+  await settled(page);
+  await field.selectOption("diskMix");
+  await settled(page);
+  await expect(input(page, "Amplitude B")).toHaveValue("1");
+});
+
+async function scrubDiskMix(page: Page, position: number) {
+  await page
+    .getByRole("slider", { name: "Animation progress" })
+    .evaluate((el: HTMLInputElement, value) => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, String(position));
+}
+
+test("both disk superposition presets seek to their direct frame and Stop restores the opening study", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator("#artwork")).toBeVisible();
+  for (const [index, title] of diskMixStudies.entries()) {
+    await choosePreset(page, { label: title });
+    await settled(page);
+    const opening = await definition(page);
+    const geometry = () =>
+      curves(page).evaluateAll((paths) =>
+        paths.map((p) => p.getAttribute("d")),
+      );
+    const before = await geometry();
+    await openAnimation(page);
+    await playAndPause(page);
+    await scrubDiskMix(page, 0.18);
+    await expect.poll(() => progress(page)).toBeGreaterThan(0);
+    const slider = page.getByRole("slider", { name: "Animation progress" });
+    await slider.scrollIntoViewIfNeeded();
+    await page.evaluate(() => {
+      const changes: string[] = [];
+      const remember = (records: MutationRecord[]) => {
+        for (const { target } of records) {
+          if (target instanceof HTMLButtonElement)
+            changes.push(
+              target.getAttribute("aria-label") ?? target.textContent!,
+            );
+        }
+      };
+      const observer = new MutationObserver(remember);
+      observer.observe(document.body, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["disabled"],
+      });
+      (window as any).stopFollowingButtons = () => {
+        remember(observer.takeRecords());
+        observer.disconnect();
+        return changes;
+      };
+    });
+    const box = (await slider.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.18, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.45, box.y + box.height / 2, {
+      steps: 10,
+    });
+    await page.mouse.up();
+    await settled(page);
+    expect(
+      await page.evaluate(() => (window as any).stopFollowingButtons()),
+    ).toEqual([]);
+    await scrubDiskMix(page, 0.25);
+    await expect
+      .poll(
+        async () => (await definition(page)).curve.implicit.diskMix.position,
+      )
+      .toBe(index === 0 ? 0.5 : 1);
+    await settled(page);
+    const sought = await geometry();
+    expect(sought).not.toEqual(before);
+    await page.getByRole("button", { name: "Stop", exact: true }).click();
+    await settled(page);
+    expect(await definition(page)).toEqual(opening);
+    expect(await geometry()).toEqual(before);
+    await input(page, index === 0 ? "Blend fraction" : "Membrane time").fill(
+      index === 0 ? ".5" : "1",
+    );
+    await settled(page);
+    expect(await geometry()).toEqual(sought);
+  }
+});
+
+for (const [index, title] of diskMixStudies.entries())
+  test(`${title} exports its two endpoint fields at the requested duration`, async ({
+    page,
+  }) => {
+    await ready(page, title);
+    await imageButton(page).click();
+    await page
+      .getByRole("menuitemradio", { name: "1000 × 760", exact: true })
+      .click();
+    const still = async () => {
+      const download = page.waitForEvent("download");
+      if ((await imageButton(page).getAttribute("aria-expanded")) !== "true")
+        await imageButton(page).click();
+      await page.getByRole("menuitem", { name: /^PNG image/ }).click();
+      return (await readFile((await (await download).path())!)).toString(
+        "base64",
+      );
+    };
+    const opening = await still();
+    await openExportSettings(page);
+    await input(page, "Repeat").selectOption("once");
+    await input(page, "Duration (seconds)").fill(".4");
+    await input(page, "Export frame rate").selectOption("15");
+    await input(page, "Export resolution").fill("1");
+    await input(page, "Export format").selectOption("webp");
+    await input(page, "Export quality").fill("100");
+    await input(page, "Loop exported animation").uncheck();
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: /^Export animated WebP/ }).click();
+    const bytes = await readFile((await (await download).path())!);
+    await input(page, index === 0 ? "Blend fraction" : "Membrane time").fill(
+      index === 0 ? "1" : "4",
+    );
+    await settled(page);
+    const ending = await still();
+    const decoded = await page.evaluate(
+      async ({ bytes, opening, ending }) => {
+        const decoder = new (window as any).ImageDecoder({
+          data: new Uint8Array(bytes),
+          type: "image/webp",
+        });
+        await decoder.tracks.ready;
+        const frameCount = decoder.tracks.selectedTrack.frameCount;
+        const canvas = document.createElement("canvas");
+        canvas.width = 250;
+        canvas.height = 190;
+        const ctx = canvas.getContext("2d")!;
+        const pixels = (image: CanvasImageSource) => {
+          ctx.clearRect(0, 0, 250, 190);
+          ctx.drawImage(image, 0, 0, 250, 190);
+          return ctx.getImageData(0, 0, 250, 190).data;
+        };
+        const stillPixels = async (data: string) => {
+          const image = new Image();
+          image.src = `data:image/png;base64,${data}`;
+          await image.decode();
+          return pixels(image);
+        };
+        const first = await stillPixels(opening);
+        const last = await stillPixels(ending);
+        const difference = (a: Uint8ClampedArray, b: Uint8ClampedArray) =>
+          a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+        let duration = 0;
+        let firstError = 0;
+        let lastError = 0;
+        for (let i = 0; i < frameCount; i++) {
+          const { image } = await decoder.decode({ frameIndex: i });
+          duration += image.duration / 1000;
+          if (i === 0) firstError = difference(first, pixels(image));
+          if (i === frameCount - 1) lastError = difference(last, pixels(image));
+          image.close();
+        }
+        decoder.close();
+        return {
+          frameCount,
+          duration,
+          firstError,
+          lastError,
+          separation: difference(first, last),
+        };
+      },
+      { bytes: Array.from(bytes), opening, ending },
+    );
+    expect(decoded.frameCount).toBe(6);
+    expect(decoded.duration).toBe(400);
+    expect(decoded.separation).toBeGreaterThan(0.5);
+    expect(decoded.firstError).toBeLessThan(0.3);
+    expect(decoded.lastError).toBeLessThan(0.3);
+  });
+
+test("changing motion replaces the incompatible track with valid endpoints", async ({
+  page,
+}) => {
+  await ready(page, diskMixStudies[1]);
+  await openAnimation(page);
+  const track = input(page, "Parameter 1");
+  await expect(track).toHaveValue("diskMixTime", { timeout: 1500 });
+  await expect(input(page, "Track 1 to")).toHaveValue("4");
+  await input(page, "Superposition motion").selectOption("sweep");
+  await settled(page);
+  await expect(track).toHaveValue("diskMixBlend");
+  await expect(input(page, "Track 1 from")).toHaveValue("0.5");
+  await expect(input(page, "Track 1 to")).toHaveValue("1");
+  await playAndPause(page);
+  await scrubDiskMix(page, 0.5);
+  await expect
+    .poll(async () => (await definition(page)).curve.implicit.diskMix.position)
+    .toBe(0.75);
 });

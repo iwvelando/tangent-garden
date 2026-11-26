@@ -732,6 +732,14 @@ export function AnimationPanel({
 
   function defaultTrack(target: Target): Track {
     const from = frame ? targetValue(frame.config, target, length) : 0;
+    if (target === "diskMixBlend" || target === "diskMixTime") {
+      const limit = target === "diskMixBlend" ? 1 : 4;
+      return {
+        target,
+        from: String(from),
+        to: String(from === limit ? 0 : limit),
+      };
+    }
     const to =
       target === "sourceX" && from === 1
         ? 0.75

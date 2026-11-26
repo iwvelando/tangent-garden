@@ -2,6 +2,7 @@
 // configuration path (engine.FieldError); the notebook shows the message
 // under the control with that name: its help topic, or else its label.
 import { pursuerLabels, seedLabels, termLabels } from "./animation";
+import { diskMixMotions } from "./disk-mode";
 import type { Config } from "./types";
 
 const named: Record<string, string> = {
@@ -63,6 +64,11 @@ const named: Record<string, string> = {
   "curve.field.y": "dy/dt",
   "curve.field.escape": "escape radius",
   "curve.implicit.f": "F(x, y)",
+  "curve.implicit.diskMix": "field",
+  "curve.implicit.diskMix.motion": "superposition motion",
+  "curve.implicit.diskMix.radius": "radius R",
+  "curve.implicit.diskMix.first": "Amplitude A",
+  "curve.implicit.diskMix.second": "Amplitude B",
   "curve.implicit.level": "level c",
   "curve.implicit.window.xMin": "Window x from",
   "curve.implicit.window.xMax": "window",
@@ -90,6 +96,8 @@ const named: Record<string, string> = {
 
 export function fieldLabel(c: Config, path: string): string | undefined {
   if (path in named) return named[path];
+  if (path === "curve.implicit.diskMix.position")
+    return diskMixMotions[c.curve.implicit.diskMix?.motion ?? "sweep"].position;
   const format = c.curve.format;
   if (path === "curve.y") return format === "cartesian" ? "f(x)" : "y(t)";
   if (path === "curve.min")
