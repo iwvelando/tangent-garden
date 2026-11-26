@@ -1,6 +1,6 @@
 // Dirichlet modes of a circular membrane as an implicit study's field
 // (docs/mathematics.md, Disk membrane modes).
-import type { DiskMode, DiskResult } from "./types";
+import type { DiskMix, DiskMixResult, DiskMode, DiskResult } from "./types";
 import { readout } from "./number-format";
 
 // The engine's admitted indices and radius (engine/bessel.go,
@@ -14,6 +14,33 @@ export const diskLimits = {
 // The mode a study switching to a disk starts from: five diameters and two
 // rings, in the unit disk.
 export const defaultDisk: DiskMode = { order: 5, ring: 3, radius: 1 };
+
+export const defaultDiskMix: DiskMix = {
+  radius: 1,
+  motion: "sweep",
+  first: 1,
+  second: 1,
+  position: 0.5,
+};
+
+export const diskMixMotions = {
+  sweep: {
+    name: "Artistic coefficient sweep",
+    position: "Blend fraction",
+  },
+  oscillation: {
+    name: "Membrane oscillation",
+    position: "Membrane time",
+  },
+} as const;
+
+export function diskMixNote(mix: DiskMix, result: DiskMixResult) {
+  const [a, b] = result.components.map((mode) => mode.coefficient);
+  const name = diskMixMotions[mix.motion].name;
+  return a === 0 && b === 0
+    ? `${name}. Both coefficients are zero. The field is flat across the disk.`
+    : `${name}. Current coefficients are A = ${readout(a)} and B = ${readout(b)}.`;
+}
 
 // What the mode is, from the engine's reply: its indices, eigenvalue and
 // exact nodal set, short enough for the contour note.

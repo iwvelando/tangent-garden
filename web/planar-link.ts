@@ -286,6 +286,17 @@ const config: SchemaOf<Config> = {
                 },
               },
             },
+            diskMix: {
+              optional: {
+                fields: {
+                  radius: { range: [...diskLimits.radius] },
+                  motion: { options: { sweep: true, oscillation: true } },
+                  first: { range: [-1, 1] },
+                  second: { range: [-1, 1] },
+                  position: { range: [0, 4] },
+                },
+              },
+            },
           },
         },
         attractor: {
@@ -577,6 +588,17 @@ export function planarStudy(value: unknown): PlanarStudy {
     )
       throw new LinkError(key, `${key} is not a known field.`);
   const conformed = conform(raw.config, config, presets[0].config, "config");
+  const { disk, diskMix } = conformed.curve.implicit;
+  if (disk && diskMix)
+    throw new LinkError(
+      "config.curve.implicit.diskMix",
+      "Choose one disk field.",
+    );
+  if (diskMix?.motion === "sweep" && diskMix.position > 1)
+    throw new LinkError(
+      "config.curve.implicit.diskMix.position",
+      "The blend fraction must be from 0 to 1.",
+    );
   // A polar source's radius or angle that the link leaves out reads as 0, as
   // its field shows it and as Go takes it; a Cartesian source keeps them
   // absent.

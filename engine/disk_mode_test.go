@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"testing"
 )
@@ -724,6 +726,212 @@ func TestDiskModePeriodIsExact(t *testing.T) {
 				if q := end.Curve.Contours[i].Points[j]; p != q {
 					t.Fatalf("%v: piece %d point %d is %v at a = 0, %v at a = 2π", mk, i, j, p, q)
 				}
+			}
+		}
+	}
+}
+
+func diskMixture(t *testing.T, mix string) Implicit {
+	t.Helper()
+	var v Implicit
+	err := json.Unmarshal([]byte(`{"f":"wrong (", "cells":161,
+		"window":{"xMin":-1.04,"xMax":1.04,"yMin":-1.04,"yMax":1.04},
+		"diskMix":`+mix+`}`), &v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func TestDiskMixContoursAndInstantaneousWeights(t *testing.T) {
+	firstZero, secondZero := zerosOf(3)[0], zerosOf(0)[1]
+	first, second := ownMode(3, 1, 1, 0), ownMode(0, 2, 1, 0)
+	ratio := secondZero / firstZero
+	for _, tc := range []struct {
+		name, motion                 string
+		position, a, b, wantA, wantB float64
+	}{
+		{"sweep first", "sweep", 0, .8, -.6, .8, 0},
+		{"sweep second", "sweep", 1, .8, -.6, 0, -.6},
+		{"signed blend", "sweep", .375, .8, -.6, .5, -.225},
+		{"initial displacement", "oscillation", 0, .8, -.6, .8, -.6},
+		{"first quarter period", "oscillation", .25, .8, -.6, 0, -.6 * math.Cos(math.Pi/2*ratio)},
+		{"second quarter period", "oscillation", .25 / ratio, .8, -.6, .8 * math.Cos(math.Pi/2/ratio), 0},
+		{"later time", "oscillation", 3.125, .8, -.6, .8 * math.Cos(2*math.Pi*3.125), -.6 * math.Cos(2*math.Pi*3.125*ratio)},
+		{"zero amplitudes", "oscillation", .125, 0, 0, 0, 0},
+		{"zero instant", "oscillation", .25, 1, 0, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := diskMixture(t, fmt.Sprintf(`{"radius":1,"motion":%q,"position":%.17g,"first":%g,"second":%g}`, tc.motion, tc.position, tc.a, tc.b))
+			result, _, err := v.contours(0, 18)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wire, err := json.Marshal(result)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var reply struct {
+				Disk    *DiskResult
+				DiskMix *struct {
+					Radius     float64
+					Components [2]struct {
+						Order, Ring                   int
+						Zero, Eigenvalue, Coefficient float64
+					}
+				}
+			}
+			if err := json.Unmarshal(wire, &reply); err != nil {
+				t.Fatal(err)
+			}
+			if reply.Disk != nil || reply.DiskMix == nil || reply.DiskMix.Radius != 1 {
+				t.Fatalf("expected mixture provenance only, got %+v", reply)
+			}
+			for i, want := range []struct {
+				m, k              int
+				root, coefficient float64
+			}{
+				{3, 1, firstZero, tc.wantA}, {0, 2, secondZero, tc.wantB},
+			} {
+				c := reply.DiskMix.Components[i]
+				if c.Order != want.m || c.Ring != want.k || math.Abs(c.Zero-want.root) > 1e-13 ||
+					math.Abs(c.Eigenvalue-want.root*want.root) > 1e-12 || math.Abs(c.Coefficient-want.coefficient) > 3e-15 {
+					t.Fatalf("component %d: %+v, expected %+v", i, c, want)
+				}
+			}
+			if tc.wantA == 0 && tc.wantB == 0 {
+				if len(result.Curve.Contours) != 0 || len(result.Normals) != 0 {
+					t.Fatal("a flat field has no drawable one-dimensional contour")
+				}
+				return
+			}
+			s, err := newSheet(v, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := func(p Vec) float64 { return tc.wantA*first(p) + tc.wantB*second(p) }
+			for _, p := range []Vec{{0, 0}, {.23, .37}, {.23, -.37}, {.9, .11}, {1, 0}, {0, -1}} {
+				f, g := s.fg(p.X, p.Y)
+				if f != s.f(p.X, p.Y) || math.Abs(f-want(p)) > 1e-14 {
+					t.Fatalf("field at %v: %.17g, expected %.17g", p, f, want(p))
+				}
+				if p.Norm() == 1 {
+					if f != 0 {
+						t.Fatalf("boundary at %v: %g", p, f)
+					}
+					continue
+				}
+				dx, dy := Vec{1e-6, 0}, Vec{0, 1e-6}
+				expected := Vec{(want(p.Add(dx)) - want(p.Sub(dx))) / 2e-6, (want(p.Add(dy)) - want(p.Sub(dy))) / 2e-6}
+				if g.Sub(expected).Norm() > 3e-9 {
+					t.Fatalf("gradient at %v: %v, expected %v", p, g, expected)
+				}
+			}
+			if len(result.Curve.Contours) == 0 || len(result.Discontinuities) != 0 || result.Nonfinite != 0 {
+				t.Fatal("expected a finite, nonempty disk trace")
+			}
+			for _, c := range result.Curve.Contours {
+				for _, p := range c.Points {
+					if p.Norm() > 1+1e-14 || math.Abs(want(p)) > 3e-14 {
+						t.Fatalf("returned vertex %v is outside the disk or off its level: u=%g", p, want(p))
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestDiskMixRefusesByField(t *testing.T) {
+	for _, tc := range []struct{ mix, path string }{
+		{`{"radius":0,"motion":"sweep"}`, "diskMix.radius"},
+		{`{"radius":1,"motion":"other"}`, "diskMix.motion"},
+		{`{"radius":1,"motion":"sweep","first":1.01}`, "diskMix.first"},
+		{`{"radius":1,"motion":"sweep","second":-1.01}`, "diskMix.second"},
+		{`{"radius":1,"motion":"sweep","position":1.01}`, "diskMix.position"},
+		{`{"radius":1,"motion":"oscillation","position":4.01}`, "diskMix.position"},
+	} {
+		_, _, err := diskMixture(t, tc.mix).contours(0, 0)
+		var field *FieldError
+		if !errors.As(err, &field) || field.Field != tc.path {
+			t.Errorf("got %v, want field error for %s", err, tc.path)
+		}
+	}
+	v := diskMixture(t, `{"radius":1,"motion":"sweep"}`)
+	v.Disk = &Disk{Order: 3, Ring: 1, Radius: 1}
+	_, _, err := v.contours(0, 0)
+	var field *FieldError
+	if !errors.As(err, &field) || field.Field != "diskMix" {
+		t.Errorf("got %v, want a diskMix conflict", err)
+	}
+}
+
+func TestDiskMixBoundaryGridNodesAreNotNodalGeometry(t *testing.T) {
+	v := diskMixture(t, `{"radius":1,"motion":"sweep","position":1,"second":1}`)
+	// Grid nodes hit the circle on axes and at Pythagorean triples.
+	v.Window = Window{-1, 1, -1, 1}
+	ring := zerosOf(0)[0] / zerosOf(0)[1]
+	for _, cells := range []int{40, 80, 160} {
+		v.Cells = cells
+		r, _, err := v.contours(0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(r.Curve.Contours) != 1 || !r.Curve.Contours[0].Closed {
+			t.Fatalf("%d cells: expected only the inner ring, got %d contours", cells, len(r.Curve.Contours))
+		}
+		for _, p := range r.Curve.Contours[0].Points {
+			if math.Abs(p.Norm()-ring) > 1e-13 {
+				t.Fatalf("%d cells: vertex %v is not on the inner ring", cells, p)
+			}
+		}
+	}
+}
+
+func TestDiskMixCoarseGridKeepsExteriorOutOfDiagnostics(t *testing.T) {
+	v := diskMixture(t, `{"radius":0.001,"motion":"sweep","position":0.5,"first":1,"second":1}`)
+	v.Cells = 4
+	r, _, err := v.contours(0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Nonfinite != 0 || len(r.Discontinuities) != 0 || len(r.Curve.Contours) != 0 {
+		t.Fatal("a disk smaller than a cell should stay finite and leave its unresolved interior undrawn")
+	}
+}
+
+// The reply's eigenvalues are (j/R)² for the study's own radius, and the
+// weighted field keeps unit peaks as the disk is scaled.
+func TestDiskMixScalesWithItsRadius(t *testing.T) {
+	firstZero, secondZero := zerosOf(3)[0], zerosOf(0)[1]
+	ratio := secondZero / firstZero
+	for _, R := range []float64{0.001, 2.5, 10000} {
+		v := diskMixture(t, fmt.Sprintf(`{"radius":%g,"motion":"oscillation","position":0.125,"first":0.8,"second":-0.6}`, R))
+		v.Window = Window{-1.04 * R, 1.04 * R, -1.04 * R, 1.04 * R}
+		v.Cells = 40
+		result, _, err := v.contours(0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mix := result.DiskMix
+		if mix == nil || mix.Radius != R {
+			t.Fatalf("R = %g: expected the mixture's radius, got %+v", R, mix)
+		}
+		wantA, wantB := .8*math.Cos(math.Pi/4), -.6*math.Cos(math.Pi/4*ratio)
+		for i, zero := range []float64{firstZero, secondZero} {
+			c, eigen := mix.Components[i], (zero/R)*(zero/R)
+			if math.Abs(c.Eigenvalue-eigen) > 1e-14*eigen {
+				t.Fatalf("R = %g, component %d: eigenvalue %.17g, expected %.17g", R, i, c.Eigenvalue, eigen)
+			}
+		}
+		s, err := newSheet(v, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		first, second := ownMode(3, 1, R, 0), ownMode(0, 2, R, 0)
+		for _, p := range []Vec{{.23 * R, .37 * R}, {-.6 * R, .1 * R}} {
+			want := wantA*first(p) + wantB*second(p)
+			if f := s.f(p.X, p.Y); math.Abs(f-want) > 1e-14 {
+				t.Fatalf("R = %g: field at %v is %.17g, expected %.17g", R, p, f, want)
 			}
 		}
 	}

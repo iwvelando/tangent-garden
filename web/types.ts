@@ -125,6 +125,7 @@ export type Config = {
       // A disk membrane mode replacing f, traced only inside the disk
       // (web/disk-mode.ts); absent for an expression.
       disk?: DiskMode;
+      diskMix?: DiskMix;
     };
     // An iterated map's orbit from start: the first `discard` iterates
     // (0–1,000,000) are dropped and the next `iterates` (0–5,000,000) counted
@@ -425,6 +426,25 @@ export type FieldResult = {
 // J_m(j_{m,k} r/R)/P_m (cos a cos mθ + sin a sin mθ), m = order (0–12),
 // k = ring (1–10).
 export type DiskMode = { order: number; ring: number; radius: number };
+
+export type DiskMix = {
+  radius: number;
+  motion: "sweep" | "oscillation";
+  first: number;
+  second: number;
+  position: number;
+};
+
+type DiskComponent = Omit<DiskMode, "radius"> & {
+  zero: number;
+  eigenvalue: number;
+  coefficient: number;
+};
+
+export type DiskMixResult = {
+  radius: number;
+  components: [DiskComponent, DiskComponent];
+};
 // The traced mode: its boundary radius, zero j_{m,k}, eigenvalue
 // (j_{m,k}/R)², peak P_m, and exact nodal set: diameters at angles
 // (radians, [0, π)) and circles of radii.
@@ -464,6 +484,7 @@ export type ContourResult = {
   topology?: LevelTopology;
   // Present only for a disk mode.
   disk?: DiskResult;
+  diskMix?: DiskMixResult;
 };
 // The curve's level set by its loops' nesting (engine.LevelTopology): per
 // contour, the smallest closed one enclosing it (−1 for none) and whether F

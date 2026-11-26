@@ -1,6 +1,7 @@
 import { plainSheetValue, type SheetValue } from "./atlas-sheet-notes";
 // Literal descriptions of the active definition, not a second evaluator.
 import { mapFormulas, mapNames } from "./attractor";
+import { diskMixMotions } from "./disk-mode";
 import type { Config } from "./types";
 
 export function planarSheetDefinition(
@@ -56,18 +57,30 @@ export function planarSheetDefinition(
         `t ∈ [${c.min}, ${c.max}]`,
         construction,
       ];
-    case "implicit":
+    case "implicit": {
+      const mix = c.implicit.diskMix;
+      const mixValue = (key: "radius" | "first" | "second" | "position") =>
+        mix && value(["curve", "implicit", "diskMix", key], mix[key]);
       return [
-        c.implicit.disk
-          ? `F = disk mode (m, k) = (${c.implicit.disk.order}, ${c.implicit.disk.ring}), R = ${c.implicit.disk.radius}`
-          : `F(x, y) = ${c.implicit.f}`,
-        `F(x, y) = c; c = ${value(["curve", "implicit", "level"], c.implicit.level)}; a = ${value(["curve", "a"], c.a)}`,
+        ...(mix
+          ? [
+              `Disk superposition · ${diskMixMotions[mix.motion].name}`,
+              `Modes (3, 1) and (0, 2), R = ${mixValue("radius")}, A = ${mixValue("first")}, B = ${mixValue("second")}`,
+              `u = c, c = ${value(["curve", "implicit", "level"], c.implicit.level)}, ${diskMixMotions[mix.motion].position} = ${mixValue("position")}`,
+            ]
+          : [
+              c.implicit.disk
+                ? `F = disk mode (m, k) = (${c.implicit.disk.order}, ${c.implicit.disk.ring}), R = ${c.implicit.disk.radius}`
+                : `F(x, y) = ${c.implicit.f}`,
+              `F(x, y) = c; c = ${value(["curve", "implicit", "level"], c.implicit.level)}; a = ${value(["curve", "a"], c.a)}`,
+            ]),
         ...(c.implicit.family.enabled
           ? [
               `Other levels: ${c.implicit.family.from} to ${c.implicit.family.to}, ${c.implicit.family.count} levels`,
             ]
           : []),
       ];
+    }
     case "attractor": {
       const a = c.attractor;
       return [

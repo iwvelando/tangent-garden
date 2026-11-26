@@ -181,6 +181,14 @@ func (d Disk) result(a float64) *DiskResult {
 type diskDomain struct {
 	R, band float64
 	mode    *diskEvaluator
+	mixed   *diskMixEvaluator
+}
+
+func (d *diskDomain) at(x, y float64, grad bool) (float64, float64, float64) {
+	if d.mixed != nil {
+		return d.mixed.at(x, y, grad)
+	}
+	return d.mode.at(x, y, grad)
 }
 
 // value is F on the sheet: the mode inside the disk, its mirror image in
@@ -194,13 +202,13 @@ func (d *diskDomain) value(x, y float64) float64 {
 		s := (2*d.R - r) / r
 		x, y = x*s, y*s
 	}
-	v, _, _ := d.mode.at(x, y, false)
+	v, _, _ := d.at(x, y, false)
 	return v
 }
 
 // valueGradient is the mode with its gradient, inside the disk only.
 func (d *diskDomain) valueGradient(x, y float64) (float64, Vec) {
-	v, gx, gy := d.mode.at(x, y, true)
+	v, gx, gy := d.at(x, y, true)
 	return v, Vec{gx, gy}
 }
 

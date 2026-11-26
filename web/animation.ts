@@ -93,6 +93,8 @@ type FixedTarget =
   | "levelsTo"
   | "levelsCount"
   | "contourCells"
+  | "diskMixBlend"
+  | "diskMixTime"
   | "mapA"
   | "mapB"
   | "mapC"
@@ -201,6 +203,8 @@ const targetLabels: Record<FixedTarget, string> = {
   levelsTo: "Levels to",
   levelsCount: "Level count",
   contourCells: "Grid cells",
+  diskMixBlend: "Blend fraction",
+  diskMixTime: "Membrane time",
   mapA: "Coefficient a",
   mapB: "Coefficient b",
   mapC: "Coefficient c",
@@ -296,17 +300,22 @@ const startTargets = { startX: "x", startY: "y" } as const;
 export function availableTargets(config: Config): Target[] {
   // A level set has no parameter, so no domain, samples, or construction:
   // only F's a and the number of normals carry over.
-  if (config.curve.format === "implicit")
+  if (config.curve.format === "implicit") {
+    const mix = config.curve.implicit.diskMix;
     return [
+      ...(mix
+        ? ([mix.motion === "sweep" ? "diskMixBlend" : "diskMixTime"] as const)
+        : []),
       "contourLevel",
       ...(Object.keys(windowTargets) as Target[]),
       ...(config.curve.implicit.family.enabled
         ? (Object.keys(levelsTargets) as Target[])
         : []),
       "contourCells",
-      "a",
+      ...(mix ? [] : (["a"] as const)),
       "lines",
     ];
+  }
   // An iterated map's own coefficients, start, and counts; a window when it
   // is given rather than fitted.
   if (config.curve.format === "attractor") {
@@ -491,6 +500,9 @@ export function targetValue(
       return config.curve.field.escape;
     case "contourLevel":
       return config.curve.implicit.level;
+    case "diskMixBlend":
+    case "diskMixTime":
+      return config.curve.implicit.diskMix?.position ?? 0;
     case "windowXMin":
     case "windowXMax":
     case "windowYMin":
@@ -656,6 +668,11 @@ export function applyTracks(
         break;
       case "contourLevel":
         config.curve.implicit.level = value;
+        break;
+      case "diskMixBlend":
+      case "diskMixTime":
+        if (config.curve.implicit.diskMix)
+          config.curve.implicit.diskMix.position = value;
         break;
       case "windowXMin":
       case "windowXMax":

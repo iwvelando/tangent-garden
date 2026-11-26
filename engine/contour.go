@@ -38,6 +38,8 @@ type Implicit struct {
 	// Disk, when set, replaces F by a disk membrane mode and traces it only
 	// inside the disk.
 	Disk *Disk `json:"disk,omitempty"`
+	// DiskMix replaces F with a two-mode superposition on the disk.
+	DiskMix *DiskMix `json:"diskMix,omitempty"`
 	// topology asks for the curve's level set classified (Request.Topology).
 	topology bool
 }
@@ -84,6 +86,8 @@ type ContourResult struct {
 	// Disk describes a disk mode's boundary and exact nodal set, only for
 	// a disk mode.
 	Disk *DiskResult `json:"disk,omitempty"`
+	// DiskMix reports the component eigenvalues and instantaneous weights.
+	DiskMix *DiskMixResult `json:"diskMix,omitempty"`
 }
 
 const (
@@ -154,6 +158,14 @@ func (v Implicit) validate() error {
 	}
 	if v.Disk != nil {
 		if err := v.Disk.validate(); err != nil {
+			return err
+		}
+	}
+	if v.DiskMix != nil {
+		if v.Disk != nil {
+			return fieldErr("diskMix", "choose one disk field")
+		}
+		if err := v.DiskMix.validate(); err != nil {
 			return err
 		}
 	}
@@ -262,12 +274,19 @@ func (s *sheet) stencil(p Vec) Vec {
 }
 
 func newSheet(v Implicit, a float64) (*sheet, error) {
+	tolerance := drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
+	var dom *diskDomain
+	var usesA bool
 	if d := v.Disk; d != nil {
-		dom := &diskDomain{R: d.Radius, mode: d.evaluator(a)}
+		dom = &diskDomain{R: d.Radius, mode: d.evaluator(a)}
+		usesA = d.Order > 0
+	} else if d := v.DiskMix; d != nil {
+		dom = &diskDomain{R: d.Radius, mixed: d.evaluator()}
+	}
+	if dom != nil {
 		s := sampleIn(dom.value, v.Window, v.Cells, dom)
 		s.fg, s.screen = dom.valueGradient, true
-		s.usesA = d.Order > 0
-		s.tolerance = drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
+		s.usesA, s.tolerance = usesA, tolerance
 		s.flatness, s.refresh = drawingBend/8, 5
 		return s, nil
 	}
@@ -280,7 +299,7 @@ func newSheet(v Implicit, a float64) (*sheet, error) {
 	}
 	s := sample(func(x, y float64) float64 { return f(x, y, 0) }, v.Window, v.Cells)
 	s.usesA = uses.A
-	s.tolerance = drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
+	s.tolerance = tolerance
 	s.flatness, s.refresh = drawingBend/8, 5
 	return s, nil
 }
@@ -302,6 +321,10 @@ func sampleIn(f func(x, y float64) float64, w Window, cells int, dom *diskDomain
 	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
 	if dom != nil {
 		dom.band = 2 * math.Hypot(s.hx, s.hy)
+		if dom.mixed != nil {
+			// A reflection through the circle cannot cross the center.
+			dom.band = math.Min(dom.band, dom.R)
+		}
 		s.domain = dom
 	}
 	s.tolerance, s.flatness, s.refresh = contourTolerance*math.Min(s.hx, s.hy), math.Inf(1), 1
@@ -548,6 +571,9 @@ var (
 // unchanged, when they would cross more grid edges than the budget allows.
 func (s *sheet) level(c float64) (LevelSet, bool) {
 	set := LevelSet{Level: c, Contours: []Contour{}}
+	if s.domain != nil && s.domain.mixed != nil && s.domain.mixed.flat() {
+		return set, true
+	}
 	if s.next == nil {
 		edges := 2 * (s.nx + 1) * (s.ny + 1)
 		s.next, s.entered = make([]int32, edges), make([]bool, edges)
@@ -899,7 +925,11 @@ func (v Implicit) traceOn(s *sheet, a float64, lines int) (*ContourResult, []str
 		for k := range out.Family {
 			s.domain.clip(&out.Family[k])
 		}
-		out.Disk = v.Disk.result(a)
+		if s.domain.mixed != nil {
+			out.DiskMix = &s.domain.mixed.result
+		} else {
+			out.Disk = v.Disk.result(a)
+		}
 	}
 	if s.truncated {
 		warnings = append(warnings, fmt.Sprintf("Contours stopped being refined at %d points; they are drawn with straighter chords.", maxContourPoints))

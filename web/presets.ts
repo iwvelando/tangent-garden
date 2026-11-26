@@ -4,6 +4,8 @@ import type { Config } from "./types";
 import type { PlanarAnimation } from "./planar-link";
 import type { PlanarProbe } from "./planar-probe";
 import type { PlanarStoryId } from "./planar-story";
+import { defaultDiskMix } from "./disk-mode";
+import type { DiskMix } from "./types";
 const base: Config = {
   kind: "evolute",
   curve: {
@@ -154,6 +156,19 @@ const diskTurn = (from: string, to: string): PlanarAnimation => ({
   pace: "steady",
   probeMotion: "stays",
 });
+const diskSuperposition = (motion: DiskMix["motion"]): Config => {
+  const config = diskMode(3, 1, 0, 128, {
+    from: -0.18,
+    to: 0.18,
+    count: 4,
+  });
+  const { disk: _, ...implicit } = config.curve.implicit;
+  config.curve.implicit = {
+    ...implicit,
+    diskMix: { ...defaultDiskMix, motion, position: 0, second: 0.7 },
+  };
+  return config;
+};
 
 // A preset may bring its own animation setup, such as a seamless loop;
 // others leave the setup as it was and play once, steadily.
@@ -2191,5 +2206,35 @@ export const presets: {
     config: diskMode(6, 3, 0, 160, { from: -0.8, to: 0.8, count: 10 }),
     layers: { lines: false },
     animation: diskTurn("0", "2*pi"),
+  },
+  {
+    title: "A rose meets a ring",
+    note: "An artistic sweep folds the three-diameter pattern into a nodal ring",
+    config: diskSuperposition("sweep"),
+    layers: { lines: false },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 8,
+      tracks: [{ target: "diskMixBlend", from: "0", to: "1" }],
+      repeat: "back-and-forth",
+      pace: "steady",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "Two rhythms in a round drum",
+    note: "Two ideal membrane modes released together oscillate at their own frequencies",
+    config: diskSuperposition("oscillation"),
+    layers: { lines: false },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 16,
+      tracks: [{ target: "diskMixTime", from: "0", to: "4" }],
+      repeat: "once",
+      pace: "steady",
+      probeMotion: "stays",
+    },
   },
 ];

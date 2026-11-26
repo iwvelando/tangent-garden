@@ -5442,3 +5442,27 @@ test("spatial phrases conform tracks, reveal, layer events and key views; older 
   looped.animation.repeat = "loop";
   expect(spatialStudy(looped).animation.repeat).toBe("loop");
 });
+
+test("disk mixture links retain their sampled position and reject conflicting or invalid fields", async () => {
+  const find = (title: string) =>
+    planarPreset(presets.findIndex((p) => p.title === title));
+  const source = find("Two rhythms in a round drum");
+  const mix = source.config.curve.implicit.diskMix!;
+  mix.position = 3.25;
+  mix.first = -0.6;
+  expect(planarStudy(source)).toEqual(source);
+  expect((await readStudyLink(envelope("2d", source))).study).toEqual(source);
+  const old = find("A drum's rose");
+  expect(planarStudy(old).config.curve.implicit).toEqual(
+    old.config.curve.implicit,
+  );
+
+  const conflict = structuredClone(source);
+  conflict.config.curve.implicit.disk = old.config.curve.implicit.disk;
+  await refused(() => planarStudy(conflict), "config.curve.implicit.diskMix");
+  mix.motion = "sweep";
+  await refused(
+    () => planarStudy(source),
+    "config.curve.implicit.diskMix.position",
+  );
+});
