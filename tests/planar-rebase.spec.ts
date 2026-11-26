@@ -106,6 +106,7 @@ const unchanged = new Set([
   "ring",
   "zero",
   "peak",
+  "coefficient",
   "angles",
   "sampleIndex",
   "breaks",
@@ -193,19 +194,22 @@ function mapStudy(config: Config, result: Result, m: Similarity) {
   copy.source.position = at(config.source.position);
   copy.curve.field.seeds = config.curve.field.seeds.map(at);
   copy.curve.field.escape = config.curve.field.escape * m.s;
-  const disk = config.curve.implicit.disk;
+  const { disk, diskMix } = config.curve.implicit;
   if (disk) copy.curve.implicit.disk = { ...disk, radius: disk.radius * m.s };
+  if (diskMix)
+    copy.curve.implicit.diskMix = { ...diskMix, radius: diskMix.radius * m.s };
   return { config: copy, result: mapped };
 }
 
 // A roulette's fixed circle or line and a field's escape circle are drawn
 // about the origin by their definitions, which a translation cannot carry
 // (the engine rewrites such a translated study as a parametric curve), and
-// a disk mode lies about the origin.
+// disk fields are centered at the origin.
 const translatable = (config: Config) =>
   config.curve.format !== "roulette" &&
   config.curve.format !== "field" &&
-  !config.curve.implicit.disk;
+  !config.curve.implicit.disk &&
+  !config.curve.implicit.diskMix;
 
 const layers: Layers = {
   base: true,
