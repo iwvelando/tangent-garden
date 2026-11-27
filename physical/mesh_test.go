@@ -172,3 +172,43 @@ func TestCheckTestsLongTriangles(t *testing.T) {
 		t.Error("past the pair ceiling: resolved")
 	}
 }
+
+// Faces pressed together, opposite and sharing no vertex, touch but do
+// not cross; facing the same way they overlap. And two long triangles
+// crossing each other are found, not only long against small.
+func TestCheckPressedFacesAndLongPairs(t *testing.T) {
+	m := &Mesh{
+		V: []float64{0, 0, 0, 4, 0, 0, 0, 4, 0, 1, 1, 0, 1, 3, 0, 3, 1, 0},
+		T: []int32{0, 1, 2, 3, 4, 5},
+	}
+	// Either way round: the smaller lies inside the larger, so only its
+	// own edges find the overlap.
+	for _, order := range [][2]int{{0, 1}, {1, 0}} {
+		m.T = []int32{0, 1, 2, 3, 4, 5}
+		if got := pair(m, order[0], order[1]); got != 1 {
+			t.Errorf("opposite faces pressed together %v: %d, want touching", order, got)
+		}
+		m.T = []int32{0, 1, 2, 3, 5, 4}
+		if got := pair(m, order[0], order[1]); got != 2 {
+			t.Errorf("faces overlapping the same way %v: %d, want crossing", order, got)
+		}
+	}
+	var long Mesh
+	for i := range 20 {
+		for j := range 20 {
+			cube(&long, 3*float64(i), 3*float64(j), 0, 1)
+		}
+	}
+	// Two lone long triangles crossing each other between the rows of
+	// cubes, a horizontal one and an upright one: only a long pair can
+	// find this crossing.
+	base := int32(len(long.V) / 3)
+	long.V = append(long.V,
+		-10, -10, 20, 190, -10, 20, -10, 190, 20,
+		-10, 50, 0, 190, 50, 0, -10, 50, 120)
+	long.T = append(long.T, base, base+1, base+2, base+3, base+4, base+5)
+	r := Check(&long, DefaultLimits)
+	if r.Unresolved || r.SelfIntersections == 0 {
+		t.Errorf("long slabs crossing: unresolved %v, crossings %d", r.Unresolved, r.SelfIntersections)
+	}
+}

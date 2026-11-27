@@ -465,7 +465,7 @@ Zoomed far toward the rim, the finite patch ends in a blank band before the rim.
 
 ### Make a lace physical
 
-**Make physical…**, at the end of the lace's controls, opens a workshop for a printable plaque of the lace as it stands. Stop a motion first. The workshop holds the lace as it was when it opened, with its isometry but not the view or zoom detail, so panning never changes the plaque. **Back to the lace**, or Escape, returns to the lace exactly as you left it.
+**Make physical…**, beside **Export image** at the top of the lace, opens a workshop for a printable plaque of the lace as it stands. Stop a motion first. In the examples gallery, **3D printable** shows only the examples Make physical can print. The workshop holds the lace as it was when it opened, with its isometry but not the view or zoom detail, so panning never changes the plaque. **Back to the lace**, or Escape, returns to the lace exactly as you left it.
 
 - **Treatment** chooses raised lines on a floor, or grooves cut into a slab.
 - **Diameter (mm)** is 10–300 mm.

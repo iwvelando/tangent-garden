@@ -112,8 +112,10 @@ export const laceExamples: Example[] = lacePresets.map((p) => ({
   caption: p.note,
   family: "Hyperbolic tilings",
   keywords:
-    "hyperbolic lace tiling tessellation poincare disk heptagon reflection escher circle limit infinity star motif",
+    "hyperbolic lace tiling tessellation poincare disk heptagon reflection escher circle limit infinity star motif printable 3d print plaque 3mf",
   fingerprint: fingerprint(p.study),
+  // Make physical turns every lace into a printable plaque.
+  printable: true,
 }));
 
 // Curves that smooth themselves likewise open over the study. Their

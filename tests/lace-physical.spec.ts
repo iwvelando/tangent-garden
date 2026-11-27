@@ -598,3 +598,64 @@ for (const [name, viewport] of [
     expect(box.width).toBeLessThanOrEqual(viewport.width);
     expect(box.height).toBeLessThanOrEqual(viewport.height);
   });
+
+test("the gallery's 3D printable filter finds the laces, and Make physical sits beside Export image with its legend under the drawing", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  const gallery = page.getByRole("dialog", { name: "Notebook examples" });
+  const cards = gallery.locator("[data-example-title]");
+  const all = await cards.count();
+  const filter = gallery.getByRole("button", { name: /^3D printable/ });
+  const { lacePresets } = await import("../web/lace/model");
+  await expect(filter).toHaveText(`3D printable ${lacePresets.length}`);
+  await filter.click();
+  await expect(filter).toHaveAttribute("aria-pressed", "true");
+  await expect(cards).toHaveCount(lacePresets.length);
+  expect(
+    await cards.evaluateAll((c) =>
+      c.every((e) => e.hasAttribute("data-lace-example")),
+    ),
+  ).toBe(true);
+  // It combines with search, and turns off again.
+  await gallery
+    .getByRole("searchbox", { name: "Search examples" })
+    .fill("receding");
+  await expect(cards).toHaveCount(1);
+  await expect(cards).toHaveAttribute("data-example-title", stars);
+  await gallery.getByRole("searchbox", { name: "Search examples" }).fill("");
+  await filter.click();
+  await expect(cards).toHaveCount(all);
+  await gallery
+    .locator(`[data-lace-example][data-example-title="${stars}"]`)
+    .click();
+  const d = page.getByRole("dialog", { name: "Hyperbolic lace" });
+  await ready(d);
+  // The entry is in the header, beside Export image.
+  const header = d.getByRole("banner");
+  await expect(
+    header.getByRole("button", { name: /Export image/ }),
+  ).toBeVisible();
+  const entry = header.getByRole("button", { name: "Make physical…" });
+  await expect(entry).toBeInViewport();
+  const w = await enter(d);
+  await field(w, "Lines").selectOption("motif");
+  await field(w, "Diameter (mm)").fill("60");
+  await prepare(d);
+  // The legend sits right under the drawing, the report beside both.
+  const canvas = (await d.locator(".lace-workshop-canvas").boundingBox())!;
+  const legend = (await d
+    .locator(".lace-workshop-figure .garden-legend")
+    .boundingBox())!;
+  const report = (await d
+    .getByRole("region", { name: "Solid report" })
+    .boundingBox())!;
+  expect(legend.y).toBeGreaterThanOrEqual(canvas.y + canvas.height - 1);
+  expect(legend.y).toBeLessThan(canvas.y + canvas.height + 40);
+  expect(legend.x + legend.width).toBeLessThanOrEqual(
+    canvas.x + canvas.width + 1,
+  );
+  expect(report.x).toBeGreaterThanOrEqual(canvas.x + canvas.width);
+});

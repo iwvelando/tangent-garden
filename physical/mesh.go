@@ -335,10 +335,37 @@ func rayHits(p, d, a, b, c vec3) bool {
 func orient(a, b, c, d vec3) float64 {
 	u, v, w := b.sub(a), c.sub(a), d.sub(a)
 	o := u.cross(v).dot(w)
-	if math.Abs(o) <= 1e-12*u.norm()*v.norm()*w.norm() {
+	// |o| ≤ 10⁻¹²|u||v||w|, squared: no square roots.
+	if float64(o*o) <= 1e-24*float64(u.dot(u)*v.dot(v))*w.dot(w) {
 		return 0
 	}
 	return o
+}
+
+// level reports whether the points all lie at one height: horizontal
+// faces of a height field, which are coplanar exactly.
+func level(ps ...vec3) bool {
+	for _, p := range ps[1:] {
+		if p[2] != ps[0][2] {
+			return false
+		}
+	}
+	return true
+}
+
+// beside reports whether the points lie strictly on one side of the
+// plane through a, b, c.
+func beside(a, b, c vec3, ps ...vec3) bool {
+	first := sign(orient(a, b, c, ps[0]))
+	if first == 0 {
+		return false
+	}
+	for _, p := range ps[1:] {
+		if sign(orient(a, b, c, p)) != first {
+			return false
+		}
+	}
+	return true
 }
 
 func sign(x float64) int {
@@ -403,7 +430,10 @@ func inside2(a, b, c, x complex128) int {
 // its interior, 1 touching it, 0 not at all. Coplanar contact is reported
 // as coplanar.
 func contact(p, q, a, b, c vec3) (kind int, coplanar bool) {
-	sp, sq := sign(orient(a, b, c, p)), sign(orient(a, b, c, q))
+	var sp, sq int
+	if !level(p, q, a, b, c) {
+		sp, sq = sign(orient(a, b, c, p)), sign(orient(a, b, c, q))
+	}
 	if sp*sq > 0 {
 		return 0, false
 	}
@@ -458,11 +488,14 @@ func contact(p, q, a, b, c vec3) (kind int, coplanar bool) {
 // where they share no vertex, 0 apart.
 func pair(m *Mesh, s, t int) int {
 	ts, tt := m.T[3*s:3*s+3], m.T[3*t:3*t+3]
-	var shared []int32
+	// Fixed arrays: a pair test allocates nothing.
+	var shared [3]int32
+	n := 0
 	for _, a := range ts {
 		for _, b := range tt {
 			if a == b {
-				shared = append(shared, a)
+				shared[n] = a
+				n++
 			}
 		}
 	}
@@ -470,7 +503,7 @@ func pair(m *Mesh, s, t int) int {
 	vt := [3]vec3{m.vertex(tt[0]), m.vertex(tt[1]), m.vertex(tt[2])}
 	ns := vs[1].sub(vs[0]).cross(vs[2].sub(vs[0]))
 	nt := vt[1].sub(vt[0]).cross(vt[2].sub(vt[0]))
-	switch len(shared) {
+	switch n {
 	case 3:
 		return 2
 	case 2:
@@ -493,6 +526,24 @@ func pair(m *Mesh, s, t int) int {
 		}
 		return 0
 	case 1:
+		// Apart unless the other triangle's far edge reaches this one's
+		// plane: one wholly beside the other's plane meets it only at the
+		// shared vertex.
+		var fs, ft [2]vec3
+		i, j := 0, 0
+		for k := range 3 {
+			if ts[k] != shared[0] {
+				fs[i] = vs[k]
+				i++
+			}
+			if tt[k] != shared[0] {
+				ft[j] = vt[k]
+				j++
+			}
+		}
+		if beside(vs[0], vs[1], vs[2], ft[:]...) || beside(vt[0], vt[1], vt[2], fs[:]...) {
+			return 0
+		}
 		worst := 0
 		opposite := func(ts []int32, v [3]vec3, w [3]vec3) {
 			for k := range 3 {
@@ -508,6 +559,10 @@ func pair(m *Mesh, s, t int) int {
 		opposite(ts, vs, vt)
 		opposite(tt, vt, vs)
 		return worst
+	}
+	// Apart when either lies wholly beside the other's plane.
+	if beside(vs[0], vs[1], vs[2], vt[:]...) || beside(vt[0], vt[1], vt[2], vs[:]...) {
+		return 0
 	}
 	worst := 0
 	for k := range 3 {
@@ -583,18 +638,17 @@ func intersections(m *Mesh, lim Limits) (crossing, touching, tests int, unresolv
 			}
 		}
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		a, b := entries[i].k, entries[j].k
-		if a[0] != b[0] {
-			return a[0] < b[0]
+	slices.SortFunc(entries, func(a, b entry) int {
+		if c := cmp.Compare(a.k[0], b.k[0]); c != 0 {
+			return c
 		}
-		if a[1] != b[1] {
-			return a[1] < b[1]
+		if c := cmp.Compare(a.k[1], b.k[1]); c != 0 {
+			return c
 		}
-		if a[2] != b[2] {
-			return a[2] < b[2]
+		if c := cmp.Compare(a.k[2], b.k[2]); c != 0 {
+			return c
 		}
-		return entries[i].t < entries[j].t
+		return cmp.Compare(a.t, b.t)
 	})
 	for i := 0; i < len(entries); {
 		j := i
@@ -610,7 +664,10 @@ func intersections(m *Mesh, lim Limits) (crossing, touching, tests int, unresolv
 					if lo[s][k] > hi[t][k] || lo[t][k] > hi[s][k] {
 						overlap = false
 					}
-					first[k] = math.Max(lo[s][k], lo[t][k])
+					first[k] = lo[s][k]
+					if lo[t][k] > first[k] {
+						first[k] = lo[t][k]
+					}
 				}
 				if !overlap || key(vec3(first)) != entries[i].k {
 					continue

@@ -957,13 +957,27 @@ export function LacePreview({
         />
         {/* The workshop saves its own file: the still is the lace's. */}
         {!workshop && (
-          <ExportImageMenu
-            kind="hyperbolic-lace"
-            revision={drawn}
-            disabled={!(ready || (film && valid)) || playing || exporting}
-            base={lacePage}
-            onSave={still}
-          />
+          <>
+            <ExportImageMenu
+              kind="hyperbolic-lace"
+              revision={drawn}
+              disabled={!(ready || (film && valid)) || playing || exporting}
+              base={lacePage}
+              onSave={still}
+            />
+            <button
+              ref={workshopEntry}
+              type="button"
+              className="export lace-physical-entry"
+              disabled={!valid || !current || !!film || playing}
+              title={
+                film ? "Stop the motion to make the lace physical" : undefined
+              }
+              onClick={openWorkshop}
+            >
+              Make physical…
+            </button>
+          </>
         )}
       </AppHeader>
       <div className="garden-content">
@@ -1465,27 +1479,6 @@ export function LacePreview({
                   value={study.weight}
                   onChange={(weight) => setStudy((s) => ({ ...s, weight }))}
                 />
-                <section
-                  className="lace-physical-entry"
-                  aria-labelledby="lace-physical-title"
-                >
-                  <h3 className="garden-section" id="lace-physical-title">
-                    Make physical
-                  </h3>
-                  <p className="note">
-                    {film
-                      ? "Stop the motion to make a printable plaque of this lace."
-                      : "A printable plaque of this lace, checked against a printer and saved as 3MF."}
-                  </p>
-                  <button
-                    ref={workshopEntry}
-                    type="button"
-                    disabled={!valid || !current || !!film || playing}
-                    onClick={openWorkshop}
-                  >
-                    Make physical…
-                  </button>
-                </section>
 
                 {!claimed && message && (
                   <div className="study-error" role="alert">

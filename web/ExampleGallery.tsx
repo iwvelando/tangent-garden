@@ -26,6 +26,9 @@ export type Example = {
   family: string;
   // Extra words search matches, such as the curve's format.
   keywords: string;
+  // Opens a study that Make physical can turn into a printable solid; the
+  // gallery's 3D printable filter shows these alone.
+  printable?: boolean;
   fingerprint: string;
   // A picture twice as wide as the others, such as a complex map's source
   // and image planes side by side. A section of wide pictures tiles them
@@ -123,6 +126,7 @@ export function ExampleGallery({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState<string | null>(null);
+  const [printable, setPrintable] = useState(false);
   const currentId = useId();
   const entries = useMemo(
     () => [
@@ -169,13 +173,15 @@ export function ExampleGallery({
     return entries.filter(
       ({ example: e }) =>
         (family === null || e.family === family) &&
+        (!printable || !!e.printable) &&
         terms.every((t) =>
           `${e.title} ${e.caption} ${e.family} ${e.keywords}`
             .toLowerCase()
             .includes(t),
         ),
     );
-  }, [entries, query, family]);
+  }, [entries, query, family, printable]);
+  const printables = entries.filter((e) => e.example.printable).length;
   // Grouped by family, keeping preset order within each.
   const groups = families
     .map((f) => ({
@@ -189,6 +195,7 @@ export function ExampleGallery({
     quiet.quiet();
     setQuery("");
     setFamily(null);
+    setPrintable(false);
     setOpen(true);
     dialog.current?.showModal();
   };
@@ -434,26 +441,38 @@ export function ExampleGallery({
                 </div>
               </div>
             )}
-            <div
-              className="gallery-families"
-              role="group"
-              aria-label="Example family"
-            >
-              {[null, ...families].map((f) => (
+            <div className="gallery-families">
+              {printables > 0 && (
                 <button
-                  key={f ?? ""}
                   type="button"
-                  aria-pressed={family === f}
-                  onClick={() => setFamily(f)}
+                  className="gallery-printable"
+                  aria-pressed={printable}
+                  onClick={() => setPrintable(!printable)}
                 >
-                  {f ?? "All"}{" "}
-                  <small>
-                    {f === null
-                      ? entries.length
-                      : entries.filter((e) => e.example.family === f).length}
-                  </small>
+                  3D printable <small>{printables}</small>
                 </button>
-              ))}
+              )}
+              <div
+                className="gallery-family-chips"
+                role="group"
+                aria-label="Example family"
+              >
+                {[null, ...families].map((f) => (
+                  <button
+                    key={f ?? ""}
+                    type="button"
+                    aria-pressed={family === f}
+                    onClick={() => setFamily(f)}
+                  >
+                    {f ?? "All"}{" "}
+                    <small>
+                      {f === null
+                        ? entries.length
+                        : entries.filter((e) => e.example.family === f).length}
+                    </small>
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="gallery-grid-wrap" onKeyDown={move}>
               {groups.length === 0 && (

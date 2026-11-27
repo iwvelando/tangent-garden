@@ -343,28 +343,30 @@ export function PhysicalWorkshop({
     <FieldErrorContext.Provider value={target ?? null}>
       <div className="garden-layout lace-workshop">
         <main className="lace-workshop-main">
-          <div
-            ref={viewRef}
-            className="garden-view lace-workshop-view"
-            aria-busy={running}
-          >
-            {s ? (
-              <TopView
-                solid={s}
-                overlay={overlay}
-                dark={theme.dark}
-                scheme={theme.scheme}
-                stale={!current}
-              />
-            ) : (
-              <p className="garden-placeholder">
-                {running
-                  ? "Preparing the solid…"
-                  : "Choose a size and treatment, then prepare the solid."}
-              </p>
-            )}
+          <div className="lace-workshop-figure">
+            <div
+              ref={viewRef}
+              className="garden-view lace-workshop-view"
+              aria-busy={running}
+            >
+              {s ? (
+                <TopView
+                  solid={s}
+                  overlay={overlay}
+                  dark={theme.dark}
+                  scheme={theme.scheme}
+                  stale={!current}
+                />
+              ) : (
+                <p className="garden-placeholder">
+                  {running
+                    ? "Preparing the solid…"
+                    : "Choose a size and treatment, then prepare the solid."}
+                </p>
+              )}
+            </div>
+            {s && <Legend solid={s} dark={theme.dark} scheme={theme.scheme} />}
           </div>
-          {s && <Legend solid={s} dark={theme.dark} scheme={theme.scheme} />}
           {s && <Report solid={s} prepared={prepared!} stale={!current} />}
         </main>
         <aside>

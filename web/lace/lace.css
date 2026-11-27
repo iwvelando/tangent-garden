@@ -38,9 +38,8 @@
 .garden-layout[hidden] {
   display: none;
 }
-/* The drawing, its legend and the report share the drawing column. On a
-   wide screen the report sits beside the drawing, the legend's row below
-   both; narrower, they stack in that order. */
+/* The drawing with its legend beneath, then the report: beside them on a
+   wide screen, below them otherwise. */
 .lace-workshop-view {
   width: min(100%, calc(100dvh - 340px));
 }
@@ -59,12 +58,9 @@
     align-content: flex-start;
     gap: 12px 20px;
   }
-  .lace-workshop-main > .lace-workshop-view {
+  .lace-workshop-main > .lace-workshop-figure {
     flex: 0 0 auto;
-  }
-  .lace-workshop-main > .garden-legend {
-    flex: 1 0 100%;
-    order: 1;
+    width: min(100%, calc(100dvh - 340px));
   }
   .lace-workshop-report {
     flex: 1 1 18rem;
@@ -160,9 +156,6 @@
 .lace-workshop-work summary {
   cursor: pointer;
   font-size: 0.85rem;
-  margin-top: 0.75rem;
-}
-.lace-physical-entry {
   margin-top: 0.75rem;
 }
 @media (orientation: landscape) and (max-height: 500px) {
