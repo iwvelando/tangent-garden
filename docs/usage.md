@@ -488,6 +488,8 @@ Zoomed far toward the rim, the finite patch ends in a blank band before the rim.
   The printer never changes the plaque's shape. Its finest values are estimates, not calibrations.
 - **Grid step (mm)** (0.05–1 mm) is how finely the plaque is sampled; empty chooses 0.2 mm.
 
+**Seven-armed snowflakes, an ornament to print** opens ready for it: short-pointed stars without tile sides, set for a 120 mm openwork plaque of whole tiles, its central flake, seven neighbors and seven smaller flakes one body.
+
 Every length accepts expressions such as `40*pi`. **Prepare solid** builds the plaque in the background, and **Cancel** stops it.
 
 The drawing is the solid's actual top: lines or grooves in the motif's color, the floor or slab paler, with marks for tiles left out, detail simplified, failing gaps and narrow gaps. The report beside or below it gives:

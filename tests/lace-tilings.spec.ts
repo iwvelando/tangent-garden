@@ -109,6 +109,8 @@ test("the lace offers each tiling, and refuses an unknown one's link", async ({
     "5,4",
     // The loop's study follows them.
     "7,3",
+    // Then the snowflake ornament, made to print.
+    "7,3",
   ]);
   for (const p of lacePresets) expect(p.title).not.toContain("research");
   let error: unknown;
@@ -124,7 +126,7 @@ test("the lace offers each tiling, and refuses an unknown one's link", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Browse notebook examples" }).click();
   const gallery = page.getByRole("dialog", { name: "Notebook examples" });
-  await expect(gallery.locator("[data-lace-example]")).toHaveCount(14);
+  await expect(gallery.locator("[data-lace-example]")).toHaveCount(15);
   await page.keyboard.press("Escape");
   const d = await openExample(page, "Seven-pointed stars receding to the rim");
   await expect(tilingChoice(d)).toHaveValue("7,3");

@@ -659,3 +659,26 @@ test("the gallery's 3D printable filter finds the laces, and Make physical sits 
   );
   expect(report.x).toBeGreaterThanOrEqual(canvas.x + canvas.width);
 });
+
+test("the snowflake ornament opens Make physical ready to print, and validates as one openwork body", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openLace(
+    page,
+    "Seven-armed snowflakes, an ornament to print",
+  );
+  const w = await enter(d);
+  await expect(field(w, "Floor (mm)")).toHaveValue("0");
+  await expect(field(w, "Diameter (mm)")).toHaveValue("120");
+  await expect(field(w, "Lines")).toHaveValue("motif");
+  await expect(field(w, "Rim")).toHaveValue("motif");
+  const report = await prepare(d);
+  await expect(report.locator(".lace-workshop-verdict")).toHaveText(
+    "Validated: every required check passes.",
+  );
+  await expect(report).toContainText("1 body");
+  await expect(report).toContainText("Openwork: no floor");
+  // The central flake, its seven neighbors and seven beyond.
+  await expect(report).toContainText("15 of 617 tiles kept");
+});

@@ -3977,6 +3977,7 @@ test("lace links conform settings, selection and view without geometry, and olde
         ...(lace.selected ? ["selected"] : []),
         ...(lace.isometry ? ["isometry"] : []),
         ...(lace.motion ? ["motion"] : []),
+        ...(lace.physical ? ["physical"] : []),
         ...(
           ["motifKind", "petalFullness", "leafFullness", "ringRadius"] as const
         ).filter((k) => k in lace),
