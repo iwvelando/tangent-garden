@@ -153,7 +153,7 @@ For a research issue, the assignment's experiment and decision gate still govern
 - React shows a `<select>`'s first option when its value is not among the options, so asserting the visible option can pass while the state is wrong. Assert the state.
 - Chromium ends a slider's drag when a child is inserted directly into its fieldset. Put content that appears or disappears beside a slider in a wrapper.
 - A sweep across presets (layout, help text) must wait for each preset to settle, or it tests nothing.
-- The smoke test's compression check fails against a local `BASE_URL`; it is meant for the deployed site.
+- The smoke tests' compression checks pass against `vite preview` only, which serves the engine's compressed copies as production does. Another static server (a plain `npx serve dist`) fails them.
 - Some checks pass on macOS and fail only on CI's Ubuntu runners, so a local `make pre-pr` cannot catch them:
   - CI's ffmpeg cannot decode animated WebP: `ffprobe` reports a 0 × 0 stream with no frames, while a current Homebrew ffmpeg decodes it. Check a WebP export by reading its RIFF chunks (`VP8X`, one `ANMF` per frame) and decoding frames with Chromium's `ImageDecoder`, as `tests/export.spec.ts` and `tests/cell24.spec.ts` do. `pixelDifference` in `tests/video.ts` compares the decoded pixels. Keep `ffprobe` and `ffmpeg` for MP4.
   - Linux Chromium's fonts give text different line heights: checkboxes 13px apart on macOS were 14px apart in CI. Compare a layout gap with a sibling measured in the same run, within about 1px, rather than with a fixed pixel value.

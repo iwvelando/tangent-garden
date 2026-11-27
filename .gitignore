@@ -1,6 +1,8 @@
 node_modules/
 dist/
 public/engine.wasm
+public/engine.wasm.br
+public/engine.wasm.gz
 public/wasm_exec.js
 public/GO-LICENSE.txt
 .DS_Store

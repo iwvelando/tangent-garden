@@ -19,14 +19,45 @@ test("@smoke the engine loads and draws with no browser errors", async ({
   await page.goto("/");
   const engine = (await wasm).headers();
   expect(engine["content-type"]).toBe("application/wasm");
-  // CloudFront compresses engine.wasm to about a quarter of its size, choosing
-  // Brotli or gzip per browser. If a distribution setting or the object's content
-  // type changes, it would silently ship uncompressed; vite preview never
-  // compresses, so this only applies to a deployed site.
-  if (process.env.BASE_URL)
-    expect(["br", "gzip"]).toContain(engine["content-encoding"]);
+  // The engine is precompressed to about a fifth of its size, and the host
+  // picks Brotli or gzip per browser, as vite preview does. If the upload or
+  // the hosting's rewrite changed, it would silently ship uncompressed.
+  expect(["br", "gzip"]).toContain(engine["content-encoding"]);
   await expect(page.locator("#artwork")).toBeVisible();
   expect(await page.locator("#artwork line").count()).toBeGreaterThan(20);
   await expect(imageButton(page)).toBeEnabled();
   expect(problems).toEqual([]);
+});
+
+// Too large for CloudFront to compress itself, the engine is uploaded as
+// Brotli and gzip copies beside the plain file, and the host chooses one by
+// Accept-Encoding, as CloudFront's own compression did (#604).
+test("@smoke the engine is served compressed by Accept-Encoding", async ({
+  request,
+}) => {
+  const fetch = async (encoding: string) => {
+    const r = await request.get("/engine.wasm", {
+      headers: { "Accept-Encoding": encoding },
+    });
+    expect(r.status()).toBe(200);
+    const headers = r.headers();
+    expect(headers["content-type"]).toBe("application/wasm");
+    expect(headers["vary"]).toMatch(/accept-encoding/i);
+    return { encoding: headers["content-encoding"], body: await r.body() };
+  };
+  const plain = await fetch("identity");
+  expect(plain.encoding).toBeUndefined();
+  expect(plain.body.subarray(0, 4)).toEqual(Buffer.from("\0asm"));
+  for (const [accepted, sent] of [
+    ["gzip, deflate, br, zstd", "br"],
+    ["br;q=1.0, gzip;q=0.8", "br"],
+    ["gzip, deflate", "gzip"],
+    ["br;q=0, gzip", "gzip"],
+    ["deflate", undefined],
+  ] as const) {
+    const served = await fetch(accepted);
+    expect(served.encoding, accepted).toBe(sent);
+    // The request context decodes the body, which must be the plain engine.
+    expect(served.body.equals(plain.body), accepted).toBe(true);
+  }
 });
