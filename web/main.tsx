@@ -157,7 +157,17 @@ import {
   type FieldErrorTarget,
 } from "./Field";
 import { tiered, type Help } from "./help";
-import { ScalarInput, ScalarStatus, type ScalarState } from "./ScalarInput";
+import {
+  ScalarInput,
+  ScalarStatus,
+  type ScalarDraft,
+  type ScalarState,
+} from "./ScalarInput";
+import {
+  defaultRectangle,
+  rectangleNote,
+  type RectangleMode,
+} from "./rectangle-mode";
 import { closureKey, closureNote, nextTerm, periodText } from "./harmonic";
 import { captureNote, nextPursuer, regularPolygon } from "./pursuit";
 import { endNote, nextSeed } from "./flow";
@@ -517,6 +527,7 @@ function App({
   const client = useRef<EngineClient | null>(null);
   const scalarJobs = useRef(new Set<Promise<void>>());
   const scalarGeneration = useRef(0);
+  const implicitScalarDrafts = useRef(new Map<string, ScalarDraft>());
   const scalarStatus = useMemo(
     () => ({
       client,
@@ -726,11 +737,17 @@ function App({
   const scalar = (
     label: ReactNode,
     path: string[],
-    options: { help?: Help; topic?: string; name?: string } = {},
+    options: {
+      help?: Help;
+      topic?: string;
+      name?: string;
+      retain?: boolean;
+    } = {},
   ) => (
     <Field label={label} help={options.help} topic={options.topic}>
       <ScalarInput
         name={options.name ?? String(label)}
+        retained={options.retain ? implicitScalarDrafts.current : undefined}
         value={getIn(config, path)}
         onChange={(value) => {
           setPreset("custom");
@@ -1161,9 +1178,13 @@ function App({
     }));
   const levels = config.curve.implicit.family;
   // Each field keeps its own values while set aside within this study.
-  const { disk, diskMix } = config.curve.implicit;
+  const { disk, diskMix, rectangle } = config.curve.implicit;
   const diskDraft = useRef<DiskMode>(defaultDisk);
   const diskMixDraft = useRef<DiskMix>(defaultDiskMix);
+  const rectangleDraft = useRef<RectangleMode>(defaultRectangle);
+  const unfinishedWindow = useRef<
+    Config["curve"]["implicit"]["window"] | undefined
+  >(undefined);
   const afterScalarEdits = async (change: () => void) => {
     const generation = scalarGeneration.current;
     await scalarStatus.resolved();
@@ -1175,10 +1196,25 @@ function App({
         const {
           disk: current,
           diskMix: currentMix,
+          rectangle: currentRectangle,
           ...rest
         } = c.curve.implicit;
         if (current) diskDraft.current = current;
         if (currentMix) diskMixDraft.current = currentMix;
+        if (currentRectangle) rectangleDraft.current = currentRectangle;
+        // An unfinished window stays in the editor draft. Active rectangle
+        // snapshots still need finite fields to open as portable links.
+        if (kind === "rectangle" && !currentRectangle) {
+          unfinishedWindow.current = Object.values(rest.window).every(
+            Number.isFinite,
+          )
+            ? undefined
+            : rest.window;
+          if (unfinishedWindow.current)
+            rest.window = presets[0].config.curve.implicit.window;
+        } else if (currentRectangle && unfinishedWindow.current) {
+          rest.window = unfinishedWindow.current;
+        }
         return {
           curve: {
             ...c.curve,
@@ -1187,7 +1223,9 @@ function App({
                 ? { ...rest, diskMix: diskMixDraft.current }
                 : kind === "disk"
                   ? { ...rest, disk: diskDraft.current }
-                  : rest,
+                  : kind === "rectangle"
+                    ? { ...rest, rectangle: rectangleDraft.current }
+                    : rest,
           },
         };
       }),
@@ -1240,10 +1278,15 @@ function App({
       ? frame.result.contours
       : undefined;
   const shownMix = shownFrame?.config.curve.implicit.diskMix;
-  const shownMixContours = shownFrame?.result.contours;
+  const shownContours = shownFrame?.result.contours;
   const mixNote =
-    diskMix && shownMix && shownMixContours?.diskMix
-      ? `${diskMixNote(shownMix, shownMixContours.diskMix)} ${contourNote(shownMixContours)}`
+    diskMix && shownMix && shownContours?.diskMix
+      ? `${diskMixNote(shownMix, shownContours.diskMix)} ${contourNote(shownContours)}`
+      : null;
+  const shownRectangle = shownFrame?.config.curve.implicit.rectangle;
+  const rectangleReadout =
+    rectangle && shownRectangle && shownContours?.rectangle
+      ? `${rectangleNote(shownContours.rectangle)} ${contourNote(shownContours)}`
       : null;
   const implicitControls = (
     <>
@@ -1251,6 +1294,11 @@ function App({
         <p className="note">
           Amplitude A weights the three-diameter mode (3, 1). Amplitude B
           weights the circular mode (0, 2). Both vanish at the boundary.
+        </p>
+      ) : rectangle ? (
+        <p className="note">
+          The membrane has height 1 and is fixed along all four edges. Its modes
+          (2, 3) and (3, 2) blend as <var>a</var> changes.
         </p>
       ) : disk ? (
         <p className="note">
@@ -1270,20 +1318,44 @@ function App({
         label="Field"
         topic="field"
         help={tiered(
-          "Choose an expression, a single disk mode, or a superposition.",
-          "A single disk mode turns as a changes. A superposition combines two modes with different eigenvalues. Both disk fields draw inside the circle about the origin.",
+          "Choose an expression or modes on a disk or rectangle.",
+          "A single disk mode turns as a changes. The disk superposition combines two modes. The rectangle blends two modes on a unit-height domain.",
         )}
       >
         <select
-          value={diskMix ? "diskMix" : disk ? "disk" : "expression"}
+          value={
+            rectangle
+              ? "rectangle"
+              : diskMix
+                ? "diskMix"
+                : disk
+                  ? "disk"
+                  : "expression"
+          }
           onChange={(e) => chooseField(e.target.value)}
         >
           <option value="expression">Expression F(x, y)</option>
           <option value="disk">Disk membrane mode</option>
           <option value="diskMix">Disk mode superposition</option>
+          <option value="rectangle">Rectangular nodal modes</option>
         </select>
       </Field>
-      {diskMix ? (
+      {rectangle ? (
+        <div key="rectangle">
+          {scalar(
+            "Aspect ratio W",
+            ["curve", "implicit", "rectangle", "aspect"],
+            {
+              topic: "aspect ratio W",
+              help: tiered(
+                "Width divided by height, from 0.5 to 2.",
+                "The rectangle starts at the origin. The grid searches the whole rectangle, so the expression’s window is set aside.",
+              ),
+              retain: true,
+            },
+          )}
+        </div>
+      ) : diskMix ? (
         <>
           <Field
             label="Superposition motion"
@@ -1375,20 +1447,31 @@ function App({
         topic: "level c",
         help: "The curve is F = c. Its pieces split or join as c passes a saddle of F.",
       })}
-      <div className="pair">
-        {scalar("Window x from", ["curve", "implicit", "window", "xMin"])}
-        {scalar("Window x to", ["curve", "implicit", "window", "xMax"], {
-          topic: "window",
-          help: tiered(
-            "The rectangle searched, within ±100,000.",
-            "Contours that leave it are cut off at its edge.",
-          ),
-        })}
-      </div>
-      <div className="pair">
-        {scalar("Window y from", ["curve", "implicit", "window", "yMin"])}
-        {scalar("Window y to", ["curve", "implicit", "window", "yMax"])}
-      </div>
+      {!rectangle && (
+        <>
+          <div className="pair">
+            {scalar("Window x from", ["curve", "implicit", "window", "xMin"], {
+              retain: true,
+            })}
+            {scalar("Window x to", ["curve", "implicit", "window", "xMax"], {
+              topic: "window",
+              retain: true,
+              help: tiered(
+                "The rectangle searched, within ±100,000.",
+                "Contours that leave it are cut off at its edge.",
+              ),
+            })}
+          </div>
+          <div className="pair">
+            {scalar("Window y from", ["curve", "implicit", "window", "yMin"], {
+              retain: true,
+            })}
+            {scalar("Window y to", ["curve", "implicit", "window", "yMax"], {
+              retain: true,
+            })}
+          </div>
+        </>
+      )}
       {number(
         "Grid cells",
         config.curve.implicit.cells,
@@ -1455,7 +1538,8 @@ function App({
           ? "Inspect an engraving member below; disable it to inspect the source level."
           : storyNoteFrame
             ? `${planarStoryNote(drawnStory!.story, storyNoteFrame.config.curve.implicit.level, storyNoteFrame.result.contours!)} ${contourNote(storyNoteFrame.result.contours!)}`
-            : (mixNote ??
+            : (rectangleReadout ??
+              mixNote ??
               (levelSets
                 ? `${levelSets.disk ? `${diskNote(levelSets.disk)} ` : ""}${contourNote(levelSets)}`
                 : "Tracing…"))}
@@ -1793,6 +1877,9 @@ function App({
     // A mode set aside for the previous study's expression stays with it.
     diskDraft.current = defaultDisk;
     diskMixDraft.current = defaultDiskMix;
+    rectangleDraft.current = defaultRectangle;
+    unfinishedWindow.current = undefined;
+    implicitScalarDrafts.current.clear();
     setPreset(preset);
     scalarGeneration.current++;
     setPoleKind(study.poleKind);
@@ -1981,9 +2068,13 @@ function App({
       : familyFrame
     : shown;
   const drawnFormat = (displayFrame?.config ?? config).curve.format;
-  // A disk mode replaces F: its curve is the level set of u.
+  // A membrane field shows the level set of u.
   const drawnImplicit = (displayFrame?.config ?? config).curve.implicit;
-  const drawnDisk = !!(drawnImplicit.disk || drawnImplicit.diskMix);
+  const drawnMembrane = !!(
+    drawnImplicit.disk ||
+    drawnImplicit.diskMix ||
+    drawnImplicit.rectangle
+  );
   const drawn = displayFrame
     ? legendGeometry(
         displayFrame.result,
@@ -2537,13 +2628,19 @@ function App({
                     ["curve", "a"],
                     {
                       topic: "shape parameter a",
-                      help: (
-                        <>
-                          Use <var>a</var> as an adjustable coefficient in your
-                          curve, for example <code>a*cos(t)</code>, then animate
-                          it. Expressions without a are unaffected.
-                        </>
-                      ),
+                      help:
+                        config.curve.format === "implicit" && rectangle ? (
+                          tiered(
+                            "Angle in radians for the artistic blend of the two rectangle modes.",
+                            "The weights are cos(a) for (2, 3) and sin(a) for (3, 2). At 0 and π/2 you see each mode alone.",
+                          )
+                        ) : (
+                          <>
+                            Use <var>a</var> as an adjustable coefficient in
+                            your curve, for example <code>a*cos(t)</code>, then
+                            animate it. Expressions without a are unaffected.
+                          </>
+                        ),
                       name: "Shape parameter a",
                     },
                   )}
@@ -3508,7 +3605,7 @@ function App({
                         <>
                           <span className="base-dot" />
                           {drawnFormat === "implicit"
-                            ? drawnDisk
+                            ? drawnMembrane
                               ? "Curve u = c"
                               : "Curve F = c"
                             : drawnFormat === "attractor"

@@ -1,3 +1,4 @@
+import type { RectangleMode, RectangleResult } from "./rectangle-mode";
 import type { RefinedPath } from "./refinement";
 export type Vec = { x: number; y: number };
 export type Kind =
@@ -126,6 +127,7 @@ export type Config = {
       // (web/disk-mode.ts); absent for an expression.
       disk?: DiskMode;
       diskMix?: DiskMix;
+      rectangle?: RectangleMode;
     };
     // An iterated map's orbit from start: the first `discard` iterates
     // (0–1,000,000) are dropped and the next `iterates` (0–5,000,000) counted
@@ -485,6 +487,7 @@ export type ContourResult = {
   // Present only for a disk mode.
   disk?: DiskResult;
   diskMix?: DiskMixResult;
+  rectangle?: RectangleResult;
 };
 // The curve's level set by its loops' nesting (engine.LevelTopology): per
 // contour, the smallest closed one enclosing it (−1 for none) and whether F

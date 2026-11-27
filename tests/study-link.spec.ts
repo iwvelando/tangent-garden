@@ -5466,3 +5466,25 @@ test("disk mixture links retain their sampled position and reject conflicting or
     "config.curve.implicit.diskMix.position",
   );
 });
+
+test("rectangle links keep the aspect track and reject incompatible fields", async () => {
+  const source = planarPreset(
+    presets.findIndex((p) => p.title === "A lattice stretches"),
+  );
+  expect((await readStudyLink(envelope("2d", source))).study).toEqual(source);
+  expect(source.animation.tracks).toEqual([
+    { target: "rectangleAspect", from: "2", to: "1/2" },
+  ]);
+  const conflict = structuredClone(source);
+  conflict.config.curve.implicit.disk = { order: 2, ring: 3, radius: 1 };
+  await refused(() => planarStudy(conflict), "config.curve.implicit.rectangle");
+  source.config.curve.implicit.rectangle!.aspect = 0.49;
+  await refused(
+    () => planarStudy(source),
+    "config.curve.implicit.rectangle.aspect",
+  );
+  const old = planarPreset(
+    presets.findIndex((p) => p.title === "A lattice changing its mind"),
+  );
+  expect(planarStudy(old)).toEqual(old);
+});

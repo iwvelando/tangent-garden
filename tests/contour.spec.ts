@@ -101,7 +101,7 @@ test("three nodal studies carry literal equal-eigenvalue modes and full-period a
     [2, 3],
     [3, 5],
   ];
-  expect(presets).toHaveLength(86);
+  expect(presets).toHaveLength(88);
   for (const [i, title] of nodalTitles.entries()) {
     const p = presets.find((p) => p.title === title);
     expect(p, title).toBeDefined();
@@ -1285,7 +1285,7 @@ test("the disk superposition keeps its source draft, field errors, and shared st
   await expect(input(page, "Amplitude B")).toHaveValue("1");
 });
 
-async function scrubDiskMix(page: Page, position: number) {
+async function scrubContour(page: Page, position: number) {
   await page
     .getByRole("slider", { name: "Animation progress" })
     .evaluate((el: HTMLInputElement, value) => {
@@ -1296,6 +1296,44 @@ async function scrubDiskMix(page: Page, position: number) {
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
     }, String(position));
+}
+
+async function expectSteadyContourScrub(page: Page) {
+  const slider = page.getByRole("slider", { name: "Animation progress" });
+  await slider.scrollIntoViewIfNeeded();
+  await page.evaluate(() => {
+    const changes: string[] = [];
+    const remember = (records: MutationRecord[]) => {
+      for (const { target } of records) {
+        if (target instanceof HTMLButtonElement)
+          changes.push(
+            target.getAttribute("aria-label") ?? target.textContent!,
+          );
+      }
+    };
+    const observer = new MutationObserver(remember);
+    observer.observe(document.body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
+    (window as any).stopFollowingButtons = () => {
+      remember(observer.takeRecords());
+      observer.disconnect();
+      return changes;
+    };
+  });
+  const box = (await slider.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.18, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.45, box.y + box.height / 2, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  await settled(page);
+  expect(
+    await page.evaluate(() => (window as any).stopFollowingButtons()),
+  ).toEqual([]);
 }
 
 test("both disk superposition presets seek to their direct frame and Stop restores the opening study", async ({
@@ -1314,44 +1352,10 @@ test("both disk superposition presets seek to their direct frame and Stop restor
     const before = await geometry();
     await openAnimation(page);
     await playAndPause(page);
-    await scrubDiskMix(page, 0.18);
+    await scrubContour(page, 0.18);
     await expect.poll(() => progress(page)).toBeGreaterThan(0);
-    const slider = page.getByRole("slider", { name: "Animation progress" });
-    await slider.scrollIntoViewIfNeeded();
-    await page.evaluate(() => {
-      const changes: string[] = [];
-      const remember = (records: MutationRecord[]) => {
-        for (const { target } of records) {
-          if (target instanceof HTMLButtonElement)
-            changes.push(
-              target.getAttribute("aria-label") ?? target.textContent!,
-            );
-        }
-      };
-      const observer = new MutationObserver(remember);
-      observer.observe(document.body, {
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["disabled"],
-      });
-      (window as any).stopFollowingButtons = () => {
-        remember(observer.takeRecords());
-        observer.disconnect();
-        return changes;
-      };
-    });
-    const box = (await slider.boundingBox())!;
-    await page.mouse.move(box.x + box.width * 0.18, box.y + box.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width * 0.45, box.y + box.height / 2, {
-      steps: 10,
-    });
-    await page.mouse.up();
-    await settled(page);
-    expect(
-      await page.evaluate(() => (window as any).stopFollowingButtons()),
-    ).toEqual([]);
-    await scrubDiskMix(page, 0.25);
+    await expectSteadyContourScrub(page);
+    await scrubContour(page, 0.25);
     await expect
       .poll(
         async () => (await definition(page)).curve.implicit.diskMix.position,
@@ -1476,8 +1480,279 @@ test("changing motion replaces the incompatible track with valid endpoints", asy
   await expect(input(page, "Track 1 from")).toHaveValue("0.5");
   await expect(input(page, "Track 1 to")).toHaveValue("1");
   await playAndPause(page);
-  await scrubDiskMix(page, 0.5);
+  await scrubContour(page, 0.5);
   await expect
     .poll(async () => (await definition(page)).curve.implicit.diskMix.position)
     .toBe(0.75);
+});
+
+test("the rectangular nodal field edits, restores its source, shares and exports its boundary", async ({
+  page,
+}) => {
+  await ready(page, cassini);
+  const field = input(page, "Field");
+  const source = input(page, "F(x, y)");
+  await source.fill("x^2 + y^2 - 1");
+  await input(page, "Window x to").fill("pi");
+  await input(page, "Level c").fill("0");
+  await settled(page);
+  await expect(field.locator("option[value=rectangle]")).toHaveCount(1, {
+    timeout: 1500,
+  });
+  await field.selectOption("rectangle");
+  const aspect = input(page, "Aspect ratio W");
+  const border = page.getByTestId("rectangle-boundary");
+  await expect(aspect).toHaveValue("1.5");
+  await expect(input(page, "Window x to")).toHaveCount(0);
+  await aspect.fill("phi");
+  await expect
+    .poll(async () => (await definition(page)).curve.implicit.rectangle?.aspect)
+    .toBeCloseTo((1 + Math.sqrt(5)) / 2, 14);
+  await settled(page);
+  await expect(note(page)).toContainText("artistic");
+  await expect(curves(page).first()).toBeVisible();
+  const ratio = () =>
+    border.evaluate(
+      (e) => Number(e.getAttribute("width")) / Number(e.getAttribute("height")),
+    );
+  expect(await ratio()).toBeCloseTo((1 + Math.sqrt(5)) / 2, 14);
+  await aspect.fill("1");
+  await expect(note(page)).toContainText("share one eigenvalue");
+  await aspect.fill("2 + 1/10");
+  await expect(page.getByRole("alert")).toContainText("from 0.5 to 2");
+  await aspect.fill("1/2");
+  await expect.poll(ratio).toBeCloseTo(0.5, 14);
+
+  await field.selectOption("expression");
+  await settled(page);
+  await expect(source).toHaveValue("x^2 + y^2 - 1");
+  await expect(input(page, "Window x to")).toHaveValue("pi");
+  await field.selectOption("rectangle");
+  await settled(page);
+  await expect.poll(ratio).toBeCloseTo(0.5, 14);
+  const saved = await definition(page);
+  expect(saved.curve.implicit.rectangle).toEqual({ aspect: 0.5 });
+  expect(saved.curve.implicit.window.xMax).toBe(Math.PI);
+
+  const download = page.waitForEvent("download");
+  await exportImage(page, "SVG");
+  const svg = await readFile((await (await download).path())!, "utf8");
+  const exported = await page.evaluate((s) => {
+    const doc = new DOMParser().parseFromString(s, "image/svg+xml");
+    const boundary = doc.querySelector("[data-testid=rectangle-boundary]")!;
+    return {
+      config: JSON.parse(doc.querySelector("desc")!.textContent!),
+      ratio:
+        Number(boundary.getAttribute("width")) /
+        Number(boundary.getAttribute("height")),
+      paths: doc.querySelectorAll("[data-testid=contour-path]").length,
+      text: doc.querySelectorAll("text").length,
+    };
+  }, svg);
+  expect(exported).toEqual({
+    config: saved,
+    ratio: 0.5,
+    paths: await curves(page).count(),
+    text: 0,
+  });
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  await page.goto(await page.evaluate(() => navigator.clipboard.readText()));
+  await expect(page).not.toHaveURL(/#s=/);
+  await settled(page);
+  expect(await definition(page)).toEqual(saved);
+
+  await choosePreset(page, { label: nodalTitles[1] });
+  await expect(field).toHaveValue("expression");
+  await settled(page);
+  await expect(border).toHaveCount(0);
+  await field.selectOption("rectangle");
+  await expect(aspect).toHaveValue("1.5");
+});
+
+test("the rectangular aspect animation seeks to the direct field and restores its study", async ({
+  page,
+}) => {
+  await ready(page, "A lattice stretches");
+  const border = page.getByTestId("rectangle-boundary");
+  const geometry = async () => {
+    const { plot } = await camera(page);
+    const normalized = async (id: string) =>
+      (await drawn(page, id)).map(({ points, closed }) => ({
+        closed,
+        points: points.map((point) => {
+          const p = plot(point);
+          return p;
+        }),
+      }));
+    return {
+      paths: await normalized("contour-path"),
+      family: await normalized("contour-family"),
+      width: Number(await border.getAttribute("width")) / (await scale(page)),
+    };
+  };
+  const opening = await definition(page);
+  const before = await geometry();
+  await openAnimation(page);
+  await playAndPause(page);
+  await scrubContour(page, 0.18);
+  await expect.poll(() => progress(page)).toBeCloseTo(0.18, 3);
+  await expectSteadyContourScrub(page);
+  await scrubContour(page, 0.5);
+  await expect
+    .poll(async () => (await definition(page)).curve.implicit.rectangle?.aspect)
+    .toBe(1.25);
+  await settled(page);
+  const sought = await geometry();
+  expect(sought.width).toBeCloseTo(1.25, 12);
+  expect(sought.paths).not.toEqual(before.paths);
+  expect(sought.family.length).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
+  await settled(page);
+  expect(await definition(page)).toEqual(opening);
+  expect(await geometry()).toEqual(before);
+  await input(page, "Aspect ratio W").fill("5/4");
+  await settled(page);
+  const direct = await geometry();
+  expect(direct.width).toBeCloseTo(sought.width, 12);
+  for (const [actual, expected] of [
+    [direct.paths, sought.paths],
+    [direct.family, sought.family],
+  ]) {
+    expect(actual.map((p) => [p.closed, p.points.length])).toEqual(
+      expected.map((p) => [p.closed, p.points.length]),
+    );
+    let largest = 0;
+    for (const [i, path] of actual.entries())
+      for (const [j, point] of path.points.entries()) {
+        const want = expected[i].points[j];
+        largest = Math.max(
+          largest,
+          Math.hypot(point.x - want.x, point.y - want.y),
+        );
+      }
+    // SVG rounds both camera projections to 0.001 viewBox units.
+    expect(largest).toBeLessThan(4e-6);
+  }
+});
+
+test("rectangle aspect endpoints use Go scalar bounds", async ({ page }) => {
+  await ready(page, "A lattice stretches");
+  await openAnimation(page);
+  await input(page, "Track 1 to").fill("2+1/10");
+  await page
+    .getByRole("button", { name: "Play animation", exact: true })
+    .click();
+  await expect(
+    page.getByText(/At animation end:.*aspect ratio must be from 0.5 to 2/),
+  ).toBeVisible();
+  await input(page, "Track 1 to").fill("1/2");
+  await playAndPause(page);
+  await expect(
+    page.getByRole("button", { name: "Resume", exact: true }),
+  ).toBeVisible();
+});
+
+test("a decoded rectangle movie keeps the opening scale and reaches both aspect endpoints", async ({
+  page,
+}) => {
+  await ready(page, "A lattice stretches");
+  await openExportSettings(page);
+  await input(page, "Duration (seconds)").fill(".4");
+  await input(page, "Export frame rate").selectOption("15");
+  await input(page, "Export resolution").fill("1");
+  await input(page, "Export format").selectOption("webp");
+  await input(page, "Export quality").fill("100");
+  await input(page, "Loop exported animation").uncheck();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: /^Export animated WebP/ }).click();
+  const bytes = await readFile((await (await download).path())!);
+  const decoded = await page.evaluate(async (bytes) => {
+    const decoder = new (window as any).ImageDecoder({
+      data: new Uint8Array(bytes),
+      type: "image/webp",
+    });
+    await decoder.tracks.ready;
+    const count = decoder.tracks.selectedTrack.frameCount;
+    const canvas = new OffscreenCanvas(1000, 760);
+    const ctx = canvas.getContext("2d")!;
+    let duration = 0;
+    const bounds: { x: number; y: number; width: number; height: number }[] =
+      [];
+    for (let i = 0; i < count; i++) {
+      const { image } = await decoder.decode({ frameIndex: i });
+      duration += image.duration / 1000;
+      ctx.drawImage(image, 0, 0, 1000, 760);
+      image.close();
+      const { data } = ctx.getImageData(0, 0, 1000, 760);
+      let left = 1000,
+        right = -1,
+        top = 760,
+        bottom = -1;
+      for (let y = 0; y < 760; y++) {
+        for (let x = 0; x < 1000; x++) {
+          const j = 4 * (y * 1000 + x);
+          if (
+            Math.abs(data[j] - data[0]) +
+              Math.abs(data[j + 1] - data[1]) +
+              Math.abs(data[j + 2] - data[2]) <=
+            50
+          )
+            continue;
+          left = Math.min(left, x);
+          right = Math.max(right, x);
+          top = Math.min(top, y);
+          bottom = Math.max(bottom, y);
+        }
+      }
+      bounds.push({
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      });
+    }
+    decoder.close();
+    return { duration, bounds };
+  }, Array.from(bytes));
+  expect(decoded.duration).toBe(400);
+  expect(decoded.bounds).toHaveLength(6);
+  for (const [i, b] of decoded.bounds.entries()) {
+    const aspect = 2 - (1.5 * i) / 5;
+    expect(Math.abs(b.width - 390 * aspect)).toBeLessThan(5);
+    expect(Math.abs(b.height - 390)).toBeLessThan(5);
+    expect(Math.abs(b.x - 110)).toBeLessThan(4);
+    expect(Math.abs(b.y - 185)).toBeLessThan(4);
+  }
+});
+
+test("a rectangle remains shareable while an unfinished expression window is set aside", async ({
+  page,
+}) => {
+  await ready(page, cassini);
+  const field = input(page, "Field");
+  const windowEnd = input(page, "Window x to");
+  await windowEnd.fill("a");
+  await expect(page.getByRole("alert")).toContainText(
+    "a is only allowed in curve expressions",
+  );
+  await field.selectOption("rectangle");
+  await expect(page.getByTestId("rectangle-boundary")).toBeVisible();
+  await settled(page);
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(page.getByText("Link copied", { exact: true })).toBeVisible();
+  const link = await page.evaluate(() => navigator.clipboard.readText());
+  const restored = await page.context().newPage();
+  await restored.goto(link);
+  await expect(restored.getByTestId("rectangle-boundary")).toBeVisible({
+    timeout: 2500,
+  });
+  await field.selectOption("expression");
+  await expect(windowEnd).toHaveValue("a");
+  await expect(page.getByRole("alert")).toContainText(
+    "a is only allowed in curve expressions",
+  );
 });

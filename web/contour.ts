@@ -12,10 +12,12 @@ export function contourNote(result: ContourResult) {
   const cut =
     result.disk || result.diskMix
       ? "ending on the disk's boundary or the window's edge"
-      : "cut off at the window's edge or beside cells left out";
+      : result.rectangle
+        ? "ending on the rectangle's boundary"
+        : "cut off at the window's edge or beside cells left out";
   const shape =
     contours.length === 0
-      ? result.diskMix
+      ? result.diskMix || result.rectangle
         ? "No one-dimensional contour is traced at this level."
         : "F does not cross the level anywhere in the window, so there is no curve here. A level F only touches, at an isolated point or along a fold, is not drawn."
       : contours.length === 1

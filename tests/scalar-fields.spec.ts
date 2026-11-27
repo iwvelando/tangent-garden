@@ -1993,3 +1993,22 @@ test("spatial engraving endpoints share scalar expressions and preserve source d
   ).not.toBeChecked();
   await expect(stage).toHaveAttribute("aria-busy", "false");
 });
+
+test("rectangle aspect accepts constants and rejects shape variables", async ({
+  page,
+}) => {
+  await ready(page, "Two modes in a rectangular window");
+  const aspect = field(page, "Aspect ratio W");
+  await aspect.fill("phi");
+  await expect
+    .poll(async () => (await definition(page)).curve.implicit.rectangle?.aspect)
+    .toBe(phi);
+  await aspect.fill("a");
+  await expect(page.getByRole("alert")).toContainText(
+    "a is only allowed in curve expressions",
+  );
+  await aspect.fill("pi/2");
+  await expect
+    .poll(async () => (await definition(page)).curve.implicit.rectangle?.aspect)
+    .toBe(Math.PI / 2);
+});

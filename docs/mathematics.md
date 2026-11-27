@@ -163,6 +163,20 @@ The authored windows are `[0.02,0.98]²`, an interior view rather than a complet
 
 Native tests read the actual preset expressions from the generated fixtures. They require every pure-mode interior branch, boundary zeros, central and diagonal reflection in returned paths, vertex residuals below `2 × 10⁻¹²`, and decreasing unrefined chord error at 96, 192 and 384 cells, away from low-gradient crossings. The chord error estimate is `|F|/|∇F|` at chord midpoints: each halving must reduce its maximum by at least 60%, with a final bound of `8 × 10⁻⁵` in square coordinates. Even and odd grids at 80, 81, 160 and 161 cells check both sides of the `(2,3)` reconnection, the critical crossing, and the finite gap without joining across it.
 
+### Rectangular nodal modes
+
+**Field → Rectangular nodal modes** uses the membrane `[0,W] × [0,1]` with a fixed, zero Dirichlet boundary. The width-to-height ratio `W` ranges from ½ through 2. Its two normalized displacement fields and their Laplacian eigenvalues are
+
+`φₘ,ₙ(x,y) = sin(mπx/W) sin(nπy)`
+
+`−Δφₘ,ₙ = λₘ,ₙ φₘ,ₙ`, with `λₘ,ₙ = π²((m/W)² + n²)`.
+
+The fixed pair is `(2,3)` and `(3,2)`. The drawn field is `u = cos(a) φ₂,₃ + sin(a) φ₃,₂`. At `W = 1` both eigenvalues are `13π²`, so this is the same field as the square lattice study, now drawn to the perimeter. At other widths the eigenvalues differ. Varying `a` is an artistic coefficient sweep. Varying `W` scales x and changes the eigenvalues while keeping the normalized pattern fixed for a given `a`. Both are geometric animations. For either pure mode the interior zero lines are `x = j W/m` and `y = k/n` for `1 ≤ j < m` and `1 ≤ k < n`. Together with the perimeter they give the analytic nodal set; a nonzero level is a level set.
+
+The ordinary nearly square grid covers the whole rectangle. At zero, the tracer divides out `sin(πx/W) sin(πy)`, a positive factor in the interior. With `X = 2 cos(πx/W)` and `Y = 2 cos(πy)`, the resulting polynomial is `cos(a) X (Y²−1) + sin(a) (X²−1) Y`. The polynomial's continuous edge values let interior nodal curves end on the boundary without tracing the perimeter a second time. The renderer adds the four exact edges. For nonzero levels and the reported normals, Go uses the original field and its analytic gradient. At a nodal crossing the cell's asymptotic decider chooses a finite-resolution connection; approaching the analytic crossing as the cells shrink does not certify the graph's topology.
+
+Each level uses one of at most two grids of the same dimensions. The grids, when both needed, share edge and contour budgets, with at most `2(cells+1)²` grid values and the ordinary grid, family, crossing and refinement limits. At the axis-aligned phases 0, ±π/2 and ±π, an inactive coefficient is exactly zero. The analytic field is exactly zero on the four edges.
+
 ### Disk membrane modes
 
 An implicit curve's field can be a Dirichlet eigenmode of the disk of radius `R` about the origin instead of an expression, under **Field → Disk membrane mode**:

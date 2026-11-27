@@ -58,7 +58,7 @@ export function planarSheetDefinition(
         construction,
       ];
     case "implicit": {
-      const mix = c.implicit.diskMix;
+      const { diskMix: mix, rectangle } = c.implicit;
       const mixValue = (key: "radius" | "first" | "second" | "position") =>
         mix && value(["curve", "implicit", "diskMix", key], mix[key]);
       return [
@@ -68,12 +68,17 @@ export function planarSheetDefinition(
               `Modes (3, 1) and (0, 2), R = ${mixValue("radius")}, A = ${mixValue("first")}, B = ${mixValue("second")}`,
               `u = c, c = ${value(["curve", "implicit", "level"], c.implicit.level)}, ${diskMixMotions[mix.motion].position} = ${mixValue("position")}`,
             ]
-          : [
-              c.implicit.disk
-                ? `F = disk mode (m, k) = (${c.implicit.disk.order}, ${c.implicit.disk.ring}), R = ${c.implicit.disk.radius}`
-                : `F(x, y) = ${c.implicit.f}`,
-              `F(x, y) = c; c = ${value(["curve", "implicit", "level"], c.implicit.level)}; a = ${value(["curve", "a"], c.a)}`,
-            ]),
+          : rectangle
+            ? [
+                "Rectangular nodal modes (2, 3) and (3, 2) · zero Dirichlet boundary",
+                `W = ${value(["curve", "implicit", "rectangle", "aspect"], rectangle.aspect)}, a = ${value(["curve", "a"], c.a)}, u = ${value(["curve", "implicit", "level"], c.implicit.level)}`,
+              ]
+            : [
+                c.implicit.disk
+                  ? `F = disk mode (m, k) = (${c.implicit.disk.order}, ${c.implicit.disk.ring}), R = ${c.implicit.disk.radius}`
+                  : `F(x, y) = ${c.implicit.f}`,
+                `F(x, y) = c; c = ${value(["curve", "implicit", "level"], c.implicit.level)}; a = ${value(["curve", "a"], c.a)}`,
+              ]),
         ...(c.implicit.family.enabled
           ? [
               `Other levels: ${c.implicit.family.from} to ${c.implicit.family.to}, ${c.implicit.family.count} levels`,

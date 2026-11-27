@@ -1328,7 +1328,7 @@ self.onmessage = async ({
         ? [
             implicit.level,
             implicit.cells,
-            ...Object.values(implicit.window),
+            ...(implicit.rectangle ? [] : Object.values(implicit.window)),
             ...(implicit.disk ? Object.values(implicit.disk) : []),
             ...(implicit.family.enabled
               ? [
@@ -1379,6 +1379,11 @@ self.onmessage = async ({
             `curve.implicit.disk.${field}`,
             "The disk mode's order m and ring k must be whole numbers.",
           );
+    if (implicit?.rectangle && !Number.isFinite(implicit.rectangle.aspect))
+      throw fieldError(
+        "curve.implicit.rectangle.aspect",
+        "Enter a finite aspect ratio.",
+      );
     if (implicit?.diskMix)
       for (const field of ["radius", "first", "second", "position"] as const)
         if (!Number.isFinite(implicit.diskMix[field]))

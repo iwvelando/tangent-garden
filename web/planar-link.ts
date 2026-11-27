@@ -1,3 +1,4 @@
+import { rectangleAspectRange } from "./rectangle-mode";
 import {
   maps,
   memberCount,
@@ -285,6 +286,9 @@ const config: SchemaOf<Config> = {
                   radius: { range: [...diskLimits.radius] },
                 },
               },
+            },
+            rectangle: {
+              optional: { fields: { aspect: { range: rectangleAspectRange } } },
             },
             diskMix: {
               optional: {
@@ -588,7 +592,12 @@ export function planarStudy(value: unknown): PlanarStudy {
     )
       throw new LinkError(key, `${key} is not a known field.`);
   const conformed = conform(raw.config, config, presets[0].config, "config");
-  const { disk, diskMix } = conformed.curve.implicit;
+  const { disk, diskMix, rectangle } = conformed.curve.implicit;
+  if (rectangle && (disk || diskMix))
+    throw new LinkError(
+      "config.curve.implicit.rectangle",
+      "Choose one membrane field.",
+    );
   if (disk && diskMix)
     throw new LinkError(
       "config.curve.implicit.diskMix",

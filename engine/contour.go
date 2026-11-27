@@ -40,6 +40,8 @@ type Implicit struct {
 	Disk *Disk `json:"disk,omitempty"`
 	// DiskMix replaces F with a two-mode superposition on the disk.
 	DiskMix *DiskMix `json:"diskMix,omitempty"`
+	// Rectangle uses two Dirichlet modes on a unit-height rectangle.
+	Rectangle *Rectangle `json:"rectangle,omitempty"`
 	// topology asks for the curve's level set classified (Request.Topology).
 	topology bool
 }
@@ -88,6 +90,8 @@ type ContourResult struct {
 	Disk *DiskResult `json:"disk,omitempty"`
 	// DiskMix reports the component eigenvalues and instantaneous weights.
 	DiskMix *DiskMixResult `json:"diskMix,omitempty"`
+	// Rectangle reports the geometry and both components of a rectangle field.
+	Rectangle *RectangleResult `json:"rectangle,omitempty"`
 }
 
 const (
@@ -147,8 +151,17 @@ func gridShape(w Window, cells int) (nx, ny int) {
 }
 
 func (v Implicit) validate() error {
-	if err := v.Window.validate(); err != nil {
-		return within("window", err)
+	if v.Rectangle == nil {
+		if err := v.Window.validate(); err != nil {
+			return within("window", err)
+		}
+	} else {
+		if v.Disk != nil || v.DiskMix != nil {
+			return fieldErr("rectangle", "choose one membrane field")
+		}
+		if err := v.Rectangle.validate(); err != nil {
+			return err
+		}
 	}
 	if v.Cells < minCells || v.Cells > maxCells {
 		return fieldErr("cells", "an implicit curve needs 4–1024 cells along the window's longer side")
@@ -213,6 +226,10 @@ type sheet struct {
 	lastRejected int
 	// The disk the contours are traced in, or nil for the window alone.
 	domain *diskDomain
+	// Rectangle fields share budgets and edge storage across both grids.
+	rectangle            *rectangleEvaluator
+	rectangleNodal       bool
+	otherRectangleValues []float64
 	// F with its exact gradient, defined inside the domain and NaN beyond
 	// it, when known; nil otherwise.
 	fg func(x, y float64) (float64, Vec)
@@ -227,7 +244,11 @@ type sheet struct {
 }
 
 func (s *sheet) node(i, j int) Vec {
-	return Vec{s.w.XMin + (s.w.XMax-s.w.XMin)*float64(i)/float64(s.nx), s.w.YMin + (s.w.YMax-s.w.YMin)*float64(j)/float64(s.ny)}
+	p := Vec{s.w.XMin + (s.w.XMax-s.w.XMin)*float64(i)/float64(s.nx), s.w.YMin + (s.w.YMax-s.w.YMin)*float64(j)/float64(s.ny)}
+	if s.rectangle != nil && i == s.nx {
+		p.X = s.w.XMax
+	}
+	return p
 }
 
 func (s *sheet) at(p Vec) float64 {
@@ -274,6 +295,15 @@ func (s *sheet) stencil(p Vec) Vec {
 }
 
 func newSheet(v Implicit, a float64) (*sheet, error) {
+	if v.Rectangle != nil {
+		w := Window{XMax: v.Rectangle.Aspect, YMax: 1}
+		s := gridSheet(w, v.Cells)
+		s.rectangle = v.Rectangle.evaluator(a)
+		s.usesA, s.tolerance = true, drawingTolerance*math.Max(w.XMax, w.YMax)
+		s.flatness, s.refresh = drawingBend/8, 5
+		s.setRectangleField()
+		return s, nil
+	}
 	tolerance := drawingTolerance * math.Max(v.Window.XMax-v.Window.XMin, v.Window.YMax-v.Window.YMin)
 	var dom *diskDomain
 	var usesA bool
@@ -315,10 +345,8 @@ func sample(f func(x, y float64) float64, w Window, cells int) *sheet {
 // cell diagonals wide, set here, and grid points beyond it are outside,
 // not undefined.
 func sampleIn(f func(x, y float64) float64, w Window, cells int, dom *diskDomain) *sheet {
-	width, height := w.XMax-w.XMin, w.YMax-w.YMin
-	s := &sheet{f: f, w: w, rejected: map[int]Vec{}}
-	s.nx, s.ny = gridShape(w, cells)
-	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
+	s := gridSheet(w, cells)
+	s.f = f
 	if dom != nil {
 		dom.band = 2 * math.Hypot(s.hx, s.hy)
 		if dom.mixed != nil {
@@ -327,8 +355,21 @@ func sampleIn(f func(x, y float64) float64, w Window, cells int, dom *diskDomain
 		}
 		s.domain = dom
 	}
+	s.sampleGrid()
+	return s
+}
+
+func gridSheet(w Window, cells int) *sheet {
+	width, height := w.XMax-w.XMin, w.YMax-w.YMin
+	s := &sheet{w: w, rejected: map[int]Vec{}}
+	s.nx, s.ny = gridShape(w, cells)
+	s.hx, s.hy = width/float64(s.nx), height/float64(s.ny)
 	s.tolerance, s.flatness, s.refresh = contourTolerance*math.Min(s.hx, s.hy), math.Inf(1), 1
 	s.scale = math.Max(width, height) + math.Max(math.Max(math.Abs(w.XMin), math.Abs(w.XMax)), math.Max(math.Abs(w.YMin), math.Abs(w.YMax)))
+	return s
+}
+
+func (s *sheet) sampleGrid() {
 	s.values = make([]float64, (s.nx+1)*(s.ny+1))
 	for j := 0; j <= s.ny; j++ {
 		for i := 0; i <= s.nx; i++ {
@@ -345,7 +386,6 @@ func sampleIn(f func(x, y float64) float64, w Window, cells int, dom *diskDomain
 			s.values[j*(s.nx+1)+i] = g
 		}
 	}
-	return s
 }
 
 // ContourBudget carries the budgets of grid edges bisected and contour
@@ -742,7 +782,7 @@ func (s *sheet) project(x Vec, c float64) (Vec, bool) {
 			return x, false
 		}
 		step := d.Mul(g / n)
-		if x = x.Sub(step); !x.Valid() {
+		if x = x.Sub(step); !x.Valid() || s.rectangle != nil && (x.X < 0 || x.X > s.w.XMax || x.Y < 0 || x.Y > 1) {
 			return x, false
 		}
 		if step.Norm() <= 1e-15*s.scale {
@@ -894,7 +934,8 @@ func (v Implicit) contours(a float64, lines int) (*ContourResult, []string, erro
 // traceOn traces the curve and its family on the sheet s of v at a.
 func (v Implicit) traceOn(s *sheet, a float64, lines int) (*ContourResult, []string, error) {
 	var warnings []string
-	out := &ContourResult{Window: v.Window, Columns: s.nx, Rows: s.ny, Family: []LevelSet{}, Normals: []Normal{}}
+	out := &ContourResult{Window: s.w, Columns: s.nx, Rows: s.ny, Family: []LevelSet{}, Normals: []Normal{}}
+	s.selectRectangleLevel(v.Level)
 	var ok bool
 	if out.Curve, ok = s.level(v.Level); !ok {
 		warnings = append(warnings, fmt.Sprintf("The curve was not traced: it would cross more than %d grid edges. Use fewer cells.", maxContourCrossings))
@@ -904,7 +945,9 @@ func (v Implicit) traceOn(s *sheet, a float64, lines int) (*ContourResult, []str
 		for k := range f.Count {
 			// This form returns both endpoints exactly.
 			u := float64(k) / float64(f.Count-1)
-			set, ok := s.level(f.From*(1-u) + f.To*u)
+			level := f.From*(1-u) + f.To*u
+			s.selectRectangleLevel(level)
+			set, ok := s.level(level)
 			if !ok {
 				skipped := "Every family level was skipped"
 				if k > 0 {
@@ -916,8 +959,10 @@ func (v Implicit) traceOn(s *sheet, a float64, lines int) (*ContourResult, []str
 			out.Family = append(out.Family, set)
 		}
 	}
+	s.selectRectangleLevel(v.Level)
 	s.refine(&out.Curve)
 	for k := range out.Family {
+		s.selectRectangleLevel(out.Family[k].Level)
 		s.refine(&out.Family[k])
 	}
 	if s.domain != nil {
@@ -934,10 +979,19 @@ func (v Implicit) traceOn(s *sheet, a float64, lines int) (*ContourResult, []str
 	if s.truncated {
 		warnings = append(warnings, fmt.Sprintf("Contours stopped being refined at %d points; they are drawn with straighter chords.", maxContourPoints))
 	}
+	s.selectRectangleLevel(v.Level)
 	if v.StableNormals {
 		out.Normals = s.anchoredNormals(out.Curve, lines)
 	} else {
 		out.Normals = s.normals(out.Curve, lines)
+	}
+	if s.rectangle != nil {
+		out.Rectangle = &s.rectangle.result
+		if v.Level == 0 {
+			for i, n := range out.Normals {
+				_, out.Normals[i].Gradient = s.rectangle.at(n.Point.X, n.Point.Y, false)
+			}
+		}
 	}
 	out.Discontinuities = s.discontinuities()
 	if s.domain != nil {

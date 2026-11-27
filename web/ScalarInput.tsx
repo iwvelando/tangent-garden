@@ -19,6 +19,11 @@ export type ScalarState = {
   error?: string;
   control?: string;
 };
+export type ScalarDraft = {
+  text: string;
+  value?: number;
+  error?: string;
+};
 export const ScalarStatus = createContext<{
   client: { current: EngineClient | null };
   track: (job: Promise<void>) => void;
@@ -38,38 +43,49 @@ export function ScalarInput({
   value,
   onChange,
   id,
+  retained,
   ...rest
 }: {
   name: string;
   value: number;
   onChange: (value: number) => void;
   id?: string;
+  retained?: Map<string, ScalarDraft>;
   "aria-describedby"?: string;
   disabled?: boolean;
 }) {
   const status = useContext(ScalarStatus)!;
   const key = useId();
   // The entered text and the value it resolved to (undefined while pending).
-  const [draft, setDraft] = useState<{ text: string; value?: number } | null>(
-    null,
+  const [draft, setDraft] = useState<ScalarDraft | null>(
+    () => retained?.get(name) ?? null,
   );
+  const saveDraft = (entry: ScalarDraft | null) => {
+    if (entry) retained?.set(name, entry);
+    else retained?.delete(name);
+    setDraft(entry);
+  };
   const latest = useRef(0);
   const report = (state: ScalarState | null) => status.report(key, state);
-  useEffect(() => () => report(null), []);
+  useEffect(() => {
+    if (draft?.error && Object.is(draft.value, value))
+      report({ name, pending: false, error: draft.error, control: id });
+    return () => report(null);
+  }, []);
   // A different value arriving from elsewhere supersedes the entry.
   const superseded =
     draft?.value !== undefined && !Object.is(draft.value, value);
   useEffect(() => {
     if (!superseded) return;
     latest.current++;
-    setDraft(null);
+    saveDraft(null);
     report(null);
   }, [superseded]);
   const change = (e: ChangeEvent<HTMLInputElement>) => {
     const text = e.target.value;
     const request = ++latest.current;
     if (!text.trim()) {
-      setDraft({ text, value: NaN });
+      saveDraft({ text, value: NaN });
       report(null);
       onChange(NaN);
       return;
@@ -88,13 +104,13 @@ export function ScalarInput({
       .current!.scalars([text])
       .then(([resolved]) => {
         if (!current()) return;
-        setDraft({ text, value: resolved });
+        saveDraft({ text, value: resolved });
         report(null);
         onChange(resolved);
       })
       .catch((error: Error) => {
         if (!current()) return;
-        setDraft({ text, value: NaN });
+        saveDraft({ text, value: NaN, error: error.message });
         report({ name, pending: false, error: error.message, control: id });
         onChange(NaN);
       });

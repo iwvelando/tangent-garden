@@ -174,6 +174,9 @@ func Compute(q Request) (Result, error) {
 		// A level set has no parameter to build a construction on: its
 		// contours are the drawing, with the gradient as construction.
 		implicit := q.Curve.Implicit
+		if implicit.Rectangle != nil && !finite(q.Curve.A) {
+			return out, fieldErr("curve.a", "the shape parameter a must be finite")
+		}
 		implicit.topology = q.Topology
 		res, warnings, err := implicit.contours(q.Curve.A, q.Lines)
 		if err != nil {
