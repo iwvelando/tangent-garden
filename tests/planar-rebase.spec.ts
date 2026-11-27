@@ -104,6 +104,9 @@ const lengths = new Set([
 const unchanged = new Set([
   "order",
   "ring",
+  "m",
+  "n",
+  "aspect",
   "zero",
   "peak",
   "coefficient",
@@ -173,7 +176,7 @@ function mapResult(value: any, m: Similarity, key = "", body = false): any {
   if (typeof value === "boolean") return value;
   if (lengths.has(key)) return value * m.s;
   if (key === "curvature") return value / m.s;
-  // A disk mode's eigenvalue, (j/R)².
+  // Membrane eigenvalues scale with the inverse square of length.
   if (key === "eigenvalue") return value / (m.s * m.s);
   if (unchanged.has(key)) return value;
   throw new Error(`Place the result's ${key} in planar-rebase.spec.ts`);

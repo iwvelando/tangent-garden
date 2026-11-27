@@ -423,7 +423,7 @@ export function Plot({
   };
   const contours = result.contours;
   const diskBoundary = contours?.disk ?? contours?.diskMix;
-  const rectangleBoundary = contours?.rectangle;
+  const rectangleBoundary = contours?.rectangle ? contours.window : undefined;
   const attractor = result.attractor;
   const { kind, optical, extended, rings, dashed } = drawnKind(result, config);
   // The circle of inversion, the curve inverted when it is derived, and where
@@ -1391,10 +1391,10 @@ export function Plot({
           {layers.base && rectangleBoundary && (
             <rect
               data-testid="rectangle-boundary"
-              x={xy({ x: 0, y: 1 }).x}
-              y={xy({ x: 0, y: 1 }).y}
-              width={rectangleBoundary.aspect * scale}
-              height={scale}
+              x={xy({ x: rectangleBoundary.xMin, y: rectangleBoundary.yMax }).x}
+              y={xy({ x: rectangleBoundary.xMin, y: rectangleBoundary.yMax }).y}
+              width={(rectangleBoundary.xMax - rectangleBoundary.xMin) * scale}
+              height={(rectangleBoundary.yMax - rectangleBoundary.yMin) * scale}
               fill="none"
               stroke={palette.line}
               {...stroke(1.6)}
