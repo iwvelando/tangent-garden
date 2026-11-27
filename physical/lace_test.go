@@ -221,3 +221,23 @@ func TestLaceNodeCeiling(t *testing.T) {
 		t.Fatalf("200 mm, automatic step: %v", err)
 	}
 }
+
+// A plaque that fits the bed is validated as a mesh however long the
+// triangles across its plain regions (the 256 mm crop of both layers was
+// unresolved, its pair tests never begun).
+func TestLargePlaqueResolvesItsMesh(t *testing.T) {
+	if testing.Short() {
+		t.Skip("a 256 mm plaque")
+	}
+	lace := starLace(5, 1000)
+	lace.StarPoint = 0.3
+	q := solidRequest(lace, 256, 2, Raised, RimCrop)
+	q.Clip, q.Lines, q.Design.Simplify = 0.8, LinesBoth, true
+	s, err := BuildLaceSolid(q, DefaultLimits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Mesh.Unresolved || s.Mesh.PairTests == 0 || !s.Mesh.Valid() {
+		t.Fatalf("mesh: unresolved %v, %d pair tests, valid %v", s.Mesh.Unresolved, s.Mesh.PairTests, s.Mesh.Valid())
+	}
+}

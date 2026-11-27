@@ -559,10 +559,20 @@ func intersections(m *Mesh, lim Limits) (crossing, touching, tests int, unresolv
 		t int32
 	}
 	var entries []entry
+	// Triangles whose boxes span more than 4,096 cells, as across a
+	// plaque's plain regions, stay out of the buckets: each is tested
+	// below against every triangle its box meets.
+	var long []int32
+	isLong := make([]bool, nt)
 	for t := range nt {
 		a, b := key(lo[t]), key(hi[t])
 		cells := (b[0] - a[0] + 1) * (b[1] - a[1] + 1) * (b[2] - a[2] + 1)
-		if cells > 4096 || len(entries) > 8*lim.Triangles {
+		if cells > 4096 {
+			long = append(long, int32(t))
+			isLong[t] = true
+			continue
+		}
+		if len(entries) > 8*lim.Triangles {
 			return crossing, touching, tests, true
 		}
 		for x := a[0]; x <= b[0]; x++ {
@@ -618,6 +628,39 @@ func intersections(m *Mesh, lim Limits) (crossing, touching, tests int, unresolv
 			}
 		}
 		i = j
+	}
+	// Each long triangle against every triangle its box meets, a pair of
+	// long ones once. Box checks are bounded with the pair tests.
+	scanned := 0
+	for _, s := range long {
+		for t := range nt {
+			if int32(t) == s || (isLong[t] && int32(t) < s) {
+				continue
+			}
+			scanned++
+			if scanned > 4*lim.PairTests {
+				return crossing, touching, tests, true
+			}
+			overlap := true
+			for k := range 3 {
+				if lo[s][k] > hi[t][k] || lo[t][k] > hi[s][k] {
+					overlap = false
+				}
+			}
+			if !overlap {
+				continue
+			}
+			tests++
+			if tests > lim.PairTests {
+				return crossing, touching, tests, true
+			}
+			switch pair(m, int(s), t) {
+			case 2:
+				crossing++
+			case 1:
+				touching++
+			}
+		}
 	}
 	return
 }

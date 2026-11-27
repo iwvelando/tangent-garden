@@ -125,3 +125,50 @@ func TestCheckRefusesPastPairCeiling(t *testing.T) {
 		t.Errorf("the self-intersection check ran past its ceiling: %d tests", r.PairTests)
 	}
 }
+
+// slab appends an axis-aligned box of sides sx, sy, sz with outward
+// triangles.
+func slab(m *Mesh, x, y, z, sx, sy, sz float64) {
+	base := int32(len(m.V) / 3)
+	for k := range 8 {
+		m.V = append(m.V, x+sx*float64(k&1), y+sy*float64(k>>1&1), z+sz*float64(k>>2&1))
+	}
+	quads := [][4]int32{{0, 2, 3, 1}, {4, 5, 7, 6}, {0, 1, 5, 4}, {2, 6, 7, 3}, {0, 4, 6, 2}, {1, 3, 7, 5}}
+	for _, q := range quads {
+		m.T = append(m.T, base+q[0], base+q[1], base+q[2], base+q[0], base+q[2], base+q[3])
+	}
+}
+
+// A few triangles far longer than the rest, as a large plaque's plain
+// regions have, are still tested against everything their boxes meet:
+// the check finishes, finds nothing where nothing crosses, and finds the
+// crossing where a long triangle cuts a small one.
+func TestCheckTestsLongTriangles(t *testing.T) {
+	small := func() *Mesh {
+		var m Mesh
+		for i := range 20 {
+			for j := range 20 {
+				cube(&m, 3*float64(i), 3*float64(j), 0, 1)
+			}
+		}
+		return &m
+	}
+	apart := small()
+	slab(apart, -10, -10, 10, 200, 200, 0.5)
+	r := Check(apart, DefaultLimits)
+	if r.Unresolved || r.SelfIntersections != 0 || r.Touching != 0 || r.Components != 401 || r.PairTests == 0 {
+		t.Errorf("apart: %+v", r)
+	}
+	crossing := small()
+	slab(crossing, -10, -10, 0.25, 200, 200, 0.5)
+	r = Check(crossing, DefaultLimits)
+	if r.Unresolved || r.SelfIntersections == 0 {
+		t.Errorf("crossing: unresolved %v, crossings %d", r.Unresolved, r.SelfIntersections)
+	}
+	// The pair-test ceiling still bounds the long triangles' pass.
+	lim := DefaultLimits
+	lim.PairTests = 10
+	if r := Check(crossing, lim); !r.Unresolved {
+		t.Error("past the pair ceiling: resolved")
+	}
+}

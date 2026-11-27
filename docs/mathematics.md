@@ -967,7 +967,7 @@ Required checks decide validation. Notes inform but never decide.
   - outward orientation: each directed edge's reverse appears once, and each component encloses positive volume;
   - one body, with no component nested in another;
   - no degenerate triangles;
-  - no self-intersection: no pair of triangles crosses or touches where it shares no vertex, tested in a bucket grid with exact coplanar and collinear handling.
+  - no self-intersection: no pair of triangles crosses or touches where it shares no vertex, tested in a bucket grid of twice the median triangle's size, each triangle whose box spans more than 4,096 cells tested against every triangle its box meets, with exact coplanar and collinear handling.
 
   A check stopped by its pair-test ceiling is unresolved.
 
