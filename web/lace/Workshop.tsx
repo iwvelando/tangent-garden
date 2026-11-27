@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EngineClient, EngineError } from "../engine-client";
 import { saveFile } from "../export-image";
 import { Field, FieldErrorContext } from "../Field";
+import { LegendEntries } from "../Legend";
 import { count, mebibytes, readout } from "../number-format";
 import { plotPalette } from "../palette";
 import { useTheme } from "../useTheme";
@@ -266,7 +267,6 @@ export function PhysicalWorkshop({
             )}
           </div>
           {s && <Legend solid={s} dark={theme.dark} scheme={theme.scheme} />}
-          {s && <Report solid={s} prepared={prepared!} />}
         </main>
         <aside>
           <section aria-label="Make physical (research)">
@@ -446,16 +446,14 @@ export function PhysicalWorkshop({
             </p>
             {error && (
               <div className="study-error" role="alert">
-                <p>
-                  {error.field ? `${error.field}: ` : ""}
-                  {error.message}
-                </p>
+                <p>{error.message}</p>
               </div>
             )}
             <button type="button" onClick={onClose}>
               Back to the lace
             </button>
           </section>
+          {s && <Report solid={s} prepared={prepared!} />}
         </aside>
       </div>
     </FieldErrorContext.Provider>
@@ -632,30 +630,60 @@ function Legend({
   );
   return (
     <div className="legend garden-legend">
-      <span>
-        {swatch(p.base)}
-        {raised
-          ? `Raised lines, top at ${readout(solid.levels.Plan)} mm`
-          : `Groove floors at ${readout(solid.levels.Plan)} mm`}
-      </span>{" "}
-      <span>
-        {swatch(p.line, 0.25)}
-        {raised
-          ? `Floor, top at ${readout(solid.levels.Rest)} mm`
-          : `Slab top at ${readout(solid.levels.Rest)} mm`}
-      </span>{" "}
-      <span>
-        {swatch(p.incident, 0.6)}
-        Source tiles left out
-      </span>{" "}
-      <span>
-        {swatch(p.derived)}
-        Failing cells, fused pieces
-      </span>{" "}
-      <span>
-        {swatch(p.probe)}
-        Narrow gaps
-      </span>
+      <LegendEntries
+        entries={[
+          {
+            key: "plan",
+            shown: true,
+            content: (
+              <>
+                {swatch(p.base)}
+                {raised ? "Raised lines" : "Grooves"}
+              </>
+            ),
+          },
+          {
+            key: "rest",
+            shown: true,
+            content: (
+              <>
+                {swatch(p.line, 0.25)}
+                {raised ? "Floor" : "Slab"}
+              </>
+            ),
+          },
+          {
+            key: "left-out",
+            shown: true,
+            content: (
+              <>
+                {swatch(p.incident, 0.6)}
+                Source tiles left out
+              </>
+            ),
+          },
+          {
+            key: "failing",
+            shown: !!solid.problems?.length || !!solid.fusedAt?.length,
+            content: (
+              <>
+                {swatch(p.derived)}
+                Failing cells, fused pieces
+              </>
+            ),
+          },
+          {
+            key: "narrow",
+            shown: !!solid.narrow?.length,
+            content: (
+              <>
+                {swatch(p.probe)}
+                Narrow gaps
+              </>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -719,8 +747,11 @@ function Report({
         {readout(s.mesh.max[1] - s.mesh.min[1], 5)} ×{" "}
         {readout(s.mesh.max[2] - s.mesh.min[2], 5)} mm; volume{" "}
         {readout(s.mesh.volume, 5)} mm³; {count(s.mesh.components)}{" "}
-        {s.mesh.components === 1 ? "body" : "bodies"}. Contour within{" "}
-        {readout(s.stats.deviation, 3)} mm of the exact boundary;{" "}
+        {s.mesh.components === 1 ? "body" : "bodies"}.{" "}
+        {s.levels.Plan > s.levels.Rest
+          ? `Raised lines' top at ${readout(s.levels.Plan)} mm, floor's at ${readout(s.levels.Rest)} mm.`
+          : `Slab top at ${readout(s.levels.Rest)} mm, groove floors at ${readout(s.levels.Plan)} mm.`}{" "}
+        Contour within {readout(s.stats.deviation, 3)} mm of the exact boundary;{" "}
         {count(s.stats.specks)} specks under a grid step filled.
       </p>
       <p className="note">
@@ -739,7 +770,11 @@ function Report({
         ms). Storage: mesh {mebibytes(s.stats.meshBytes)}, package{" "}
         {mebibytes(s.stats.packageBytes)}, transferred{" "}
         {mebibytes(prepared.bytes ?? 0)}, grid arrays about{" "}
-        {mebibytes(s.stats.workingBytes)}.
+        {mebibytes(s.stats.workingBytes)}
+        {s.stats.memory
+          ? `; the worker's Go memory reached ${mebibytes(s.stats.memory)}`
+          : ""}
+        .
       </p>
     </section>
   );

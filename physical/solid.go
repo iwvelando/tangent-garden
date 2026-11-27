@@ -2,6 +2,7 @@ package physical
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/cmplx"
 )
@@ -95,7 +96,7 @@ func SolidifyWithin(c *Contours, b Base, lv Levels, lim Limits) (*Mesh, error) {
 	tri := func(a, b, c int32) error {
 		m.T = append(m.T, a, b, c)
 		if len(m.T)/3 > lim.Triangles {
-			return limitError{"number of output triangles"}
+			return fmt.Errorf("the solid would pass its ceiling of %d triangles: choose a smaller plaque, wider lines, a crop or a coarser grid step: %w", lim.Triangles, ErrLimit)
 		}
 		return nil
 	}

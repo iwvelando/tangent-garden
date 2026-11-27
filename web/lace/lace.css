@@ -37,13 +37,13 @@
 .garden-layout[hidden] {
   display: none;
 }
+/* Square, as wide as fits both the column and the height left below the
+   header and heading, as the lace's own page is. */
 .lace-workshop-canvas {
   display: block;
-  width: 100%;
+  width: min(100%, calc(100dvh - 340px));
   aspect-ratio: 1;
-}
-.lace-workshop-view {
-  aspect-ratio: auto;
+  margin-inline: auto;
 }
 .lace-workshop aside section {
   display: grid;
@@ -71,4 +71,11 @@
 }
 .lace-physical-entry {
   margin-top: 0.75rem;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  /* The drawing column is one screen tall there (garden.css): fill the
+     view's box. */
+  .lace-workshop-canvas {
+    width: min(100cqw, 100cqh);
+  }
 }

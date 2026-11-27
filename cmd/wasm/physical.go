@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"runtime"
+	"runtime/debug"
 	"syscall/js"
 	"unsafe"
 
@@ -27,6 +28,10 @@ func registerPhysical() {
 		if err := json.Unmarshal([]byte(args[0].String()), &q); err != nil {
 			return refusal(err)
 		}
+		// The build's working memory budget is 128 MiB (#543): a soft limit
+		// makes the collector run before the heap doubles, which
+		// WebAssembly memory, never returned, would otherwise keep.
+		debug.SetMemoryLimit(physical.MemoryBudget)
 		s, err := physical.BuildLaceSolid(q, physical.DefaultLimits)
 		if err != nil {
 			var fe *physical.FieldError

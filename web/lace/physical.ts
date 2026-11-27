@@ -129,6 +129,9 @@ export type LaceSolid = {
     deviation: number;
     specks: number;
     chord: number;
+    // The worker's Go memory after the build, its peak (WebAssembly
+    // memory only grows).
+    memory?: number;
   };
   scale: number;
   clip: number;
