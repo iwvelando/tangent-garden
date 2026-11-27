@@ -198,3 +198,28 @@ func TestStudyErrorsNameNoField(t *testing.T) {
 		}
 	}
 }
+
+func TestRectangleModeValidation(t *testing.T) {
+	for _, x := range []float64{.49, 2.01, math.NaN(), math.Inf(1)} {
+		q := rectangleRequest(t, 1, 0, 0, 50)
+		q.Curve.Implicit.Rectangle.Aspect = x
+		_, err := Compute(q)
+		var field *FieldError
+		if !errors.As(err, &field) || field.Field != "curve.implicit.rectangle.aspect" {
+			t.Fatalf("width %g: want aspect field error, got %v", x, err)
+		}
+	}
+	q := rectangleRequest(t, 1, 0, 0, 50)
+	q.Curve.A = math.NaN()
+	_, err := Compute(q)
+	var field *FieldError
+	if !errors.As(err, &field) || field.Field != "curve.a" {
+		t.Fatalf("want shape parameter field error, got %v", err)
+	}
+	q.Curve.A = 0
+	q.Curve.Implicit.Disk = &Disk{Order: 3, Ring: 1, Radius: 1}
+	_, err = Compute(q)
+	if !errors.As(err, &field) || field.Field != "curve.implicit.rectangle" {
+		t.Fatalf("want exclusive field error, got %v", err)
+	}
+}

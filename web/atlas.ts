@@ -92,6 +92,8 @@ export function atlasFacts(
       frame.config.curve.format === "implicit" &&
       frame.config.curve.implicit.f === config.curve.implicit.f &&
       !config.curve.implicit.diskMix &&
+      !config.curve.implicit.rectangle &&
+      !frame.config.curve.implicit.rectangle &&
       JSON.stringify(frame.config.curve.implicit.disk) ===
         JSON.stringify(config.curve.implicit.disk),
   };

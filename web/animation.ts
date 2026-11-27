@@ -93,6 +93,7 @@ type FixedTarget =
   | "levelsTo"
   | "levelsCount"
   | "contourCells"
+  | "rectangleAspect"
   | "diskMixBlend"
   | "diskMixTime"
   | "mapA"
@@ -203,6 +204,7 @@ const targetLabels: Record<FixedTarget, string> = {
   levelsTo: "Levels to",
   levelsCount: "Level count",
   contourCells: "Grid cells",
+  rectangleAspect: "Aspect ratio W",
   diskMixBlend: "Blend fraction",
   diskMixTime: "Membrane time",
   mapA: "Coefficient a",
@@ -301,13 +303,15 @@ export function availableTargets(config: Config): Target[] {
   // A level set has no parameter, so no domain, samples, or construction:
   // only F's a and the number of normals carry over.
   if (config.curve.format === "implicit") {
-    const mix = config.curve.implicit.diskMix;
+    const { diskMix: mix, rectangle } = config.curve.implicit;
     return [
       ...(mix
         ? ([mix.motion === "sweep" ? "diskMixBlend" : "diskMixTime"] as const)
         : []),
       "contourLevel",
-      ...(Object.keys(windowTargets) as Target[]),
+      ...(rectangle
+        ? (["rectangleAspect"] as const)
+        : (Object.keys(windowTargets) as Target[])),
       ...(config.curve.implicit.family.enabled
         ? (Object.keys(levelsTargets) as Target[])
         : []),
@@ -500,6 +504,8 @@ export function targetValue(
       return config.curve.field.escape;
     case "contourLevel":
       return config.curve.implicit.level;
+    case "rectangleAspect":
+      return config.curve.implicit.rectangle?.aspect ?? 0;
     case "diskMixBlend":
     case "diskMixTime":
       return config.curve.implicit.diskMix?.position ?? 0;
@@ -668,6 +674,10 @@ export function applyTracks(
         break;
       case "contourLevel":
         config.curve.implicit.level = value;
+        break;
+      case "rectangleAspect":
+        if (config.curve.implicit.rectangle)
+          config.curve.implicit.rectangle.aspect = value;
         break;
       case "diskMixBlend":
       case "diskMixTime":

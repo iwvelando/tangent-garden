@@ -4252,3 +4252,35 @@ for (const label of ["A knot remembers", "A surface remembers its bending"])
       .getByRole("button", { name: /^(Stop|Back to study)$/, exact: true })
       .click();
   });
+
+test("a rectangle aspect edit, field switch and blur stay reachable in WebKit", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 760 });
+  await page.goto("/");
+  await choosePreset(page, { label: "Two modes in a rectangular window" });
+  const aspect = page.getByLabel("Aspect ratio W", { exact: true });
+  const field = page.getByLabel("Field", { exact: true });
+  const border = page.getByTestId("rectangle-boundary");
+  await aspect.click();
+  await expect(aspect).toBeFocused();
+  await aspect.fill("2/3");
+  await aspect.blur();
+  await expect(aspect).not.toBeFocused();
+  await expect
+    .poll(() =>
+      border.evaluate(
+        (e) =>
+          Number(e.getAttribute("width")) / Number(e.getAttribute("height")),
+      ),
+    )
+    .toBeCloseTo(2 / 3, 12);
+  await field.selectOption("expression");
+  await expect(border).toHaveCount(0);
+  await field.selectOption("rectangle");
+  await expect(aspect).toHaveValue("2/3");
+  await expect(border).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
+});

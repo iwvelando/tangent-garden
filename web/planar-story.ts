@@ -239,7 +239,7 @@ export function planarStoryContext(
   const story = id && planarStories[id];
   if (!story || config.curve.format !== "implicit") return null;
   const q = config.curve.implicit;
-  if (q.f !== story.f || q.disk || q.diskMix)
+  if (q.f !== story.f || q.disk || q.diskMix || q.rectangle)
     return {
       story,
       eligible: false,

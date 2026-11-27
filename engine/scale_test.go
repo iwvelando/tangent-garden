@@ -144,6 +144,10 @@ func (m similarity) copyOf(q Request) (Request, bool) {
 		}
 		c.Field.Escape *= m.s
 	case "implicit":
+		// A rectangular membrane has a fixed origin and unit height.
+		if c.Implicit.Rectangle != nil {
+			return q, false
+		}
 		// A disk field is centered at the origin. Scaling updates its
 		// radius within the admitted range.
 		if d := c.Implicit.Disk; d != nil {

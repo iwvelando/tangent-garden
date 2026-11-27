@@ -423,6 +423,7 @@ export function Plot({
   };
   const contours = result.contours;
   const diskBoundary = contours?.disk ?? contours?.diskMix;
+  const rectangleBoundary = contours?.rectangle;
   const attractor = result.attractor;
   const { kind, optical, extended, rings, dashed } = drawnKind(result, config);
   // The circle of inversion, the curve inverted when it is derived, and where
@@ -1162,18 +1163,20 @@ export function Plot({
               aria-label="Window and normals"
             >
               {/* The contours are sought only inside the window. */}
-              <rect
-                data-testid="contour-window"
-                x={xy({ x: contours.window.xMin, y: contours.window.yMax }).x}
-                y={xy({ x: contours.window.xMin, y: contours.window.yMax }).y}
-                width={(contours.window.xMax - contours.window.xMin) * scale}
-                height={(contours.window.yMax - contours.window.yMin) * scale}
-                fill="none"
-                stroke={palette.line}
-                {...stroke(1)}
-                strokeDasharray="4 5"
-                opacity=".5"
-              />
+              {!rectangleBoundary && (
+                <rect
+                  data-testid="contour-window"
+                  x={xy({ x: contours.window.xMin, y: contours.window.yMax }).x}
+                  y={xy({ x: contours.window.xMin, y: contours.window.yMax }).y}
+                  width={(contours.window.xMax - contours.window.xMin) * scale}
+                  height={(contours.window.yMax - contours.window.yMin) * scale}
+                  fill="none"
+                  stroke={palette.line}
+                  {...stroke(1)}
+                  strokeDasharray="4 5"
+                  opacity=".5"
+                />
+              )}
               {/* Where F changes sign without reaching the level: a pole or a
               jump, not a curve. */}
               {contours.discontinuities.map((p, k) => {
@@ -1380,6 +1383,18 @@ export function Plot({
               cx={xy({ x: 0, y: 0 }).x}
               cy={xy({ x: 0, y: 0 }).y}
               r={diskBoundary.radius * scale}
+              fill="none"
+              stroke={palette.line}
+              {...stroke(1.6)}
+            />
+          )}
+          {layers.base && rectangleBoundary && (
+            <rect
+              data-testid="rectangle-boundary"
+              x={xy({ x: 0, y: 1 }).x}
+              y={xy({ x: 0, y: 1 }).y}
+              width={rectangleBoundary.aspect * scale}
+              height={scale}
               fill="none"
               stroke={palette.line}
               {...stroke(1.6)}

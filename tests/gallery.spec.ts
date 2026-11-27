@@ -229,7 +229,7 @@ for (const [width, height] of [
   });
 
 for (const [path, count] of [
-  ["/", 86],
+  ["/", 88],
   ["/?study=3d", 166],
   ["/?study=4d", 39],
 ] as const)

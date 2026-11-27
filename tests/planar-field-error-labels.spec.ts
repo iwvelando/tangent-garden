@@ -7,6 +7,7 @@ import {
 } from "../web/planar-link";
 import type { Config } from "../web/types";
 import { studyHref, writeStudyLink } from "../web/study-link";
+import { choosePreset } from "./helpers";
 
 // Every field the engine names in a validation error has a control that
 // shows the error: each study is opened from a link, with one field out of
@@ -473,3 +474,15 @@ for (let g = 0; g < groups; g++)
       ).toHaveAttribute("aria-invalid", "true");
     }
   });
+
+// The link schema rejects an out-of-range aspect before the worker sees it.
+// Enter the value in the editor to exercise Go's field error and its label.
+test("rectangle aspect errors stand under Aspect ratio W", async ({ page }) => {
+  await page.goto("/");
+  await choosePreset(page, { label: "Two modes in a rectangular window" });
+  const aspect = page.getByLabel("Aspect ratio W", { exact: true });
+  await aspect.fill("2 + 1/10");
+  const field = page.locator(".field").filter({ has: aspect });
+  await expect(field.getByRole("alert")).toContainText("from 0.5 to 2");
+  await expect(aspect).toHaveAttribute("aria-invalid", "true");
+});

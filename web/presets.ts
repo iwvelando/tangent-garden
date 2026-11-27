@@ -170,6 +170,29 @@ const diskSuperposition = (motion: DiskMix["motion"]): Config => {
   return config;
 };
 
+function rectangularNodalStudy(
+  aspect: number,
+  a: number,
+  count: number,
+): Config {
+  return {
+    ...base,
+    curve: {
+      ...base.curve,
+      format: "implicit",
+      a,
+      implicit: {
+        ...base.curve.implicit,
+        level: 0,
+        family: { enabled: true, from: -0.24, to: 0.24, count },
+        cells: 144,
+        rectangle: { aspect },
+      },
+    },
+    lines: 24,
+  };
+}
+
 // A preset may bring its own animation setup, such as a seamless loop;
 // others leave the setup as it was and play once, steadily.
 export const presets: {
@@ -2232,6 +2255,37 @@ export const presets: {
       camera: "hold",
       duration: 16,
       tracks: [{ target: "diskMixTime", from: "0", to: "4" }],
+      repeat: "once",
+      pace: "steady",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "Two modes in a rectangular window",
+    note: "Two standing-wave patterns trade their lines in a fixed rectangle",
+    config: rectangularNodalStudy(1.6, Math.PI / 8, 6),
+    layers: { lines: false },
+    animation: {
+      mode: "parameters",
+      camera: "hold",
+      duration: 8,
+      tracks: [{ target: "a", from: "pi/8", to: "pi/2" }],
+      repeat: "back-and-forth",
+      pace: "steady",
+      probeMotion: "stays",
+    },
+  },
+  {
+    title: "A lattice stretches",
+    note: "A fixed nodal pattern stretches from a wide window to a tall one",
+    // The held opening view lets the right edge travel while the left edge and height stay put.
+    config: rectangularNodalStudy(2, Math.PI / 4, 4),
+    layers: { lines: false },
+    animation: {
+      mode: "parameters",
+      camera: "current",
+      duration: 8,
+      tracks: [{ target: "rectangleAspect", from: "2", to: "1/2" }],
       repeat: "once",
       pace: "steady",
       probeMotion: "stays",

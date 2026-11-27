@@ -1,3 +1,4 @@
+import { rectangleAspectRange } from "./rectangle-mode";
 import {
   count as formatCount,
   elapsed,
@@ -732,6 +733,14 @@ export function AnimationPanel({
 
   function defaultTrack(target: Target): Track {
     const from = frame ? targetValue(frame.config, target, length) : 0;
+    if (target === "rectangleAspect") {
+      const [min, max] = rectangleAspectRange;
+      return {
+        target,
+        from: String(from),
+        to: String(from === max ? min : max),
+      };
+    }
     if (target === "diskMixBlend" || target === "diskMixTime") {
       const limit = target === "diskMixBlend" ? 1 : 4;
       return {
