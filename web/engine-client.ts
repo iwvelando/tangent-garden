@@ -170,9 +170,10 @@ export class EngineClient {
   ): Promise<import("./lace/model").LaceFrame> {
     return (await this.request({ action: "laceFrame", laceFrame: f })).result;
   }
-  // #543 research: a plaque prepared from a lace study, with the solid's
-  // arrays and 3MF package, and the worker's preparation time and bytes
-  // moved.
+  // A plaque prepared from a lace study (physical.BuildLaceSolid), with
+  // the solid's arrays and 3MF package, and the worker's preparation time
+  // and bytes moved. Each job runs on a client of its own: disposing it
+  // cancels the job.
   async laceSolid(q: import("./lace/physical").LaceSolidRequest): Promise<{
     result: import("./lace/physical").LaceSolid;
     timings?: { prepare: number; bytes: number };

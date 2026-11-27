@@ -13,6 +13,7 @@ import {
   type PlanarEngravingPhrase,
 } from "./planar-engraving";
 import { laceLimits, laceViewAddress, type LaceStudy } from "./lace/model";
+import { physicalVersion } from "./lace/physical";
 import {
   deepestDepth,
   laceTilings,
@@ -1044,6 +1045,24 @@ function gardenStudy(value: unknown): GardenStudy {
 // presentation, view and weight; never generated geometry. Go validates
 // the same limits again.
 function laceStudy(value: unknown): LaceStudy {
+  for (const [path, version, supported] of [
+    [
+      "lace.physical.version",
+      (value as { physical?: { version?: unknown } })?.physical?.version,
+      physicalVersion,
+    ],
+    [
+      "lace.physical.profile.version",
+      (value as { physical?: { profile?: { version?: unknown } } })?.physical
+        ?.profile?.version,
+      1,
+    ],
+  ] as const)
+    if (typeof version === "number" && version > supported)
+      throw new LinkError(
+        path,
+        `${path} ${version} is newer than this version of Tangent Garden reads (${supported}): open the link in a newer version.`,
+      );
   const tilings = Object.fromEntries(
     laceTilings.map((t) => [t.id, true]),
   ) as Record<LaceTilingId, true>;
@@ -1106,6 +1125,47 @@ function laceStudy(value: unknown): LaceStudy {
         },
         // Absent in older links, which open without zoom detail.
         detail: { optional: "boolean" },
+        // Absent until the plaque workshop is opened; Go checks every
+        // range again, and the exclusive ones.
+        physical: {
+          optional: {
+            fields: {
+              version: { range: [physicalVersion, physicalVersion] },
+              open: { optional: "boolean" },
+              treatment: { options: { raised: true, recessed: true } },
+              diameter: { range: [10, 300] },
+              line: { range: [0, 20] },
+              floor: { range: [0, 20] },
+              relief: { range: [0, 20] },
+              lines: { options: { motif: true, sides: true, both: true } },
+              rim: { options: { motif: true, rim: true, crop: true } },
+              clip: { optional: { range: [0.05, 0.98] } },
+              simplify: { optional: "boolean" },
+              faceDown: { optional: "boolean" },
+              grid: { optional: { range: [0.05, 1] } },
+              profile: {
+                fields: {
+                  version: { range: [1, 1] },
+                  id: "text",
+                  name: "text",
+                  envelope: { tuple: { range: [0, 2000] }, length: 3 },
+                  nozzle: { range: [0, 5] },
+                  extrusionWidth: { range: [0, 5] },
+                  layerHeight: { range: [0, 2] },
+                  firstLayer: { range: [0, 2] },
+                  xyDetail: { range: [0, 50] },
+                  xyGap: { range: [0, 50] },
+                  zDetail: { range: [0, 20] },
+                  calibrated: "boolean",
+                  wall: { range: [0, 50] },
+                  strut: { range: [0, 50] },
+                  floor: { range: [0, 50] },
+                  gap: { range: [0, 50] },
+                },
+              },
+            },
+          },
+        },
         // Absent in older links, which open the lace in place and still.
         isometry: {
           optional: {
@@ -1134,6 +1194,21 @@ function laceStudy(value: unknown): LaceStudy {
     undefined,
     "lace",
   );
+  // Plaque settings from a newer version name what to do; text is
+  // bounded as Go bounds it.
+  if (out.physical) {
+    const p = out.physical.profile;
+    if (p.id.length > 64)
+      throw new LinkError(
+        "lace.physical.profile.id",
+        "lace.physical.profile.id must be at most 64 characters.",
+      );
+    if (p.name.length > 120)
+      throw new LinkError(
+        "lace.physical.profile.name",
+        "lace.physical.profile.name must be at most 120 characters.",
+      );
+  }
   for (const k of ["depth", "maxTiles"] as const)
     if (!Number.isInteger(out[k]))
       throw new LinkError(`lace.${k}`, `lace.${k} must be a whole number.`);

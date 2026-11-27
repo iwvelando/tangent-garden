@@ -3,6 +3,7 @@ package physical
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/cmplx"
@@ -157,7 +158,7 @@ func (q *LaceSolidRequest) validate() error {
 	bad := func(field, msg string) error { return &FieldError{field, msg} }
 	in := func(v, lo, hi float64) bool { return v >= lo && v <= hi }
 	if q.Version != 0 && q.Version != SettingsVersion {
-		return bad("version", fmt.Sprintf("settings version %d is not supported; this build reads version %d", q.Version, SettingsVersion))
+		return bad("version", fmt.Sprintf("Plaque settings version %d is not supported; this version of Tangent Garden reads version %d.", q.Version, SettingsVersion))
 	}
 	if !in(q.Diameter, 10, 300) {
 		return bad("diameter", "Diameter must be 10–300 mm.")
@@ -787,7 +788,7 @@ func (s *LaceSolid) checks(q LaceSolidRequest) []CheckItem {
 	const bug = "This should not happen: please report the settings that made it."
 	geometry("closed", "Closed two-manifold", r.Closed && r.Nonmanifold == 0 && r.NonmanifoldVertices == 0,
 		float64(r.Boundary+r.Nonmanifold+r.NonmanifoldVertices), "every edge between exactly two triangles, one fan at every vertex", bug)
-	geometry("oriented", "Outward orientation", r.Oriented, r.Volume, "every edge used once each way; every piece encloses positive volume", bug)
+	geometry("oriented", "Outward orientation", r.Oriented, r.Volume, fmt.Sprintf("every edge used once each way; %s mm³ enclosed", strconv.FormatFloat(r.Volume, 'g', 5, 64)), bug)
 	bodyHint := "Add a floor, or frame the lace with a clean rim or a crop, so that every piece is held."
 	if !q.Design.Openwork() {
 		bodyHint = bug
@@ -795,7 +796,7 @@ func (s *LaceSolid) checks(q LaceSolidRequest) []CheckItem {
 	geometry("components", "One body", r.Components == 1 && r.Nested == 0, float64(r.Components), "pieces joined through edges", bodyHint)
 	geometry("degenerate", "No degenerate triangles", r.Degenerate == 0, float64(r.Degenerate), "", bug)
 	si := CheckItem{ID: "intersections", Label: "No self-intersection", Required: true, Evidence: Measured,
-		Value: float64(r.SelfIntersections + r.Touching), Detail: fmt.Sprintf("%d triangle pairs tested", r.PairTests), Hint: bug}
+		Value: float64(r.SelfIntersections + r.Touching), Detail: grouped(float64(r.PairTests)) + " triangle pairs tested", Hint: bug}
 	switch {
 	case r.Unresolved:
 		si.Status, si.Detail = StatusUnresolved, "the pair-test ceiling stopped the check"
@@ -830,7 +831,7 @@ func (s *LaceSolid) checks(q LaceSolidRequest) []CheckItem {
 	out = append(out, cell)
 	separate := CheckItem{ID: "separate", Label: "Separate pieces stay apart", Required: true, Evidence: Sampled,
 		Status: pass(len(c.Fused) == 0), Value: float64(len(c.Fused)), Limit: c.Need,
-		Detail: fmt.Sprintf("%d source pieces; groups closer than the minimum: %d", s.Source.Pieces, len(c.Fused)),
+		Detail: separation(s.Source.Pieces, len(c.Fused), c.Need),
 		Hint:   fixRemove + " to join them deliberately, or enlarge the plaque or narrow the lines."}
 	if simplify && len(c.Fused) > 0 {
 		separate.Required, separate.Status, separate.Hint = false, StatusWarn, ""
@@ -844,7 +845,7 @@ func (s *LaceSolid) checks(q LaceSolidRequest) []CheckItem {
 				s.Simplified.RemovedArea, WallNeed(q.Profile), s.Simplified.FilledArea, GapNeed(q.Profile))})
 	} else {
 		narrow := CheckItem{ID: "narrow", Label: "Narrow gap area", Evidence: Sampled, Value: c.NarrowArea, Status: StatusPass,
-			Detail: "wedge corners, cusps and channels no disk of the minimum reaches"}
+			Detail: fmt.Sprintf("%s mm² of wedge corners, cusps and channels that no disk of the minimum reaches", strconv.FormatFloat(c.NarrowArea, 'g', 3, 64))}
 		if c.NarrowArea > 0 {
 			narrow.Status = StatusWarn
 		}
@@ -875,4 +876,51 @@ func (s *LaceSolid) checks(q LaceSolidRequest) []CheckItem {
 			Hint:   "Print raised plaques face up, or as openwork."})
 	}
 	return out
+}
+
+// MaxRequestBytes bounds the JSON of one solid request, as the bridge
+// and a package's recorded settings carry it.
+const MaxRequestBytes = 64 << 10
+
+// ParseLaceSolidRequest reads one solid request from JSON: settings a
+// worker sends, or that a package records in tg:settings. It refuses
+// oversized, malformed, trailing and unknown data, and a settings or
+// profile version this build cannot read, by its field; BuildLaceSolid
+// checks every value.
+func ParseLaceSolidRequest(data []byte) (LaceSolidRequest, error) {
+	var q LaceSolidRequest
+	if len(data) > MaxRequestBytes {
+		return q, fmt.Errorf("the plaque settings are too large: at most %s bytes", grouped(MaxRequestBytes))
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&q); err != nil {
+		return q, fmt.Errorf("the plaque settings cannot be read: %w", err)
+	}
+	if d.More() {
+		return q, errors.New("the plaque settings must be one set of settings")
+	}
+	if q.Version != 0 && q.Version != SettingsVersion {
+		return q, &FieldError{"version", fmt.Sprintf("Plaque settings version %d is not supported; this version of Tangent Garden reads version %d.", q.Version, SettingsVersion)}
+	}
+	if err := q.Profile.Validate(); err != nil {
+		return q, err
+	}
+	return q, nil
+}
+
+// separation describes the separate source pieces and the groups of them
+// the plan joins closer than the minimum gap.
+func separation(pieces, fused int, need float64) string {
+	what := "1 separate source piece"
+	if pieces != 1 {
+		what = grouped(float64(pieces)) + " separate source pieces"
+	}
+	switch fused {
+	case 0:
+		return what + "; none closer than the minimum gap"
+	case 1:
+		return what + fmt.Sprintf("; 1 group closer than %s mm", strconv.FormatFloat(need, 'g', 3, 64))
+	}
+	return what + fmt.Sprintf("; %d groups closer than %s mm", fused, strconv.FormatFloat(need, 'g', 3, 64))
 }

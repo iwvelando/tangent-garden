@@ -14,25 +14,24 @@ import (
 	"tangentgarden/physical"
 )
 
-// #543 research: tangentGardenLaceSolid prepares a plaque from a lace
-// study (physical.BuildLaceSolid) and replies { json, vertices,
-// triangles, package }: the report as JSON, and the solid's float64
-// vertices (x, y, z each), int32 triangles and 3MF bytes as views on one
-// ArrayBuffer for the worker to transfer. Nothing is retained.
+// tangentGardenLaceSolid prepares a plaque from a lace study
+// (physical.BuildLaceSolid) and replies { json, vertices, triangles,
+// package }: the report as JSON, and the solid's float64 vertices (x, y, z
+// each), int32 triangles and 3MF bytes as views on one ArrayBuffer for
+// the worker to transfer. Nothing is retained between calls.
 func registerPhysical() {
 	js.Global().Set("tangentGardenLaceSolid", js.FuncOf(func(this js.Value, args []js.Value) any {
-		if len(args) != 1 || len(args[0].String()) > 65536 {
-			return `{"error":"solid request is too large"}`
+		if len(args) != 1 {
+			return `{"error":"enter plaque settings"}`
 		}
-		var q physical.LaceSolidRequest
-		if err := json.Unmarshal([]byte(args[0].String()), &q); err != nil {
-			return refusal(err)
-		}
-		// The build's working memory budget is 128 MiB (#543): a soft limit
-		// makes the collector run before the heap doubles, which
-		// WebAssembly memory, never returned, would otherwise keep.
+		// A soft limit makes the collector run before the heap doubles,
+		// which WebAssembly memory, never returned, would otherwise keep.
 		debug.SetMemoryLimit(physical.MemoryBudget)
-		s, err := physical.BuildLaceSolid(q, physical.DefaultLimits)
+		q, err := physical.ParseLaceSolidRequest([]byte(args[0].String()))
+		var s *physical.LaceSolid
+		if err == nil {
+			s, err = physical.BuildLaceSolid(q, physical.DefaultLimits)
+		}
 		if err != nil {
 			var fe *physical.FieldError
 			if errors.As(err, &fe) {

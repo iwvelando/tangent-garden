@@ -33,7 +33,8 @@
   visibility: hidden;
 }
 
-/* #543 research: the plaque workshop, shown only with ?research=543. */
+/* The plaque workshop (Workshop.tsx) replaces the lace's layout, which
+   stays mounted, hidden, so returning restores it exactly. */
 .garden-layout[hidden] {
   display: none;
 }
@@ -105,9 +106,51 @@
 .lace-check-detail {
   color: var(--muted);
 }
-.lace-workshop-checks li[data-status="fail"] strong,
+/* Each status reads in words; failing and unresolved ones are also
+   colored and marked, distinctly. */
+.lace-workshop-checks li[data-status="fail"] strong {
+  color: #a4522f;
+}
 .lace-workshop-checks li[data-status="unresolved"] strong {
-  text-decoration: underline;
+  color: #a4522f;
+  text-decoration: underline dotted;
+}
+.lace-workshop-checks li[data-status="pass"] strong,
+.lace-workshop-checks li[data-status="warn"] strong {
+  font-weight: 500;
+  color: var(--muted);
+}
+.dark .lace-workshop-checks li[data-status="fail"] strong,
+.dark .lace-workshop-checks li[data-status="unresolved"] strong {
+  color: #f3bc83;
+}
+.lace-check-hint {
+  margin-top: 0.15rem;
+}
+.lace-workshop-group {
+  margin: 0.9rem 0 0;
+  font-size: 0.9rem;
+}
+.lace-workshop-verdict {
+  margin: 0 0 0.4rem;
+}
+.lace-workshop-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.lace-workshop-heading h3 {
+  margin: 0;
+}
+.lace-workshop-canvas[data-stale] {
+  opacity: 0.45;
+}
+.lace-workshop-work summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
 }
 .lace-physical-entry {
   margin-top: 0.75rem;

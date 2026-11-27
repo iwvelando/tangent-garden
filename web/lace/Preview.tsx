@@ -32,7 +32,12 @@ import {
 import { useCameraMove } from "../camera-move";
 import { LatestSession } from "../latest-session";
 import type { PlotCamera } from "../planar-link";
-import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
+import {
+  ScalarInput,
+  ScalarStatus,
+  type ScalarDraft,
+  type ScalarState,
+} from "../ScalarInput";
 import { ShareLink } from "../ShareLink";
 import { useTheme } from "../useTheme";
 import { useQuietFocus } from "../quiet-focus";
@@ -81,7 +86,13 @@ import {
   type LaceStudyMotion,
 } from "./model";
 import { laceTilings, tilingOf, type LaceTilingId } from "./tilings";
-import { frozenSource, researchPhysical } from "./physical";
+import {
+  defaultPhysical,
+  frozenSource,
+  physicalProblem,
+  studyLines,
+  type LacePhysical,
+} from "./physical";
 import { PhysicalWorkshop } from "./Workshop";
 import { laceMotifs, motifOf } from "./motifs";
 import "../garden/garden.css";
@@ -184,8 +195,16 @@ export function LacePreview({
     exportAbort = useRef<AbortController | null>(null);
   const exportState = useMotionExport();
   const exportSection = useDisclosure("lace-export");
-  // #543 research: the plaque workshop's frozen source while it is open.
-  const [workshop, setWorkshop] = useState<LaceRequest>();
+  // The plaque workshop's frozen source while it is open: a link may
+  // open the lace in it. Its settings live in the study, its entries'
+  // raw text here, so returning and reopening keeps both.
+  const [workshop, setWorkshop] = useState<LaceRequest | undefined>(() => {
+    const lace = entry.study.lace;
+    return lace?.physical?.open ? frozenSource(laceRequest(lace)) : undefined;
+  });
+  const workshopText = useRef(new Map<string, ScalarDraft>());
+  const workshopEntry = useRef<HTMLButtonElement>(null);
+  const leftWorkshop = useRef(false);
   const view = useRef<HTMLDivElement>(null),
     playback = useRef<HTMLDivElement>(null);
   // While a motion is frozen, its frame is drawn, or its static patch
@@ -327,6 +346,34 @@ export function LacePreview({
     stopClock.current = () => {};
     setPlaying(false);
   };
+  // Opening the workshop freezes the lace's source; returning keeps the
+  // settings, drops whether it is open, and focuses its entry again.
+  const openWorkshop = () => {
+    setStudy((s) => ({
+      ...s,
+      physical: {
+        ...(s.physical ?? defaultPhysical(studyLines(s))),
+        open: true,
+      },
+    }));
+    setWorkshop(frozenSource(laceRequest(study)));
+  };
+  const closeWorkshop = () => {
+    setStudy((s) => {
+      if (!s.physical) return s;
+      const { open: _, ...physical } = s.physical;
+      return { ...s, physical };
+    });
+    leftWorkshop.current = true;
+    setWorkshop(undefined);
+  };
+  useLayoutEffect(() => {
+    if (workshop || !leftWorkshop.current) return;
+    leftWorkshop.current = false;
+    quiet.quiet();
+    workshopEntry.current?.focus();
+  }, [workshop]);
+  const physicalInvalid = !!study.physical && !!physicalProblem(study.physical);
   const endFilm = () => {
     pause();
     frames.current?.invalidate();
@@ -885,7 +932,8 @@ export function LacePreview({
       aria-labelledby="lace-title"
       onCancel={(e) => {
         e.preventDefault();
-        onReturn("keyboard");
+        if (workshop) closeWorkshop();
+        else onReturn("keyboard");
       }}
       onPointerDown={quiet.onPointerDown}
       onKeyDownCapture={quiet.onKeyDownCapture}
@@ -905,15 +953,18 @@ export function LacePreview({
             const { garden: _, shorten: __, ...base } = entry.study;
             return { ...base, lace: study };
           }}
-          disabled={!valid || !(current || film)}
+          disabled={!valid || !(current || film) || physicalInvalid}
         />
-        <ExportImageMenu
-          kind="hyperbolic-lace"
-          revision={drawn}
-          disabled={!(ready || (film && valid)) || playing || exporting}
-          base={lacePage}
-          onSave={still}
-        />
+        {/* The workshop saves its own file: the still is the lace's. */}
+        {!workshop && (
+          <ExportImageMenu
+            kind="hyperbolic-lace"
+            revision={drawn}
+            disabled={!(ready || (film && valid)) || playing || exporting}
+            base={lacePage}
+            onSave={still}
+          />
+        )}
       </AppHeader>
       <div className="garden-content">
         <div className="garden-heading">
@@ -928,14 +979,29 @@ export function LacePreview({
             reflected across sides, as is its motif.
           </p>
         </div>
-        {workshop && (
-          <PhysicalWorkshop
-            source={workshop}
-            lines={study.edges ? (study.motif ? "both" : "sides") : "motif"}
-            onClose={() => setWorkshop(undefined)}
-          />
-        )}
         <ScalarStatus.Provider value={scalarStatus}>
+          {workshop && study.physical && (
+            <PhysicalWorkshop
+              source={workshop}
+              settings={study.physical}
+              update={(change) =>
+                setStudy((s) => ({
+                  ...s,
+                  physical: change(
+                    s.physical ?? defaultPhysical(studyLines(s)),
+                  ),
+                }))
+              }
+              retained={workshopText.current}
+              scalarError={scalarError}
+              scalarPending={scalarPending}
+              focus={(el) => {
+                quiet.quiet();
+                el?.focus();
+              }}
+              onClose={closeWorkshop}
+            />
+          )}
           <FieldErrorContext.Provider value={target}>
             <div className="garden-layout" hidden={!!workshop}>
               <main>
@@ -1399,22 +1465,27 @@ export function LacePreview({
                   value={study.weight}
                   onChange={(weight) => setStudy((s) => ({ ...s, weight }))}
                 />
-                {researchPhysical() && (
-                  <section
-                    className="lace-physical-entry"
-                    aria-label="Make physical (research)"
+                <section
+                  className="lace-physical-entry"
+                  aria-labelledby="lace-physical-title"
+                >
+                  <h3 className="garden-section" id="lace-physical-title">
+                    Make physical
+                  </h3>
+                  <p className="note">
+                    {film
+                      ? "Stop the motion to make a printable plaque of this lace."
+                      : "A printable plaque of this lace, checked against a printer and saved as 3MF."}
+                  </p>
+                  <button
+                    ref={workshopEntry}
+                    type="button"
+                    disabled={!valid || !current || !!film || playing}
+                    onClick={openWorkshop}
                   >
-                    <button
-                      type="button"
-                      disabled={!valid || !current || !!film || playing}
-                      onClick={() =>
-                        setWorkshop(frozenSource(laceRequest(study)))
-                      }
-                    >
-                      Make physical (research)
-                    </button>
-                  </section>
-                )}
+                    Make physical…
+                  </button>
+                </section>
 
                 {!claimed && message && (
                   <div className="study-error" role="alert">

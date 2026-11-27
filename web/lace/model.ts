@@ -1,3 +1,4 @@
+import type { LacePhysical } from "./physical";
 import {
   readout as formatNumber,
   count as formatCount,
@@ -186,6 +187,9 @@ export type LaceStudy = Omit<
   // Deeper tiles for the view when zoomed in (laceDetailFor); absent or
   // false, zoom only enlarges the patch, as in older links.
   detail?: boolean;
+  // The plaque workshop's settings once it has been opened, and whether
+  // it is open (physical.ts); absent in older links.
+  physical?: LacePhysical;
 };
 export type LaceStudyMotion = LaceMotion & {
   duration: number;

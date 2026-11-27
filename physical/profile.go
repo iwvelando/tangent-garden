@@ -3,7 +3,25 @@ package physical
 import (
 	"fmt"
 	"math"
+	"strconv"
 )
+
+// grouped writes a limit or count as the interface shows numbers, whole
+// numbers' thousands grouped: 2,000; 434,034.
+func grouped(v float64) string {
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if v != math.Trunc(v) || math.Abs(v) < 1000 {
+		return s
+	}
+	sign := ""
+	if s[0] == '-' {
+		sign, s = "-", s[1:]
+	}
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return sign + s
+}
 
 // ProfileVersion is the profile schema's version. A profile with any
 // other version is refused.
@@ -101,24 +119,40 @@ func DefaultProfiles() []Profile {
 	}
 }
 
-// Validate refuses a profile that is not version 1 or holds a
-// nonpositive or nonfinite length, naming the field.
+// Validate refuses a profile that is not version 1, holds a nonpositive
+// or nonfinite length, or carries more text than a link or package
+// should, naming the field in the workshop's words.
 func (p Profile) Validate() error {
 	if p.Version != ProfileVersion {
-		return &FieldError{"profile.version", fmt.Sprintf("profile version %d is not supported; this build reads version %d", p.Version, ProfileVersion)}
+		return &FieldError{"profile.version", fmt.Sprintf("Printer profile version %d is not supported; this version of Tangent Garden reads version %d.", p.Version, ProfileVersion)}
+	}
+	if len(p.ID) > 64 {
+		return &FieldError{"profile.id", "Printer profile identifier must be at most 64 bytes."}
+	}
+	if len(p.Name) > 120 {
+		return &FieldError{"profile.name", "Printer profile name must be at most 120 bytes."}
+	}
+	if len(p.Sources) > 8 {
+		return &FieldError{"profile.sources", "Printer profile must cite at most 8 sources."}
+	}
+	for _, s := range p.Sources {
+		if len(s.Fields)+len(s.Value)+len(s.Document)+len(s.Revision) > 1000 {
+			return &FieldError{"profile.sources", "Each printer profile source must be at most 1,000 bytes."}
+		}
 	}
 	for _, f := range []struct {
-		name string
-		v    float64
-		hi   float64
+		field, label string
+		v, hi        float64
 	}{
-		{"envelope", p.Envelope[0], 2000}, {"envelope", p.Envelope[1], 2000}, {"envelope", p.Envelope[2], 2000},
-		{"nozzle", p.Nozzle, 5}, {"extrusionWidth", p.ExtrusionWidth, 5}, {"layerHeight", p.LayerHeight, 2}, {"firstLayer", p.FirstLayer, 2},
-		{"xyDetail", p.XYDetail, 50}, {"xyGap", p.XYGap, 50}, {"zDetail", p.ZDetail, 20},
-		{"wall", p.Wall, 50}, {"strut", p.Strut, 50}, {"floor", p.Floor, 50}, {"gap", p.Gap, 50},
+		{"envelope.0", "Bed width", p.Envelope[0], 2000}, {"envelope.1", "Bed depth", p.Envelope[1], 2000}, {"envelope.2", "Build height", p.Envelope[2], 2000},
+		{"nozzle", "Nozzle", p.Nozzle, 5}, {"extrusionWidth", "Extrusion width", p.ExtrusionWidth, 5},
+		{"layerHeight", "Layer height", p.LayerHeight, 2}, {"firstLayer", "First layer", p.FirstLayer, 2},
+		{"xyDetail", "Finest wall", p.XYDetail, 50}, {"xyGap", "Finest gap", p.XYGap, 50}, {"zDetail", "Finest height step", p.ZDetail, 20},
+		{"wall", "Minimum wall", p.Wall, 50}, {"strut", "Minimum raised line", p.Strut, 50},
+		{"floor", "Minimum floor", p.Floor, 50}, {"gap", "Minimum gap", p.Gap, 50},
 	} {
-		if !(f.v > 0) || f.v > f.hi || math.IsInf(f.v, 0) {
-			return &FieldError{"profile." + f.name, fmt.Sprintf("%s must be above 0 and at most %g mm", f.name, f.hi)}
+		if !(f.v > 0) || f.v > f.hi {
+			return &FieldError{"profile." + f.field, fmt.Sprintf("%s must be above 0 and at most %s mm.", f.label, grouped(f.hi))}
 		}
 	}
 	return nil

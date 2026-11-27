@@ -152,7 +152,7 @@ func sizeChecks(d Design, p Profile) []CheckItem {
 		reliefWhat = "Groove depth"
 	}
 	out = append(out, CheckItem{ID: "relief", Label: reliefWhat, Required: true, Status: pass(d.Relief >= p.ZDetail), Evidence: Exact,
-		Value: d.Relief, Limit: p.ZDetail, Hint: "Raise it to at least the profile's Z detail."})
+		Value: d.Relief, Limit: p.ZDetail, Hint: "Raise it to at least the finest height step."})
 	lv := d.Levels()
 	for _, h := range []struct {
 		id, label string

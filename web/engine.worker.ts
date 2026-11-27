@@ -40,8 +40,8 @@ declare const tangentGardenLaceFrame: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
-// #543 research: a plaque from a lace study (physical.BuildLaceSolid), its
-// report as JSON beside the solid and its 3MF package on one buffer.
+// A plaque from a lace study (physical.BuildLaceSolid): its report as
+// JSON beside the solid and its 3MF package on one buffer.
 declare const tangentGardenLaceSolid: (json: string) =>
   | string
   | {
