@@ -461,7 +461,46 @@ Zoomed far toward the rim, the finite patch ends in a blank band before the rim.
 - Follow selection frames a tile only when you select it, where it is at that moment; while the disk moves, the camera holds still.
 - Changing the cutoffs, the shape or its size, the isometry or the path stops the motion and returns to the still drawing. Changing the timing pauses it.
 
-**Copy link** saves the tiling, cutoffs, whether deeper tiles are on, the shape and each shape's size once changed, the woven loop's fitted terms (never its outline), layers, selection, presentation, view, line weight, the isometry and motion once changed, and Follow selection with the view it returns to, beneath the study you came from. A link never saves a paused time. **Export image** saves a vector SVG or a PNG of the drawing as shown, a paused frame included, with the settings, the selection, the view's detail request when deeper tiles are drawn, and a note that the patch is finite recorded in the file. **Export** under Motion saves the motion as an MP4 video or animated WebP, drawn frame by frame from the geometry.
+**Copy link** saves the tiling, cutoffs, whether deeper tiles are on, the shape and each shape's size once changed, the woven loop's fitted terms (never its outline), layers, selection, presentation, view, line weight, the isometry and motion once changed, Follow selection with the view it returns to, and the plaque settings once [Make physical](#make-a-lace-physical) has been opened, beneath the study you came from. A link never saves a paused time. **Export image** saves a vector SVG or a PNG of the drawing as shown, a paused frame included, with the settings, the selection, the view's detail request when deeper tiles are drawn, and a note that the patch is finite recorded in the file. **Export** under Motion saves the motion as an MP4 video or animated WebP, drawn frame by frame from the geometry.
+
+### Make a lace physical
+
+**Make physical…**, beside **Export image** at the top of the lace, opens a workshop for a printable plaque of the lace as it stands. Stop a motion first. In the examples gallery, **3D printable** shows only the examples Make physical can print. The workshop holds the lace as it was when it opened, with its isometry but not the view or zoom detail, so panning never changes the plaque. **Back to the lace**, or Escape, returns to the lace exactly as you left it.
+
+- **Treatment** chooses raised lines on a floor, or grooves cut into a slab.
+- **Diameter (mm)** is 10–300 mm.
+- **Line width (mm)** is the width of every line and of the frame, above 0 and at most 20 mm.
+- **Floor (mm)** is 0–20 mm. At 0 the lace prints alone as openwork, which must hold together as one body: a clean rim or crop frames it.
+- **Relief (mm)**, or **Depth (mm)** for grooves, is above 0 and at most 20 mm.
+- **Wall preset** sets the line width and the minimum wall and raised line to 2 or 3 mm together.
+- **Lines** draws the motif, the tile sides, or both. It starts as the study draws them.
+- **Rim** decides where lines and gaps grow too fine near the edge:
+  - **Whole tiles** keeps the largest tiles while every gap holds the minimum.
+  - **Clean rim** cuts the lace at a circle joined to a frame. **Rim radius** (0.05–0.98 of the disk) places the circle; left empty, it is chosen from the whole tiles and drawn in while a gap still fails.
+  - **Crop and enlarge** fills the plaque with a disk of the lace, **Crop radius** (0.05–0.95) of the way to the rim.
+- **Remove features below the minimums** removes material thinner than the minimum wall and fills gaps narrower than the minimum gap, and marks what it changed. Off, those features fail their checks instead.
+- **Face down** turns the plaque over, so its decorated face prints smooth on the bed. It suits recessed plaques and openwork.
+- **Printer** chooses the Bambu Lab X1-Carbon or the Original Prusa i3 MK3S+ (each with a 0.4 mm nozzle), and the note below it gives the bed. **Minimums the checks use** and **Printer bed and slicing** hold every value, all editable:
+  - choosing another printer keeps your minimums;
+  - each check needs the larger of a minimum and the printer's finest value;
+  - the slicing values only count layers.
+
+  The printer never changes the plaque's shape. Its finest values are estimates, not calibrations.
+- **Grid step (mm)** (0.05–1 mm) is how finely the plaque is sampled; empty chooses 0.2 mm.
+
+**Seven-armed snowflakes, an ornament to print** opens ready for it: short-pointed stars without tile sides, set for a 120 mm openwork plaque of whole tiles, its central flake, seven neighbors and seven smaller flakes one body.
+
+Every length accepts expressions such as `40*pi`. **Prepare solid** builds the plaque in the background, and **Cancel** stops it.
+
+The drawing is the solid's actual top: lines or grooves in the motif's color, the floor or slab paler, with marks for tiles left out, detail simplified, failing gaps and narrow gaps. The report beside or below it gives:
+
+- the dimensions and how many tiles were kept;
+- the checks of the solid itself (closed, outward, one body, no crossing triangles);
+- the checks against the printer (widths, gaps, separation, resolution, floor, relief, the bed), and notes such as layer counts.
+
+A failing check gives its remedy, and an unresolved one says the grid could not decide. **Save 3MF ↓** saves the prepared plaque as a 3MF file in millimeters, placed at the bed's center, with the settings that rebuild it. When a required check fails or is unresolved, the button and the file name say "not validated". Changing any setting asks you to prepare again before saving.
+
+Slice the file in Bambu Studio or PrusaSlicer with the layer height the profile names: the report's layer counts assume it. **Copy link** saves the workshop's settings and every printer value, and opens the workshop again for whoever follows it. It never saves a prepared plaque. While a workshop length is empty or unreadable there is no link; back in the lace, its error names the field.
 
 ## Curves that smooth themselves
 

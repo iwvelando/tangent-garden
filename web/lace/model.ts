@@ -1,3 +1,4 @@
+import { defaultPhysical, type LacePhysical } from "./physical";
 import {
   readout as formatNumber,
   count as formatCount,
@@ -186,6 +187,9 @@ export type LaceStudy = Omit<
   // Deeper tiles for the view when zoomed in (laceDetailFor); absent or
   // false, zoom only enlarges the patch, as in older links.
   detail?: boolean;
+  // The plaque workshop's settings once it has been opened, and whether
+  // it is open (physical.ts); absent in older links.
+  physical?: LacePhysical;
 };
 export type LaceStudyMotion = LaceMotion & {
   duration: number;
@@ -481,6 +485,22 @@ export const lacePresets: readonly {
     title: "A drawn leaf in every triangle",
     note: "The example leaf from Draw a loop, mirrored like a kaleidoscope into each of every heptagon's fourteen triangles",
     study: { ...defaultLace, motifKind: "loop" },
+  },
+  // A festive ornament ready to print: {7,3} stars with short points
+  // (0.2) and no tile sides, so each heptagon's center holds a seven-armed
+  // flake joined to its neighbors. It opens with Make physical's settings
+  // for a 120 mm openwork plaque of whole tiles (floor 0), which keeps the
+  // central flake, its seven neighbors and seven smaller flakes beyond as
+  // one body.
+  {
+    title: "Seven-armed snowflakes, an ornament to print",
+    note: "Short-pointed stars draw a flake at every heptagon's center; Make physical prints the central flakes as one openwork ornament",
+    study: {
+      ...defaultLace,
+      starPoint: 0.2,
+      edges: false,
+      physical: { ...defaultPhysical("motif"), diameter: 120, floor: 0 },
+    },
   },
 ];
 export const presetLace = (index: number): LaceStudy =>

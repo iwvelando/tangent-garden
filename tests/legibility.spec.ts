@@ -85,6 +85,13 @@ for (const scheme of ["light", "dark"] as const) {
       await expectLegible(page);
       await examplesButton(page).click();
       await expectLegible(page);
+      // A hovered filter chip keeps its count legible: the pointer rests
+      // where the gallery opened, which can be over a chip.
+      const gallery = page.getByRole("dialog", { name: "Notebook examples" });
+      for (const name of [/^3D printable/, /^Hyperbolic tilings/]) {
+        await gallery.getByRole("button", { name }).hover();
+        await expectLegible(page);
+      }
       await page.keyboard.press("Escape");
       await page
         .getByRole("button", { name: "diacaustic", exact: true })

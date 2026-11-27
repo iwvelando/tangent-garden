@@ -884,6 +884,111 @@ The tests check, on the returned geometry:
   - The still records its request, with the frozen request's level after zoom during a motion.
   - The policy's levels, cutoffs, windows and snapping match values worked by hand.
 
+## Printable lace plaques
+
+Make physical turns a lace study into a round plaque of diameter `D = 2R` millimeters (`physical/lace.go`, `BuildLaceSolid`). The source is the study's `LaceRequest` with its static isometry, frozen when the workshop opens. The view's window and zoom detail never reach the solid, so the camera never changes it. Every length below is in millimeters.
+
+### Scale and strokes
+
+A model unit (the disk's radius is 1) becomes `S` millimeters:
+
+- **Whole tiles and clean rim:** `S = R − b`. The border `b` is the larger of the minimum wall and the line width, unless the request sets it, at most 20 mm.
+- **Crop:** `S = (R − f)/c`. The crop radius `c` is 0.05–0.95 of the disk, and `f` is the frame's width.
+
+The plan is made of strokes, each a centerline arc or segment of the lace scaled by `S`, with half width `w/2` for a line width `w`:
+
+- the motif's strokes;
+- the tile sides (each geodesic side once per tile that has it);
+- or both, as **Lines** chooses.
+
+Strokes whose ends agree within 10⁻³ mm belong to one source piece. A tile `i` with Möbius transform `T_i(z) = (az + b)/(b̄z + ā)` is drawn at scale `σ_i = |T_i'(0)| = 1/|a|²`.
+
+### The plan's field
+
+The plan region `L` is where its signed field is negative:
+
+```text
+F(x) = max(min(max(min_s d_s(x) − w/2, |x| − ρ), |r_f − |x|| − f/2), |x| − O)
+```
+
+- `d_s` is the exact Euclidean distance to stroke `s`'s centerline. For a minor arc with center `C` and radius `r`, it is `||x − C| − r|` where the projection from `C` falls within the arc, and otherwise the distance to the nearer end.
+- `ρ` is a clip circle (absent: no clip), `r_f = ρ + f/2` the frame band's middle radius, and `O` the plan's outer radius.
+- Outside `L`, `min_s d_s − w/2` is the exact distance to the union of bands.
+
+`Sample` evaluates `F` at every node of a square grid of step `h`, covering the plaque with a two-step margin. Values beyond a cap read the cap. A node within `0.01h` of zero is pushed away from it, keeping its sign, so no contour vertex lies on a node; this moves the boundary by at most `0.01h`. The automatic step is 0.2 mm, or the least step keeping `(⌈D/h⌉ + 5)²` within 4,000,000 nodes (at every accepted diameter, 0.2 mm).
+
+`Clean` fills specks: components of either sign holding at most three nodes, all within `h` of the boundary. These are tips of wedges narrower than a step, cut off by sampling.
+
+### Contours and the solid
+
+`Contour` traces `F < 0` by marching squares. An edge whose ends differ in sign holds one vertex, by linear interpolation. A cell with four crossings joins its inside corners when the mean of its four values is negative, the same rule the cells use (below). Each grid edge is crossed at most once, so the loops are simple and pairwise disjoint. Vertices within 10⁻⁷ mm of the line through their neighbors are dropped.
+
+The solid is a two-level height field over a flat bottom at height 0:
+
+| Treatment | Plan's top | Rest's top |
+| --- | --- | --- |
+| Raised | floor + relief | floor |
+| Recessed | floor | floor + relief |
+
+Each top is triangulated on its own from the same loop points: ear clipping, with holes bridged to their outer loop, then Lawson flips toward a Delaunay triangulation, leaving loop edges fixed. Vertical walls join the levels along every loop and around the plaque's edge, a regular polygon of at least 64 sides whose chord lies within `0.01h` of the circle. Walls and tops share their edges exactly; nothing is snapped or welded.
+
+A floor of 0 is openwork: only the plan's region (raised) or the rest (recessed) is extruded, and it must be one body. **Face down** applies `(x, y, z) → (x, −y, H − z)`, where `H` is the higher top. This is a rotation by π about a horizontal axis, so orientation and every check are preserved. The top view undoes it to draw the plaque as designed.
+
+### Rim policies
+
+- **Whole tiles** first keeps every tile the grid resolves, meaning the incircle of the tiling's fundamental triangle spans at least two steps: `σ_i·S·r_△ ≥ 2h`. Every kept stroke must also lie inside `S`. Then, while a cell fails or separate pieces fuse (below), each failure names the tiles nearest its failing nodes. The threshold `τ` is the largest, over failures, of their smallest scale. Every tile with `σ_i ≤ τ` is left out, and the round repeats, at most 12 rounds. Tiles leave by drawn size, never one cell at a time, so the kept lace stays symmetric wherever the tiling's scales allow.
+- **Clean rim** keeps every tile with a stroke within `ρ + w/2` of the center and clips the bands at `ρ`, joined to a frame. An automatic `ρ` comes from the whole-tile cutoff: just inside the nearest left-out tile's band. While a cell then fails against the frame, and simplifying is off, it draws in by 3% of its radius, within the round ceiling.
+- **Crop** sets `ρ = R − f`, enlarging the disk of radius `c` to the plaque, with the frame at the plaque's edge.
+
+The frame is the line width when raised. Recessed, it is slab material at full height, at least a minimum wall plus one grid step wide, so the plaque's face is a full-height rim. A recessed clean rim or crop therefore prints face down on its own flat face.
+
+### Removing features below the minimums
+
+With **Remove features below the minimums** on, two morphological openings run on the sampled field before contouring (`(*Grid).Simplify`):
+
+1. The material keeps exactly the points that a disk of the wall's diameter inside the material reaches. These are its nodes within `wall/2` of a node at least `wall/2` deep, found with an exact Euclidean distance transform. Isolated pillars, thin walls and thin corner tips go; everything else keeps its boundary.
+2. The gaps inside the plaque then keep only the points that a disk of the gap's diameter inside them reaches. Narrower slots, cusps and wedge corners fill.
+
+The material is the plan when raised and the rest when recessed. Decisions at nodes carry an allowance of `h/√2`. The region the cell check judges (the webs when recessed, the gaps when raised) is opened strictly, with a core at least `r` deep, so every kept piece provably holds the minimum's disk. The other region is opened leniently, with a core `r − h/√2` deep, so a line exactly at the minimum stays. A trimmed node reads `r − d`, where `d` is its distance to the core, which places the new boundary between nodes. The workshop marks the changed nodes. Cells the openings filled, and separate pieces they joined, become notes rather than failures. Off, the same features fail their checks instead.
+
+### Checks
+
+Required checks decide validation. Notes inform but never decide.
+
+- **Line width (conservative).** Every point of `L` lies in a disk of diameter `w` inside it, by construction. The width must reach the larger of the requested and the printer's finest value: strut and finest wall raised, gap and finest gap recessed.
+- **Cells (sampled).** A cell is a component of the plaque outside `L`, labeled on the grid with the contour's saddle rule. It is a gap between raised lines, or a web between grooves. A node's clearance `min(F(x), R − |x|)` is a disk inside the cell, so the cell's largest sampled clearance `r` bounds its inscribed radius from below, and the true radius is at most `r + h/√2`. A cell passes when `2r` reaches the need (minimum gap and finest gap raised; minimum wall and finest wall recessed). It fails when `2(r + h/√2)` falls short of the need, and is unresolved between. A source cell, a piece outside the strokes' centerlines, that the bands fill entirely has vanished, and fails with radius 0. Only source cells the grid resolves are judged this way: those with a node at least `2h` from every centerline, inside the frame's middle.
+- **Separation (sampled).** Separate source pieces must stay apart by the need. They are found fused on `L` widened by half the need. Joints that the frame makes by design are not counted.
+- **Resolution (exact).** Every kept tile is resolved by the grid. With simplifying on, the step must be at most half the smaller of the wall and gap minima instead.
+- **Floor, relief and envelope (exact).** The floor reaches the minimum floor, unless it is 0 (openwork). The relief reaches the finest height step. The diameter fits the bed and the higher top fits the build height. A plaque over the envelope fails; it is never rescaled.
+- **Layers (notes).** A height `z` prints in `1 + (z − first layer)/layer height` layers; a fractional count says what a slicer will actually print.
+- **Narrow gap area (note).** The sampled area of cells that no disk of the need's diameter inside them reaches: wedge corners, cusps and channels.
+- **The mesh (measured, required),** independent of how it was built:
+  - closed two-manifold: every edge belongs to exactly two triangles, with one fan at each vertex;
+  - outward orientation: each directed edge's reverse appears once, and each component encloses positive volume;
+  - one body, with no component nested in another;
+  - no degenerate triangles;
+  - no self-intersection: no pair of triangles crosses or touches where it shares no vertex, tested in a bucket grid of twice the median triangle's size, each triangle whose box spans more than 4,096 cells tested against every triangle its box meets, with exact coplanar and collinear handling.
+
+  A check stopped by its pair-test ceiling is unresolved.
+
+A failed or unresolved required check makes the plaque "not validated". The 3MF can still be saved, under a name that says so.
+
+### Profiles
+
+A printer profile (version 1) keeps four kinds of value apart, each with its sources:
+
+- the machine's build envelope;
+- the process: nozzle, extrusion width, layer and first-layer heights, used only for layer counts;
+- calibrated limits: the finest wall, gap and height step, flagged as uncalibrated estimates in the defaults;
+- the object's requested minima: wall, raised line, floor and gap.
+
+A check needs the larger of a requested and a calibrated value. Positioning or sensor precision is never a printable width. The profile never changes the solid's shape; it sets what the checks require and where the package places the plaque on the bed. The defaults are:
+
+- **Bambu Lab X1-Carbon:** 0.4 mm nozzle, 0.20 mm Standard; 256 × 256 × 250 mm.
+- **Original Prusa i3 MK3S+:** 0.4 mm nozzle, 0.15 mm QUALITY; 250 × 210 × 210 mm.
+
+Each is read from its manufacturer's specifications and slicer profiles at the revisions its sources record.
+
 ## Curves that smooth themselves
 
 Curve shortening moves every point of a smooth closed loop inward along its normal at its curvature: `dX/dt = −κ n_out`, with `κ > 0` where the loop turns toward its inside. It is a separate bounded planar mode, not a curve family. `engine/shorten` solves it; the definitions below are its contract. The flow is the subject of Gage–Hamilton and Grayson's theorems, and [Andrews and Bryan](https://arxiv.org/abs/0908.2682) give a short proof. These describe the continuum. The checks below concern the discrete solver.

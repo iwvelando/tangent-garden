@@ -40,6 +40,16 @@ declare const tangentGardenLaceFrame: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenFit: (json: string) => string;
+// A plaque from a lace study (physical.BuildLaceSolid): its report as
+// JSON beside the solid and its 3MF package on one buffer.
+declare const tangentGardenLaceSolid: (json: string) =>
+  | string
+  | {
+      json: string;
+      vertices: Float64Array;
+      triangles: Int32Array;
+      package: Uint8Array;
+    };
 declare const tangentGardenSpatialFit: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
@@ -128,6 +138,7 @@ self.onmessage = async ({
     | "gardenFrame"
     | "lace"
     | "laceFrame"
+    | "laceSolid"
     | "shorten"
     | "implicit-scan";
   loom?: import("./loom/model").LoomRequest;
@@ -135,6 +146,7 @@ self.onmessage = async ({
   gardenFrame?: import("./garden/model").GardenFrameRequest;
   lace?: import("./lace/model").LaceRequest;
   laceFrame?: import("./lace/model").LaceFrameRequest;
+  laceSolid?: import("./lace/physical").LaceSolidRequest;
   shorten?: import("./shorten/model").ShortenRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
@@ -280,6 +292,48 @@ self.onmessage = async ({
       const start = performance.now();
       const raw = tangentGardenLace(JSON.stringify(laceSettings(q)));
       postLifted(data.id, raw, start);
+      return;
+    }
+    if (data.action === "laceSolid") {
+      const q = data.laceSolid;
+      if (!q) throw new Error("Enter plaque settings.");
+      // Numbers must be finite before JSON turns NaN or infinity into
+      // null; Go checks every limit.
+      const check = (v: unknown, path: string) => {
+        if (typeof v === "number" && !Number.isFinite(v))
+          throw fieldError(path, "Enter a finite number.");
+        if (Array.isArray(v)) v.forEach((x, i) => check(x, `${path}.${i}`));
+        else if (typeof v === "object" && v !== null)
+          for (const [k, x] of Object.entries(v))
+            check(x, path ? `${path}.${k}` : k);
+      };
+      check(q, "");
+      const json = JSON.stringify({ ...q, lace: laceSettings(q.lace) });
+      if (json.length > 65536)
+        throw new Error("Plaque settings are too large.");
+      const start = performance.now();
+      const raw = tangentGardenLaceSolid(json);
+      const prepared = performance.now();
+      if (typeof raw === "string") {
+        const r = JSON.parse(raw);
+        self.postMessage({ id: data.id, ...(r.error ? r : { result: r }) });
+        return;
+      }
+      const result = JSON.parse(raw.json);
+      result.vertices = raw.vertices;
+      result.triangles = raw.triangles;
+      result.package = raw.package;
+      self.postMessage(
+        {
+          id: data.id,
+          result,
+          timings: {
+            prepare: prepared - start,
+            bytes: raw.vertices.buffer.byteLength + raw.json.length,
+          },
+        },
+        [raw.vertices.buffer],
+      );
       return;
     }
     if (data.action === "laceFrame") {

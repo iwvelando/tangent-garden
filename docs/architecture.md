@@ -720,6 +720,105 @@ A conformed planar link may carry optional `lace: LaceStudy`: `tiling` (any of t
 
 `LaceDrawing` (`web/lace/Drawing.tsx`) draws the rim as one `<circle>` and every edge and stroke as an SVG arc command (`arcCommand`: the minor arc, its sweep flag from the arc's direction with the page's y turned down, or a line for a diameter), in page units at the camera's zoom with the pan as a group translation, under the shared page camera (`usePageGestures`). Arcs are grouped into a few dozen `<path>` elements by role (`edge`, `motif`, `pathEdge`, `pathMotif`, `selectedEdge`, `selectedMotif`) and taper level, so the DOM stays small at 1,000 tiles: a level is how many half-octaves the tile (or side) is drawn smaller than the center tile at 1× zoom, and its width falls with the square root of drawn size, to a floor, under the shared line weights. Sides take the palette's line ink, the motif and the rim the base ink, and the selection the derived ink; with a selection, the rest recedes and the tiles on its path from the center are drawn heavier. With sides hidden, the selected tile is still outlined. **Follow selection** behaves as the garden's: `followView` frames the bounding box of the tile's corners, centered with its larger side a quarter of the page height, zoom within 1–100; turning it on records `viewBeforeFollow` and off moves back to it; manual pan, zoom and Reset view stop a move and are kept until the next selection; the move is the shared `useCameraMove`, instant under reduced motion; opening a link never reframes. It frames a tile where it is drawn when it is selected, a moved frame included, and never in response to the motion: the camera holds while the disk moves, so the isometry is never mistaken for a camera move. `hitTile` selects arithmetically, inside a tile by its `p` geodesics, or within 10 pixels of a tile's corners for a mouse and 18 for touch outside the drawn tiles, so no hit geometry enters the drawing or its exports. `LaceStill` renders the same geometry for vector SVG and target-resolution PNG through `export-image`, with the page color as the root's background; the record (tiling, model, metric, units, cutoffs, the star point, or for another motif `motifKind` and its size, with the loop's `loopTerms`, counts and omissions, a sentence on the finite patch, layers, presentation, selection by number and address, view, theme, scheme and weight) is the SVG root's `desc` and the PNG's `iTXt` chunk. Labels, the explanation, the legend and the cutoff summary stay outside the drawing.
 
+## Physical solids interfaces and ownership
+
+`physical/` turns frozen planar geometry into a validated solid and a core 3MF package. It has no UI dependency and never reads a camera. The mathematics are in [Printable lace plaques](mathematics.md#printable-lace-plaques). `physical/doc.go` states the contract, and `Example` in `physical/example_test.go` runs it end to end.
+
+### The validated-solid interface
+
+Planar sources after the lace use these entry points and nothing narrower:
+
+| Step | Entry point | Bounded by (`Limits`) |
+| --- | --- | --- |
+| Plan region | `Plan{Strokes []Stroke, Clip, Frame, Outer, Plaque}`; `Stroke{A, B, C, R, Straight, Half, Tile}`; `Circle` | `Strokes` |
+| Field | `Sample(plan, h, cap, lim) (*Grid, error)` | `Nodes`, `Evaluations` |
+| Cleanup | `(*Grid).Clean() int`; `(*Grid).Simplify(raised, wall, gap, outer, plaque) SimplifyReport` | the grid |
+| Boundary | `(*Grid).Contour(lim) (*Contours, error)` | `Vertices` |
+| Cells | `AnalyzeCells(grid, plan, pieces, need) CellReport` | the grid |
+| Solid | `SolidifyWithin(contours, Base, Levels, lim) (*Mesh, error)`; `(*Mesh).TurnOver(h)` | `Triangles` |
+| Validation | `Check(mesh, lim) Report`; `Report.Valid()` | `PairTests` |
+| Package | `Write3MF(w, mesh, PackageInfo, lim) error`; `Read3MF(data)` | `Package` |
+
+A consumer must:
+
+- make its own strokes and `Plan`;
+- choose a grid step, and a cap at least half its largest need plus two steps;
+- turn its source's constraints into `CheckItem`s (`Required`, `Status`, `Evidence`, `Value`, `Limit`, `Detail`, `Hint`). `Report` covers only the mesh.
+
+A required check that fails or is unresolved means not validated. A `Report` that a ceiling stopped is unresolved, never valid. `Profile` (version 1) and `Design` carry the printer's and the object's minima. `WallNeed`, `GapNeed`, `Design.LineNeed` and `Design.CellNeed` combine requested and calibrated values; the profile never changes geometry.
+
+**Errors.** A refused field is a `*FieldError{Field, Message}` named by its request path, such as `diameter`, `design.floor`, `clip`, `grid` or `profile.envelope.0`, `profile.nozzle` … `profile.gap`, `profile.id`, `profile.name` and `profile.sources`. A ceiling wraps `ErrLimit`. `SolidifyWithin` refuses equal or negative levels.
+
+**Ceilings** (`DefaultLimits`, the app's):
+
+| Limit | Value |
+| --- | ---: |
+| Strokes | 200,000 |
+| Field nodes | 4,000,000 |
+| Stroke evaluations | 200,000,000 |
+| Vertices | 150,000 |
+| Triangles | 500,000 |
+| Triangle-pair tests | 20,000,000 |
+| Cutoff rounds | 12 |
+| Package | 64 MiB |
+
+The worker's Go heap runs under a 512 MiB soft limit (`MemoryBudget`). These caps bound work; they say nothing about how long a build takes or how much memory a device has.
+
+**Determinism.** Equal inputs give equal bytes. The fingerprints in `physical/contract_test.go` pin four lace plaques (raised whole tiles, a recessed clean rim, openwork, and a face-down crop with simplifying) and `Example`'s ring and bar, for amd64, WebAssembly (`GOOS=js GOARCH=wasm`, run with Go's `go_js_wasm_exec`) and arm64. amd64 and WebAssembly agree bit for bit. arm64 fuses multiply-adds, so geometric predicates are written with explicit `float64(a*b) - float64(c*d)` conversions (`cross`, `dot`, `vec3`), and arm64 keeps its own fingerprints. A consumer's fixtures follow the same rule: pin against amd64 or WebAssembly output, never only a native arm64 run.
+
+**No importer.** `Read3MF` reads back the single object `Write3MF` writes, for tests and readback. It is not a general mesh importer, and no source accepts arbitrary meshes.
+
+### The lace's plaque
+
+`BuildLaceSolid(LaceSolidRequest, Limits) (*LaceSolid, error)` is the lace's complete use of the interface. `LaceSolidRequest` holds:
+
+- `version` (`SettingsVersion`, 1; 0 reads as 1);
+- `lace` (an `engine.LaceRequest`; its `window` and `minRadius` are dropped);
+- `diameter` (10–300);
+- `design` (`treatment` raised or recessed; `line`, above 0 to 20; `floor`, 0–20, 0 for openwork; `relief`, above 0 to 20; `simplify`; `faceDown`);
+- `rim` (`motif`, `rim` or `crop`) and `clip` (a clean rim's 0.05–0.98 or automatic 0; a crop's 0.05–0.95);
+- `border` (0 for automatic, at most 20);
+- `grid` (0.05–1, or 0 for automatic);
+- `lines` (`motif`, `sides` or `both`);
+- `profile`.
+
+`ParseLaceSolidRequest` reads one from JSON strictly: at most `MaxRequestBytes` (64 KiB), exactly one value, no unknown fields, and a settings or profile version it supports, refused as `version` or `profile.version`.
+
+`LaceSolid` reports:
+
+- `validated` and the ordered `checks`;
+- the mesh `Report`, the `CellReport`, and the source and cutoff;
+- the bounded highlight lists `problems`, `narrow`, `fusedAt` and `simplifiedAt`;
+- `scale`, `clip`, `radius`, `levels`, `faceDown` and the `grid` used;
+- `stats`: work, storage, milliseconds and the contour's measured deviation.
+
+The package records the resolved request, automatic grid included, as `tg:settings`. Parsing those settings and building again gives the same bytes (`TestSettingsReproduceThePackage`).
+
+### The package
+
+Core 3MF only, with three parts:
+
+- `[Content_Types].xml`;
+- `_rels/.rels`;
+- `3D/3dmodel.model`.
+
+The model is in millimeters with one mesh object, and its coordinates are written in the shortest decimal that reads back as the same float64. Metadata holds `Title`, `Application` and `tg:settings`, the last in the `https://tangent-garden.isaacvelando.com/3mf/2026` namespace. One build item is translated to the profile's bed center. Zip entries carry a fixed date. Text uses only the five named XML entities: lib3mf's strict reader refuses numeric character references, which Go's encoder would write. There is no G-code, no slicer project, and no color or material.
+
+### Transport
+
+`tangentGardenLaceSolid` (`cmd/wasm/physical.go`) sets the soft memory limit, parses and builds, and replies `{ json, vertices, triangles, package }`. The report is JSON. The solid's float64 vertices, int32 triangles and the package bytes are views on one `ArrayBuffer`, which the worker's `laceSolid` action transfers. `stats.memory` is the Go runtime's `Sys` after the build: WebAssembly memory only grows, so it is the peak. Nothing is retained between calls. Each preparation runs on an `EngineClient` of its own, so disposing it cancels the job and frees that worker's memory.
+
+### The workshop's state and ownership
+
+Make physical (`web/lace/Workshop.tsx`) is a mode of the lace dialog, not a dialog of its own:
+
+- **Entry.** It opens over a `frozenSource` (`web/lace/physical.ts`), the lace's request without its view window. The lace's layout stays mounted and hidden, so returning restores the lace, its view and its typed text exactly.
+- **Settings.** The physical settings live in the lace study's `physical` field (`LacePhysical`, version 1), which study links carry ([Portable study links](permalinks.md)). Their raw scalar text lives in a map that the lace dialog keeps across returns.
+- **Preparation.** A prepared solid is transient: its key is the request's JSON, and any edit makes it stale.
+- **Export.** The workshop saves its own file with `saveFile`; the lace's still export is hidden while it is open. Copy link stays in the header.
+
+`physicalProblem` refuses empty lengths before a request. Go's `FieldError`s are shown under the control that `physicalLabel` names. Profile citations stay with the build's defaults (`defaultProfiles`): a link carries values only, and a request reattaches the citations of the default with the same id.
+
 ## Curve-shortening interfaces and ownership
 
 `engine/shorten` holds both solvers behind one film. A `scheme` supplies its node count, step rate, right-hand side with its cyclic tridiagonal Jacobian, state limits and geometry. `Film` owns the ROS2 step, the step rule, the run to the horizon or the first limit, checkpoints, `Sample(t)` and `Frames(times)`. `Solve(Request)` builds the convex support-function `grid`; `SolveBloom(BloomRequest)` builds the flower's radial-graph `polar` scheme. Both validate with `engine.FieldError`s on request paths (`seed.petals`, `seed.depth`, `seed.ruffles`, `seed.ruffle`, `seed.phase`, `seed.mode`, `seed.epsilon`, `nodes`, `tau`, `horizon`). A `Contour` is the loop's vertices with the returned polygon's `area`, `length` and centroid, the curvature range (`minKappa`, `maxKappa`; for convex loops `minRho`, `maxRho`) and the steps a seek retook. A `Reply` adds the film's `end`, `extinction`, `area0`, `stop` and `Stats` (accepted, rejected, attempted, discarded, remeshed (always 0), node updates, checkpoints, stride). `FrameRequest` names exactly one of `convex`, `bloom` or `loop`, and at most 64 `times`, each within `[0, End]`; `Evolve` solves whichever it names.

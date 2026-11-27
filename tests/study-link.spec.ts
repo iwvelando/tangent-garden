@@ -3977,6 +3977,7 @@ test("lace links conform settings, selection and view without geometry, and olde
         ...(lace.selected ? ["selected"] : []),
         ...(lace.isometry ? ["isometry"] : []),
         ...(lace.motion ? ["motion"] : []),
+        ...(lace.physical ? ["physical"] : []),
         ...(
           ["motifKind", "petalFullness", "leafFullness", "ringRadius"] as const
         ).filter((k) => k in lace),
@@ -5487,4 +5488,102 @@ test("rectangle links keep the aspect track and reject incompatible fields", asy
     presets.findIndex((p) => p.title === "A lattice changing its mind"),
   );
   expect(planarStudy(old)).toEqual(old);
+});
+
+test("a lace's plaque settings conform, older lace links open without them, and future, damaged or oversized settings are refused by their field", async () => {
+  const { presetLace } = await import("../web/lace/model");
+  const { defaultPhysical, defaultProfiles, profileValues } =
+    await import("../web/lace/physical");
+  const ordinary = planarPreset(0);
+  const lace = presetLace(1);
+  // Absent in older lace links, which open the lace without a workshop.
+  assert.equal("physical" in planarStudy({ ...ordinary, lace }).lace!, false);
+  const physical = {
+    ...defaultPhysical("both"),
+    open: true,
+    treatment: "recessed",
+    diameter: 100,
+    rim: "crop",
+    clip: 0.7,
+    faceDown: true,
+    simplify: true,
+    grid: 0.25,
+    profile: { ...profileValues(defaultProfiles[1]), gap: 1.2 },
+  } as const;
+  for (const p of [
+    physical,
+    defaultPhysical("motif"),
+    // A profile no build names travels by its values alone.
+    {
+      ...physical,
+      profile: { ...physical.profile, id: "my-printer", name: "My printer" },
+    },
+  ]) {
+    const saved = planarStudy({ ...ordinary, lace: { ...lace, physical: p } });
+    assert.deepEqual(saved.lace!.physical, p);
+    const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+    assert.deepEqual(planarStudy(decoded.study).lace!.physical, p);
+  }
+  // Citations stay with the build's defaults: a link carries values only.
+  assert.equal("sources" in physical.profile, false);
+  for (const [patch, field] of [
+    [{ version: 2 }, "lace.physical.version"],
+    [{ version: 0 }, "lace.physical.version"],
+    [
+      { profile: { ...physical.profile, version: 2 } },
+      "lace.physical.profile.version",
+    ],
+    [{ diameter: 400 }, "lace.physical.diameter"],
+    [{ diameter: null }, "lace.physical.diameter"],
+    [{ diameter: "100" }, "lace.physical.diameter"],
+    [{ treatment: "embossed" }, "lace.physical.treatment"],
+    [{ rim: "fade" }, "lace.physical.rim"],
+    [{ lines: "all" }, "lace.physical.lines"],
+    [{ clip: 1.5 }, "lace.physical.clip"],
+    [{ grid: 0.01 }, "lace.physical.grid"],
+    [{ open: "yes" }, "lace.physical.open"],
+    [{ prepared: true }, "lace.physical.prepared"],
+    [
+      { profile: { ...physical.profile, envelope: [250, 210] } },
+      "lace.physical.profile.envelope",
+    ],
+    [
+      { profile: { ...physical.profile, sources: [] } },
+      "lace.physical.profile.sources",
+    ],
+    [
+      { profile: { ...physical.profile, name: "x".repeat(121) } },
+      "lace.physical.profile.name",
+    ],
+    [
+      { profile: { ...physical.profile, id: "x".repeat(65) } },
+      "lace.physical.profile.id",
+    ],
+    [
+      { profile: { ...physical.profile, nozzle: 6 } },
+      "lace.physical.profile.nozzle",
+    ],
+    [{ profile: "bambu-x1c-0.4" }, "lace.physical.profile"],
+  ] as const) {
+    let error: unknown;
+    try {
+      planarStudy({
+        ...ordinary,
+        lace: { ...lace, physical: { ...physical, ...patch } },
+      });
+    } catch (e) {
+      error = e;
+    }
+    assert.ok(error instanceof LinkError, JSON.stringify(patch));
+    assert.equal(error.field, field, JSON.stringify(patch));
+  }
+  // A newer version says what to do.
+  assert.throws(
+    () =>
+      planarStudy({
+        ...ordinary,
+        lace: { ...lace, physical: { ...physical, version: 2 } },
+      }),
+    /newer than this version of Tangent Garden reads \(1\)/,
+  );
 });

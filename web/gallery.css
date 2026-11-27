@@ -226,6 +226,18 @@
   padding: 0 24px 14px;
   border-bottom: 1px solid var(--border);
 }
+/* The families are a group of their own inside the row, after the 3D
+   printable filter; their chips flow as the row's own. */
+.gallery-family-chips {
+  display: flex;
+  flex-wrap: inherit;
+  gap: inherit;
+  min-width: 0;
+}
+.gallery-families .gallery-printable {
+  border-style: dashed;
+  border-color: #246c68;
+}
 .gallery-families button {
   padding: 5px 11px;
   border-color: var(--border);
@@ -242,7 +254,9 @@
   border-color: #246c68;
   color: white;
 }
-.gallery-families button[aria-pressed="true"] small {
+.gallery-families button[aria-pressed="true"] small,
+.gallery-families button:hover small {
+  /* The muted count is too faint on a hovered chip in the dark theme. */
   color: inherit;
 }
 .gallery-grid-wrap {
@@ -395,7 +409,8 @@
     overflow-x: auto;
     scrollbar-width: thin;
   }
-  .gallery-families button {
+  .gallery-families button,
+  .gallery-family-chips {
     flex-shrink: 0;
   }
 }
