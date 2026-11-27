@@ -884,3 +884,85 @@ test("a tiered help's Show more toggle stays where it is when it becomes Show le
   }
   expect(tiered).toBeGreaterThan(5);
 });
+
+test("the plaque workshop's help fits both tiers and states the engine's limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator('[data-lace-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Hyperbolic lace" });
+  await expect(d.locator("#lace-artwork")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await d.getByRole("button", { name: "Make physical…" }).click();
+  const w = d.locator("section.lace-workshop-controls");
+  const read = () =>
+    w.evaluate((root) =>
+      Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+        const h = document.getElementById(
+          toggle.getAttribute("aria-controls")!,
+        )!;
+        const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+          HTMLElement | undefined;
+        brief?.querySelector(".help-more")?.remove();
+        return {
+          topic: toggle.getAttribute("aria-label"),
+          paired: !!toggle.closest(".pair"),
+          brief: brief?.textContent ?? h.textContent ?? "",
+          more: h.querySelector(".hint-more")?.textContent ?? "",
+        };
+      }),
+    );
+  const seen: Awaited<ReturnType<typeof read>> = [];
+  const fits = async () => {
+    const entries = await read();
+    for (const e of entries) {
+      expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+        e.paired ? pairedBriefWords : 20,
+      );
+      expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
+    }
+    seen.push(...entries);
+    return entries;
+  };
+  expect((await fits()).map((e) => e.topic)).toEqual([
+    "About Treatment",
+    "About Diameter (mm)",
+    "About Line width (mm)",
+    "About Floor (mm)",
+    "About Relief (mm)",
+    "About Wall preset",
+    "About Lines",
+    "About Rim",
+    "About removing features below the minimums",
+    "About Face down",
+    "About Printer",
+    "About Grid step (mm)",
+  ]);
+  // Helps shown only under other settings: recessed depth, and each rim's
+  // radius.
+  await w.getByLabel("Treatment", { exact: true }).selectOption("recessed");
+  await fits();
+  for (const rim of ["rim", "crop"]) {
+    await w.getByLabel("Rim", { exact: true }).selectOption(rim);
+    await fits();
+  }
+  const text = seen.map((e) => `${e.brief} ${e.more}`).join(" ");
+  // physical/lace.go (validate), physical/field.go (DefaultLimits) and
+  // the automatic grid step.
+  for (const limit of [
+    "10–300 mm",
+    "above 0, at most 20 mm",
+    "0–20 mm; 0 is openwork",
+    "0.05–0.98",
+    "0.05–0.95",
+    "0.05–1 mm",
+    "empty chooses 0.2 mm",
+    "4,000,000 field nodes",
+    "2 or 3 mm",
+    "never shrunk",
+  ])
+    expect(text).toContain(limit);
+});

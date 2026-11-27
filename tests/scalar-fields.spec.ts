@@ -2012,3 +2012,119 @@ test("rectangle aspect accepts constants and rejects shape variables", async ({
     .poll(async () => (await definition(page)).curve.implicit.rectangle?.aspect)
     .toBe(Math.PI / 2);
 });
+
+test("the plaque workshop's lengths share scalar parsing, preserve overlapping edits and keep their text across a return", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).copied = value;
+        },
+      },
+    });
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action !== "scalars") return send.call(this, q, ...rest);
+      setTimeout(() => send.call(this, q, ...rest), 250);
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator('[data-lace-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Hyperbolic lace" });
+  await expect(d.locator("#lace-artwork")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  await d.getByRole("button", { name: "Make physical…" }).click();
+  const w = d.locator("section.lace-workshop-controls");
+  const input = (label: string) => w.getByLabel(label, { exact: true });
+  const prepare = w.getByRole("button", { name: "Prepare solid" });
+  const share = d.getByRole("button", { name: "Copy link", exact: true });
+  await w.getByText("Minimums the checks use", { exact: true }).click();
+  await w.getByText("Printer bed and slicing", { exact: true }).click();
+  await w.getByLabel("Rim", { exact: true }).selectOption("crop");
+  // Each length accepts constants and refuses variables, under its field.
+  for (const [label, text] of [
+    ["Diameter (mm)", "40*pi"],
+    ["Line width (mm)", "phi"],
+    ["Floor (mm)", "e/2"],
+    ["Relief (mm)", "sqrt(2)"],
+    ["Crop radius (of the disk)", "1/sqrt(2)"],
+    ["Grid step (mm)", "1/4"],
+    ["Minimum wall (mm)", "phi"],
+    ["Minimum raised line (mm)", "phi"],
+    ["Minimum gap (mm)", "pi/3"],
+    ["Minimum floor (mm)", "1"],
+    ["Finest wall (mm)", "2*0.42"],
+    ["Finest gap (mm)", "0.4"],
+    ["Finest height step (mm)", "0.2"],
+    ["Bed width (mm)", "256"],
+    ["Bed depth (mm)", "2^8"],
+    ["Build height (mm)", "250"],
+    ["Nozzle (mm)", "0.4"],
+    ["Extrusion width (mm)", "0.42"],
+    ["Layer height (mm)", "1/5"],
+    ["First layer (mm)", "0.2"],
+  ] as const) {
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await input(label).fill(bad);
+      await expect(
+        w
+          .locator(".field", { has: page.getByLabel(label, { exact: true }) })
+          .locator(".field-error"),
+      ).toBeVisible();
+      await expect(prepare).toBeDisabled();
+      await expect(share).toBeDisabled();
+    }
+    await input(label).fill(text);
+  }
+  // Overlapping edits: each resolves into the latest settings.
+  await input("Diameter (mm)").fill("30*pi");
+  await input("Line width (mm)").fill("2.5");
+  await input("Minimum gap (mm)").fill("1.25");
+  await expect(prepare).toBeEnabled();
+  await share.click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link: string = await page.evaluate(() => (window as any).copied);
+  const { wireStudy } = await import("./study-link-wire");
+  const physical = wireStudy(new URL(link).hash.slice(3)).lace.physical;
+  const phi = (1 + Math.sqrt(5)) / 2;
+  expect(physical).toMatchObject({
+    diameter: 30 * Math.PI,
+    line: 2.5,
+    floor: Math.E / 2,
+    relief: Math.SQRT2,
+    clip: 1 / Math.sqrt(2),
+    grid: 0.25,
+    profile: {
+      wall: phi,
+      strut: phi,
+      gap: 1.25,
+      floor: 1,
+      xyDetail: 0.84,
+      envelope: [256, 256, 250],
+      layerHeight: 0.2,
+    },
+  });
+  // The text typed stays across a return to the lace and back.
+  await w.getByRole("button", { name: "Back to the lace" }).click();
+  await d.getByRole("button", { name: "Make physical…" }).click();
+  await expect(input("Diameter (mm)")).toHaveValue("30*pi");
+  await expect(input("Relief (mm)")).toHaveValue("sqrt(2)");
+  // Emptied optional lengths are automatic: absent from the settings.
+  await input("Grid step (mm)").fill("");
+  await expect(prepare).toBeEnabled();
+  await page.evaluate(() => delete (window as any).copied);
+  await share.click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).copied))
+    .toBeTruthy();
+  const again = wireStudy(
+    new URL(await page.evaluate(() => (window as any).copied)).hash.slice(3),
+  ).lace.physical;
+  expect("grid" in again).toBe(false);
+});

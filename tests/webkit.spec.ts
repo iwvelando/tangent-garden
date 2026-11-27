@@ -4284,3 +4284,32 @@ test("a rectangle aspect edit, field switch and blur stay reachable in WebKit", 
     await page.evaluate(() => document.documentElement.scrollWidth),
   ).toBeLessThanOrEqual(390);
 });
+
+test("the plaque workshop moves focus in and back out without Safari rings after a click, and with them from the keyboard", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator('[data-lace-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Hyperbolic lace" });
+  await expect(d.locator("#lace-artwork")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entry = d.getByRole("button", { name: "Make physical…" });
+  const back = d.getByRole("button", { name: "Back to the lace" });
+  // By click: Safari focuses no clicked button, so the script does, quietly.
+  await entry.click();
+  await expect(back).toBeFocused();
+  await expect(d).toHaveAttribute("data-quiet", "");
+  await back.click();
+  await expect(entry).toBeFocused();
+  await expect(d).toHaveAttribute("data-quiet", "");
+  // By keyboard: the same moves, ringed; Escape returns to the lace.
+  await entry.press("Enter");
+  await expect(back).toBeFocused();
+  await expect(d).not.toHaveAttribute("data-quiet", "");
+  await page.keyboard.press("Escape");
+  await expect(entry).toBeFocused();
+  await expect(d).toBeVisible();
+});

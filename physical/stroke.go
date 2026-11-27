@@ -1,9 +1,3 @@
-// Package physical turns frozen planar geometry into printable solids:
-// a two-level height field over a plaque, checked as a closed mesh and
-// against a printer profile, and written as core 3MF.
-//
-// #543 research: nothing here is a public contract yet. Lengths are in
-// millimeters.
 package physical
 
 import (

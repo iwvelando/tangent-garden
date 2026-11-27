@@ -148,13 +148,42 @@ func fingerprintRequests() []LaceSolidRequest {
 	return []LaceSolidRequest{raised, recessed, openwork, down}
 }
 
+// The downstream interface's own fixture: Example's ring and bar, through
+// Sample, Clean, Contour, SolidifyWithin, Check and Write3MF.
+func pipelinePackage(t *testing.T) []byte {
+	t.Helper()
+	lim := DefaultLimits
+	plan := Plan{Strokes: append(Circle(0, 12, 1), Stroke{A: -12, B: 12, Straight: true, Half: 1}), Outer: 18}
+	g, err := Sample(plan, 0.2, 4, lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Clean()
+	c, err := g.Contour(lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := SolidifyWithin(c, Base{Radius: 20, Segments: 256}, Levels{Plan: 2.8, Rest: 1.6}, lim)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := Check(m, lim); !r.Valid() {
+		t.Fatalf("pipeline fixture: %+v", r)
+	}
+	var pkg bytes.Buffer
+	if err := Write3MF(&pkg, m, PackageInfo{Title: "Ring and bar"}, lim); err != nil {
+		t.Fatal(err)
+	}
+	return pkg.Bytes()
+}
+
 // The packages' bits, recorded on each architecture. WebAssembly, as the
 // browser runs it, matches amd64; arm64 fuses multiply-adds, so its last
 // digits differ. A change that moves any of them changes saved files.
 var packageGolden = map[string][]string{
-	"amd64": {"337879dc5bd59c10", "c322e01d5b795924", "212b055350c94ae6", "cdc7b10313453635"},
-	"wasm":  {"337879dc5bd59c10", "c322e01d5b795924", "212b055350c94ae6", "cdc7b10313453635"},
-	"arm64": {"f91c1a7748b02256", "99fc6ce3079e7fae", "856de70f1d9d202e", "c49a79568310c2fc"},
+	"amd64": {"337879dc5bd59c10", "c322e01d5b795924", "212b055350c94ae6", "cdc7b10313453635", "1f46ccf232f882f8"},
+	"wasm":  {"337879dc5bd59c10", "c322e01d5b795924", "212b055350c94ae6", "cdc7b10313453635", "1f46ccf232f882f8"},
+	"arm64": {"f91c1a7748b02256", "99fc6ce3079e7fae", "856de70f1d9d202e", "c49a79568310c2fc", "6acb5535880a6b16"},
 }
 
 func TestPackageFingerprints(t *testing.T) {
@@ -170,6 +199,7 @@ func TestPackageFingerprints(t *testing.T) {
 		}
 		got = append(got, fmt.Sprintf("%x", sha256.Sum256(s.Package))[:16])
 	}
+	got = append(got, fmt.Sprintf("%x", sha256.Sum256(pipelinePackage(t)))[:16])
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Errorf("%s fingerprints %q, recorded %q", runtime.GOARCH, got, want)
 	}

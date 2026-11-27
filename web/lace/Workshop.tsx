@@ -11,6 +11,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { EngineClient, EngineError } from "../engine-client";
 import { saveFile } from "../export-image";
@@ -92,6 +93,20 @@ export const workshopHelp = {
   ),
 };
 
+// Fields side by side, two to a row; an odd one out stands alone.
+const paired = (fields: ReactNode[]) =>
+  fields.map((f, i) =>
+    i % 2 ? null : i + 1 < fields.length ? (
+      <div className="pair" key={i}>
+        {f}
+        {fields[i + 1]}
+      </div>
+    ) : (
+      f
+    ),
+  );
+// A printer's name without its process, which the note below states.
+const printerName = (name: string) => name.split(", ")[0];
 const minimums: ProfileLength[] = ["wall", "strut", "gap", "floor"];
 const finest: ProfileLength[] = ["xyDetail", "xyGap", "zDetail"];
 const slicing: ProfileLength[] = [
@@ -509,18 +524,20 @@ export function PhysicalWorkshop({
               >
                 {defaultProfiles.map((d, i) => (
                   <option key={d.id} value={i}>
-                    {d.name}
+                    {printerName(d.name)}
                   </option>
                 ))}
                 {printer < 0 && (
                   <option value="link">
-                    {p.profile.name || "From the link"}
+                    {printerName(p.profile.name) || "From the link"}
                   </option>
                 )}
               </select>
             </Field>
             <p className="note">
-              Bed {readout(p.profile.envelope[0])} ×{" "}
+              {readout(p.profile.nozzle)} mm nozzle,{" "}
+              {readout(p.profile.layerHeight)} mm layers; bed{" "}
+              {readout(p.profile.envelope[0])} ×{" "}
               {readout(p.profile.envelope[1])} ×{" "}
               {readout(p.profile.envelope[2])} mm
               {profileEdited(p.profile)
@@ -531,8 +548,8 @@ export function PhysicalWorkshop({
             </p>
             <details className="lace-workshop-profile">
               <summary>Minimums the checks use</summary>
-              {minimums.map(profileField)}
-              {finest.map(profileField)}
+              {paired(minimums.map(profileField))}
+              {paired(finest.map(profileField))}
               <p className="note">
                 Each check needs the larger of a minimum and the printer's
                 finest value.
@@ -540,8 +557,8 @@ export function PhysicalWorkshop({
             </details>
             <details className="lace-workshop-profile">
               <summary>Printer bed and slicing</summary>
-              {([0, 1, 2] as const).map(bedField)}
-              {slicing.map(profileField)}
+              {paired(([0, 1, 2] as const).map(bedField))}
+              {paired(slicing.map(profileField))}
               <p className="note">
                 The slicing values only count the layers each height prints in;
                 choose them in the slicer.

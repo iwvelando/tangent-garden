@@ -265,11 +265,11 @@ test("edits invalidate a prepared plaque, and canceled or superseded jobs never 
     [
       () =>
         field(w, "Printer").selectOption({
-          label: "Original Prusa i3 MK3S+, 0.4 mm nozzle, 0.15 mm QUALITY",
+          label: "Original Prusa i3 MK3S+",
         }),
       () =>
         field(w, "Printer").selectOption({
-          label: "Bambu Lab X1-Carbon, 0.4 mm nozzle, 0.20 mm Standard",
+          label: "Bambu Lab X1-Carbon",
         }),
     ],
     [
@@ -416,7 +416,7 @@ test("a link saves the plaque's settings and reopens the workshop; older and dam
   await field(w, "Crop radius (of the disk)").fill("0.7");
   await w.getByRole("checkbox", { name: "Face down" }).check();
   await field(w, "Printer").selectOption({
-    label: "Original Prusa i3 MK3S+, 0.4 mm nozzle, 0.15 mm QUALITY",
+    label: "Original Prusa i3 MK3S+",
   });
   await w.getByText("Minimums the checks use", { exact: true }).click();
   await field(w, "Minimum gap (mm)").fill("1.2");

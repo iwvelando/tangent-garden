@@ -57,8 +57,9 @@ type Limits struct {
 	Package     int
 }
 
-// DefaultLimits are the research ceilings (#543). They bound work, not
-// responsiveness. Measured first against a 128 MiB working budget, the
+// DefaultLimits are the ceilings every build in the app runs under (#543,
+// #544). They bound work, not responsiveness. Measured first against a
+// 128 MiB working budget, the
 // worker's Go memory reached 52 MiB at 120 mm, 99–138 MiB at 180 mm and
 // 162–242 MiB at 200–256 mm; the owner then chose larger ceilings over
 // that budget, with real-phone checks still required. The planned values

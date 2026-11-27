@@ -80,9 +80,19 @@
   max-width: 100%;
   aspect-ratio: 1;
 }
-.lace-workshop aside section {
-  display: grid;
-  gap: 0.6rem;
+/* The controls flow as the lace's own do; the actions stack. */
+.lace-workshop-controls .animation-buttons,
+.lace-workshop-save {
+  margin-top: 0.75rem;
+}
+.lace-workshop-save {
+  width: 100%;
+}
+.lace-workshop-profile {
+  margin-top: 0.75rem;
+}
+.lace-workshop-profile summary {
+  cursor: pointer;
 }
 .lace-workshop-checks {
   list-style: none;

@@ -5491,9 +5491,8 @@ test("rectangle links keep the aspect track and reject incompatible fields", asy
 
 test("a lace's plaque settings conform, older lace links open without them, and future, damaged or oversized settings are refused by their field", async () => {
   const { presetLace } = await import("../web/lace/model");
-  const { defaultPhysical, defaultProfiles, profileValues } = await import(
-    "../web/lace/physical"
-  );
+  const { defaultPhysical, defaultProfiles, profileValues } =
+    await import("../web/lace/physical");
   const ordinary = planarPreset(0);
   const lace = presetLace(1);
   // Absent in older lace links, which open the lace without a workshop.
