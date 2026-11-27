@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import basicSsl from "@vitejs/plugin-basic-ssl";
 import { defineConfig } from "vite";
+import { precompressedPreview } from "./scripts/precompressed-preview.mjs";
 
 // Production sends this policy from CloudFront; preview sends it too so the browser
 // tests run under it. See tests/csp.spec.ts.
@@ -14,5 +15,5 @@ export default defineConfig(({ mode }) => ({
   // certificate. A plain-HTTP address other than localhost is no secure
   // context: Safari then runs JavaScript and WebAssembly several times slower,
   // and browsers withhold the video encoder that MP4 export needs.
-  plugins: mode === "lan" ? [basicSsl()] : [],
+  plugins: [precompressedPreview(), ...(mode === "lan" ? [basicSsl()] : [])],
 }));

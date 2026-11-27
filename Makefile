@@ -20,7 +20,7 @@ test-wasm: wasm
 	node scripts/test-dev-worker.mjs
 # Tests of the project scripts that need no engine.
 test-scripts:
-	node --test scripts/test-durations.test.mjs scripts/go-race.test.mjs scripts/ci-failure.test.mjs scripts/apt-cutoff.test.mjs
+	node --test scripts/test-durations.test.mjs scripts/go-race.test.mjs scripts/ci-failure.test.mjs scripts/apt-cutoff.test.mjs scripts/precompressed-preview.test.mjs
 # Times large implicit surfaces and curve meshes; ARGS="--compare <site or directory>" adds another engine.
 bench: wasm
 	node scripts/bench-spatial.mjs $(ARGS)
@@ -82,7 +82,7 @@ preview:
 preview-lan:
 	npm run preview:lan
 clean:
-	rm -rf dist public/engine.wasm public/wasm_exec.js public/GO-LICENSE.txt public/LICENSE.txt public/THIRD-PARTY-NOTICES.txt
+	rm -rf dist public/engine.wasm public/engine.wasm.br public/engine.wasm.gz public/wasm_exec.js public/GO-LICENSE.txt public/LICENSE.txt public/THIRD-PARTY-NOTICES.txt
 thumbnails: build
 	node scripts/build-thumbnails.mjs
 # Rewrites the engines' copies of the 2D and 3D presets that their Go tests read.

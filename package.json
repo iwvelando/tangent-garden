@@ -8,7 +8,7 @@
     "wasm": "node scripts/build-wasm.mjs",
     "dev": "npm run wasm && vite --host 127.0.0.1",
     "dev:lan": "npm run wasm && vite --host 0.0.0.0 --mode lan",
-    "build": "npm run wasm && node scripts/build-notices.mjs && tsc --noEmit && vite build && node scripts/check-dist.mjs",
+    "build": "npm run wasm && node scripts/compress-wasm.mjs && node scripts/build-notices.mjs && tsc --noEmit && vite build && node scripts/check-dist.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "preview:lan": "vite preview --host 0.0.0.0 --mode lan",
     "test": "npm run wasm && go test ./... && node scripts/test-wasm.mjs",
