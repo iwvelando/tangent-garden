@@ -31,8 +31,8 @@ func Solidify(c *Contours, b Base, lv Levels) (*Mesh, error) {
 
 // SolidifyWithin is Solidify under the given ceilings.
 func SolidifyWithin(c *Contours, b Base, lv Levels, lim Limits) (*Mesh, error) {
-	if !(lv.Plan > 0) || !(lv.Rest > 0) || lv.Plan == lv.Rest {
-		return nil, errors.New("the plan and the rest need distinct positive heights")
+	if !(lv.Plan >= 0) || !(lv.Rest >= 0) || lv.Plan == lv.Rest || math.IsInf(lv.Plan+lv.Rest, 0) {
+		return nil, errors.New("the plan and the rest need distinct heights, at least zero")
 	}
 	pts := append([]complex128(nil), c.Points...)
 	loops := c.Loops
@@ -100,60 +100,82 @@ func SolidifyWithin(c *Contours, b Base, lv Levels, lim Limits) (*Mesh, error) {
 		}
 		return nil
 	}
-	top := func(polys []Polygon, level uint8) error {
+	// face fills polygons at a level, facing up, or down when flipped.
+	face := func(polys []Polygon, level uint8, down bool) error {
 		for _, p := range polys {
 			ts, err := Triangulate(pts, p)
 			if err != nil {
 				return err
 			}
 			for _, t := range ts {
-				if err := tri(vid(t[0], level), vid(t[1], level), vid(t[2], level)); err != nil {
+				a, b, c := vid(t[0], level), vid(t[1], level), vid(t[2], level)
+				if down {
+					b, c = c, b
+				}
+				if err := tri(a, b, c); err != nil {
 					return err
 				}
 			}
 		}
 		return nil
 	}
-	// The plan's top at Plan, the rest's at Rest.
-	if err := top(planPolys, 2); err != nil {
-		return nil, err
-	}
-	if err := top(restPolys, 1); err != nil {
-		return nil, err
-	}
-	// The bottom: the outline at zero, facing down.
-	bottom, err := Triangulate(pts, Polygon{Outer: edge})
-	if err != nil {
-		return nil, err
-	}
-	for _, t := range bottom {
-		if err := tri(vid(t[0], 0), vid(t[2], 0), vid(t[1], 0)); err != nil {
-			return nil, err
-		}
-	}
 	// wall joins the loop's edges from level lo to level hi, facing to
-	// the loop's right when out is true, else to its left.
+	// the loop's right when right is true, else to its left.
 	wall := func(l []int32, lo, hi uint8, right bool) error {
 		for k := range l {
 			a, b := l[k], l[(k+1)%len(l)]
 			al, bl, ah, bh := vid(a, lo), vid(b, lo), vid(a, hi), vid(b, hi)
+			var err error
 			if right {
-				if err := tri(al, bl, bh); err != nil {
-					return err
-				}
-				if err := tri(al, bh, ah); err != nil {
-					return err
+				if err = tri(al, bl, bh); err == nil {
+					err = tri(al, bh, ah)
 				}
 			} else {
-				if err := tri(al, bh, bl); err != nil {
-					return err
+				if err = tri(al, bh, bl); err == nil {
+					err = tri(al, ah, bh)
 				}
-				if err := tri(al, ah, bh); err != nil {
-					return err
-				}
+			}
+			if err != nil {
+				return err
 			}
 		}
 		return nil
+	}
+	// Openwork: one region alone, from the bed to its height, every loop
+	// of it walled. Raised with no floor, the plan; recessed with grooves
+	// through, the rest.
+	if lv.Rest == 0 || lv.Plan == 0 {
+		polys, level, loopsOf := planPolys, uint8(2), loops
+		if lv.Plan == 0 {
+			polys, level = restPolys, 1
+			loopsOf = reversed
+		}
+		if err := face(polys, level, false); err != nil {
+			return nil, err
+		}
+		if err := face(polys, 0, true); err != nil {
+			return nil, err
+		}
+		for i, l := range loopsOf {
+			if lv.Plan == 0 && b.Framed && i == edgeLoop {
+				continue // the plaque's edge is no wall of the rest
+			}
+			if err := wall(l, 0, level, true); err != nil {
+				return nil, err
+			}
+		}
+		return m, nil
+	}
+	// The plan's top at Plan, the rest's at Rest.
+	if err := face(planPolys, 2, false); err != nil {
+		return nil, err
+	}
+	if err := face(restPolys, 1, false); err != nil {
+		return nil, err
+	}
+	// The bottom: the outline at zero, facing down.
+	if err := face([]Polygon{{Outer: edge}}, 0, true); err != nil {
+		return nil, err
 	}
 	raised := lv.Plan > lv.Rest
 	for i, l := range loops {
@@ -179,4 +201,14 @@ func SolidifyWithin(c *Contours, b Base, lv Levels, lim Limits) (*Mesh, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+// TurnOver turns the mesh upside down about the x axis within the height
+// h: (x, y, z) becomes (x, −y, h − z). It is a rotation, so the object is
+// the same object, not its mirror image, and triangles keep facing out.
+func (m *Mesh) TurnOver(h float64) {
+	for i := 0; i < len(m.V); i += 3 {
+		m.V[i+1] = -m.V[i+1]
+		m.V[i+2] = h - m.V[i+2]
+	}
 }

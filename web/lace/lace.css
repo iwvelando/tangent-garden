@@ -37,45 +37,91 @@
 .garden-layout[hidden] {
   display: none;
 }
-/* Square, as wide as fits both the column and the height left below the
-   header and heading, as the lace's own page is. */
+/* The drawing, its legend and the report share the drawing column. On a
+   wide screen the report sits beside the drawing, the legend's row below
+   both; narrower, they stack in that order. */
+.lace-workshop-view {
+  width: min(100%, calc(100dvh - 340px));
+}
+.lace-workshop-report {
+  margin-top: 12px;
+}
+/* Five entries do not fit a phone's line: they wrap. */
+.lace-workshop .garden-legend {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+@media (min-width: 1001px) {
+  .garden-layout > main.lace-workshop-main {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 12px 20px;
+  }
+  .lace-workshop-main > .lace-workshop-view {
+    flex: 0 0 auto;
+  }
+  .lace-workshop-main > .garden-legend {
+    flex: 1 0 100%;
+    order: 1;
+  }
+  .lace-workshop-report {
+    flex: 1 1 18rem;
+    min-width: 18rem;
+    margin-top: 0;
+  }
+}
+/* Square, as wide as fits both its share of the column and the height
+   left below the header and heading, as the lace's own page is. */
 .lace-workshop-canvas {
   display: block;
-  width: min(100%, calc(100dvh - 340px));
+  width: 100%;
+  max-width: 100%;
   aspect-ratio: 1;
-  margin-inline: auto;
 }
 .lace-workshop aside section {
   display: grid;
   gap: 0.6rem;
 }
-.lace-workshop-report {
-  margin-top: 0.75rem;
-  overflow-x: auto;
-}
 .lace-workshop-checks {
-  border-collapse: collapse;
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
   font-size: 0.85rem;
-  width: 100%;
 }
-.lace-workshop-checks th,
-.lace-workshop-checks td {
+.lace-workshop-checks li {
   border-bottom: 1px solid var(--border);
-  padding: 0.25rem 0.4rem;
-  text-align: left;
-  vertical-align: top;
+  padding: 0.35rem 0;
 }
-.lace-workshop-checks tr[data-status="fail"] td:nth-child(2),
-.lace-workshop-checks tr[data-status="unresolved"] td:nth-child(2) {
-  font-weight: 700;
+.lace-workshop-checks p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.lace-check-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.lace-check-detail {
+  color: var(--muted);
+}
+.lace-workshop-checks li[data-status="fail"] strong,
+.lace-workshop-checks li[data-status="unresolved"] strong {
+  text-decoration: underline;
 }
 .lace-physical-entry {
   margin-top: 0.75rem;
 }
 @media (orientation: landscape) and (max-height: 500px) {
-  /* The drawing column is one screen tall there (garden.css): fill the
-     view's box. */
-  .lace-workshop-canvas {
-    width: min(100cqw, 100cqh);
+  /* The garden's drawing column is one screen tall there; the workshop's
+     scrolls instead, its drawing at most a screen high. */
+  .garden-layout.lace-workshop > main {
+    position: static;
+    height: auto;
+    display: block;
+  }
+  .lace-workshop .lace-workshop-view {
+    width: min(100%, calc(100svh - 24px));
+    container-type: normal;
   }
 }

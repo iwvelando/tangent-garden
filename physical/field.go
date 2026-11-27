@@ -57,35 +57,28 @@ type Limits struct {
 	Package     int
 }
 
-// DefaultLimits are the research ceilings (#543), tightened after
-// measurement:
-//
-//   - The allocation audit: the field, labels, clearances and distance
-//     transform hold about 56 bytes per node at once, and the mesh checks
-//     about 300 bytes per triangle.
-//   - The worker's Go memory, under the soft limit MemoryBudget: 52 MiB
-//     for a 120 mm plaque, 99–138 MiB at 178–180 mm and 0.2 mm, 162–225
-//     MiB at 200–240 mm, and 171 MiB at 256 mm with a 0.3 mm step. These
-//     ceilings bound the work; they do not yet hold every build within
-//     the 128 MiB budget, which is an open decision.
-//
-// So 820,000 nodes, a 180 mm plaque at 0.2 mm or a 270 mm one at 0.3 mm,
-// and 180,000 triangles. (Planned: 4 million and 500,000.)
+// DefaultLimits are the research ceilings (#543). They bound work, not
+// responsiveness. Measured first against a 128 MiB working budget, the
+// worker's Go memory reached 52 MiB at 120 mm, 99–138 MiB at 180 mm and
+// 162–242 MiB at 200–256 mm; the owner then chose larger ceilings over
+// that budget, with real-phone checks still required. The planned values
+// stand: 4 million field nodes (about 400 mm at 0.2 mm), 500,000
+// triangles. An automatic grid step keeps a large plaque within them.
 var DefaultLimits = Limits{
 	Strokes:     200_000,
-	Nodes:       820_000,
+	Nodes:       4_000_000,
 	Evaluations: 200_000_000,
 	Vertices:    150_000,
-	Triangles:   180_000,
+	Triangles:   500_000,
 	PairTests:   20_000_000,
 	Rounds:      12,
 	Package:     64 << 20,
 }
 
 // MemoryBudget is the soft memory limit a build in the browser's worker
-// runs under: the working-memory ceiling of 128 MiB less room for the
-// runtime and the reply.
-const MemoryBudget = 112 << 20
+// runs under: the collector works to stay below it rather than let the
+// heap double, which WebAssembly memory, never returned, would keep.
+const MemoryBudget = 512 << 20
 
 // ErrLimit marks a build that would pass a ceiling; nothing is returned.
 var ErrLimit = errors.New("ceiling")

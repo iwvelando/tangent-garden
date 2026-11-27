@@ -931,6 +931,7 @@ export function LacePreview({
         {workshop && (
           <PhysicalWorkshop
             source={workshop}
+            lines={study.edges ? (study.motif ? "both" : "sides") : "motif"}
             onClose={() => setWorkshop(undefined)}
           />
         )}

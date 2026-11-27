@@ -3,6 +3,7 @@ package physical
 import (
 	"fmt"
 	"math"
+	"strconv"
 )
 
 // Status is a check's outcome. A required check that fails or is
@@ -31,6 +32,8 @@ const (
 
 // CheckItem is one check of a prepared solid.
 type CheckItem struct {
+	// Hint says what to change when the check does not pass.
+	Hint     string   `json:"hint,omitempty"`
 	ID       string   `json:"id"`
 	Label    string   `json:"label"`
 	Required bool     `json:"required"`
@@ -57,7 +60,23 @@ type Design struct {
 	Line      float64 `json:"line"`
 	Floor     float64 `json:"floor"`
 	Relief    float64 `json:"relief"`
+	// Simplify removes material thinner than the wall and fills gaps
+	// narrower than the gap minimum (Grid.Simplify), reported, before
+	// the solid is built.
+	Simplify bool `json:"simplify,omitempty"`
+	// FaceDown turns the solid over for printing with its decorated face
+	// on the bed (Mesh.TurnOver).
+	FaceDown bool `json:"faceDown,omitempty"`
 }
+
+// Openwork is a design with no floor: raised, the lines alone; recessed,
+// grooves cut through, leaving the webs.
+func (d Design) Openwork() bool { return d.Floor == 0 }
+
+// WallNeed and GapNeed are the least material width and gap the profile
+// admits.
+func WallNeed(p Profile) float64 { return math.Max(p.Wall, p.XYDetail) }
+func GapNeed(p Profile) float64  { return math.Max(p.Gap, p.XYGap) }
 
 // Levels are the design's two top heights.
 func (d Design) Levels() Levels {
@@ -115,24 +134,33 @@ func sizeChecks(d Design, p Profile) []CheckItem {
 		what = "Groove width"
 	}
 	out = append(out, CheckItem{ID: "line", Label: what, Required: true, Status: pass(d.Line >= lineNeed), Evidence: Conservative,
-		Value: d.Line, Limit: lineNeed, Detail: "every point of the plan lies in a disk of this width inside it"})
+		Value: d.Line, Limit: lineNeed, Detail: "every point of the plan lies in a disk of this width inside it",
+		Hint: "Widen the lines to the profile's minimum."})
 	floorWhat := "Floor under the lines"
 	if d.Treatment == Recessed {
 		floorWhat = "Floor under the grooves"
 	}
-	out = append(out, CheckItem{ID: "floor", Label: floorWhat, Required: true, Status: pass(d.Floor >= p.Floor), Evidence: Exact,
-		Value: d.Floor, Limit: p.Floor})
+	if d.Openwork() {
+		out = append(out, CheckItem{ID: "floor", Label: "Openwork: no floor", Required: true, Status: StatusPass, Evidence: Exact,
+			Detail: "nothing joins the pieces but the lace itself"})
+	} else {
+		out = append(out, CheckItem{ID: "floor", Label: floorWhat, Required: true, Status: pass(d.Floor >= p.Floor), Evidence: Exact,
+			Value: d.Floor, Limit: p.Floor, Hint: fmt.Sprintf("Raise the floor to %s mm or more, or set it to 0 for openwork.", strconv.FormatFloat(p.Floor, 'f', -1, 64))})
+	}
 	reliefWhat := "Relief height"
 	if d.Treatment == Recessed {
 		reliefWhat = "Groove depth"
 	}
 	out = append(out, CheckItem{ID: "relief", Label: reliefWhat, Required: true, Status: pass(d.Relief >= p.ZDetail), Evidence: Exact,
-		Value: d.Relief, Limit: p.ZDetail})
+		Value: d.Relief, Limit: p.ZDetail, Hint: "Raise it to at least the profile's Z detail."})
 	lv := d.Levels()
 	for _, h := range []struct {
 		id, label string
 		v         float64
 	}{{"layers-low", "Lower top in layers", math.Min(lv.Plan, lv.Rest)}, {"layers-high", "Upper top in layers", math.Max(lv.Plan, lv.Rest)}} {
+		if h.v == 0 {
+			continue
+		}
 		n := layers(h.v, p)
 		st := StatusPass
 		detail := fmt.Sprintf("%.4g layers", n)

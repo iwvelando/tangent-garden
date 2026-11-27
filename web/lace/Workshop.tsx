@@ -18,6 +18,7 @@ import {
   type LaceSolidRequest,
   type Profile,
   type Rim,
+  type Lines,
   type Treatment,
 } from "./physical";
 
@@ -31,6 +32,9 @@ type Settings = {
   clip: string;
   grid: string;
   profile: number;
+  lines: Lines;
+  simplify: boolean;
+  faceDown: boolean;
 };
 
 const initial: Settings = {
@@ -41,24 +45,32 @@ const initial: Settings = {
   relief: "1.2",
   rim: "motif",
   clip: "",
-  grid: "0.2",
+  grid: "",
   profile: 0,
+  lines: "motif",
+  simplify: false,
+  faceDown: false,
 };
 
-// The profile fields offered for editing, with their labels.
-const profileFields: [keyof Profile, string][] = [
+// The profile's editable fields, grouped by what they are for: the
+// minimums the checks use, and the slicing values that only count layers
+// in the report. Neither changes the solid.
+const minimumFields: [keyof Profile, string][] = [
+  ["wall", "Minimum wall"],
+  ["strut", "Minimum raised line"],
+  ["gap", "Minimum gap"],
+  ["floor", "Minimum floor"],
+  ["xyDetail", "Printer's finest wall"],
+  ["xyGap", "Printer's finest gap"],
+  ["zDetail", "Printer's finest height step"],
+];
+const slicingFields: [keyof Profile, string][] = [
   ["nozzle", "Nozzle"],
   ["extrusionWidth", "Extrusion width"],
+  ["firstLayer", "First layer height"],
   ["layerHeight", "Layer height"],
-  ["firstLayer", "First layer"],
-  ["xyDetail", "Calibrated XY detail"],
-  ["xyGap", "Calibrated XY gap"],
-  ["zDetail", "Calibrated Z detail"],
-  ["wall", "Requested wall"],
-  ["strut", "Requested strut"],
-  ["floor", "Requested floor"],
-  ["gap", "Requested gap"],
 ];
+const profileFields = [...minimumFields, ...slicingFields];
 
 const number = (text: string) => {
   const t = text.trim();
@@ -75,13 +87,19 @@ type Prepared = {
 
 export function PhysicalWorkshop({
   source,
+  lines,
   onClose,
 }: {
   source: LaceRequest;
+  // What the study draws: the motif, the tile sides, or both.
+  lines: Lines;
   onClose: () => void;
 }) {
   const theme = useTheme();
-  const [settings, setSettings] = useState(initial);
+  const [settings, setSettings] = useState<Settings>(() => ({
+    ...initial,
+    lines,
+  }));
   const [profiles, setProfiles] = useState<Profile[]>(() =>
     structuredClone(defaultProfiles),
   );
@@ -119,8 +137,13 @@ export function PhysicalWorkshop({
         settings.treatment === "raised" ? "Relief" : "Depth",
         number(settings.relief),
       ],
-      ["grid", "Grid step", number(settings.grid)],
     ];
+    const grid = settings.grid.trim() === "" ? 0 : number(settings.grid);
+    if (!Number.isFinite(grid))
+      return {
+        field: "grid",
+        message: "Grid step: enter a number or leave it empty.",
+      };
     for (const [field, label, v] of fields)
       if (!Number.isFinite(v))
         return { field, message: `${label}: enter a number.` };
@@ -149,10 +172,13 @@ export function PhysicalWorkshop({
         line: fields[1][2],
         floor: fields[2][2],
         relief: fields[3][2],
+        ...(settings.simplify && { simplify: true }),
+        ...(settings.faceDown && { faceDown: true }),
       },
       rim: settings.rim,
       ...(Number.isFinite(clip) && { clip }),
-      grid: fields[4][2],
+      ...(grid > 0 && { grid }),
+      lines: settings.lines,
       profile: edited,
     };
   };
@@ -240,11 +266,33 @@ export function PhysicalWorkshop({
       />
     </Field>
   );
+  const check = (k: "simplify" | "faceDown", label: string, help: string) => (
+    <Field label={label} help={help}>
+      <input
+        type="checkbox"
+        checked={settings[k]}
+        onChange={(e) => set(k, e.currentTarget.checked)}
+      />
+    </Field>
+  );
+  const profileField = (k: keyof Profile, label: string) => (
+    <Field key={k} label={label}>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={profileText[`${settings.profile}.${k}`] ?? String(profile[k])}
+        onChange={(e) => {
+          const v = e.currentTarget.value;
+          setProfileText((t) => ({ ...t, [`${settings.profile}.${k}`]: v }));
+        }}
+      />
+    </Field>
+  );
   const s = prepared?.solid;
   return (
     <FieldErrorContext.Provider value={null}>
       <div className="garden-layout lace-workshop">
-        <main>
+        <main className="lace-workshop-main">
           <div
             ref={viewRef}
             className="garden-view lace-workshop-view"
@@ -267,6 +315,7 @@ export function PhysicalWorkshop({
             )}
           </div>
           {s && <Legend solid={s} dark={theme.dark} scheme={theme.scheme} />}
+          {s && <Report solid={s} prepared={prepared!} />}
         </main>
         <aside>
           <section aria-label="Make physical (research)">
@@ -340,8 +389,8 @@ export function PhysicalWorkshop({
               "Floor",
               "mm",
               settings.treatment === "raised"
-                ? "The plaque under the raised lines."
-                : "The material left under a groove.",
+                ? "The plaque under the raised lines; 0 prints the lines alone, as openwork."
+                : "The material left under a groove; 0 cuts the grooves through, as openwork.",
             )}
             {text(
               "relief",
@@ -351,6 +400,19 @@ export function PhysicalWorkshop({
                 ? "How far the lines rise above the floor."
                 : "How deep the grooves are cut.",
             )}
+            <Field
+              label="Lines"
+              help="The motif, the tile sides, or both: as the study draws them."
+            >
+              <select
+                value={settings.lines}
+                onChange={(e) => set("lines", e.currentTarget.value as Lines)}
+              >
+                <option value="motif">Motif</option>
+                <option value="sides">Tile sides</option>
+                <option value="both">Motif and tile sides</option>
+              </select>
+            </Field>
             <Field
               label="Rim"
               help="Where lines and gaps grow too fine: whole tiles, a framed circle, or an enlarged crop."
@@ -373,9 +435,19 @@ export function PhysicalWorkshop({
                   ? "The disk enlarged to the plaque: 0.05–0.95."
                   : "Where the frame cuts the lace: 0.05–0.98; empty chooses it from whole tiles.",
               )}
+            {check(
+              "simplify",
+              "Remove features below the minimums",
+              "Removes material thinner than the minimum wall and fills gaps narrower than the minimum gap, and counts what it changed.",
+            )}
+            {check(
+              "faceDown",
+              "Face down",
+              "Turns the plaque over so its decorated face prints on the bed: suits recessed plaques and openwork.",
+            )}
             <Field
               label="Printer profile"
-              help="Editable defaults, with their sources in the report."
+              help="Sets the minimums the checks use and where the file places the plaque; it never changes the solid's shape."
             >
               <select
                 value={settings.profile}
@@ -389,37 +461,28 @@ export function PhysicalWorkshop({
               </select>
             </Field>
             <details className="lace-workshop-profile">
-              <summary>Profile values (mm)</summary>
-              {profileFields.map(([k, label]) => (
-                <Field key={k} label={label}>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={
-                      profileText[`${settings.profile}.${k}`] ??
-                      String(profile[k])
-                    }
-                    onChange={(e) => {
-                      const v = e.currentTarget.value;
-                      setProfileText((t) => ({
-                        ...t,
-                        [`${settings.profile}.${k}`]: v,
-                      }));
-                    }}
-                  />
-                </Field>
-              ))}
+              <summary>Minimums the checks use (mm)</summary>
+              {minimumFields.map(([k, label]) => profileField(k, label))}
               <p className="note">
-                Envelope {readout(profile.envelope[0])} ×{" "}
+                A check needs the larger of a minimum and the printer's finest;
+                the printer's values are estimates, not calibrations.
+              </p>
+            </details>
+            <details className="lace-workshop-profile">
+              <summary>Slicing, for the layer note only (mm)</summary>
+              {slicingFields.map(([k, label]) => profileField(k, label))}
+              <p className="note">
+                These only count the layers each height slices to in the report;
+                set them in the slicer. Bed {readout(profile.envelope[0])} ×{" "}
                 {readout(profile.envelope[1])} × {readout(profile.envelope[2])}{" "}
-                mm. Calibrated values are uncalibrated estimates.
+                mm.
               </p>
             </details>
             {text(
               "grid",
               "Grid step",
               "mm",
-              "The field's sampling step: 0.05–1 mm.",
+              "The field's sampling step, 0.05–1 mm; empty chooses 0.2 mm, or coarser for a large plaque.",
             )}
             <div className="animation-buttons">
               <button
@@ -453,7 +516,6 @@ export function PhysicalWorkshop({
               Back to the lace
             </button>
           </section>
-          {s && <Report solid={s} prepared={prepared!} />}
         </aside>
       </div>
     </FieldErrorContext.Provider>
@@ -492,8 +554,15 @@ function TopView({
     const k = (size / 2 - 8) / R;
     const X = (x: number) => size / 2 + x * k;
     const Y = (y: number) => size / 2 - y * k;
-    const v = solid.vertices,
-      t = solid.triangles;
+    // A solid turned over for printing is drawn as designed, face up:
+    // the turn (x, y, z) → (x, −y, H − z) is its own inverse.
+    const H = Math.max(solid.levels.Plan, solid.levels.Rest);
+    const v = solid.faceDown
+      ? solid.vertices.map((x, i) =>
+          i % 3 === 1 ? -x : i % 3 === 2 ? H - x : x,
+        )
+      : solid.vertices;
+    const t = solid.triangles;
     const planZ = solid.levels.Plan,
       restZ = solid.levels.Rest;
     // Opaque inks, the floor's mixed toward the background, so that the
@@ -571,6 +640,17 @@ function TopView({
       }
       g.stroke();
       g.globalAlpha = 1;
+    }
+    // What removing features below the minimums changed.
+    if (solid.simplifiedAt) {
+      g.fillStyle = p.incident;
+      for (let i = 0; i < solid.simplifiedAt.length; i += 2)
+        g.fillRect(
+          X(solid.simplifiedAt[i]) - 1,
+          Y(solid.simplifiedAt[i + 1]) - 1,
+          2,
+          2,
+        );
     }
     // Narrow gaps, failing cells and fused pieces.
     if (solid.narrow) {
@@ -658,7 +738,17 @@ function Legend({
             content: (
               <>
                 {swatch(p.incident, 0.6)}
-                Source tiles left out
+                Left out
+              </>
+            ),
+          },
+          {
+            key: "simplified",
+            shown: !!solid.simplifiedAt?.length,
+            content: (
+              <>
+                {swatch(p.incident)}
+                Simplified
               </>
             ),
           },
@@ -668,7 +758,7 @@ function Legend({
             content: (
               <>
                 {swatch(p.derived)}
-                Failing cells, fused pieces
+                Failing
               </>
             ),
           },
@@ -713,35 +803,34 @@ function Report({
           ? `, stopped by the ${s.source.stopped} limit`
           : ""}; {count(s.source.pieces)} separate source{" "}
         {s.source.pieces === 1 ? "piece" : "pieces"}. Scale{" "}
-        {readout(s.scale, 4)} mm per model unit.
+        {readout(s.scale, 4)} mm per model unit; grid step {readout(s.grid, 3)}{" "}
+        mm.
       </p>
-      <table className="lace-workshop-checks">
-        <thead>
-          <tr>
-            <th>Check</th>
-            <th>Outcome</th>
-            <th>Evidence</th>
-            <th>Value</th>
-            <th>Limit</th>
-            <th>Detail</th>
-          </tr>
-        </thead>
-        <tbody>
-          {s.checks.map((c) => (
-            <tr key={c.id} data-status={c.status}>
-              <td>
+      <ul className="lace-workshop-checks">
+        {s.checks.map((c) => (
+          <li key={c.id} data-status={c.status}>
+            <p className="lace-check-head">
+              <span>
                 {c.label}
                 {c.required ? "" : " (advisory)"}
-              </td>
-              <td>{c.status}</td>
-              <td>{c.evidence}</td>
-              <td>{readout(c.value, 4)}</td>
-              <td>{c.limit ? readout(c.limit, 4) : "—"}</td>
-              <td>{c.detail}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </span>
+              <strong>{c.status}</strong>
+            </p>
+            <p className="lace-check-detail">
+              {c.evidence}
+              {c.limit
+                ? ` · ${readout(c.value, 4)} against ${readout(c.limit, 4)}`
+                : c.value
+                  ? ` · ${readout(c.value, 4)}`
+                  : ""}
+              {c.detail ? ` · ${c.detail}` : ""}
+            </p>
+            {c.hint && c.status !== "pass" && (
+              <p className="lace-check-hint">{c.hint}</p>
+            )}
+          </li>
+        ))}
+      </ul>
       <p className="note">
         Bounds {readout(s.mesh.max[0] - s.mesh.min[0], 5)} ×{" "}
         {readout(s.mesh.max[1] - s.mesh.min[1], 5)} ×{" "}

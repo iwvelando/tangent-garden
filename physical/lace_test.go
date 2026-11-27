@@ -201,21 +201,23 @@ func TestLaceRefusals(t *testing.T) {
 	}
 }
 
-// The node ceiling admits a 180 mm plaque at the default step and
-// refuses a larger one there, asking for a coarser step, which admits the
-// largest build plate's.
+// An explicit grid step past the node ceiling is refused, asking for a
+// coarser one; an automatic step adapts (TestAutomaticGrid).
 func TestLaceNodeCeiling(t *testing.T) {
+	lim := DefaultLimits
+	lim.Nodes = 820_000
 	q := solidRequest(starLace(2, 1000), 180, 2, Raised, RimMotif)
-	if _, err := BuildLaceSolid(q, DefaultLimits); err != nil {
+	q.Grid = 0.2
+	if _, err := BuildLaceSolid(q, lim); err != nil {
 		t.Fatalf("180 mm: %v", err)
 	}
 	q.Diameter = 200
-	_, err := BuildLaceSolid(q, DefaultLimits)
+	_, err := BuildLaceSolid(q, lim)
 	if !errors.Is(err, ErrLimit) || !strings.Contains(err.Error(), "coarser grid step") {
 		t.Fatalf("200 mm at 0.2 mm: %v", err)
 	}
-	q.Diameter, q.Grid = 256, 0.3
-	if _, err := BuildLaceSolid(q, DefaultLimits); err != nil {
-		t.Fatalf("256 mm at 0.3 mm: %v", err)
+	q.Grid = 0
+	if _, err := BuildLaceSolid(q, lim); err != nil {
+		t.Fatalf("200 mm, automatic step: %v", err)
 	}
 }

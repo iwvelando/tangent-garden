@@ -34,12 +34,21 @@ export type Profile = {
 };
 
 export type Treatment = "raised" | "recessed";
+export type Lines = "motif" | "sides" | "both";
 export type Rim = "motif" | "rim" | "crop";
 
 export type LaceSolidRequest = {
   lace: LaceRequest;
   diameter: number;
-  design: { treatment: Treatment; line: number; floor: number; relief: number };
+  design: {
+    treatment: Treatment;
+    line: number;
+    floor: number;
+    relief: number;
+    simplify?: boolean;
+    faceDown?: boolean;
+  };
+  lines?: Lines;
   rim: Rim;
   clip?: number;
   border?: number;
@@ -53,6 +62,7 @@ export type CheckItem = {
   required: boolean;
   status: "pass" | "fail" | "unresolved" | "warn";
   evidence: "exact" | "conservative" | "sampled" | "measured";
+  hint?: string;
   value: number;
   limit: number;
   detail: string;
@@ -134,6 +144,11 @@ export type LaceSolid = {
     memory?: number;
   };
   scale: number;
+  // The solid was turned over for printing: (x, y, z) → (x, −y, H − z).
+  faceDown: boolean;
+  grid: number;
+  simplified: { removedArea: number; filledArea: number };
+  simplifiedAt: number[] | null;
   clip: number;
   radius: number;
   levels: { Plan: number; Rest: number };

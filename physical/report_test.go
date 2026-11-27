@@ -70,6 +70,26 @@ func researchCorpus() []corpusCase {
 	moved.Isometry = &engine.LaceIsometry{Offset: 0.5, Direction: 0.3, Rotation: 0.2}
 	add("moved73-120-2-crop0.4", moved, 120, 2, Recessed, RimCrop, 0.4)
 	add("unprintable-20-3", starLace(5, 1000), 20, 3, Raised, RimMotif, 0)
+	// The owner's first exploration: rings with tile sides, recessed at
+	// 210 mm, a rim at 0.95 on a 0.3 mm grid, then a crop turned face
+	// down, and openwork.
+	rings := engine.LaceRequest{Tiling: "7,3", Depth: 5, MaxTiles: 1000, StarPoint: 0.3, Motif: "rings", Size: 0.6}
+	owner := func(name string, d float64, tr, rim string, clip float64, edit func(*LaceSolidRequest)) {
+		q := solidRequest(rings, d, 2, tr, rim)
+		q.Clip, q.Grid, q.Lines = clip, 0.3, LinesBoth
+		edit(&q)
+		out = append(out, corpusCase{name, q})
+	}
+	owner("owner-rings-sides-210-rim0.95", 210, Recessed, RimClean, 0.95, func(q *LaceSolidRequest) {})
+	owner("owner-rings-sides-210-rim0.95-simplify", 210, Recessed, RimClean, 0.95, func(q *LaceSolidRequest) { q.Design.Simplify = true })
+	owner("owner-rings-sides-210-crop0.8-facedown", 210, Recessed, RimCrop, 0.8, func(q *LaceSolidRequest) {
+		q.Design.Simplify, q.Design.FaceDown = true, true
+	})
+	owner("owner-rings-sides-150-openwork-crop0.8", 150, Raised, RimCrop, 0.8, func(q *LaceSolidRequest) {
+		q.Design.Simplify, q.Design.Floor = true, 0
+	})
+	add("star73-150-2-openwork", starLace(4, 1000), 150, 2, Raised, RimMotif, 0)
+	out[len(out)-1].q.Design.Floor = 0
 	return out
 }
 
