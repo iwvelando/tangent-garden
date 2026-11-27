@@ -81,6 +81,8 @@ import {
   type LaceStudyMotion,
 } from "./model";
 import { laceTilings, tilingOf, type LaceTilingId } from "./tilings";
+import { frozenSource, researchPhysical } from "./physical";
+import { PhysicalWorkshop } from "./Workshop";
 import { laceMotifs, motifOf } from "./motifs";
 import "../garden/garden.css";
 import "./lace.css";
@@ -182,6 +184,8 @@ export function LacePreview({
     exportAbort = useRef<AbortController | null>(null);
   const exportState = useMotionExport();
   const exportSection = useDisclosure("lace-export");
+  // #543 research: the plaque workshop's frozen source while it is open.
+  const [workshop, setWorkshop] = useState<LaceRequest>();
   const view = useRef<HTMLDivElement>(null),
     playback = useRef<HTMLDivElement>(null);
   // While a motion is frozen, its frame is drawn, or its static patch
@@ -924,9 +928,15 @@ export function LacePreview({
             reflected across sides, as is its motif.
           </p>
         </div>
+        {workshop && (
+          <PhysicalWorkshop
+            source={workshop}
+            onClose={() => setWorkshop(undefined)}
+          />
+        )}
         <ScalarStatus.Provider value={scalarStatus}>
           <FieldErrorContext.Provider value={target}>
-            <div className="garden-layout">
+            <div className="garden-layout" hidden={!!workshop}>
               <main>
                 {artwork}
                 <p className="note garden-gestures">
@@ -1388,6 +1398,22 @@ export function LacePreview({
                   value={study.weight}
                   onChange={(weight) => setStudy((s) => ({ ...s, weight }))}
                 />
+                {researchPhysical() && (
+                  <section
+                    className="lace-physical-entry"
+                    aria-label="Make physical (research)"
+                  >
+                    <button
+                      type="button"
+                      disabled={!valid || !current || !!film || playing}
+                      onClick={() =>
+                        setWorkshop(frozenSource(laceRequest(study)))
+                      }
+                    >
+                      Make physical (research)
+                    </button>
+                  </section>
+                )}
 
                 {!claimed && message && (
                   <div className="study-error" role="alert">

@@ -32,3 +32,43 @@
   content: attr(data-reserve);
   visibility: hidden;
 }
+
+/* #543 research: the plaque workshop, shown only with ?research=543. */
+.garden-layout[hidden] {
+  display: none;
+}
+.lace-workshop-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+}
+.lace-workshop-view {
+  aspect-ratio: auto;
+}
+.lace-workshop aside section {
+  display: grid;
+  gap: 0.6rem;
+}
+.lace-workshop-report {
+  margin-top: 0.75rem;
+  overflow-x: auto;
+}
+.lace-workshop-checks {
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  width: 100%;
+}
+.lace-workshop-checks th,
+.lace-workshop-checks td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.25rem 0.4rem;
+  text-align: left;
+  vertical-align: top;
+}
+.lace-workshop-checks tr[data-status="fail"] td:nth-child(2),
+.lace-workshop-checks tr[data-status="unresolved"] td:nth-child(2) {
+  font-weight: 700;
+}
+.lace-physical-entry {
+  margin-top: 0.75rem;
+}
