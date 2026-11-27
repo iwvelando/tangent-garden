@@ -788,7 +788,7 @@ func (s *LaceSolid) checks(q LaceSolidRequest) []CheckItem {
 	const bug = "This should not happen: please report the settings that made it."
 	geometry("closed", "Closed two-manifold", r.Closed && r.Nonmanifold == 0 && r.NonmanifoldVertices == 0,
 		float64(r.Boundary+r.Nonmanifold+r.NonmanifoldVertices), "every edge between exactly two triangles, one fan at every vertex", bug)
-	geometry("oriented", "Outward orientation", r.Oriented, r.Volume, fmt.Sprintf("every edge used once each way; %s mm³ enclosed", strconv.FormatFloat(r.Volume, 'g', 5, 64)), bug)
+	geometry("oriented", "Outward orientation", r.Oriented, r.Volume, "every edge used once each way; "+grouped(math.Round(r.Volume))+" mm³ enclosed", bug)
 	bodyHint := "Add a floor, or frame the lace with a clean rim or a crop, so that every piece is held."
 	if !q.Design.Openwork() {
 		bodyHint = bug

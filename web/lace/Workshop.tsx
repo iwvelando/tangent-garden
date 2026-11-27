@@ -905,6 +905,16 @@ function Checks({ title, checks }: { title: string; checks: CheckItem[] }) {
   );
 }
 
+// How a length check's limit reads: a bound the value may not pass, the
+// height a slicer prints, or the least it needs.
+const limitWord = (id: string) =>
+  id === "envelope"
+    ? "at most"
+    : id.startsWith("layers-")
+      ? "slices to"
+      : id === "resolution"
+        ? "at most"
+        : "needs";
 // A check's evidence, a length against its limit, and Go's detail, which
 // carries every count.
 function checkDetail(c: CheckItem) {
@@ -918,9 +928,9 @@ function checkDetail(c: CheckItem) {
   // Simplifying judges the grid step itself, a length.
   if (lengths.has(c.id) || (c.id === "resolution" && c.limit > 0))
     parts.push(
-      c.limit
-        ? `${readout(c.value, 4)} mm, needs ${readout(c.limit, 4)} mm`
-        : `${readout(c.value, 4)} mm`,
+      !c.limit
+        ? `${readout(c.value, 4)} mm`
+        : `${readout(c.value, 4)} mm, ${limitWord(c.id)} ${readout(c.limit, 4)} mm`,
     );
   if (c.detail) parts.push(c.detail);
   return parts.join(" · ");

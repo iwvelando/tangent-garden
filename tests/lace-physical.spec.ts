@@ -382,7 +382,7 @@ test("refusals show under their own controls, and a plaque that fails is saved o
   );
   const envelope = report.locator("li", { hasText: "Fits the build envelope" });
   await expect(envelope).toHaveAttribute("data-status", "fail");
-  await expect(envelope).toContainText("260 mm, needs 256 mm");
+  await expect(envelope).toContainText("260 mm, at most 256 mm");
   await expect(envelope).toContainText("Choose a smaller plaque");
   const [, width] = (await report.textContent())!.match(/(\d+(?:\.\d+)?) ×/)!;
   expect(Number(width)).toBeGreaterThan(259.9);
