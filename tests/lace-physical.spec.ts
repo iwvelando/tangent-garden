@@ -391,6 +391,31 @@ test("refusals show under their own controls, and a plaque that fails is saved o
   expect((await download).suggestedFilename()).toBe(
     "hyperbolic-lace-7-3-raised-260mm-not-validated.3mf",
   );
+
+  // Left empty when returning to the lace, a field still holds the link,
+  // and the lace says which and where, until the workshop fills it.
+  const share = d.getByRole("button", { name: "Copy link", exact: true });
+  await field(w, "Floor (mm)").fill("");
+  await expect(errorOf("Floor (mm)")).toHaveText(
+    "Enter a length in millimeters.",
+  );
+  await w.getByRole("button", { name: "Back to the lace" }).click();
+  await ready(d);
+  const held = d.locator(".study-error");
+  await expect(held).toHaveText(
+    "Floor (mm) in Make physical: Enter a length in millimeters.",
+  );
+  await expect(share).toBeDisabled();
+  const reopened = await enter(d);
+  await expect(field(reopened, "Floor (mm)")).toHaveValue("");
+  await expect(errorOf("Floor (mm)")).toHaveText(
+    "Enter a length in millimeters.",
+  );
+  await field(reopened, "Floor (mm)").fill("1.6");
+  await reopened.getByRole("button", { name: "Back to the lace" }).click();
+  await ready(d);
+  await expect(held).toHaveCount(0);
+  await expect(share).toBeEnabled();
 });
 
 test("a link saves the plaque's settings and reopens the workshop; older and damaged links keep the reader's work", async ({

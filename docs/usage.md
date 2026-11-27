@@ -500,7 +500,7 @@ The drawing is the solid's actual top: lines or grooves in the motif's color, th
 
 A failing check gives its remedy, and an unresolved one says the grid could not decide. **Save 3MF ↓** saves the prepared plaque as a 3MF file in millimeters, placed at the bed's center, with the settings that rebuild it. When a required check fails or is unresolved, the button and the file name say "not validated". Changing any setting asks you to prepare again before saving.
 
-Slice the file in Bambu Studio or PrusaSlicer with the layer height the profile names: the report's layer counts assume it. **Copy link** saves the workshop's settings and every printer value, and opens the workshop again for whoever follows it. It never saves a prepared plaque.
+Slice the file in Bambu Studio or PrusaSlicer with the layer height the profile names: the report's layer counts assume it. **Copy link** saves the workshop's settings and every printer value, and opens the workshop again for whoever follows it. It never saves a prepared plaque. While a workshop length is empty or unreadable there is no link; back in the lace, its error names the field.
 
 ## Curves that smooth themselves
 

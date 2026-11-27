@@ -89,6 +89,7 @@ import { laceTilings, tilingOf, type LaceTilingId } from "./tilings";
 import {
   defaultPhysical,
   frozenSource,
+  physicalLabel,
   physicalProblem,
   studyLines,
   type LacePhysical,
@@ -373,7 +374,10 @@ export function LacePreview({
     quiet.quiet();
     workshopEntry.current?.focus();
   }, [workshop]);
-  const physicalInvalid = !!study.physical && !!physicalProblem(study.physical);
+  // A workshop field left empty or unreadable holds the link. Closed, the
+  // workshop cannot show it under its control, so the lace names it.
+  const physicalHeld = study.physical && physicalProblem(study.physical);
+  const physicalInvalid = !!physicalHeld;
   const endFilm = () => {
     pause();
     frames.current?.invalidate();
@@ -704,9 +708,18 @@ export function LacePreview({
   useEffect(() => {
     exportGeneration.current++;
   }, [drawn]);
+  const held =
+    !workshop && physicalHeld
+      ? {
+          title: `${physicalLabel(physicalHeld.field, study.physical!)} in Make physical`,
+          message: physicalHeld.message,
+        }
+      : undefined;
   const message = scalarError
     ? `${scalarError.name}: ${scalarError.error}`
-    : (activeError?.message ?? motionError?.message ?? durationError);
+    : (activeError?.message ??
+      motionError?.message ??
+      (durationError || (held?.message ?? "")));
   const errorField = activeError
     ? activeError.field
     : (motionError?.field ?? (durationError ? "duration" : undefined));
@@ -724,7 +737,9 @@ export function LacePreview({
             ? motif.label
             : errorField
               ? labels[errorField]
-              : undefined);
+              : message === held?.message
+                ? held?.title
+                : undefined);
   const [claimed, setClaimed] = useState(false);
   const claim = useCallback((_key: string, on: boolean) => setClaimed(on), []);
   const target = useMemo(
