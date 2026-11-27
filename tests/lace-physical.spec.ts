@@ -415,11 +415,17 @@ test("a link saves the plaque's settings and reopens the workshop; older and dam
   await expect(field(w, "Crop radius (of the disk)")).toHaveValue("0.8");
   await field(w, "Crop radius (of the disk)").fill("0.7");
   await w.getByRole("checkbox", { name: "Face down" }).check();
+  // A requested minimum belongs to the object: choosing another printer
+  // keeps it and takes the rest of that printer's values.
+  await w.getByText("Minimums the checks use", { exact: true }).click();
+  await field(w, "Minimum gap (mm)").fill("1.2");
+  // Settled first, so the switch itself must keep it.
+  await expect(w.getByRole("button", { name: "Prepare solid" })).toBeEnabled();
   await field(w, "Printer").selectOption({
     label: "Original Prusa i3 MK3S+",
   });
-  await w.getByText("Minimums the checks use", { exact: true }).click();
-  await field(w, "Minimum gap (mm)").fill("1.2");
+  await expect(field(w, "Minimum gap (mm)")).toHaveValue("1.2");
+  await expect(field(w, "Finest wall (mm)")).toHaveValue("0.9");
   await expect(w.getByText(/values edited/)).toBeVisible();
   const share = d.getByRole("button", { name: "Copy link", exact: true });
   await expect(share).toBeEnabled();
