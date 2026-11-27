@@ -254,7 +254,9 @@
   border-color: #246c68;
   color: white;
 }
-.gallery-families button[aria-pressed="true"] small {
+.gallery-families button[aria-pressed="true"] small,
+.gallery-families button:hover small {
+  /* The muted count is too faint on a hovered chip in the dark theme. */
   color: inherit;
 }
 .gallery-grid-wrap {
