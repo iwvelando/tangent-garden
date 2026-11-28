@@ -211,6 +211,7 @@ export function ThreeBodyPreview({
           result.paths.map((_, i) => (
             <path
               key={`ghost-${i}`}
+              className="threebody-ghost"
               d={
                 "M" +
                 vertices[i].join("L") +

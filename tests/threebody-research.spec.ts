@@ -19,13 +19,14 @@ async function open(page: Page) {
 // vertex count and its head position.
 async function picture(page: Page) {
   return page.locator(".threebody-drawing").evaluate((svg) => ({
-    trails: [...svg.querySelectorAll("path")].map(
+    trails: [...svg.querySelectorAll("path:not(.threebody-ghost)")].map(
       (p) => (p.getAttribute("d") ?? "").split(/[ML]/).length - 1,
     ),
     heads: [...svg.querySelectorAll("circle")].map(
       (c) => `${c.getAttribute("cx")},${c.getAttribute("cy")}`,
     ),
     triangle: svg.querySelectorAll("polygon").length,
+    ghosts: svg.querySelectorAll("path.threebody-ghost").length,
     text: svg.querySelectorAll("text").length,
   }));
 }
@@ -46,8 +47,12 @@ test("the figure-eight opens from the corpus through the worker", async ({
   expect(p.heads).toHaveLength(3);
   expect(p.triangle).toBe(0);
   expect(p.text).toBe(0);
-  // At t = 0 each trail is its first sample alone.
+  // At t = 0 each trail is its first sample alone; the whole path is
+  // drawn faintly behind it, and can be turned off.
   expect(p.trails).toEqual([1, 1, 1]);
+  expect(p.ghosts).toBe(3);
+  await dialog(page).getByLabel("The whole path, faintly").uncheck();
+  expect((await picture(page)).ghosts).toBe(0);
   await expect(dialog(page)).toContainText("Periodicity.");
   await expect(dialog(page)).toContainText("Published lengths are divided");
 });
