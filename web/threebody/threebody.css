@@ -49,9 +49,13 @@
 .threebody-about p {
   margin: 6px 0;
 }
-.threebody main .threebody-about {
+.threebody-history {
   max-width: 760px;
-  margin: 14px auto 0;
+  margin: 8px auto 0;
+  text-align: center;
+}
+.threebody-history p {
+  margin: 0;
 }
 .threebody-facts {
   display: grid;

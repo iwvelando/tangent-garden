@@ -787,8 +787,7 @@ export function ThreeBodyPreview({
                   ))}
                 </ul>
                 {history && t && d && (
-                  <div className="threebody-about">
-                    <h3>This history</h3>
+                  <div className="threebody-history">
                     <p role="status" className="threebody-status">
                       The integration {terminalText[t.reason]} at t ={" "}
                       {readout(t.time, 6)}
@@ -800,41 +799,6 @@ export function ThreeBodyPreview({
                         : ""}
                       .
                     </p>
-                    <dl className="threebody-facts">
-                      <dt>Steps</dt>
-                      <dd>
-                        {formatCount(history.accepted)} accepted,{" "}
-                        {formatCount(history.rejected)} rejected
-                      </dd>
-                      <dt>Samples</dt>
-                      <dd>
-                        {formatCount(history.available)} of{" "}
-                        {formatCount(history.times.length)}
-                      </dd>
-                      <dt>Energy error</dt>
-                      <dd>{readout(d.energyError, 2)}, relative</dd>
-                      <dt>Momentum change</dt>
-                      <dd>{readout(d.momentumError, 2)}</dd>
-                      <dt>Angular momentum change</dt>
-                      <dd>{readout(d.angularError, 2)}, relative</dd>
-                      <dt>Center of mass off its line</dt>
-                      <dd>{readout(d.centerError, 2)}</dd>
-                      <dt>Closest approach</dt>
-                      <dd>
-                        {readout(d.closest, 3)} at t ={" "}
-                        {readout(d.closestTime, 4)}
-                      </dd>
-                      <dt>Largest step error</dt>
-                      <dd>
-                        {readout(d.stepError, 2)} of the tolerance{" "}
-                        {readout(d.tolerance)}
-                      </dd>
-                      <dt>Prepared</dt>
-                      <dd>
-                        {readout(shown!.prepare, 3)} ms in the worker;{" "}
-                        {mebibytes(d.retainedBytes)} retained
-                      </dd>
-                    </dl>
                   </div>
                 )}
               </main>
@@ -1000,6 +964,46 @@ export function ThreeBodyPreview({
                       (duration) => edit((s) => ({ ...s, duration })),
                       threeBodyHelp.duration,
                     )}
+                  </>
+                )}
+                {history && d && (
+                  <>
+                    <h3 className="garden-section">This history</h3>
+                    <dl className="threebody-facts">
+                      <dt>Steps</dt>
+                      <dd>
+                        {formatCount(history.accepted)} accepted,{" "}
+                        {formatCount(history.rejected)} rejected
+                      </dd>
+                      <dt>Samples</dt>
+                      <dd>
+                        {formatCount(history.available)} of{" "}
+                        {formatCount(history.times.length)}
+                      </dd>
+                      <dt>Energy error</dt>
+                      <dd>{readout(d.energyError, 2)}, relative</dd>
+                      <dt>Momentum change</dt>
+                      <dd>{readout(d.momentumError, 2)}</dd>
+                      <dt>Angular momentum change</dt>
+                      <dd>{readout(d.angularError, 2)}, relative</dd>
+                      <dt>Center of mass off its line</dt>
+                      <dd>{readout(d.centerError, 2)}</dd>
+                      <dt>Closest approach</dt>
+                      <dd>
+                        {readout(d.closest, 3)} at t ={" "}
+                        {readout(d.closestTime, 4)}
+                      </dd>
+                      <dt>Largest step error</dt>
+                      <dd>
+                        {readout(d.stepError, 2)} of the tolerance{" "}
+                        {readout(d.tolerance)}
+                      </dd>
+                      <dt>Prepared</dt>
+                      <dd>
+                        {readout(shown!.prepare, 3)} ms in the worker;{" "}
+                        {mebibytes(d.retainedBytes)} retained
+                      </dd>
+                    </dl>
                   </>
                 )}
                 <h3 className="garden-section">About this configuration</h3>
