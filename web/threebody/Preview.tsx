@@ -9,6 +9,7 @@ import { EngineClient } from "../engine-client";
 import { axisInks, plotPalette } from "../palette";
 import { count, liveReadout, mebibytes, readout } from "../number-format";
 import { useTheme } from "../useTheme";
+import { useQuietFocus } from "../quiet-focus";
 import type { Vec } from "../types";
 import { sampleAt, type ThreeBodyCase, type ThreeBodyPrepared } from "./model";
 import "./threebody.css";
@@ -78,6 +79,8 @@ export function ThreeBodyPreview({
 }) {
   const theme = useTheme();
   const dialog = useRef<HTMLDialogElement>(null);
+  const back = useRef<HTMLButtonElement>(null);
+  const quiet = useQuietFocus(dialog);
   const client = useRef<EngineClient | null>(null);
   const [cases, setCases] = useState<ThreeBodyCase[]>([]);
   const [name, setName] = useState("figure-eight");
@@ -95,11 +98,18 @@ export function ThreeBodyPreview({
   const [trail, setTrail] = useState<"full" | "window">("full");
   const [windowLength, setWindowLength] = useState(3);
   const [triangle, setTriangle] = useState(false);
+  const [ghost, setGhost] = useState(true);
   const [framing, setFraming] = useState<"whole" | "close">("whole");
   const request = useRef(0);
 
   useLayoutEffect(() => {
     dialog.current?.showModal();
+    // Opened with the page, not from the keyboard: focus the way back
+    // without a ring, which iOS would draw for a scripted focus, until the
+    // reader uses the keyboard.
+    quiet.onPointerDown();
+    quiet.quiet();
+    back.current?.focus();
     document.documentElement.classList.add("threebody-open");
     return () => document.documentElement.classList.remove("threebody-open");
   }, []);
@@ -197,6 +207,24 @@ export function ThreeBodyPreview({
         aria-busy={prepared?.key !== key || undefined}
         style={{ background: palette.bg }}
       >
+        {ghost &&
+          result.paths.map((_, i) => (
+            <path
+              key={`ghost-${i}`}
+              d={
+                "M" +
+                vertices[i].join("L") +
+                (result.final.time > result.times[result.available - 1]
+                  ? `L${at(frame, result.final.positions[i])}`
+                  : "")
+              }
+              fill="none"
+              stroke={inks[i]}
+              strokeWidth={1}
+              strokeOpacity={0.22}
+              strokeLinejoin="round"
+            />
+          ))}
         {result.paths.map((_, i) => {
           let d = "M" + vertices[i].slice(from, k + 1).join("L");
           if (past) d += `L${at(frame, result.final.positions[i])}`;
@@ -250,9 +278,12 @@ export function ThreeBodyPreview({
         e.preventDefault();
         onReturn("keyboard");
       }}
+      onPointerDown={quiet.onPointerDown}
+      onKeyDownCapture={quiet.onKeyDownCapture}
     >
       <AppHeader theme={theme} appearance={false}>
         <button
+          ref={back}
           onClick={(e) => onReturn(e.detail === 0 ? "keyboard" : "pointer")}
         >
           Return to the notebook
@@ -435,6 +466,14 @@ export function ThreeBodyPreview({
                 The close dance: while all three stay within 2 of the start
               </label>
             </fieldset>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={ghost}
+                onChange={(e) => setGhost(e.currentTarget.checked)}
+              />
+              The whole path, faintly
+            </label>
             <label className="check">
               <input
                 type="checkbox"

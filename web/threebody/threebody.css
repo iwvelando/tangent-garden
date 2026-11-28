@@ -17,6 +17,9 @@ html.threebody-open {
   overscroll-behavior: contain;
   overflow: hidden;
 }
+.threebody[data-quiet] :focus-visible {
+  outline: none;
+}
 .threebody::backdrop {
   background: var(--panel);
 }
@@ -193,7 +196,7 @@ html.threebody-open {
     height: auto;
     padding: 12px 16px 24px;
   }
-  .threebody .threebody-heading p:not(.eyebrow) {
+  .threebody .threebody-heading {
     display: none;
   }
   .threebody h2 {
@@ -208,6 +211,8 @@ html.threebody-open {
   }
   .threebody-drawing,
   .threebody-placeholder {
-    width: min(100%, calc((100dvh - 120px) * 1000 / 760));
+    /* The drawing and its playback row share one screen once the header
+       scrolls away. */
+    width: min(100%, calc((100dvh - 170px) * 1000 / 760));
   }
 }
