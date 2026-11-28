@@ -206,6 +206,27 @@ export class EngineClient {
       bytes: reply.timings?.bytes ?? NaN,
     };
   }
+  // A history and its twin prepared together and compared
+  // (engine/threebody.Pair), in one preparation.
+  async threeBodyPair(
+    q: import("./threebody/model").ThreeBodyRequest,
+    twin: import("./threebody/model").ThreeBodyTwin,
+  ): Promise<{
+    result: import("./threebody/model").ThreeBodyPair;
+    prepare: number;
+    bytes: number;
+  }> {
+    const reply = await this.request({
+      action: "threeBody",
+      threeBody: q,
+      twin,
+    });
+    return {
+      result: reply.result,
+      prepare: reply.timings?.prepare ?? NaN,
+      bytes: reply.timings?.bytes ?? NaN,
+    };
+  }
   async threeBodyCorpus(): Promise<
     import("./threebody/model").ThreeBodyCase[]
   > {

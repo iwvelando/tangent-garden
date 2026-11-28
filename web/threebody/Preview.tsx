@@ -2,8 +2,10 @@
 // One request prepares a finite, immutable history in the worker; playback,
 // seeking, stills and movies select its samples by physical time. Nothing
 // reintegrates or interpolates, and nothing is drawn past the terminal
-// state. The configuration descriptor (configurations.ts) and the Go
-// corpus supply every case's text and defaults.
+// state. A comparison prepares a twin with the history in the same request
+// and draws both on one clock and frame. The configuration descriptor
+// (configurations.ts) and the Go corpus supply every case's text and
+// defaults.
 import {
   count as formatCount,
   elapsed,
@@ -13,6 +15,7 @@ import {
   readout,
 } from "../number-format";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -24,7 +27,7 @@ import { AppHeader } from "../AppHeader";
 import { ExportImageMenu } from "../ExportImageMenu";
 import type { Still } from "../export-image";
 import { EngineClient, EngineError } from "../engine-client";
-import { Field, FieldErrorContext } from "../Field";
+import { CheckSetting, Field, FieldErrorContext } from "../Field";
 import { LatestSession } from "../latest-session";
 import type { PlotCamera } from "../planar-link";
 import { ScalarInput, ScalarStatus, type ScalarState } from "../ScalarInput";
@@ -53,9 +56,11 @@ import {
   type ThreeBodyName,
 } from "./configurations";
 import {
+  configurationTwin,
   defaultThreeBody,
   edited,
-  endOf,
+  pairEnd,
+  twinShift,
   massesTotalOne,
   massTotal,
   refusedField,
@@ -70,10 +75,13 @@ import {
   type ThreeBodyBodies,
   type ThreeBodyBody,
   type ThreeBodyCase,
+  type ThreeBodyComparison,
   type ThreeBodyFraming,
+  type ThreeBodyPair,
   type ThreeBodyPrepared,
   type ThreeBodyRequest,
   type ThreeBodyStudy,
+  type ThreeBodyTwin,
   type Trail,
 } from "./model";
 import "../garden/garden.css";
@@ -90,24 +98,36 @@ function loadCorpus() {
   return corpusLoad;
 }
 
+// What the session asks for: a history, or a history and its twin.
+type Asked = { request: ThreeBodyRequest; twin?: ThreeBodyTwin };
 type Shown = {
   key: string;
   history: ThreeBodyPrepared;
   request: ThreeBodyRequest;
   prepare: number;
+  // The twin as asked for and as prepared, when comparing.
+  twin?: {
+    asked: ThreeBodyTwin;
+    history: ThreeBodyPrepared;
+    bodies: ThreeBodyBodies;
+    comparison: ThreeBodyComparison;
+  };
 };
 const bodyName = (i: number) => `Body ${i + 1}`;
 const topics = {
   mass: (i: number) => `${bodyName(i)} mass`,
   position: (i: number, axis: "x" | "y") => `${bodyName(i)} position ${axis}`,
   velocity: (i: number, axis: "x" | "y") => `${bodyName(i)} velocity ${axis}`,
+  twin: "Twin size",
 };
+const componentName = (w: ThreeBodyTwin) => `${w.kind} ${w.axis}` as const;
 // An engine refusal's path as the field that shows it: a coordinate's own
 // control, and the speed and a close start on the vector's x.
 function topicOf(path: string) {
   const f = refusedField(path);
   if (!f) return undefined;
   if (f === "duration") return "Duration";
+  if (f === "twin-size") return topics.twin;
   const [kind, index, axis] = f.split("-");
   const i = Number(index);
   return kind === "mass"
@@ -167,9 +187,12 @@ export function ThreeBodyPreview({
     generation = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
   const session = useRef<LatestSession<
-    ThreeBodyRequest,
-    { result: ThreeBodyPrepared; prepare: number }
+    Asked,
+    { result: ThreeBodyPrepared | ThreeBodyPair; prepare: number }
   > | null>(null);
+  // The twin last compared, which turning the comparison on again restores
+  // until another configuration is chosen.
+  const lastTwin = useRef<ThreeBodyTwin | undefined>(undefined);
   // Where the motion stands, from 0 to 1 of the history's span, while it
   // plays, is paused or has been sought; absent, the opening moment.
   const [film, setFilm] = useState<{ progress: number }>();
@@ -188,10 +211,16 @@ export function ThreeBodyPreview({
 
   const chosen = corpus?.find((c) => c.name === study.configuration);
   const request = chosen && threeBodyRequest(study, chosen);
-  const key = request ? JSON.stringify(request) : "";
+  const asked: Asked | undefined = request && {
+    request,
+    ...(study.twin && { twin: study.twin }),
+  };
+  const key = asked ? JSON.stringify(asked.twin ? asked : asked.request) : "";
   const current = !!shown && shown.key === key;
   const history = shown?.history;
-  const end = history ? endOf(history) : 0;
+  const twin = shown?.twin;
+  // One clock for the pair, to the later of the two ends.
+  const end = history ? pairEnd(history, twin?.history) : 0;
   const bodies = chosen && studyBodies(study, chosen);
   const masses = useMemo(
     () => (shown?.request.bodies ?? bodies ?? []).map((b) => b.mass),
@@ -264,7 +293,10 @@ export function ThreeBodyPreview({
   useEffect(() => {
     session.current = new LatestSession(
       () => new EngineClient(),
-      async (client, q: ThreeBodyRequest) => client.threeBody(q),
+      async (client, q: Asked) =>
+        q.twin
+          ? client.threeBodyPair(q.request, q.twin)
+          : client.threeBody(q.request),
     );
     scalarClient.current = new EngineClient();
     let live = true;
@@ -297,19 +329,27 @@ export function ThreeBodyPreview({
   // briefly, as the ordinary editor does; the session keeps only the newest
   // unsent request, and a reply for an older one never replaces it.
   useEffect(() => {
-    if (!request || current || massError || scalarError || scalarPending)
-      return;
-    const q = request;
+    if (!asked || current || massError || scalarError || scalarPending) return;
+    const q = asked;
     const timer = setTimeout(
       () =>
         session.current!.update(
           q,
           (r) => {
+            const pair = q.twin ? (r.result as ThreeBodyPair) : undefined;
             setShown({
               key,
-              history: r.result,
-              request: q,
+              history: pair ? pair.reference : (r.result as ThreeBodyPrepared),
+              request: q.request,
               prepare: r.prepare,
+              ...(pair && {
+                twin: {
+                  asked: q.twin!,
+                  history: pair.twin,
+                  bodies: pair.bodies,
+                  comparison: pair.comparison,
+                },
+              }),
             });
             setError({ message: "" });
           },
@@ -395,14 +435,35 @@ export function ThreeBodyPreview({
       next[i] = change(next[i]);
       return { ...s, bodies: next };
     });
+  // The twin changes the second history, so it ends a motion as an initial
+  // state edit does.
+  const editTwin = (change: (w: ThreeBodyTwin) => ThreeBodyTwin) =>
+    edit((s) => (s.twin ? { ...s, twin: change(s.twin) } : s));
+  const compare = (on: boolean) =>
+    edit(({ twin, ...s }) => {
+      if (!on) {
+        if (twin) lastTwin.current = twin;
+        return s;
+      }
+      return {
+        ...s,
+        twin: lastTwin.current ?? configurationTwin(s.configuration),
+      };
+    });
   const manual = (camera: PlotCamera) =>
     setStudy((s) => ({ ...s, view: camera }));
 
   const time = (film?.progress ?? (finished ? 1 : 0)) * end;
   const frame = useMemo(
     () =>
-      history && frameOf(history, masses, study.framing as ThreeBodyFraming),
-    [history, study.framing],
+      history &&
+      frameOf(
+        history,
+        masses,
+        study.framing as ThreeBodyFraming,
+        twin?.history,
+      ),
+    [history, twin, study.framing],
   );
   const drawing = (): ThreeBodyDrawingProps | undefined =>
     history &&
@@ -419,7 +480,19 @@ export function ThreeBodyPreview({
       dark: theme.dark,
       scheme: theme.scheme,
       weight: study.weight,
+      twin: twin?.history,
     };
+  const quality = (h: ThreeBodyPrepared) => ({
+    accepted: h.accepted,
+    rejected: h.rejected,
+    energyError: h.diagnostics.energyError,
+    momentumError: h.diagnostics.momentumError,
+    angularError: h.diagnostics.angularError,
+    centerError: h.diagnostics.centerError,
+    closest: h.diagnostics.closest,
+    closestTime: h.diagnostics.closestTime,
+    stepError: h.diagnostics.stepError,
+  });
   const record = () => {
     const q = shown!.request;
     const h = shown!.history;
@@ -449,17 +522,8 @@ export function ThreeBodyPreview({
       },
       terminal: h.terminal,
       final: h.final,
-      quality: {
-        accepted: h.accepted,
-        rejected: h.rejected,
-        energyError: h.diagnostics.energyError,
-        momentumError: h.diagnostics.momentumError,
-        angularError: h.diagnostics.angularError,
-        centerError: h.diagnostics.centerError,
-        closest: h.diagnostics.closest,
-        closestTime: h.diagnostics.closestTime,
-        stepError: h.diagnostics.stepError,
-      },
+      quality: quality(h),
+      ...(shown!.twin && { twin: twinRecord(shown!.twin) }),
       bodyInks: ["base", "derived", "third"],
       // Page coordinates of a point (x, y) at zoom 1 before the pan:
       // (500 + (x − cx)·k, 380 − (y − cy)·k).
@@ -472,6 +536,35 @@ export function ThreeBodyPreview({
       theme: theme.dark ? "dark" : "light",
       scheme: theme.scheme,
       weight: study.weight,
+    };
+  };
+  // The twin: what was moved and how, its starting state as integrated, how
+  // it ended, its quality and the comparison over the shared samples.
+  const twinRecord = (w: NonNullable<Shown["twin"]>) => {
+    const c = w.comparison;
+    return {
+      perturbation: {
+        ...w.asked,
+        units: w.asked.kind === "position" ? "length units" : "velocity units",
+        others: twinShift(shown!.request.bodies, w.asked),
+      },
+      bodies: w.bodies,
+      terminal: w.history.terminal,
+      final: w.history.final,
+      samples: { available: w.history.available },
+      quality: quality(w.history),
+      comparison: {
+        metric:
+          "the largest |rᵢ′ − rᵢ| over bodies i at each shared sample, in the integration's coordinates, never aligned",
+        common: c.common,
+        end: c.end,
+        largest: c.largest,
+        largestTime: c.largestTime,
+        crossings: c.crossings,
+        retainedBytes: c.retainedBytes,
+      },
+      style:
+        "the twin's trails dashed and its markers hollow, in the same inks",
     };
   };
   const motionRecord = () => ({
@@ -488,7 +581,12 @@ export function ThreeBodyPreview({
       await threeBodyStill(
         format as "svg" | "png",
         props,
-        { ...record(), time: props.time, shown: shownState(history!, time) },
+        {
+          ...record(),
+          time: props.time,
+          shown: shownState(history!, time),
+          ...(twin && { twinShown: shownState(twin.history, time) }),
+        },
         () => id === exportGeneration.current,
         settings,
       );
@@ -654,6 +752,89 @@ export function ThreeBodyPreview({
       {vector(i, b, "velocity")}
     </fieldset>
   );
+  // A history's steps, samples and conservation; the pair's preparation and
+  // retained bytes are shown once, under the history.
+  const facts = (h: ThreeBodyPrepared) => {
+    const q = h.diagnostics;
+    const first = h === history;
+    return (
+      <dl className="threebody-facts">
+        <dt>Steps</dt>
+        <dd>
+          {formatCount(h.accepted)} accepted, {formatCount(h.rejected)} rejected
+        </dd>
+        <dt>Samples</dt>
+        <dd>
+          {formatCount(h.available)} of {formatCount(h.times.length)}
+        </dd>
+        <dt>Energy error</dt>
+        <dd>{readout(q.energyError, 2)}, relative</dd>
+        <dt>Momentum change</dt>
+        <dd>{readout(q.momentumError, 2)}</dd>
+        <dt>Angular momentum change</dt>
+        <dd>{readout(q.angularError, 2)}, relative</dd>
+        <dt>Center of mass off its line</dt>
+        <dd>{readout(q.centerError, 2)}</dd>
+        <dt>Closest approach</dt>
+        <dd>
+          {readout(q.closest, 3)} at t = {readout(q.closestTime, 4)}
+        </dd>
+        <dt>Largest step error</dt>
+        <dd>
+          {readout(q.stepError, 2)} of the tolerance {readout(q.tolerance)}
+        </dd>
+        {first && (
+          <>
+            <dt>Prepared</dt>
+            <dd>
+              {readout(shown!.prepare, 3)} ms in the worker;{" "}
+              {twin
+                ? `${mebibytes(twin.comparison.retainedBytes)} retained for both`
+                : `${mebibytes(q.retainedBytes)} retained`}
+            </dd>
+          </>
+        )}
+      </dl>
+    );
+  };
+  // What the twin changes, in its units, and what it keeps.
+  const twinStatement = (w: ThreeBodyTwin, b: readonly ThreeBodyBody[]) => {
+    const units = w.kind === "position" ? "length" : "velocity";
+    const kept = w.kind === "position" ? "center of mass" : "momentum";
+    const others = [0, 1, 2].filter((j) => j !== w.body).map(bodyName);
+    const signed = (v: number) =>
+      v >= 0 ? `larger by ${readout(v, 6)}` : `smaller by ${readout(-v, 6)}`;
+    const first = `The twin's ${bodyName(w.body).toLowerCase()} starts with ${componentName(w)} ${signed(w.size)} ${units} units.`;
+    if (w.size === 0) return `${first} The twin is the history itself.`;
+    if (w.conserve)
+      return `${first} ${others.join(" and ")} each start ${signed(twinShift(b, w))}, so the ${kept} is unchanged; nothing else differs.`;
+    return `${first} Nothing else differs, so the ${kept} changes by ${readout(Math.abs(b[w.body].mass * w.size), 3)}.`;
+  };
+  const comparison = twin?.comparison;
+  // A checked twin's evidence holds only for that twin of the unedited
+  // configuration.
+  const evidence =
+    study.twin &&
+    !changed &&
+    JSON.stringify(study.twin) === JSON.stringify(description.twin)
+      ? description.twinEvidence
+      : undefined;
+  // The separation at the shown moment, while both histories last.
+  const shownSample = history ? shownState(history, time).sample : -1;
+  const apart =
+    comparison &&
+    typeof shownSample === "number" &&
+    shownSample < comparison.common
+      ? comparison.separation[shownSample]
+      : undefined;
+  const stopped =
+    twin &&
+    history &&
+    (twin.history.available < history.available
+      ? "the twin"
+      : history.available < twin.history.available
+        ? "the history"
+        : undefined);
   const artwork = (
     <div ref={view} className="garden-view">
       {props ? (
@@ -797,6 +978,24 @@ export function ThreeBodyPreview({
                     </li>
                   ))}
                 </ul>
+                {twin && comparison && (
+                  <>
+                    <p className="note threebody-key">
+                      Solid, filled: the history. Dashed, hollow: its twin.
+                    </p>
+                    {/* The separation spans many orders of magnitude, so it
+                        keeps significant digits rather than fixed decimals. */}
+                    <p
+                      className="note threebody-separation"
+                      aria-live="off"
+                      data-separation={apart}
+                    >
+                      {apart !== undefined
+                        ? `Farthest any body is from its twin: ${readout(apart, 2)}`
+                        : `Compared until t = ${readout(comparison.end, 6)}, where ${stopped ?? "both"} stopped`}
+                    </p>
+                  </>
+                )}
                 {history && t && d && (
                   <div className="threebody-history">
                     <p role="status" className="threebody-status">
@@ -809,6 +1008,12 @@ export function ThreeBodyPreview({
                         ? `, before the ${readout(shown!.request.duration, 6)} asked for`
                         : ""}
                       .
+                      {twin &&
+                        ` The twin ${terminalText[twin.history.terminal.reason]} at t = ${readout(twin.history.terminal.time, 6)}${
+                          twin.history.terminal.reason === "encounter"
+                            ? `: bodies ${twin.history.terminal.pair[0]} and ${twin.history.terminal.pair[1]} came within ${readout(twin.history.terminal.separation, 3)}`
+                            : ""
+                        }.`}
                     </p>
                   </div>
                 )}
@@ -826,7 +1031,10 @@ export function ThreeBodyPreview({
                         n,
                         corpus.find((c) => c.name === n)?.title ?? n,
                       ]),
-                      (name) => replace((s) => switchConfiguration(s, name)),
+                      (name) => {
+                        lastTwin.current = undefined;
+                        replace((s) => switchConfiguration(s, name));
+                      },
                       threeBodyHelp.configuration,
                     )}
                     {changed && (
@@ -849,6 +1057,100 @@ export function ThreeBodyPreview({
                   </>
                 ) : (
                   <p className="note">Reading the configurations…</p>
+                )}
+                <h3 className="garden-section">Comparison</h3>
+                <CheckSetting
+                  label="Compare with a twin"
+                  topic="Compare with a twin"
+                  checked={!!study.twin}
+                  disabled={!corpus || exporting}
+                  onChange={compare}
+                  help={threeBodyHelp.twin}
+                />
+                {study.twin && bodies && (
+                  <fieldset disabled={exporting} className="threebody-twin">
+                    <div className="pair">
+                      {select<string>(
+                        "Body",
+                        String(study.twin.body),
+                        [0, 1, 2].map((i) => [String(i), bodyName(i)]),
+                        (v) =>
+                          editTwin((w) => ({
+                            ...w,
+                            body: Number(v) as 0 | 1 | 2,
+                          })),
+                        threeBodyHelp.twinBody,
+                      )}
+                      {select<string>(
+                        "Component",
+                        `${study.twin.kind}-${study.twin.axis}`,
+                        [
+                          ["position-x", "Position x"],
+                          ["position-y", "Position y"],
+                          ["velocity-x", "Velocity x"],
+                          ["velocity-y", "Velocity y"],
+                        ],
+                        (v) => {
+                          const [kind, axis] = v.split("-") as [
+                            ThreeBodyTwin["kind"],
+                            ThreeBodyTwin["axis"],
+                          ];
+                          editTwin((w) => ({ ...w, kind, axis }));
+                        },
+                        threeBodyHelp.twinComponent,
+                      )}
+                    </div>
+                    {scalar(
+                      topics.twin,
+                      "Size",
+                      study.twin.size,
+                      (size) => editTwin((w) => ({ ...w, size })),
+                      threeBodyHelp.twinSize,
+                    )}
+                    <CheckSetting
+                      label="Keep the center of mass and momentum"
+                      topic="Keep the center of mass and momentum"
+                      checked={study.twin.conserve}
+                      onChange={(conserve) =>
+                        editTwin((w) => ({ ...w, conserve }))
+                      }
+                      help={threeBodyHelp.conserve}
+                    />
+                    <p className="note threebody-twin-statement">
+                      {twinStatement(study.twin, bodies)}
+                    </p>
+                  </fieldset>
+                )}
+                {evidence && (
+                  <p className="note threebody-twin-evidence">
+                    <strong>Numerical evidence.</strong> {evidence}
+                  </p>
+                )}
+                {twin && comparison && current && (
+                  <dl className="threebody-facts threebody-comparison">
+                    <dt>Compared</dt>
+                    <dd>
+                      {comparison.common > 0
+                        ? `t = 0 to ${readout(comparison.end, 6)}, ${formatCount(comparison.common)} shared samples`
+                        : "no shared samples"}
+                      {stopped ? `; ${stopped} stopped first` : ""}
+                    </dd>
+                    <dt>Largest separation</dt>
+                    <dd>
+                      {readout(comparison.largest, 3)} at t ={" "}
+                      {readout(comparison.largestTime, 4)}
+                    </dd>
+                    {comparison.crossings.map((x) => (
+                      <Fragment key={x.threshold}>
+                        <dt>Past {readout(x.threshold)}</dt>
+                        <dd>
+                          {x.reached
+                            ? `t = ${readout(x.time, 4)}`
+                            : "not within the comparison"}
+                        </dd>
+                      </Fragment>
+                    ))}
+                  </dl>
                 )}
                 <h3 className="garden-section">Motion</h3>
                 {playbackControls}
@@ -984,42 +1286,16 @@ export function ThreeBodyPreview({
                 )}
                 {history && d && (
                   <>
-                    <h3 className="garden-section">This history</h3>
-                    <dl className="threebody-facts">
-                      <dt>Steps</dt>
-                      <dd>
-                        {formatCount(history.accepted)} accepted,{" "}
-                        {formatCount(history.rejected)} rejected
-                      </dd>
-                      <dt>Samples</dt>
-                      <dd>
-                        {formatCount(history.available)} of{" "}
-                        {formatCount(history.times.length)}
-                      </dd>
-                      <dt>Energy error</dt>
-                      <dd>{readout(d.energyError, 2)}, relative</dd>
-                      <dt>Momentum change</dt>
-                      <dd>{readout(d.momentumError, 2)}</dd>
-                      <dt>Angular momentum change</dt>
-                      <dd>{readout(d.angularError, 2)}, relative</dd>
-                      <dt>Center of mass off its line</dt>
-                      <dd>{readout(d.centerError, 2)}</dd>
-                      <dt>Closest approach</dt>
-                      <dd>
-                        {readout(d.closest, 3)} at t ={" "}
-                        {readout(d.closestTime, 4)}
-                      </dd>
-                      <dt>Largest step error</dt>
-                      <dd>
-                        {readout(d.stepError, 2)} of the tolerance{" "}
-                        {readout(d.tolerance)}
-                      </dd>
-                      <dt>Prepared</dt>
-                      <dd>
-                        {readout(shown!.prepare, 3)} ms in the worker;{" "}
-                        {mebibytes(d.retainedBytes)} retained
-                      </dd>
-                    </dl>
+                    <h3 className="garden-section">
+                      {twin ? "The history" : "This history"}
+                    </h3>
+                    {facts(history)}
+                    {twin && (
+                      <>
+                        <h3 className="garden-section">The twin</h3>
+                        {facts(twin.history)}
+                      </>
+                    )}
                   </>
                 )}
                 <h3 className="garden-section">About this configuration</h3>

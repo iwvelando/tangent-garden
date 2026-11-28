@@ -7,7 +7,12 @@ import { count as formatCount, readout } from "../number-format";
 import type { LineWeight } from "../line-weight";
 import type { PlotCamera } from "../planar-link";
 import type { Vec } from "../types";
-import { threeBodyConfigurations, type ThreeBodyName } from "./configurations";
+import {
+  threeBodyConfigurations,
+  type ThreeBodyName,
+  type ThreeBodyTwin,
+} from "./configurations";
+export type { ThreeBodyTwin } from "./configurations";
 
 export type ThreeBodyBody = { mass: number; position: Vec; velocity: Vec };
 export type ThreeBodyBodies = [ThreeBodyBody, ThreeBodyBody, ThreeBodyBody];
@@ -66,6 +71,28 @@ export type ThreeBodyPrepared = {
   };
 };
 
+// A history and its twin, prepared together on the same sampling plan
+// (engine/threebody.Pair): the twin's starting state as integrated and
+// their comparison over the samples both have.
+export type ThreeBodyComparison = {
+  common: number;
+  end: number;
+  // The farthest any body is from its own twin at each shared sample, and
+  // the same for velocities.
+  separation: number[];
+  speedSeparation: number[];
+  largest: number;
+  largestTime: number;
+  crossings: { threshold: number; reached: boolean; time: number }[];
+  retainedBytes: number;
+};
+export type ThreeBodyPair = {
+  reference: ThreeBodyPrepared;
+  twin: ThreeBodyPrepared;
+  bodies: ThreeBodyBodies;
+  comparison: ThreeBodyComparison;
+};
+
 export type Trail = "whole" | "window";
 export type ThreeBodyFraming = "whole" | "close";
 // The study: the configuration it starts from, its initial state once
@@ -87,6 +114,8 @@ export type ThreeBodyStudy = {
   framing: ThreeBodyFraming;
   view: PlotCamera;
   weight: LineWeight;
+  // The twin compared with the history, when comparing.
+  twin?: ThreeBodyTwin;
 };
 
 // The engine's admission limits and stopping policy (engine/threebody).
@@ -106,6 +135,8 @@ export const threeBodyLimits = {
   drift: 1e-6,
   tolerance: 1e-12,
   // The study's own playback speeds and trail lengths.
+  // The largest twin perturbation, in length or velocity units.
+  twin: 0.1,
   speeds: [0.01, 100] as [number, number],
   windows: [0.01, 100] as [number, number],
 } as const;
@@ -127,6 +158,14 @@ export function configurationStudy(name: ThreeBodyName): ThreeBodyStudy {
   };
 }
 export const defaultThreeBody = configurationStudy("figure-eight");
+// The twin a comparison of a configuration starts from.
+export const configurationTwin = (name: ThreeBodyName): ThreeBodyTwin =>
+  structuredClone(threeBodyConfigurations[name].twin);
+// A configuration's study compared with its twin.
+const twinStudy = (name: ThreeBodyName): ThreeBodyStudy => ({
+  ...configurationStudy(name),
+  twin: configurationTwin(name),
+});
 
 // The authored studies, in the 2D examples gallery. Each opens over the
 // notebook's study without replacing it, and takes nothing from it.
@@ -162,6 +201,19 @@ export const threeBodyPresets: {
     note: "Lagrange's equal-mass triangle, nudged by 10⁻⁶, turns as one for a while, then comes apart",
     study: configurationStudy("broken-triangle"),
   },
+  // A stable neighborhood: the twin's separation grows about linearly.
+  {
+    title: "A figure-eight and its twin",
+    note: "Body 1 of the twin starts 0.01 faster; the two dances drift apart in phase but keep their shape",
+    study: twinStudy("figure-eight"),
+  },
+  // A sensitive encounter, validated against the reference integrator:
+  // the twins part while both are still accurate.
+  {
+    title: "Burrau's problem and a twin",
+    note: "Body 1 of the twin starts 10⁻⁴ to the right; after the close passes the twins throw it out opposite ways",
+    study: twinStudy("pythagorean"),
+  },
 ];
 export const presetThreeBody = (index: number): ThreeBodyStudy =>
   structuredClone(threeBodyPresets[index].study);
@@ -191,6 +243,7 @@ export function threeBodyRequest(
 // The study a configuration switch leaves: the new configuration's state,
 // duration, framing, speed and an unpanned view; the trails, faint path,
 // triangle and weight as they were.
+// A comparison continues with the new configuration's twin.
 export function switchConfiguration(
   s: ThreeBodyStudy,
   name: ThreeBodyName,
@@ -198,6 +251,7 @@ export function switchConfiguration(
   const next = configurationStudy(name);
   return {
     ...next,
+    ...(s.twin && { twin: configurationTwin(name) }),
     trail: s.trail,
     window: s.window,
     ghost: s.ghost,
@@ -233,8 +287,23 @@ export const pastSamples = (p: ThreeBodyPrepared) =>
 export function refusedField(path: string) {
   const m = /^bodies\.(\d)\.(mass|position|velocity)(?:\.(x|y))?$/.exec(path);
   if (m) return `${m[2]}-${m[1]}-${m[3] ?? "x"}`;
-  return path === "duration" ? "duration" : undefined;
+  return path === "duration"
+    ? "duration"
+    : path === "twin.size"
+      ? "twin-size"
+      : undefined;
 }
+
+// The other two bodies' shift when a twin keeps the center of mass or the
+// momentum: −mᵢ·size/(mⱼ + mₖ) each, as engine/threebody.Twin applies it.
+export function twinShift(bodies: readonly ThreeBodyBody[], w: ThreeBodyTwin) {
+  if (!w.conserve) return 0;
+  const others = bodies.reduce((t, b, j) => (j === w.body ? t : t + b.mass), 0);
+  return (-bodies[w.body].mass * w.size) / others;
+}
+// The physical time the pair's clock runs to: the later of the two ends.
+export const pairEnd = (h: ThreeBodyPrepared, twin?: ThreeBodyPrepared) =>
+  twin ? Math.max(endOf(h), endOf(twin)) : endOf(h);
 
 export const terminalText: Record<ThreeBodyTerminal["reason"], string> = {
   end: "reached the end",
@@ -282,4 +351,18 @@ export const threeBodyHelp = {
   ),
   progress:
     "Seek the motion by its physical time; the same time always shows the same sample.",
+  twin: tiered(
+    "Integrates a twin with one starting value moved, and draws both on one clock and frame.",
+    "The twin is dashed, with hollow markers, in its body's ink. Its separation is the farthest any body is from its twin, compared only while both histories last.",
+  ),
+  twinBody: "The body whose starting value the twin moves.",
+  twinComponent: "The position or velocity component moved.",
+  twinSize: tiered(
+    `How far the component moves, within ±${L.twin}; zero matches exactly.`,
+    "In length units for a position and velocity units for a velocity. Nothing else changes, and nothing is renormalized afterward; a twin outside the starting limits is refused.",
+  ),
+  conserve: tiered(
+    "Moves the other two bodies the opposite way, keeping the center of mass or momentum.",
+    "Each moves by the perturbed body's mass times the size over their combined mass. Energy and angular momentum still change.",
+  ),
 };

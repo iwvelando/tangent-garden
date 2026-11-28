@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import type { ColorScheme } from "../color-schemes";
 import { plotPalette, type PlotPalette } from "../palette";
 import { svgStroke, type LineWeight } from "../line-weight";
@@ -28,13 +28,16 @@ export type Frame = { cx: number; cy: number; k: number };
 // The whole history fits every sample and the final state. The close dance
 // fits only the samples whose bodies are all within 2 of that moment's
 // center of mass, so a fleeing body leaves the frame instead of shrinking
-// the rest; with no such sample it fits the whole history.
+// the rest; with no such sample it fits the whole history. A twin shares
+// the frame, which fits both histories by the same rule.
 export const closeRadius = 2;
 export function frameOf(
   p: ThreeBodyPrepared,
   masses: readonly number[],
   framing: ThreeBodyFraming,
+  twin?: ThreeBodyPrepared,
 ): Frame {
+  const histories = twin ? [p, twin] : [p];
   let x0 = Infinity,
     x1 = -Infinity,
     y0 = Infinity,
@@ -45,27 +48,29 @@ export function frameOf(
     y0 = Math.min(y0, v.y);
     y1 = Math.max(y1, v.y);
   };
-  const close = (k: number) => {
+  const close = (h: ThreeBodyPrepared, k: number) => {
     let cx = 0,
       cy = 0;
-    p.paths.forEach((path, i) => {
+    h.paths.forEach((path, i) => {
       cx += masses[i] * path.positions[k].x;
       cy += masses[i] * path.positions[k].y;
     });
-    return p.paths.every(
+    return h.paths.every(
       (path) =>
         Math.hypot(path.positions[k].x - cx, path.positions[k].y - cy) <=
         closeRadius,
     );
   };
   if (framing === "close")
-    for (let k = 0; k < p.available; k++)
-      if (close(k)) for (const path of p.paths) take(path.positions[k]);
-  if (!(x1 >= x0)) {
-    for (let k = 0; k < p.available; k++)
-      for (const path of p.paths) take(path.positions[k]);
-    p.final.positions.forEach(take);
-  }
+    for (const h of histories)
+      for (let k = 0; k < h.available; k++)
+        if (close(h, k)) for (const path of h.paths) take(path.positions[k]);
+  if (!(x1 >= x0))
+    for (const h of histories) {
+      for (let k = 0; k < h.available; k++)
+        for (const path of h.paths) take(path.positions[k]);
+      h.final.positions.forEach(take);
+    }
   const w = Math.max(x1 - x0, 1e-6),
     h = Math.max(y1 - y0, 1e-6);
   const k = 0.9 * Math.min(width / w, height / h);
@@ -207,25 +212,94 @@ export type ThreeBodyDrawingProps = {
   // The simplified paths for the frame at the camera's zoom; computed when
   // absent.
   geometry?: Geometry;
+  // The twin, drawn on the same clock and frame, and its simplified paths.
+  twin?: ThreeBodyPrepared;
+  twinGeometry?: Geometry;
 };
+
+// How a history is drawn: the reference solid with filled markers, its
+// twin dashed with hollow ones, both in the bodies' own inks.
+type Style = "reference" | "twin";
+const dashes = { trail: "7 5", ghost: "5 5", triangle: "2 4" };
 
 // The bodies alone: each one's faint whole history, its trail to the shown
 // moment and its marker, sized by mass, in its own ink, and the optional
-// triangle joining the three. Samples are chosen by physical time and
-// never interpolated; past the last sample only the terminal state is
+// triangle joining the three; a twin's the same, dashed and hollow, beneath
+// the reference's. Samples are chosen by physical time and never
+// interpolated; past a history's last sample only its terminal state is
 // drawn. No text.
 function Art(p: ThreeBodyDrawingProps & { clip?: string }) {
   const palette = plotPalette(p.dark, p.scheme),
     stroke = svgStroke(p.weight),
     inks = bodyInks(palette);
-  const h = p.history;
-  const g = p.geometry ?? geometryOf(h, p.frame, p.camera.zoom);
-  const k = sampleAt(h, p.time);
-  const shown = shownState(h, p.time);
-  const past = shown.sample === "final";
-  const from =
-    p.trail === "whole" ? 0 : Math.max(0, sampleAt(h, p.time - p.window));
-  const heads = shown.positions;
+  const layer = (h: ThreeBodyPrepared, g: Geometry, style: Style) => {
+    const twin = style === "twin",
+      role = (r: string) => (twin ? `twin-${r}` : r);
+    const k = sampleAt(h, p.time);
+    const shown = shownState(h, p.time);
+    const past = shown.sample === "final";
+    const from =
+      p.trail === "whole" ? 0 : Math.max(0, sampleAt(h, p.time - p.window));
+    const heads = shown.positions;
+    // The reference's elements sit directly in the drawing, as they do
+    // without a twin; the twin's are grouped.
+    const Group = twin ? "g" : Fragment;
+    return (
+      <Group key={style} {...(twin && { "data-history": "twin" })}>
+        {p.ghost &&
+          h.paths.map((_, i) => (
+            <path
+              key={`ghost-${i}`}
+              data-role={role("ghost")}
+              data-body={i + 1}
+              d={g.whole[i]}
+              stroke={inks[i]}
+              strokeOpacity={0.22}
+              strokeDasharray={twin ? dashes.ghost : undefined}
+              {...stroke(1)}
+            />
+          ))}
+        {h.paths.map((_, i) => (
+          <path
+            key={`trail-${i}`}
+            data-role={role("trail")}
+            data-body={i + 1}
+            d={pathBetween(g, h, i, from, k) + (past ? tailOf(g, h, i) : "")}
+            stroke={inks[i]}
+            strokeOpacity={0.85}
+            strokeDasharray={twin ? dashes.trail : undefined}
+            {...stroke(1.6)}
+          />
+        ))}
+        {p.triangle && (
+          <polygon
+            data-role={role("triangle")}
+            points={heads.map(g.point).join(" ")}
+            stroke={palette.line}
+            strokeDasharray={twin ? dashes.triangle : "5 4"}
+            {...stroke(1)}
+          />
+        )}
+        {heads.map((v, i) => {
+          const [x, y] = g.point(v).split(" ");
+          return (
+            <circle
+              key={`body-${i}`}
+              data-role={role("body")}
+              data-body={i + 1}
+              cx={x}
+              cy={y}
+              r={markerRadius(p.masses[i])}
+              fill={twin ? palette.bg : inks[i]}
+              stroke={twin ? inks[i] : palette.bg}
+              strokeWidth={twin ? 2 : 1.5}
+            />
+          );
+        })}
+      </Group>
+    );
+  };
+  const g = p.geometry ?? geometryOf(p.history, p.frame, p.camera.zoom);
   return (
     <>
       {p.clip && (
@@ -243,54 +317,13 @@ function Art(p: ThreeBodyDrawingProps & { clip?: string }) {
           strokeLinejoin="round"
           strokeLinecap="round"
         >
-          {p.ghost &&
-            h.paths.map((_, i) => (
-              <path
-                key={`ghost-${i}`}
-                data-role="ghost"
-                data-body={i + 1}
-                d={g.whole[i]}
-                stroke={inks[i]}
-                strokeOpacity={0.22}
-                {...stroke(1)}
-              />
-            ))}
-          {h.paths.map((_, i) => (
-            <path
-              key={`trail-${i}`}
-              data-role="trail"
-              data-body={i + 1}
-              d={pathBetween(g, h, i, from, k) + (past ? tailOf(g, h, i) : "")}
-              stroke={inks[i]}
-              strokeOpacity={0.85}
-              {...stroke(1.6)}
-            />
-          ))}
-          {p.triangle && (
-            <polygon
-              data-role="triangle"
-              points={heads.map(g.point).join(" ")}
-              stroke={palette.line}
-              strokeDasharray="5 4"
-              {...stroke(1)}
-            />
-          )}
-          {heads.map((v, i) => {
-            const [x, y] = g.point(v).split(" ");
-            return (
-              <circle
-                key={`body-${i}`}
-                data-role="body"
-                data-body={i + 1}
-                cx={x}
-                cy={y}
-                r={markerRadius(p.masses[i])}
-                fill={inks[i]}
-                stroke={palette.bg}
-                strokeWidth={1.5}
-              />
-            );
-          })}
+          {p.twin &&
+            layer(
+              p.twin,
+              p.twinGeometry ?? geometryOf(p.twin, p.frame, p.camera.zoom),
+              "twin",
+            )}
+          {layer(p.history, g, "reference")}
         </g>
       </g>
     </>
@@ -335,6 +368,10 @@ export function ThreeBodyDrawing(
     () => geometryOf(p.history, p.frame, p.camera.zoom),
     [p.history, p.frame, p.camera.zoom],
   );
+  const twinGeometry = useMemo(
+    () => p.twin && geometryOf(p.twin, p.frame, p.camera.zoom),
+    [p.twin, p.frame, p.camera.zoom],
+  );
   return (
     <svg
       {...gestures}
@@ -344,14 +381,18 @@ export function ThreeBodyDrawing(
       className="garden-drawing"
       viewBox={`0 0 ${width} ${height}`}
       role="img"
-      aria-label="Three bodies and their trails"
+      aria-label={
+        p.twin
+          ? "Three bodies and their twins, with their trails"
+          : "Three bodies and their trails"
+      }
       aria-busy={p.busy}
       data-zoom={p.camera.zoom}
       data-pan={`${p.camera.x},${p.camera.y}`}
       data-time={p.time}
       data-sample={sampleAt(p.history, p.time)}
     >
-      <Art {...p} geometry={geometry} />
+      <Art {...p} geometry={geometry} twinGeometry={twinGeometry} />
     </svg>
   );
 }

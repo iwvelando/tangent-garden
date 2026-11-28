@@ -853,6 +853,7 @@ test("three-body help fits both tiers and states the engine's limits", async ({
   ]);
   expect(entries.map((e) => e.topic)).toEqual([
     "About Configuration",
+    "About Compare with a twin",
     "About Animation progress",
     "About Speed",
     "About Export resolution",
@@ -894,6 +895,60 @@ test("three-body help fits both tiers and states the engine's limits", async ({
     "closer than 0.01",
     "√(L³/GM)",
   ])
+    expect(text).toContain(limit);
+});
+
+test("three-body twin help fits both tiers and states its limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page
+    .locator(
+      '[data-threebody-example][data-example-title="A figure-eight and its twin"]',
+    )
+    .click();
+  const d = page.getByRole("dialog", { name: "Three bodies" });
+  await expect(d.locator("#threebody-artwork")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const twin = [
+    "About Compare with a twin",
+    "About Body",
+    "About Component",
+    "About Twin size",
+    "About Keep the center of mass and momentum",
+  ];
+  const entries = await d.evaluate(
+    (root, topics) =>
+      Array.from(root.querySelectorAll(".help-toggle"))
+        .filter((t) => topics.includes(t.getAttribute("aria-label")!))
+        .map((toggle) => {
+          const h = document.getElementById(
+            toggle.getAttribute("aria-controls")!,
+          )!;
+          const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+            HTMLElement | undefined;
+          brief?.querySelector(".help-more")?.remove();
+          return {
+            topic: toggle.getAttribute("aria-label"),
+            paired: !!toggle.closest(".pair"),
+            brief: brief?.textContent ?? h.textContent ?? "",
+            more: h.querySelector(".hint-more")?.textContent ?? "",
+          };
+        }),
+    twin,
+  );
+  expect(entries.map((e) => e.topic)).toEqual(twin);
+  for (const e of entries) {
+    expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+      e.paired ? pairedBriefWords : 20,
+    );
+    expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
+  }
+  const text = entries.map((e) => `${e.brief} ${e.more}`).join(" ");
+  for (const limit of ["±0.1", "length units", "velocity units", "refused"])
     expect(text).toContain(limit);
 });
 

@@ -62,7 +62,8 @@ declare const tangentGardenShorten: (
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenSpatialProbe: (json: string) => string;
 // A three-body history sampled at physical times
-// (engine/threebody.Prepared), or the reference corpus as plain JSON.
+// (engine/threebody.Prepared), a history and its twin compared
+// (engine/threebody.Pair), or the reference corpus as plain JSON.
 declare const tangentGardenThreeBody: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
@@ -156,6 +157,8 @@ self.onmessage = async ({
   laceSolid?: import("./lace/physical").LaceSolidRequest;
   shorten?: import("./shorten/model").ShortenRequest;
   threeBody?: import("./threebody/model").ThreeBodyRequest;
+  // With a twin, the history and its twin are prepared together.
+  twin?: import("./threebody/model").ThreeBodyTwin;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
   source?: Pick<import("./planar-link").PlanarStudy, "config" | "bounds">;
@@ -251,12 +254,20 @@ self.onmessage = async ({
         ]),
         ["duration", q.duration],
         ["samples", q.samples],
+        ...(data.twin
+          ? ([
+              ["twin.body", data.twin.body],
+              ["twin.size", data.twin.size],
+            ] as [string, unknown][])
+          : []),
       ];
       for (const [path, v] of numbers)
         if (typeof v !== "number" || !Number.isFinite(v))
           throw fieldError(path, "Enter a finite number.");
       const start = performance.now();
-      const raw = tangentGardenThreeBody(JSON.stringify({ request: q }));
+      const raw = tangentGardenThreeBody(
+        JSON.stringify({ request: q, ...(data.twin && { twin: data.twin }) }),
+      );
       postLifted(data.id, raw, start);
       return;
     }

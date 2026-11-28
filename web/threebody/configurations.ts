@@ -15,6 +15,16 @@ export const threeBodyNames = [
 ] as const;
 export type ThreeBodyName = (typeof threeBodyNames)[number];
 
+// A twin: one declared component of one body's initial state moved by
+// size (engine/threebody.Twin); with conserve the other two bodies move
+// the opposite way together, keeping the center of mass or the momentum.
+export type ThreeBodyTwin = {
+  body: 0 | 1 | 2;
+  kind: "position" | "velocity";
+  axis: "x" | "y";
+  size: number;
+  conserve: boolean;
+};
 type Defaults = {
   speed: number;
   trail: "whole" | "window";
@@ -23,9 +33,19 @@ type Defaults = {
   triangle: boolean;
   framing: "whole" | "close";
 };
+// Each configuration's twin is the one a comparison starts from, when it
+// is turned on or the configuration is chosen while comparing. A twin the
+// reference integrator has checked states its evidence, measured in the
+// WASM build (engine/threebody's TestExampleTwinsAgainstTheReference); it
+// is shown only for that twin of the unedited configuration.
 export const threeBodyConfigurations: Record<
   ThreeBodyName,
-  { explanation: string; defaults: Defaults }
+  {
+    explanation: string;
+    defaults: Defaults;
+    twin: ThreeBodyTwin;
+    twinEvidence?: string;
+  }
 > = {
   // Three periods; short trails chase one another around the faint eight.
   "figure-eight": {
@@ -39,6 +59,9 @@ export const threeBodyConfigurations: Record<
       triangle: false,
       framing: "whole",
     },
+    twin: { body: 0, kind: "velocity", axis: "x", size: 0.01, conserve: true },
+    twinEvidence:
+      "Both histories stay within 10⁻⁶ of the double-double reference throughout. Their separation grows about linearly, to 0.17 after one period: a neighboring orbit, not a sensitive one.",
   },
   "lagrange-equal": {
     explanation:
@@ -51,6 +74,7 @@ export const threeBodyConfigurations: Record<
       triangle: true,
       framing: "whole",
     },
+    twin: { body: 0, kind: "position", axis: "x", size: 1e-6, conserve: false },
   },
   "lagrange-routh": {
     explanation:
@@ -63,6 +87,7 @@ export const threeBodyConfigurations: Record<
       triangle: true,
       framing: "whole",
     },
+    twin: { body: 2, kind: "velocity", axis: "x", size: 0.01, conserve: true },
   },
   hierarchical: {
     explanation:
@@ -75,6 +100,7 @@ export const threeBodyConfigurations: Record<
       triangle: false,
       framing: "whole",
     },
+    twin: { body: 2, kind: "velocity", axis: "x", size: 0.01, conserve: true },
   },
   // The lightest body is ejected: the close dance keeps the others in view.
   pythagorean: {
@@ -88,6 +114,9 @@ export const threeBodyConfigurations: Record<
       triangle: false,
       framing: "close",
     },
+    twin: { body: 0, kind: "position", axis: "x", size: 1e-4, conserve: false },
+    twinEvidence:
+      "The twins pass 10⁻³ apart at t = 17.1, while both histories are still within 10⁻⁶ of the double-double reference (until t = 23.1), so the parting is the perturbation's, not rounding's. The reference confirms that body 1 leaves the history upward and the twin downward.",
   },
   "broken-triangle": {
     explanation:
@@ -100,6 +129,7 @@ export const threeBodyConfigurations: Record<
       triangle: true,
       framing: "whole",
     },
+    twin: { body: 0, kind: "position", axis: "x", size: 1e-6, conserve: false },
   },
   "head-on": {
     explanation:
@@ -112,5 +142,6 @@ export const threeBodyConfigurations: Record<
       triangle: false,
       framing: "whole",
     },
+    twin: { body: 2, kind: "position", axis: "y", size: 0.01, conserve: false },
   },
 };

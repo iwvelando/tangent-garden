@@ -2129,6 +2129,65 @@ test("the plaque workshop's lengths share scalar parsing, preserve overlapping e
   expect("grid" in again).toBe(false);
 });
 
+test("a three-body twin's size shares scalar parsing, lands beside overlapping edits and yields to a configuration", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "scalars")
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else return send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page
+    .locator(
+      '[data-threebody-example][data-example-title="A figure-eight and its twin"]',
+    )
+    .click();
+  const d = page.getByRole("dialog", { name: "Three bodies" });
+  const art = d.locator("#threebody-artwork");
+  const settle = () =>
+    expect(art).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+  await settle();
+  const size = d.getByLabel("Size", { exact: true });
+  const x = d
+    .locator('fieldset.threebody-body[data-body="2"]')
+    .getByLabel("Position x", { exact: true });
+  await size.fill("-pi/100");
+  await x.fill("1/phi");
+  await settle();
+  await expect(d.locator(".field-error")).toHaveCount(0);
+  const download = page.waitForEvent("download");
+  await d.getByRole("button", { name: /Export image/ }).click();
+  await page.getByRole("menuitem", { name: /SVG/ }).click();
+  const svg = Buffer.concat(
+    await (await (await download).createReadStream()).toArray(),
+  ).toString("utf8");
+  const record = JSON.parse(
+    svg
+      .match(/<desc>([^<]*)<\/desc>/)![1]
+      .replaceAll("&quot;", '"')
+      .replaceAll("&amp;", "&"),
+  );
+  expect(record.twin.perturbation.size).toBe(-Math.PI / 100);
+  expect(record.bodies[1].position.x).toBe(1 / phi);
+  for (const bad of ["t", "x", "a", "1/0"]) {
+    await size.fill(bad);
+    await expect(d.locator(".field-error")).toHaveCount(1);
+  }
+  // A configuration drops the evaluation still out and brings its twin.
+  await size.fill("pi/50");
+  await d
+    .getByLabel("Configuration", { exact: true })
+    .selectOption("pythagorean");
+  await settle();
+  await expect(size).toHaveValue("0.0001");
+  await expect(d.locator(".field-error")).toHaveCount(0);
+});
+
 test("three-body masses, starting state and duration share scalar parsing and preserve overlapping edits", async ({
   page,
 }) => {

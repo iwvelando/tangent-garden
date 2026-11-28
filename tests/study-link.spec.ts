@@ -3885,6 +3885,8 @@ test("three-body links conform the configuration, an edited state and the presen
           "weight",
           "window",
           ...Object.keys(extra),
+          // A twin example's comparison.
+          ...("twin" in threeBody ? ["twin"] : []),
         ].sort(),
       );
     }
@@ -3898,6 +3900,24 @@ test("three-body links conform the configuration, an edited state and the presen
     { window: 0.01 },
     { window: 100 },
     { bodies: [body(0.001, -10), body(0.499, 10), body(0.5, 0)] },
+    {
+      twin: {
+        body: 2,
+        kind: "velocity",
+        axis: "y",
+        size: -0.1,
+        conserve: true,
+      },
+    },
+    {
+      twin: {
+        body: 0,
+        kind: "position",
+        axis: "x",
+        size: 0.1,
+        conserve: false,
+      },
+    },
   ])
     assert.deepEqual(
       planarStudy({ ...ordinary, threeBody: { ...threeBody, ...patch } })
@@ -3924,6 +3944,32 @@ test("three-body links conform the configuration, an edited state and the presen
     ],
     [{ samples: 20 }, "threeBody.samples"],
     [{ progress: 0.5 }, "threeBody.progress"],
+    ...(
+      [
+        [{ body: 3 }, "threeBody.twin.body"],
+        [{ body: 1.5 }, "threeBody.twin.body"],
+        [{ kind: "mass" }, "threeBody.twin.kind"],
+        [{ axis: "z" }, "threeBody.twin.axis"],
+        [{ size: 0.11 }, "threeBody.twin.size"],
+        [{ size: -0.11 }, "threeBody.twin.size"],
+        [{ conserve: 0 }, "threeBody.twin.conserve"],
+      ] as const
+    ).map(
+      ([twin, field]) =>
+        [
+          {
+            twin: {
+              body: 0,
+              kind: "position",
+              axis: "x",
+              size: 0.01,
+              conserve: false,
+              ...twin,
+            },
+          },
+          field,
+        ] as const,
+    ),
   ] as const)
     assert.throws(
       () => planarStudy({ ...ordinary, threeBody: { ...threeBody, ...patch } }),

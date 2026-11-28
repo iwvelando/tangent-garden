@@ -360,12 +360,12 @@ test("arrow keys move between cards", async ({ page }) => {
   await page.keyboard.press("ArrowDown");
   const below = page.locator("[data-example]:focus");
   expect((await below.boundingBox())!.y).toBeGreaterThan(top);
-  // End reaches the last card of all, three bodies' broken triangle in 2D.
+  // End reaches the last card of all, three bodies' Burrau twins in 2D.
   await page.keyboard.press("End");
   await expect(dialog.locator(".example-card:visible").last()).toBeFocused();
   await expect(page.locator(".example-card:focus")).toHaveAttribute(
     "data-threebody-example",
-    "4",
+    "6",
   );
 });
 

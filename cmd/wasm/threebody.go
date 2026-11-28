@@ -9,12 +9,15 @@ import (
 )
 
 // A three-body request: the reference corpus, or a history
-// prepared and sampled once at the request's physical times, its samples
-// lifted (docs/architecture.md). Nothing is retained between requests:
-// playback seeks among the samples, so it never integrates again.
+// prepared and sampled once at the request's physical times, or with a
+// twin that history and its twin prepared together and compared, their
+// samples lifted (docs/architecture.md). Nothing is retained between
+// requests: playback seeks among the samples, so it never integrates
+// again.
 type threeBodyRequest struct {
 	Corpus  bool              `json:"corpus"`
 	Request threebody.Request `json:"request"`
+	Twin    *threebody.Twin   `json:"twin"`
 }
 
 type threeBodyCorpus struct {
@@ -36,6 +39,13 @@ func registerThreeBody() {
 				return refusal(err)
 			}
 			return string(out)
+		}
+		if q.Twin != nil {
+			p, err := threebody.PairRequest{Request: q.Request, Twin: *q.Twin}.Prepare()
+			if err != nil {
+				return refusal(err)
+			}
+			return liftReply(p, `{"error":"nonfinite three-body result"}`, nil, nil, map[string]map[string]any{})
 		}
 		p, err := q.Request.Prepare()
 		if err != nil {

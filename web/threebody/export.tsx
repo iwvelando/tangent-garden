@@ -53,8 +53,8 @@ export async function threeBodyStill(
 }
 
 // The motion as MP4 or animated WebP through the shared encoder. Each frame
-// shows the frozen history at that frame's physical time, progress times
-// the history's last time, so the file depends neither on playback nor on
+// shows the frozen history, and its twin when comparing, at that frame's
+// physical time, progress times the pair's last time, so the file depends neither on playback nor on
 // render speed; each frame is drawn as vector SVG at the encoding's size.
 // The motion runs once, so the file never promises a loop.
 export async function threeBodyMovie(o: {
@@ -72,6 +72,9 @@ export async function threeBodyMovie(o: {
     o.drawing.frame,
     o.drawing.camera.zoom,
   );
+  const twinGeometry =
+    o.drawing.twin &&
+    geometryOf(o.drawing.twin, o.drawing.frame, o.drawing.camera.zoom);
   const blob = await exportSvgAnimation({
     ...o.options,
     duration: o.duration,
@@ -80,7 +83,10 @@ export async function threeBodyMovie(o: {
     lookahead: 1,
     sample: async (progress) => Math.min(1, Math.max(0, progress)) * o.end,
     draw: (time, scale) => {
-      const svg = threeBodySVG({ ...o.drawing, geometry, time }, o.metadata);
+      const svg = threeBodySVG(
+        { ...o.drawing, geometry, twinGeometry, time },
+        o.metadata,
+      );
       svg.setAttribute(
         "width",
         String(Math.round(threeBodyPage.width * scale)),

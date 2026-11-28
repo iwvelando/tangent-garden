@@ -1346,7 +1346,8 @@ function shortenStudy(value: unknown): ShortenStudy {
 }
 
 // The configuration, the initial state and duration once edited, playback
-// speed, presentation, view and weight; never the history. Go validates the
+// speed, presentation, view and weight, and the twin when comparing; never
+// the history. Go validates the
 // state again, including the total mass and the closest start.
 function threeBodyStudy(value: unknown): ThreeBodyStudy {
   const L = threeBodyLimits;
@@ -1381,11 +1382,27 @@ function threeBodyStudy(value: unknown): ThreeBodyStudy {
           fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
         },
         weight: lineWeightSchema,
+        twin: {
+          optional: {
+            fields: {
+              body: { range: [0, 2] },
+              kind: { options: { position: true, velocity: true } },
+              axis: { options: { x: true, y: true } },
+              size: { range: [-L.twin, L.twin] },
+              conserve: "boolean",
+            },
+          },
+        },
       },
     },
     undefined,
     "threeBody",
   );
+  if (out.twin && !Number.isInteger(out.twin.body))
+    throw new LinkError(
+      "threeBody.twin.body",
+      "threeBody.twin.body must be 0, 1 or 2.",
+    );
   if (out.duration !== undefined && !(out.duration > 0))
     throw new LinkError(
       "threeBody.duration",

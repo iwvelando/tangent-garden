@@ -14,6 +14,8 @@ import { chooseColorScheme } from "./helpers";
 const title = "Three bodies";
 const eight = "Three bodies share a figure-eight";
 const burrau = "Burrau's three-four-five problem";
+const eightTwin = "A figure-eight and its twin";
+const burrauTwin = "Burrau's problem and a twin";
 
 test("samples are chosen by physical time, never past the history", async () => {
   const { sampleAt, pastSamples, refusedField, massesTotalOne } =
@@ -88,9 +90,24 @@ test("a configuration switch replaces the state and keeps the presentation", asy
   expect(Object.keys(threeBodyConfigurations).sort()).toEqual(
     [...threeBodyNames].sort(),
   );
-  for (const p of threeBodyPresets)
-    expect(p.study).toEqual(configurationStudy(p.study.configuration));
+  // A twin example is its configuration's study with that
+  // configuration's twin.
+  for (const p of threeBodyPresets) {
+    const { twin, ...study } = p.study;
+    expect(study).toEqual(configurationStudy(p.study.configuration));
+    if (twin)
+      expect(twin).toEqual(threeBodyConfigurations[study.configuration].twin);
+  }
   expect(threeBodyPresets[0].title).toBe(eight);
+  expect(
+    threeBodyPresets.filter((p) => p.study.twin).map((p) => p.title),
+  ).toEqual([eightTwin, burrauTwin]);
+  // A comparison follows a configuration switch with the new one's twin.
+  const compared = { ...s, twin: threeBodyConfigurations["figure-eight"].twin };
+  expect(switchConfiguration(compared, "pythagorean").twin).toEqual(
+    threeBodyConfigurations.pythagorean.twin,
+  );
+  expect(switchConfiguration(s, "pythagorean").twin).toBeUndefined();
 });
 
 const art = (d: Locator) => d.locator("#threebody-artwork");
@@ -137,7 +154,20 @@ async function picture(d: Locator) {
       x: Number(c.getAttribute("cx")),
       y: Number(c.getAttribute("cy")),
       fill: c.getAttribute("fill"),
+      stroke: c.getAttribute("stroke"),
     })),
+    twinTrailPaths: [...svg.querySelectorAll("path[data-role=twin-trail]")].map(
+      (p) => p.getAttribute("d"),
+    ),
+    twinHeads: [...svg.querySelectorAll("circle[data-role=twin-body]")].map(
+      (c) => ({
+        body: Number(c.getAttribute("data-body")),
+        x: Number(c.getAttribute("cx")),
+        y: Number(c.getAttribute("cy")),
+        stroke: c.getAttribute("stroke"),
+        fill: c.getAttribute("fill"),
+      }),
+    ),
     ghosts: svg.querySelectorAll("path[data-role=ghost]").length,
     triangle: svg.querySelectorAll("[data-role=triangle]").length,
     text: svg.querySelectorAll("text").length,
@@ -677,6 +707,7 @@ for (const [name, viewport] of [
     );
     for (const control of [
       d.getByLabel("Configuration", { exact: true }),
+      twinToggle(d),
       d.getByRole("button", { name: "Play motion" }),
       d.getByLabel("Speed", { exact: true }),
       d.getByRole("button", { name: /^Export (MP4 video|animated WebP)/ }),
@@ -707,8 +738,14 @@ for (const [name, viewport] of [
   }) => {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    const d = await openStudy(page);
+    const d = await openStudy(page, eightTwin);
     const pairs: [string, string, Locator, Locator][] = [
+      [
+        "Body",
+        "Component",
+        d.getByLabel("Body", { exact: true }),
+        d.getByLabel("Component", { exact: true }),
+      ],
       [
         "Trail",
         "Trail length",
@@ -908,4 +945,458 @@ test("configurations that cannot be read are reported, and Try again reads them"
   await ready(d);
   await expect(status(d)).toContainText("t = 32.8704");
   await expect(again).toHaveCount(0);
+});
+
+// Twins (T3, #554): a second history from one declared component moved,
+// prepared with the first in one worker call, drawn on its clock and in its
+// frame, and compared only while both last.
+test("a twin's perturbation, shift and clock are the declared ones", async () => {
+  const { twinShift, pairEnd, refusedField, configurationTwin } =
+    await import("../web/threebody/model");
+  const body = (mass: number) => ({
+    mass,
+    position: { x: 0, y: 0 },
+    velocity: { x: 0, y: 0 },
+  });
+  const bodies = [body(0.25), body(1 / 3), body(5 / 12)];
+  const twin = { body: 0, kind: "position", axis: "x", size: 3e-4 } as const;
+  // The other two move together by −mᵢ·size/(mⱼ + mₖ), only when kept.
+  expect(twinShift(bodies, { ...twin, conserve: false })).toBe(0);
+  expect(twinShift(bodies, { ...twin, conserve: true })).toBeCloseTo(
+    (-0.25 * 3e-4) / 0.75,
+    18,
+  );
+  expect(refusedField("twin.size")).toBe("twin-size");
+  const h = (end: number) => ({ final: { time: end } }) as any;
+  expect(pairEnd(h(3), h(5))).toBe(5);
+  expect(pairEnd(h(5), h(3))).toBe(5);
+  expect(pairEnd(h(3))).toBe(3);
+  // A copy, so an edit never reaches the descriptor.
+  const a = configurationTwin("pythagorean");
+  a.size = 7;
+  expect(configurationTwin("pythagorean").size).toBe(1e-4);
+});
+
+const twinToggle = (d: Locator) =>
+  d.getByRole("checkbox", { name: "Compare with a twin" });
+const twinSize = (d: Locator) => d.getByLabel("Size", { exact: true });
+const fact = (d: Locator, name: string) =>
+  d.locator(".threebody-comparison dt", { hasText: name }).locator("+ dd");
+
+test("a twin shares the history's clock and frame, and a zero twin is the history exactly", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openStudy(page);
+  const singleFrame = (await still(page, d)).record.frame;
+  await seek(d, 0.5);
+  const single = await picture(d);
+  expect(single.twinHeads).toEqual([]);
+  await twinToggle(d).check();
+  await ready(d);
+  await expect(d.locator(".threebody-key")).toBeVisible();
+  // The descriptor's twin: body 1 sped up 0.01 in x, keeping momentum.
+  await expect(d.getByLabel("Body", { exact: true })).toHaveValue("0");
+  await expect(d.getByLabel("Component", { exact: true })).toHaveValue(
+    "velocity-x",
+  );
+  await expect(twinSize(d)).toHaveValue("0.01");
+  await expect(
+    d.getByRole("checkbox", { name: "Keep the center of mass and momentum" }),
+  ).toBeChecked();
+  await expect(d.locator(".threebody-twin-statement")).toHaveText(
+    "The twin's body 1 starts with velocity x larger by 0.01 velocity units. Body 2 and Body 3 each start smaller by 0.005, so the momentum is unchanged; nothing else differs.",
+  );
+  // The comparison changes what is integrated, so the motion starts over;
+  // a velocity twin starts where the history does and has moved apart by
+  // the middle.
+  await expect(slider(d)).toHaveValue("0");
+  await seek(d, 0.5);
+  const half = await picture(d);
+  expect(half.twinHeads.map((h) => h.body)).toEqual([1, 2, 3]);
+  expect(half.twinHeads).not.toEqual(
+    half.heads.map((h) => expect.objectContaining({ x: h.x, y: h.y })),
+  );
+  await seek(d, 0);
+  const start = await picture(d);
+  expect(start.twinHeads.map(({ x, y }) => ({ x, y }))).toEqual(
+    start.heads.map(({ x, y }) => ({ x, y })),
+  );
+  // Hollow markers in the bodies' own inks: filled with the background
+  // the reference's markers are ringed with.
+  expect(start.twinHeads.map((h) => h.stroke)).toEqual(
+    start.heads.map((h) => h.fill),
+  );
+  expect(start.twinHeads.map((h) => h.fill)).toEqual(
+    start.heads.map((h) => h.stroke),
+  );
+  // A zero twin: the same samples, so the same drawing, and no separation.
+  await twinSize(d).fill("0");
+  await ready(d);
+  await seek(d, 0.5);
+  const zero = await picture(d);
+  expect(zero.twinTrailPaths).toEqual(zero.trailPaths);
+  expect(zero.twinHeads.map(({ x, y }) => ({ x, y }))).toEqual(
+    zero.heads.map(({ x, y }) => ({ x, y })),
+  );
+  // Both share the single history's frame.
+  expect(zero.trailPaths).toEqual(single.trailPaths);
+  await expect(d.locator(".threebody-separation")).toHaveText(
+    "Farthest any body is from its twin: 0",
+  );
+  await expect(fact(d, "Largest separation")).toHaveText(/^0 at t = 0$/);
+  await expect(fact(d, "Past 0.001")).toHaveText("not within the comparison");
+  await expect(d.locator(".threebody-twin-statement")).toContainText(
+    "The twin is the history itself.",
+  );
+  // A twin that reaches past the history widens the shared frame: body 1
+  // moved out 0.1 without compensation shifts the twin's whole dance.
+  await d.getByLabel("Component", { exact: true }).selectOption("position-x");
+  await d
+    .getByRole("checkbox", { name: "Keep the center of mass and momentum" })
+    .uncheck();
+  await twinSize(d).fill("-0.1");
+  await ready(d);
+  const wide = (await still(page, d)).record;
+  expect(wide.frame.k).toBeLessThan(singleFrame.k * 0.99);
+  expect(wide.frame.cx).toBeLessThan(singleFrame.cx);
+  // Without the comparison the study is the single history again.
+  await twinToggle(d).uncheck();
+  await ready(d);
+  await seek(d, 0.5);
+  const again = await picture(d);
+  expect(again.twinHeads).toEqual([]);
+  expect(again.trailPaths).toEqual(single.trailPaths);
+  await expect(d.locator(".threebody-key")).toHaveCount(0);
+});
+
+test("a twin is refused by its own field, ends a motion, and follows a configuration", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openStudy(page, eightTwin);
+  await d.getByRole("button", { name: "Play motion" }).click();
+  await expect(d.getByRole("button", { name: "Pause motion" })).toBeVisible();
+  await twinSize(d).fill("0.02");
+  // An edit to the twin changes the second history, so the motion ends.
+  await expect(d.getByRole("button", { name: "Play motion" })).toBeVisible();
+  await expect(slider(d)).toHaveValue("0");
+  await ready(d);
+  await twinSize(d).fill("0.2");
+  await expect(refusal(d, "within ±0.1")).toBeVisible();
+  await expect(d.locator(".study-error")).toHaveCount(0);
+  // A twin whose starting state the engine refuses is refused on its size.
+  await bodyField(d, 1, "Position x").fill("9.95");
+  await d.getByLabel("Component", { exact: true }).selectOption("position-x");
+  await d
+    .getByRole("checkbox", { name: "Keep the center of mass and momentum" })
+    .uncheck();
+  await twinSize(d).fill("0.1");
+  await expect(refusal(d, "twin's starting state is refused")).toBeVisible();
+  await expect(d.getByRole("button", { name: "Copy link" })).toBeDisabled();
+  await twinSize(d).fill("-0.1");
+  await ready(d);
+  await expect(refusal(d, /./)).toHaveCount(0);
+  // Turned off and on again, the comparison keeps its twin.
+  await twinToggle(d).uncheck();
+  await ready(d);
+  await twinToggle(d).check();
+  await expect(twinSize(d)).toHaveValue("-0.1");
+  await expect(d.getByLabel("Component", { exact: true })).toHaveValue(
+    "position-x",
+  );
+  await ready(d);
+  // Another configuration brings its own twin.
+  await d
+    .getByLabel("Configuration", { exact: true })
+    .selectOption("pythagorean");
+  await ready(d);
+  await expect(twinSize(d)).toHaveValue("0.0001");
+  await expect(
+    d.getByRole("checkbox", { name: "Keep the center of mass and momentum" }),
+  ).not.toBeChecked();
+  await twinToggle(d).uncheck();
+  await twinToggle(d).check();
+  await expect(twinSize(d)).toHaveValue("0.0001");
+});
+
+test("Burrau's twins part while both are accurate, and throw body 1 out opposite ways", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openStudy(page, burrauTwin);
+  // The WASM build's crossings (docs/mathematics.md, three bodies).
+  await expect(fact(d, "Past 0.001")).toHaveText(/^t = 17\.\d$/);
+  await expect(fact(d, "Past 0.1")).toHaveText(/^t = 2[45]\.\d+$/);
+  await expect(fact(d, "Compared")).toHaveText(
+    "t = 0 to 43.121, 20,000 shared samples",
+  );
+  await expect(d.locator(".threebody-twin-evidence")).toContainText(
+    "pass 10⁻³ apart at t = 17.1",
+  );
+  // The readout is the shown sample's separation: the farthest any body
+  // is from its own twin.
+  await seek(d, 0.5);
+  const middle = (await still(page, d)).record;
+  const apart = Math.max(
+    ...middle.shown.positions.map((v: any, i: number) =>
+      Math.hypot(
+        middle.twinShown.positions[i].x - v.x,
+        middle.twinShown.positions[i].y - v.y,
+      ),
+    ),
+  );
+  expect(apart).toBeGreaterThan(1e-3);
+  expect(
+    Number(
+      await d.locator(".threebody-separation").getAttribute("data-separation"),
+    ),
+  ).toBeCloseTo(apart, 12);
+  await seek(d, 1);
+  const { record } = await still(page, d);
+  expect(record.twin.perturbation).toMatchObject({
+    body: 0,
+    kind: "position",
+    axis: "x",
+    size: 1e-4,
+    conserve: false,
+    units: "length units",
+    others: 0,
+  });
+  expect(record.twin.bodies[0].position.x).toBe(
+    record.bodies[0].position.x + 1e-4,
+  );
+  expect(record.twin.comparison.common).toBe(20000);
+  // Body 1 leaves the history upward and the twin downward.
+  expect(record.final.positions[0].y).toBeGreaterThan(3);
+  expect(record.twin.final.positions[0].y).toBeLessThan(-3);
+  expect(record.twinShown.time).toBe(record.shown.time);
+});
+
+test("when the twin stops first the comparison ends there and nothing is extrapolated", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openStudy(page, burrauTwin);
+  await twinSize(d).fill("0.01");
+  await ready(d);
+  // The evidence is about the example's own twin, not this one.
+  await expect(d.locator(".threebody-twin-evidence")).toHaveCount(0);
+  await expect(status(d)).toContainText(
+    /The twin stopped at a close encounter at t = 9\.7\d*: bodies 2 and 3/,
+  );
+  await expect(fact(d, "Compared")).toHaveText(
+    /^t = 0 to 9\.7\d*, [\d,]+ shared samples; the twin stopped first$/,
+  );
+  // The clock runs on to the history's end, with the twin held at its
+  // terminal state and no separation claimed past the comparison.
+  await seek(d, 1);
+  await expect(d.locator(".threebody-clock")).toContainText(
+    "t = 43.1210 of 43.121",
+  );
+  await expect(d.locator(".threebody-separation")).toHaveText(
+    /^Compared until t = 9\.7\d*, where the twin stopped$/,
+  );
+  const { record } = await still(page, d);
+  expect(record.twinShown.sample).toBe("final");
+  expect(record.twinShown.positions).toEqual(record.twin.final.positions);
+  const drawn = await picture(d);
+  for (const [i, h] of drawn.twinHeads.entries()) {
+    const at = onPage(record.frame, record.twin.final.positions[i]);
+    expect(h.x).toBeCloseTo(at.x, 1);
+    expect(h.y).toBeCloseTo(at.y, 1);
+  }
+});
+
+test("a twin changed while preparing is replaced, and turning it off drops it", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openStudy(page, burrauTwin);
+  // Each change supersedes the pair before it; only the last arrives.
+  for (const size of ["0.0002", "0.0003", "0.0004"])
+    await twinSize(d).fill(size);
+  await ready(d);
+  const { record } = await still(page, d);
+  expect(record.twin.perturbation.size).toBe(4e-4);
+  // Turned off before its pair arrives, the single history shows.
+  await twinSize(d).fill("0.0005");
+  await twinToggle(d).uncheck();
+  await ready(d);
+  await page.waitForTimeout(500);
+  expect((await picture(d)).twinHeads).toEqual([]);
+  const single = await still(page, d);
+  expect(single.record.twin).toBeUndefined();
+});
+
+test("scrubbing a comparison never makes a button blink", async ({ page }) => {
+  await page.goto("/");
+  const d = await openStudy(page, burrauTwin);
+  await slider(d).scrollIntoViewIfNeeded();
+  await page.evaluate(() => {
+    const log: string[] = [];
+    (window as any).blinks = log;
+    new MutationObserver((m) =>
+      m.forEach((r) => log.push((r.target as Element).textContent ?? "")),
+    ).observe(document.querySelector("dialog.threebody")!, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
+  });
+  const box = (await slider(d).boundingBox())!;
+  await page.mouse.move(box.x + 2, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let i = 1; i <= 20; i++)
+    await page.mouse.move(box.x + (box.width * i) / 20, box.y + box.height / 2);
+  await page.mouse.up();
+  expect(await page.evaluate(() => (window as any).blinks)).toEqual([
+    "Stop motion",
+  ]);
+});
+
+test("a comparison's link saves its twin, and older links open without one", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as any).copied = value;
+        },
+      },
+    }),
+  );
+  await page.goto("/");
+  const d = await openStudy(page, eightTwin);
+  await d.getByLabel("Body", { exact: true }).selectOption("2");
+  await d.getByLabel("Component", { exact: true }).selectOption("position-y");
+  await twinSize(d).fill("-0.05");
+  await ready(d);
+  await seek(d, 0.5);
+  const drawn = await picture(d);
+  await d.getByRole("button", { name: "Copy link", exact: true }).click();
+  await expect(d.getByText("Link copied", { exact: true })).toBeVisible();
+  const link: string = await page.evaluate(() => (window as any).copied);
+  const saved = wireStudy(new URL(link).hash.slice(3));
+  expect(saved.threeBody.twin).toEqual({
+    body: 2,
+    kind: "position",
+    axis: "y",
+    size: -0.05,
+    conserve: true,
+  });
+  await page.goto(link);
+  const reopened = page.getByRole("dialog", { name: title });
+  await ready(reopened);
+  await expect(twinToggle(reopened)).toBeChecked();
+  await seek(reopened, 0.5);
+  const again = await picture(reopened);
+  expect(again.twinTrailPaths).toEqual(drawn.twinTrailPaths);
+  expect(again.trailPaths).toEqual(drawn.trailPaths);
+  const { planarStudy, presetStudy } = await import("../web/planar-link");
+  const { twin: _, ...older } = saved.threeBody;
+  expect(
+    planarStudy({ ...presetStudy(0), threeBody: older }).threeBody!.twin,
+  ).toBeUndefined();
+  for (const [field, value, path] of [
+    ["body", 3, "threeBody.twin.body"],
+    ["body", 0.5, "threeBody.twin.body"],
+    ["kind", "spin", "threeBody.twin.kind"],
+    ["axis", "z", "threeBody.twin.axis"],
+    ["size", 0.2, "threeBody.twin.size"],
+    ["conserve", "yes", "threeBody.twin.conserve"],
+  ] as const)
+    expect(() =>
+      planarStudy({
+        ...presetStudy(0),
+        threeBody: {
+          ...saved.threeBody,
+          twin: { ...saved.threeBody.twin, [field]: value },
+        },
+      }),
+    ).toThrow(path);
+});
+
+// The paired movie: one clock to the later end, both histories in one
+// frame. The history stops at the head-on encounter while its twin, body 1
+// raised 0.1, passes and goes on.
+test("the paired movie holds both histories on one clock, with their endpoints and record", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto("/");
+  const d = await openStudy(page);
+  await d.getByLabel("Configuration", { exact: true }).selectOption("head-on");
+  await ready(d);
+  await twinToggle(d).check();
+  await d.getByLabel("Body", { exact: true }).selectOption("0");
+  await d.getByLabel("Component", { exact: true }).selectOption("position-y");
+  await twinSize(d).fill("0.1");
+  await d.getByLabel("Trail", { exact: true }).selectOption("window");
+  await d.getByLabel("Trail length", { exact: true }).fill("0.02");
+  await d.getByLabel("The whole path, faintly").uncheck();
+  await d.getByLabel("Speed", { exact: true }).fill("1");
+  await ready(d);
+  const { record } = await still(page, d);
+  expect(record.terminal.reason).toBe("encounter");
+  const end = Math.max(record.final.time, record.twin.final.time);
+  expect(end).toBeGreaterThan(record.final.time);
+  // The frame fits the twin's history too, though it outlives the history.
+  for (const v of [...record.twin.final.positions, ...record.final.positions]) {
+    const at = onPage(record.frame, v);
+    expect(at.x).toBeGreaterThanOrEqual(0);
+    expect(at.x).toBeLessThanOrEqual(1000);
+    expect(at.y).toBeGreaterThanOrEqual(0);
+    expect(at.y).toBeLessThanOrEqual(760);
+  }
+  const settings = d.locator("#threebody-export-settings");
+  if (!(await settings.evaluate((e) => (e as HTMLDetailsElement).open)))
+    await settings.locator("summary").click();
+  await d.getByLabel("Export format", { exact: true }).selectOption("mp4");
+  await d.getByRole("slider", { name: "Export resolution" }).fill("0.5");
+  await d.getByLabel("Export frame rate", { exact: true }).selectOption("15");
+  const download = page.waitForEvent("download");
+  await d.getByRole("button", { name: /^Export MP4 video/ }).click();
+  const path = (await (await download).path())!;
+  const bytes = await readFile(path);
+  expect(bytes.includes(Buffer.from('"perturbation":{"body":0'))).toBe(true);
+  const frames = Math.ceil(end * 15);
+  const timing = probe(path);
+  if (timing) expect(timing.frames).toBe(frames);
+  expect((await decodeVideo(page, bytes)).duration).toBeCloseTo(end, 2);
+  const ink = (rgb: Buffer, at: { x: number; y: number }) => {
+    const i = (Math.round(at.y / 2) * 500 + Math.round(at.x / 2)) * 3;
+    return [rgb[i], rgb[i + 1], rgb[i + 2]];
+  };
+  const first = decodedFrame(path, 500, 380, 0);
+  const last = decodedFrame(path, 500, 380, frames - 1);
+  if (first && last) {
+    const background = ink(first, { x: 20, y: 20 });
+    const near = (a: number[], b: number[]) =>
+      a.every((c, i) => Math.abs(c - b[i]) < 40);
+    // A hollow marker: some ink on its ring.
+    const ring = (rgb: Buffer, v: any, r: number) =>
+      [...Array(12).keys()].some(
+        (j) =>
+          !near(
+            ink(rgb, {
+              x: v.x + r * Math.cos((j * Math.PI) / 6),
+              y: v.y + r * Math.sin((j * Math.PI) / 6),
+            }),
+            background,
+          ),
+      );
+    const r = 4 + 10 * Math.sqrt(record.bodies[0].mass);
+    const start = onPage(record.frame, record.twin.bodies[0].position);
+    const gone = onPage(record.frame, record.twin.final.positions[0]);
+    expect(ring(first, start, r)).toBe(true);
+    expect(ring(last, start, r)).toBe(false);
+    expect(ring(last, gone, r)).toBe(true);
+    expect(ring(first, gone, r)).toBe(false);
+    // The history stays at its encounter, held to the twin's end.
+    const met = onPage(record.frame, record.final.positions[0]);
+    expect(near(ink(last, { x: met.x, y: met.y - 6 }), background)).toBe(false);
+  }
 });
