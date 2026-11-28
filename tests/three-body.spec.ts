@@ -697,3 +697,61 @@ for (const [name, viewport] of [
     await expect(art(d)).toBeInViewport({ ratio: 0.9 });
     await context.close();
   });
+
+for (const [name, viewport] of [
+  ["desktop", { width: 1280, height: 800 }],
+  ["phone", { width: 390, height: 844 }],
+] as const)
+  test(`opening a paired help leaves its neighbor in place (${name})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    const d = await openStudy(page);
+    const pairs: [string, string, Locator, Locator][] = [
+      [
+        "Trail",
+        "Trail length",
+        d.getByLabel("Trail", { exact: true }),
+        d.getByLabel("Trail length", { exact: true }),
+      ],
+      ...[1, 2, 3].flatMap((i) =>
+        (["position", "velocity"] as const).map(
+          (kind): [string, string, Locator, Locator] => {
+            const label = kind === "position" ? "Position" : "Velocity";
+            return [
+              `Body ${i} ${kind} x`,
+              `Body ${i} ${kind} y`,
+              bodyField(d, i, `${label} x`),
+              bodyField(d, i, `${label} y`),
+            ];
+          },
+        ),
+      ),
+    ];
+    for (const [left, right, leftControl, rightControl] of pairs)
+      for (const [open, control] of [
+        [left, rightControl],
+        [right, leftControl],
+      ] as const) {
+        await control.scrollIntoViewIfNeeded();
+        const place = () =>
+          control.evaluate((e) => {
+            const pair = e.closest(".pair")!.getBoundingClientRect(),
+              own = e.getBoundingClientRect();
+            return { x: own.x - pair.x, y: own.y - pair.y };
+          });
+        const before = await place();
+        const toggle = d.getByRole("button", {
+          name: `About ${open}`,
+          exact: true,
+        });
+        await toggle.click();
+        const more = d
+          .locator(`#${await toggle.getAttribute("aria-controls")}`)
+          .getByRole("button", { name: "Show more" });
+        if (await more.count()) await more.click();
+        expect(await place(), `${open} beside its neighbor`).toEqual(before);
+        await toggle.click();
+      }
+  });

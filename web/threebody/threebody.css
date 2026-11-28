@@ -67,3 +67,6 @@
 .threebody-facts dd {
   margin: 0;
 }
+.threebody-units p {
+  margin: 0 0 6px;
+}

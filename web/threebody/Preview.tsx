@@ -162,6 +162,7 @@ export function ThreeBodyPreview({
   const [attempt, setAttempt] = useState(0);
   // The mass last changed, which a total other than 1 is refused under.
   const [lastMass, setLastMass] = useState(2);
+  const [unitsMore, setUnitsMore] = useState(false);
   const scalarClient = useRef<EngineClient | null>(null),
     generation = useRef(0),
     jobs = useRef(new Set<Promise<void>>());
@@ -974,9 +975,23 @@ export function ThreeBodyPreview({
                 {corpus && chosen && bodies && (
                   <>
                     <h3 className="garden-section">Initial state</h3>
-                    <p className="note threebody-units">
-                      {threeBodyHelp.units.brief}
-                    </p>
+                    <div className="note threebody-units">
+                      <p>
+                        {threeBodyHelp.units.brief}{" "}
+                        <button
+                          type="button"
+                          className="text-button"
+                          aria-expanded={unitsMore}
+                          aria-controls="threebody-units-more"
+                          onClick={() => setUnitsMore((m) => !m)}
+                        >
+                          {unitsMore ? "Show less" : "Show more"}
+                        </button>
+                      </p>
+                      <p id="threebody-units-more" hidden={!unitsMore}>
+                        {threeBodyHelp.units.more}
+                      </p>
+                    </div>
                     {bodies.map(bodyEditor)}
                     {scalar(
                       "Duration",
