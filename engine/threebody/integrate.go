@@ -21,7 +21,7 @@ type Settings struct {
 	Eta float64
 }
 
-// DefaultSettings are the research admission settings, chosen by the #552
+// DefaultSettings are the admission settings, chosen by the #552
 // measurements: at 10⁻¹² regular corpus paths stay within 10⁻⁷ of the
 // reference over 100 time units; a pericenter of 10⁻⁴ costs about 10⁻⁸ in
 // relative energy (10⁻⁵ costs 5·10⁻⁷, and 10⁻⁶ collapses the step); and the

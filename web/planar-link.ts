@@ -30,6 +30,8 @@ import {
 import { planarStoryIds, type PlanarStoryId } from "./planar-story";
 import { diskLimits } from "./disk-mode";
 import { shortenLimits, type ShortenStudy } from "./shorten/model";
+import { threeBodyLimits, type ThreeBodyStudy } from "./threebody/model";
+import { threeBodyNames } from "./threebody/configurations";
 import {
   gardenLimits,
   gardenSeed,
@@ -144,6 +146,8 @@ export type PlanarStudy = {
   // Curves that smooth themselves open over this study; absent in older
   // links.
   shorten?: ShortenStudy;
+  // Three bodies open over this study; absent in older links.
+  threeBody?: ThreeBodyStudy;
   // The planar event the study opened as (planar-story.ts), absent from
   // other studies and from links made before planar events.
   story?: PlanarStoryId;
@@ -588,6 +592,7 @@ export function planarStudy(value: unknown): PlanarStudy {
         "garden",
         "lace",
         "shorten",
+        "threeBody",
         "story",
       ].includes(key)
     )
@@ -898,6 +903,8 @@ export function planarStudy(value: unknown): PlanarStudy {
   const lace = raw.lace === undefined ? undefined : laceStudy(raw.lace);
   const shorten =
     raw.shorten === undefined ? undefined : shortenStudy(raw.shorten);
+  const threeBody =
+    raw.threeBody === undefined ? undefined : threeBodyStudy(raw.threeBody);
   // A story is kept however the study has changed since; it applies only
   // while the study is its recipe (planar-story.ts's planarStoryContext).
   const story =
@@ -921,6 +928,7 @@ export function planarStudy(value: unknown): PlanarStudy {
     ...(garden && { garden }),
     ...(lace && { lace }),
     ...(shorten && { shorten }),
+    ...(threeBody && { threeBody }),
     ...(story && { story }),
   };
 }
@@ -1334,6 +1342,55 @@ function shortenStudy(value: unknown): ShortenStudy {
   // A drawn loop's outline never travels, so its link evolves the terms;
   // only the example leaf, whose outline is built in, keeps its source.
   if (out.loopTerms) delete out.loopSource;
+  return out;
+}
+
+// The configuration, the initial state and duration once edited, playback
+// speed, presentation, view and weight; never the history. Go validates the
+// state again, including the total mass and the closest start.
+function threeBodyStudy(value: unknown): ThreeBodyStudy {
+  const L = threeBodyLimits;
+  const within = (r: number) => ({ range: [-r, r] as [number, number] });
+  const body = {
+    fields: {
+      mass: { range: [L.minMass, 1] as [number, number] },
+      position: {
+        fields: { x: within(L.coordinate), y: within(L.coordinate) },
+      },
+      velocity: { fields: { x: within(L.speed), y: within(L.speed) } },
+    },
+  };
+  const out = conform<ThreeBodyStudy>(
+    value,
+    {
+      fields: {
+        configuration: {
+          options: Object.fromEntries(
+            threeBodyNames.map((n) => [n, true]),
+          ) as Record<(typeof threeBodyNames)[number], true>,
+        },
+        bodies: { optional: { tuple: body, length: 3 } },
+        duration: { optional: { range: [0, L.duration] } },
+        speed: { range: [...L.speeds] },
+        trail: { options: { whole: true, window: true } },
+        window: { range: [...L.windows] },
+        ghost: "boolean",
+        triangle: "boolean",
+        framing: { options: { whole: true, close: true } },
+        view: {
+          fields: { x: "number", y: "number", zoom: { range: [0.1, 100] } },
+        },
+        weight: lineWeightSchema,
+      },
+    },
+    undefined,
+    "threeBody",
+  );
+  if (out.duration !== undefined && !(out.duration > 0))
+    throw new LinkError(
+      "threeBody.duration",
+      `threeBody.duration must be above 0 and at most ${L.duration}.`,
+    );
   return out;
 }
 

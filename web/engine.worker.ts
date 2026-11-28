@@ -61,8 +61,8 @@ declare const tangentGardenShorten: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenSpatialProbe: (json: string) => string;
-// A three-body history sampled at physical times (#552 research,
-// engine/threebody.Prepared), or the reference corpus as plain JSON.
+// A three-body history sampled at physical times
+// (engine/threebody.Prepared), or the reference corpus as plain JSON.
 declare const tangentGardenThreeBody: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
@@ -244,10 +244,10 @@ self.onmessage = async ({
       const numbers: [string, unknown][] = [
         ...q.bodies.flatMap((b, i): [string, unknown][] => [
           [`bodies.${i}.mass`, b.mass],
-          [`bodies.${i}.position`, b.position?.x],
-          [`bodies.${i}.position`, b.position?.y],
-          [`bodies.${i}.velocity`, b.velocity?.x],
-          [`bodies.${i}.velocity`, b.velocity?.y],
+          [`bodies.${i}.position.x`, b.position?.x],
+          [`bodies.${i}.position.y`, b.position?.y],
+          [`bodies.${i}.velocity.x`, b.velocity?.x],
+          [`bodies.${i}.velocity.y`, b.velocity?.y],
         ]),
         ["duration", q.duration],
         ["samples", q.samples],

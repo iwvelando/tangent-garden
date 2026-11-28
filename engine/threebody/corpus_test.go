@@ -22,8 +22,8 @@ func TestCorpusIsInFixtureUnits(t *testing.T) {
 			far = math.Max(far, math.Hypot(y[2*i]-center[0], y[2*i+1]-center[1]))
 		}
 		near(t, c.Name+" farthest body", far, 1, 1e-6)
-		if c.Periodicity == "" || c.Stability == "" || c.Source == "" {
-			t.Errorf("%s is not classified and sourced", c.Name)
+		if c.Periodicity == "" || c.Stability == "" || c.Observed == "" || c.Source == "" {
+			t.Errorf("%s is not classified, evidenced and sourced", c.Name)
 		}
 	}
 }
@@ -196,6 +196,8 @@ func TestHeadOnCaseStopsAtTheFloor(t *testing.T) {
 	if p.Terminal.Reason != "encounter" || p.Terminal.Pair != [2]int{1, 2} || p.Available >= len(p.Times) {
 		t.Fatalf("terminal %+v with %d of %d samples", p.Terminal, p.Available, len(p.Times))
 	}
+	// The time its evidence states.
+	near(t, "encounter time", p.Final.Time, 0.4126, 1e-4)
 }
 
 func TestHierarchicalTripleStaysRegular(t *testing.T) {

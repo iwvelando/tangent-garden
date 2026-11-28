@@ -10,6 +10,7 @@ import { loomPresets, maps, presetDefinition } from "../loom/model";
 import { gardenPresets } from "../garden/model";
 import { lacePresets } from "../lace/model";
 import { shortenPresets } from "../shorten/model";
+import { threeBodyPresets } from "../threebody/model";
 import { spatialPresets } from "../spatial/presets";
 import { defaultSight, isPlain } from "../spatial/sight";
 import { composes } from "../spatial/types";
@@ -126,6 +127,17 @@ export const shortenExamples: Example[] = shortenPresets.map((p) => ({
   family: "Curves that smooth themselves",
   keywords:
     "curve shortening flow curvature smoothing flower petals nest contours grayson circle shrink heat",
+  fingerprint: fingerprint(p.study),
+}));
+
+// Three bodies likewise open over the study. Their thumbnails are the
+// drawing as it opens.
+export const threeBodyExamples: Example[] = threeBodyPresets.map((p) => ({
+  title: p.title,
+  caption: p.note,
+  family: "Three bodies",
+  keywords:
+    "three body problem gravity newton orbit choreography figure eight lagrange triangle burrau pythagorean chaos encounter ejection binary",
   fingerprint: fingerprint(p.study),
 }));
 

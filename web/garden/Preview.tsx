@@ -951,7 +951,12 @@ export function GardenPreview({
           // One mode per link: the garden opens first, so a lace or curves
           // that smooth themselves would linger unopened.
           study={() => {
-            const { lace: _, shorten: __, ...base } = entry.study;
+            const {
+              lace: _,
+              shorten: __,
+              threeBody: ___,
+              ...base
+            } = entry.study;
             return { ...base, garden: study };
           }}
           disabled={!valid || !(current || film)}

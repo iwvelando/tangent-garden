@@ -7,8 +7,8 @@ import (
 	"tangentgarden/engine"
 )
 
-// Research admission limits (#552). They bound the experiment's work and
-// storage; they are not accuracy claims.
+// Admission limits. They bound the work and storage of a history; they are
+// not accuracy claims.
 const (
 	maxDuration   = 100
 	maxSamples    = 20000
@@ -43,7 +43,9 @@ func fieldErr(field, format string, args ...any) error {
 
 func finite(x float64) bool { return !math.IsNaN(x) && !math.IsInf(x, 0) }
 
-// Validate refuses a request outside the research limits, naming the field.
+// Validate refuses a request outside the admission limits, naming the
+// field: a coordinate on its own path, and the speed and a close start on
+// the vector they constrain.
 func (q Request) Validate() error {
 	if len(q.Bodies) != 3 {
 		return fieldErr("bodies", "a three-body study has exactly three bodies")
@@ -55,11 +57,24 @@ func (q Request) Validate() error {
 			return fieldErr(path+".mass", "body %d: the mass must be at least 0.001 and at most 1", i+1)
 		}
 		total += b.Mass
-		if p := b.Position; !finite(p.X) || !finite(p.Y) || math.Abs(p.X) > maxCoordinate || math.Abs(p.Y) > maxCoordinate {
-			return fieldErr(path+".position", "body %d: the position must be finite and within ±10", i+1)
+		for _, c := range []struct {
+			axis string
+			v    float64
+		}{{"x", b.Position.X}, {"y", b.Position.Y}} {
+			if !finite(c.v) || math.Abs(c.v) > maxCoordinate {
+				return fieldErr(path+".position."+c.axis, "body %d: the position must be finite and within ±10", i+1)
+			}
 		}
-		if v := b.Velocity; !finite(v.X) || !finite(v.Y) || math.Hypot(v.X, v.Y) > maxSpeed {
-			return fieldErr(path+".velocity", "body %d: the velocity must be finite, with speed at most 20", i+1)
+		for _, c := range []struct {
+			axis string
+			v    float64
+		}{{"x", b.Velocity.X}, {"y", b.Velocity.Y}} {
+			if !finite(c.v) {
+				return fieldErr(path+".velocity."+c.axis, "body %d: the velocity must be finite", i+1)
+			}
+		}
+		if speed := math.Hypot(b.Velocity.X, b.Velocity.Y); speed > maxSpeed {
+			return fieldErr(path+".velocity", "body %d: the speed must be at most 20; it is %.6g", i+1, speed)
 		}
 	}
 	if math.Abs(total-1) > 1e-12 {
@@ -99,7 +114,7 @@ func (q Request) initial() []float64 {
 	return y
 }
 
-// Integrate validates the request and integrates it with the research
+// Integrate validates the request and integrates it with the default
 // settings into an immutable history.
 func (q Request) Integrate() (*History, error) {
 	return q.integrate(DefaultSettings())

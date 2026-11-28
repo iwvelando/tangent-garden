@@ -126,6 +126,12 @@
 .example-thumb .f-text {
   fill: var(--tg-text);
 }
+.example-thumb .f-third {
+  fill: var(--tg-third);
+}
+.example-thumb .s-third {
+  stroke: var(--tg-third);
+}
 .example-thumb .s-base {
   stroke: var(--tg-base);
 }

@@ -29,9 +29,12 @@ func TestRequestRefusalsNameTheirField(t *testing.T) {
 		{"NaN mass", "bodies.0.mass", edit(func(q *Request) { q.Bodies[0].Mass = math.NaN() })},
 		{"light mass", "bodies.1.mass", edit(func(q *Request) { q.Bodies[1].Mass = 5e-4 })},
 		{"mass sum", "bodies.2.mass", edit(func(q *Request) { q.Bodies[2].Mass += 1e-9 })},
-		{"NaN position", "bodies.1.position", edit(func(q *Request) { q.Bodies[1].Position.Y = math.NaN() })},
-		{"far position", "bodies.0.position", edit(func(q *Request) { q.Bodies[0].Position.X = 10.5 })},
-		{"infinite velocity", "bodies.2.velocity", edit(func(q *Request) { q.Bodies[2].Velocity.X = math.Inf(1) })},
+		{"NaN position", "bodies.1.position.y", edit(func(q *Request) { q.Bodies[1].Position.Y = math.NaN() })},
+		{"far position", "bodies.0.position.x", edit(func(q *Request) { q.Bodies[0].Position.X = 10.5 })},
+		{"far below", "bodies.1.position.y", edit(func(q *Request) { q.Bodies[1].Position.Y = -10.5 })},
+		{"infinite velocity", "bodies.2.velocity.x", edit(func(q *Request) { q.Bodies[2].Velocity.X = math.Inf(1) })},
+		{"NaN velocity", "bodies.0.velocity.y", edit(func(q *Request) { q.Bodies[0].Velocity.Y = math.NaN() })},
+		// The speed limit is on the vector, so on the velocity as a whole.
 		{"fast", "bodies.2.velocity", edit(func(q *Request) { q.Bodies[2].Velocity = engine.Vec{X: 15, Y: 15} })},
 		{"coincident", "bodies.1.position", edit(func(q *Request) { q.Bodies[1].Position = q.Bodies[0].Position })},
 		{"too close", "bodies.2.position", edit(func(q *Request) {

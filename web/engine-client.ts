@@ -191,9 +191,9 @@ export class EngineClient {
     const reply = await this.request({ action: "shorten", shorten: q });
     return { result: reply.result, prepare: reply.timings?.prepare ?? NaN };
   }
-  // A three-body history sampled once at its physical times (#552
-  // research, engine/threebody.Prepared), with the worker's preparation
-  // time, and the reference corpus.
+  // A three-body history sampled once at its physical times
+  // (engine/threebody.Prepared), with the worker's preparation time and
+  // the reply's size, and the reference corpus.
   async threeBody(q: import("./threebody/model").ThreeBodyRequest): Promise<{
     result: import("./threebody/model").ThreeBodyPrepared;
     prepare: number;

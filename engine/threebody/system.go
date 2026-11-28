@@ -1,6 +1,7 @@
 // Package threebody integrates the planar Newtonian problem of three point
 // masses, G = 1, as one coupled system: twelve state components, positions
-// then velocities, body by body. It is #552 research, not a public study.
+// then velocities, body by body: the history behind the three-body study
+// (docs/mathematics.md#three-bodies).
 //
 // The driver is written for any small number of bodies so the analytic
 // two-body (Kepler) problem can test it; requests admit exactly three.

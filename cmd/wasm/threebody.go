@@ -8,7 +8,7 @@ import (
 	"tangentgarden/engine/threebody"
 )
 
-// A three-body request (#552 research): the reference corpus, or a history
+// A three-body request: the reference corpus, or a history
 // prepared and sampled once at the request's physical times, its samples
 // lifted (docs/architecture.md). Nothing is retained between requests:
 // playback seeks among the samples, so it never integrates again.
