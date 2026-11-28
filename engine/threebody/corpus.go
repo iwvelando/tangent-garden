@@ -168,6 +168,21 @@ func Corpus() []Case {
 		Periodicity: "not periodic",
 		Stability:   "a perturbation of a linearly unstable equilibrium",
 	})
+	// Two bodies falling together from rest, the third above them: a
+	// terminal to inspect, not an orbit. The history stops where bodies 1
+	// and 2 come within the encounter floor.
+	cases = append(cases, Case{
+		Name: "head-on", Title: "A head-on encounter",
+		Source: "constructed: bodies 1 and 2 at rest 0.5 apart", Length: 1, TimeFactor: 1,
+		Bodies: []Body{
+			{Mass: 0.45, Position: engine.Vec{X: -0.25}},
+			{Mass: 0.45, Position: engine.Vec{X: 0.25}},
+			{Mass: 0.1, Position: engine.Vec{Y: 10.0 / 9}},
+		},
+		Duration:    2,
+		Periodicity: "not periodic: a collision orbit",
+		Stability:   "not applicable: Newtonian point masses collide, which the study does not continue",
+	})
 	return cases
 }
 

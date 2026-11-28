@@ -8,6 +8,7 @@ import { LaceContext, type LaceEntry } from "./lace/Context";
 import { defaultLace, presetLace, studyLoop } from "./lace/model";
 import { drawnMotif } from "./lace/motifs";
 import { ShortenContext, type ShortenEntry } from "./shorten/Context";
+import { researchThreeBody } from "./threebody/model";
 import { defaultShorten, presetShorten, studyLoopTerms } from "./shorten/model";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
@@ -3662,6 +3663,10 @@ const LacePreview = lazy(() =>
 const ShortenPreview = lazy(() =>
   import("./shorten/Preview").then((m) => ({ default: m.ShortenPreview })),
 );
+// #552 research: the three-body preview, only with ?research=552.
+const ThreeBodyPreview = lazy(() =>
+  import("./threebody/Preview").then((m) => ({ default: m.ThreeBodyPreview })),
+);
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const SpatialAtlasPreview = lazy(() => import("./spatial/AtlasPreview"));
 const HarmonicFitPreview = lazy(() => import("./spatial/HarmonicFitPreview"));
@@ -3693,8 +3698,11 @@ function Notebook() {
   const [garden, setGarden] = useState<GardenEntry | null>(null);
   const [lace, setLace] = useState<LaceEntry | null>(null);
   const [shorten, setShorten] = useState<ShortenEntry | null>(null);
+  // #552 research: the preview opens over the 2D notebook with the gate.
+  const [threeBody, setThreeBody] = useState(researchThreeBody);
   // An overlay study holds the notebooks beneath it inert.
   const overlay =
+    threeBody ||
     !!excursion ||
     !!atlas ||
     !!spatialAtlas ||
@@ -3878,6 +3886,22 @@ function Notebook() {
                       setLoom(null);
                     }}
                   />
+                </Suspense>
+              </div>
+            )}
+            {threeBody && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening three bodies…
+                    </div>
+                  }
+                >
+                  <ThreeBodyPreview onReturn={() => setThreeBody(false)} />
                 </Suspense>
               </div>
             )}

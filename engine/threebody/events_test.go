@@ -37,6 +37,10 @@ func TestEncounterStopsAtTheFloorCrossing(t *testing.T) {
 		t.Fatal("no state at the encounter")
 	}
 	near(t, "separation at the encounter", separation(last), 0.01, 1e-12)
+	// The history ends at the last moment at or above the floor.
+	if separation(last) < 0.01 {
+		t.Errorf("the last state is %.17g apart, inside the floor", separation(last))
+	}
 	near(t, "terminal separation", h.Terminal.Separation, 0.01, 1e-12)
 	if _, ok := h.State(math.Nextafter(h.End, 11)); ok {
 		t.Fatal("the history continues past the encounter")
@@ -88,6 +92,17 @@ func TestRejectedStepsAreBounded(t *testing.T) {
 	h = integrate(s, 0, k.at(0), 10, set)
 	if h.Terminal.Reason != "unresolved" || h.Terminal.Check != "step size" {
 		t.Fatalf("terminal %+v, want unresolved by step size", h.Terminal)
+	}
+
+	// Rejections spread through a history are not rejections in a row: at
+	// a loose tolerance an eccentric orbit rejects about 190 steps and
+	// still ends normally.
+	set = DefaultSettings()
+	set.Tolerance = 1e-8
+	ecc := kepler{m1: 0.7, m2: 0.3, a: 1, e: 0.9}
+	h = integrate(s, 0, ecc.at(0), 10*ecc.period(), set)
+	if h.Terminal.Reason != "end" || h.Rejected <= set.MaxRejections {
+		t.Fatalf("terminal %+v with %d rejections", h.Terminal, h.Rejected)
 	}
 
 	// The attempt budget counts rejected steps as well as accepted ones.

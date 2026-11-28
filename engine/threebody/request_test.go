@@ -61,6 +61,10 @@ func TestRequestRefusalsNameTheirField(t *testing.T) {
 }
 
 func TestSamplingPlanIsTheEvenPhysicalClock(t *testing.T) {
+	// The last time is the duration itself, though 0.1·3/3 is not 0.1.
+	if last := Times(0.1, 4)[3]; last != 0.1 {
+		t.Errorf("the plan ends at %v", last)
+	}
 	p, err := figureEight(7.5, 31).Prepare()
 	if err != nil {
 		t.Fatal(err)
@@ -137,6 +141,43 @@ func TestEncounterBetweenOutputTimes(t *testing.T) {
 	d := DefaultSettings().Floor
 	want := math.Sqrt(1/(2*0.9)) * (math.Sqrt(d*(1-d)) + math.Acos(math.Sqrt(d)))
 	near(t, "encounter time", end, want, 1e-2)
+}
+
+// Each sample carries the error estimate of the step that holds it: the
+// accepted step ending there, or the step its dense state is taken within.
+func TestSamplesCarryTheirStepsError(t *testing.T) {
+	h, err := figureEight(5, 2).Integrate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := 1; k+1 < len(h.ts); k += 37 {
+		mid := (h.ts[k] + h.ts[k+1]) / 2
+		if got := h.sizes[h.stepAt(mid)]; got != h.sizes[k+1] {
+			t.Fatalf("a state inside step %d carries error %g, want %g", k+1, got, h.sizes[k+1])
+		}
+		if got := h.sizes[h.stepAt(h.ts[k])]; got != h.sizes[k] {
+			t.Fatalf("accepted state %d carries error %g, want %g", k, got, h.sizes[k])
+		}
+	}
+}
+
+// The center of mass is measured against its moving straight line.
+func TestCenterDriftFollowsTheMovingCenter(t *testing.T) {
+	q := figureEight(20, 101)
+	q.Bodies = append([]Body{}, q.Bodies...)
+	for i := range q.Bodies {
+		q.Bodies[i].Velocity = q.Bodies[i].Velocity.Add(engine.Vec{X: 0.05, Y: -0.03})
+	}
+	p, err := q.Prepare()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := p.Diagnostics.CenterError; d > 1e-12 {
+		t.Errorf("a boosted center leaves its line by %.3g", d)
+	}
+	if d := p.Diagnostics.MomentumError; d > 1e-13 {
+		t.Errorf("momentum changed by %.3g", d)
+	}
 }
 
 func TestDiagnosticsAndBudgets(t *testing.T) {

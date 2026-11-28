@@ -187,6 +187,17 @@ func TestLagrangeTrianglesRotateRigidly(t *testing.T) {
 	}
 }
 
+func TestHeadOnCaseStopsAtTheFloor(t *testing.T) {
+	c := caseNamed("head-on")
+	p, err := Request{Bodies: c.Bodies, Duration: c.Duration, Samples: 401}.Prepare()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Terminal.Reason != "encounter" || p.Terminal.Pair != [2]int{1, 2} || p.Available >= len(p.Times) {
+		t.Fatalf("terminal %+v with %d of %d samples", p.Terminal, p.Available, len(p.Times))
+	}
+}
+
 func TestHierarchicalTripleStaysRegular(t *testing.T) {
 	c := caseNamed("hierarchical")
 	p, err := Request{Bodies: c.Bodies, Duration: 100, Samples: 2001}.Prepare()
