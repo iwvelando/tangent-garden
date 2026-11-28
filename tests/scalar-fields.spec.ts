@@ -2128,3 +2128,74 @@ test("the plaque workshop's lengths share scalar parsing, preserve overlapping e
   ).lace.physical;
   expect("grid" in again).toBe(false);
 });
+
+test("three-body masses, starting state and duration share scalar parsing and preserve overlapping edits", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const send = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (q: any, ...rest: any[]) {
+      if (q.action === "scalars")
+        setTimeout(() => send.call(this, q, ...rest), 200);
+      else return send.call(this, q, ...rest);
+    };
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator('[data-threebody-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Three bodies" });
+  const art = d.locator("#threebody-artwork");
+  const settle = () =>
+    expect(art).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+  await settle();
+  const of = (body: number, label: string) =>
+    d
+      .locator(`fieldset.threebody-body[data-body="${body}"]`)
+      .getByLabel(label, { exact: true });
+  // Typed one after another while each evaluation is still out: every
+  // value lands, none overwrites another.
+  const entries = [
+    [of(1, "Mass"), "1/2", 0.5],
+    [of(2, "Mass"), "1/4", 0.25],
+    [of(3, "Mass"), "1/4", 0.25],
+    [of(1, "Position x"), "-pi/4", -Math.PI / 4],
+    [of(2, "Position y"), "1/phi", 1 / phi],
+    [of(3, "Velocity x"), "-e/10", -Math.E / 10],
+    [d.getByLabel("Duration", { exact: true }), "2*pi", 2 * Math.PI],
+  ] as const;
+  for (const [input, text] of entries) await input.fill(text);
+  await settle();
+  await expect(d.locator(".field-error")).toHaveCount(0);
+  const download = page.waitForEvent("download");
+  await d.getByRole("button", { name: /Export image/ }).click();
+  await page.getByRole("menuitem", { name: /SVG/ }).click();
+  const svg = Buffer.concat(
+    await (await (await download).createReadStream()).toArray(),
+  ).toString("utf8");
+  const record = JSON.parse(
+    svg
+      .match(/<desc>([^<]*)<\/desc>/)![1]
+      .replaceAll("&quot;", '"')
+      .replaceAll("&amp;", "&"),
+  );
+  expect(record.bodies.map((b: any) => b.mass)).toEqual([0.5, 0.25, 0.25]);
+  expect(record.bodies[0].position.x).toBe(-Math.PI / 4);
+  expect(record.bodies[1].position.y).toBe(1 / phi);
+  expect(record.bodies[2].velocity.x).toBe(-Math.E / 10);
+  expect(record.duration).toBe(2 * Math.PI);
+  // Variables and nonfinite values are refused under their field.
+  for (const [input] of entries.slice(3))
+    for (const bad of ["t", "x", "a", "1/0"]) {
+      await input.fill(bad);
+      await expect(d.locator(".field-error")).toHaveCount(1);
+    }
+  // Choosing a configuration drops an evaluation still out and takes all
+  // of its own values.
+  await of(1, "Position x").fill("pi/9");
+  await d
+    .getByLabel("Configuration", { exact: true })
+    .selectOption("hierarchical");
+  await settle();
+  await expect(of(1, "Position x")).toHaveValue("-0.35");
+  await expect(d.locator(".field-error")).toHaveCount(0);
+});

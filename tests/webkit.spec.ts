@@ -4313,3 +4313,61 @@ test("the plaque workshop moves focus in and back out without Safari rings after
   await expect(entry).toBeFocused();
   await expect(d).toBeVisible();
 });
+
+test("three bodies: entry, scalar blur, restore, phone playback and return preserve focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.locator(".plot-wrap")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const trigger = page.getByRole("button", {
+    name: "Browse notebook examples",
+  });
+  await trigger.click();
+  await page.locator('[data-threebody-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Three bodies" });
+  await expect(d).toHaveAttribute("data-quiet", "");
+  await expect(
+    d.getByRole("button", { name: "Return to study", exact: true }),
+  ).toBeFocused();
+  const art = d.locator("#threebody-artwork");
+  await expect(art).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+  // On a phone the drawing leads the controls.
+  const drawing = (await art.boundingBox())!;
+  const pick = d.getByLabel("Configuration", { exact: true });
+  expect(drawing.y + drawing.height).toBeLessThan(
+    (await pick.boundingBox())!.y,
+  );
+  // A constant typed and left resolves through the shared parser.
+  const x = d
+    .locator('fieldset.threebody-body[data-body="3"]')
+    .getByLabel("Velocity x", { exact: true });
+  await x.fill("pi/4");
+  await x.blur();
+  await expect(art).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  // Restore by a click brings back the configuration.
+  await d.getByRole("button", { name: "Restore Figure-eight" }).click();
+  await expect(art).toHaveAttribute("aria-busy", "false", { timeout: 30_000 });
+  await expect(d.locator(".threebody-edited")).toHaveCount(0);
+  // Play, pause and stop by clicks alone, which Safari does not follow
+  // with focus; Play brings the drawing into view.
+  const play = d.getByRole("button", { name: "Play motion" });
+  await play.scrollIntoViewIfNeeded();
+  await play.click();
+  await expect(art).toBeInViewport({ ratio: 0.9 });
+  const pauseButton = d.getByRole("button", { name: "Pause motion" });
+  await expect(pauseButton).toBeInViewport();
+  await pauseButton.click();
+  await expect(d.getByRole("button", { name: "Resume motion" })).toBeVisible();
+  await d.getByRole("button", { name: "Stop motion" }).click();
+  await expect(
+    d.getByRole("slider", { name: "Animation progress" }),
+  ).toHaveValue("0");
+  await d.getByRole("button", { name: "Return to study", exact: true }).click();
+  await expect(d).toBeHidden();
+  await expect(trigger).toBeFocused();
+});

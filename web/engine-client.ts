@@ -191,6 +191,26 @@ export class EngineClient {
     const reply = await this.request({ action: "shorten", shorten: q });
     return { result: reply.result, prepare: reply.timings?.prepare ?? NaN };
   }
+  // A three-body history sampled once at its physical times
+  // (engine/threebody.Prepared), with the worker's preparation time and
+  // the reply's size, and the reference corpus.
+  async threeBody(q: import("./threebody/model").ThreeBodyRequest): Promise<{
+    result: import("./threebody/model").ThreeBodyPrepared;
+    prepare: number;
+    bytes: number;
+  }> {
+    const reply = await this.request({ action: "threeBody", threeBody: q });
+    return {
+      result: reply.result,
+      prepare: reply.timings?.prepare ?? NaN,
+      bytes: reply.timings?.bytes ?? NaN,
+    };
+  }
+  async threeBodyCorpus(): Promise<
+    import("./threebody/model").ThreeBodyCase[]
+  > {
+    return (await this.request({ action: "threeBodyCorpus" })).result.cases;
+  }
   async fitFourier(
     count: number,
     points?: import("./types").Vec[],

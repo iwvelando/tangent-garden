@@ -78,7 +78,7 @@ type Overlay = {
     via: "keyboard" | "pointer",
   ) => void;
 };
-type EntryKind = "curve" | "loom" | "garden" | "lace" | "shorten";
+type EntryKind = "curve" | "loom" | "garden" | "lace" | "shorten" | "threebody";
 
 export function ExampleGallery({
   examples,
@@ -92,6 +92,7 @@ export function ExampleGallery({
   gardens,
   laces,
   shortens,
+  threeBodies,
 }: {
   examples: Example[];
   // null while the study is the reader's own.
@@ -115,6 +116,8 @@ export function ExampleGallery({
   laces?: Overlay;
   // Examples that open curves that smooth themselves, likewise.
   shortens?: Overlay;
+  // Examples that open three bodies, likewise.
+  threeBodies?: Overlay;
 }) {
   const { scheme } = useTheme();
   const wrap = useRef<HTMLDivElement>(null);
@@ -155,6 +158,11 @@ export function ExampleGallery({
         index,
         kind: "shorten" as EntryKind,
       })),
+      ...(threeBodies?.examples ?? []).map((example, index) => ({
+        example,
+        index,
+        kind: "threebody" as EntryKind,
+      })),
     ],
     [
       examples,
@@ -162,6 +170,7 @@ export function ExampleGallery({
       gardens?.examples,
       laces?.examples,
       shortens?.examples,
+      threeBodies?.examples,
     ],
   );
   const families = useMemo(
@@ -242,8 +251,9 @@ export function ExampleGallery({
         garden: gardens,
         lace: laces,
         shorten: shortens,
+        threebody: threeBodies,
       }) as const
-    )[kind as "loom" | "garden" | "lace" | "shorten"]?.open(
+    )[kind as Exclude<EntryKind, "curve">]?.open(
       index,
       (returnVia) => {
         via.current = returnVia;
@@ -503,6 +513,9 @@ export function ExampleGallery({
                         data-lace-example={kind === "lace" ? index : undefined}
                         data-shorten-example={
                           kind === "shorten" ? index : undefined
+                        }
+                        data-threebody-example={
+                          kind === "threebody" ? index : undefined
                         }
                         data-example-title={example.title}
                         data-example-slug={slug(example.title)}

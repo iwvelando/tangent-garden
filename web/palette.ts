@@ -16,6 +16,8 @@ const defaultPalette = (dark: boolean) =>
         probe: "#ff78c4",
         probeTangent: "#ff7361",
         probeNormal: "#73e680",
+        // A third family beside base and derived, as the three bodies'.
+        third: "#bdacf0",
       }
     : {
         bg: "#f3f1ea",
@@ -29,12 +31,14 @@ const defaultPalette = (dark: boolean) =>
         probe: "#b81a75",
         probeTangent: "#cc291f",
         probeNormal: "#1a802e",
+        // A third family beside base and derived, as the three bodies'.
+        third: "#7050a2",
       };
 export const plotPalette = (dark: boolean, scheme: ColorScheme = "default") => {
   const p = defaultPalette(dark);
   if (scheme === "default") return p;
-  const [base, derived, line] = schemeInks(scheme, dark);
-  return { ...p, base, derived, line };
+  const [base, derived, line, third] = schemeInks(scheme, dark);
+  return { ...p, base, derived, line, third };
 };
 export type PlotPalette = ReturnType<typeof plotPalette>;
 // The coordinate axes' inks, x, y, z and w: the 4D drawing's edge families

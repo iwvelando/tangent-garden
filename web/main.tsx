@@ -8,6 +8,8 @@ import { LaceContext, type LaceEntry } from "./lace/Context";
 import { defaultLace, presetLace, studyLoop } from "./lace/model";
 import { drawnMotif } from "./lace/motifs";
 import { ShortenContext, type ShortenEntry } from "./shorten/Context";
+import { ThreeBodyContext, type ThreeBodyEntry } from "./threebody/Context";
+import { presetThreeBody } from "./threebody/model";
 import { defaultShorten, presetShorten, studyLoopTerms } from "./shorten/model";
 import { curveLoom, presetLoom, supportedSource } from "./loom/model";
 
@@ -76,6 +78,7 @@ import {
   gardenExamples,
   laceExamples,
   shortenExamples,
+  threeBodyExamples,
   loomExamples,
   planarExamples,
   planarThumbnail,
@@ -379,6 +382,7 @@ function App({
   const gardenOwner = useContext(GardenContext);
   const laceOwner = useContext(LaceContext);
   const shortenOwner = useContext(ShortenContext);
+  const threeBodyOwner = useContext(ThreeBodyContext);
   const loomHelp = useHelp();
   // An entry waiting for the study's inputs to settle: the study's own curve
   // from the loom button, or an authored family from the gallery.
@@ -1956,6 +1960,16 @@ function App({
               .querySelector<HTMLButtonElement>(".example-trigger")
               ?.focus({ preventScroll: true }),
         });
+      // And three bodies, last.
+      else if (incoming.threeBody)
+        threeBodyOwner.begin({
+          study: incoming,
+          via: "keyboard",
+          restoreFocus: () =>
+            document
+              .querySelector<HTMLButtonElement>(".example-trigger")
+              ?.focus({ preventScroll: true }),
+        });
     } catch (e) {
       setLinkNotice(
         e instanceof LinkError ? e.message : "This link could not be read.",
@@ -2318,6 +2332,19 @@ function App({
                       study: {
                         ...structuredClone(snapshot()),
                         shorten: presetShorten(preset),
+                      },
+                      via,
+                      restoreFocus,
+                    }),
+                }}
+                // Nor do three bodies.
+                threeBodies={{
+                  examples: threeBodyExamples,
+                  open: (preset, restoreFocus, via) =>
+                    threeBodyOwner.begin({
+                      study: {
+                        ...structuredClone(snapshot()),
+                        threeBody: presetThreeBody(preset),
                       },
                       via,
                       restoreFocus,
@@ -3662,6 +3689,9 @@ const LacePreview = lazy(() =>
 const ShortenPreview = lazy(() =>
   import("./shorten/Preview").then((m) => ({ default: m.ShortenPreview })),
 );
+const ThreeBodyPreview = lazy(() =>
+  import("./threebody/Preview").then((m) => ({ default: m.ThreeBodyPreview })),
+);
 const SpatialApp = lazy(() => import("./spatial/SpatialApp"));
 const SpatialAtlasPreview = lazy(() => import("./spatial/AtlasPreview"));
 const HarmonicFitPreview = lazy(() => import("./spatial/HarmonicFitPreview"));
@@ -3693,8 +3723,10 @@ function Notebook() {
   const [garden, setGarden] = useState<GardenEntry | null>(null);
   const [lace, setLace] = useState<LaceEntry | null>(null);
   const [shorten, setShorten] = useState<ShortenEntry | null>(null);
+  const [threeBody, setThreeBody] = useState<ThreeBodyEntry | null>(null);
   // An overlay study holds the notebooks beneath it inert.
   const overlay =
+    !!threeBody ||
     !!excursion ||
     !!atlas ||
     !!spatialAtlas ||
@@ -3729,6 +3761,7 @@ function Notebook() {
     garden,
     lace,
     shorten,
+    threeBody,
   ]);
   const initial = notebookKind();
   const [mode, setMode] = useState<NotebookKind>(initial);
@@ -3752,6 +3785,7 @@ function Notebook() {
     setGarden(null);
     setLace(null);
     setShorten(null);
+    setThreeBody(null);
     setExcursion(null);
     focusRequest.current = via;
     show(next);
@@ -3783,7 +3817,7 @@ function Notebook() {
       setGarden(null);
       setLace(null);
       setShorten(null);
-      setShorten(null);
+      setThreeBody(null);
       show(notebookKind());
     };
     window.addEventListener("popstate", pop);
@@ -3809,7 +3843,7 @@ function Notebook() {
       setGarden(null);
       setLace(null);
       setShorten(null);
-      setShorten(null);
+      setThreeBody(null);
       const id = ++links.current;
       let next: { notebook: NotebookKind; link: SharedStudy };
       try {
@@ -3876,6 +3910,29 @@ function Notebook() {
                     onReturn={(via) => {
                       restoreFocus.current = () => loom.restoreFocus(via);
                       setLoom(null);
+                    }}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {threeBody && (
+              <div
+                className={theme.dark ? "app dark" : "app"}
+                style={{ ...theme.style, display: "contents" }}
+              >
+                <Suspense
+                  fallback={
+                    <div className="loom-loading" role="status">
+                      Opening three bodies…
+                    </div>
+                  }
+                >
+                  <ThreeBodyPreview
+                    key={shared["2d"]?.id ?? "local"}
+                    entry={threeBody}
+                    onReturn={(via) => {
+                      restoreFocus.current = () => threeBody.restoreFocus(via);
+                      setThreeBody(null);
                     }}
                   />
                 </Suspense>
@@ -4339,12 +4396,16 @@ function Notebook() {
                   <GardenContext.Provider value={{ begin: setGarden }}>
                     <LaceContext.Provider value={{ begin: setLace }}>
                       <ShortenContext.Provider value={{ begin: setShorten }}>
-                        <App
-                          active={mode === "2d"}
-                          shared={shared["2d"]}
-                          adoption={adoptions["2d"]}
-                          sourceSnapshot={sourceSnapshot}
-                        />
+                        <ThreeBodyContext.Provider
+                          value={{ begin: setThreeBody }}
+                        >
+                          <App
+                            active={mode === "2d"}
+                            shared={shared["2d"]}
+                            adoption={adoptions["2d"]}
+                            sourceSnapshot={sourceSnapshot}
+                          />
+                        </ThreeBodyContext.Provider>
                       </ShortenContext.Provider>
                     </LaceContext.Provider>
                   </GardenContext.Provider>

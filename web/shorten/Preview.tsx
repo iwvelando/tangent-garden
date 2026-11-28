@@ -911,7 +911,12 @@ export function ShortenPreview({
           notebook="2d"
           // One mode per link: a garden or lace there would open instead.
           study={() => {
-            const { garden: _, lace: __, ...base } = entry.study;
+            const {
+              garden: _,
+              lace: __,
+              threeBody: ___,
+              ...base
+            } = entry.study;
             return { ...base, shorten: linkShorten(study) };
           }}
           disabled={!valid || !current}

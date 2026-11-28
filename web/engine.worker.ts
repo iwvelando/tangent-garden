@@ -61,6 +61,11 @@ declare const tangentGardenShorten: (
   json: string,
 ) => string | { json: string; lifted: import("./lifted").Lifted };
 declare const tangentGardenSpatialProbe: (json: string) => string;
+// A three-body history sampled at physical times
+// (engine/threebody.Prepared), or the reference corpus as plain JSON.
+declare const tangentGardenThreeBody: (
+  json: string,
+) => string | { json: string; lifted: import("./lifted").Lifted };
 // Scan for changes (engine3/scan.go): readings only, as plain JSON.
 declare const tangentGardenImplicitScan: (json: string) => string;
 // A result's large numeric arrays arrive beside its JSON, on one buffer
@@ -140,6 +145,8 @@ self.onmessage = async ({
     | "laceFrame"
     | "laceSolid"
     | "shorten"
+    | "threeBody"
+    | "threeBodyCorpus"
     | "implicit-scan";
   loom?: import("./loom/model").LoomRequest;
   garden?: import("./garden/model").GardenRequest;
@@ -148,6 +155,7 @@ self.onmessage = async ({
   laceFrame?: import("./lace/model").LaceFrameRequest;
   laceSolid?: import("./lace/physical").LaceSolidRequest;
   shorten?: import("./shorten/model").ShortenRequest;
+  threeBody?: import("./threebody/model").ThreeBodyRequest;
   pointOnly?: boolean;
   points?: import("./types").Vec[];
   source?: Pick<import("./planar-link").PlanarStudy, "config" | "bounds">;
@@ -221,6 +229,34 @@ self.onmessage = async ({
       const raw = tangentGardenGardenFrame(
         JSON.stringify({ garden, progress: f.progress }),
       );
+      postLifted(data.id, raw, start);
+      return;
+    }
+    if (data.action === "threeBodyCorpus") {
+      postLifted(data.id, tangentGardenThreeBody('{"corpus":true}'), 0);
+      return;
+    }
+    if (data.action === "threeBody") {
+      const q = data.threeBody;
+      if (!q || !Array.isArray(q.bodies))
+        throw fieldError("bodies", "Enter three bodies.");
+      // JSON would turn NaN or infinity into null, which Go reads as zero.
+      const numbers: [string, unknown][] = [
+        ...q.bodies.flatMap((b, i): [string, unknown][] => [
+          [`bodies.${i}.mass`, b.mass],
+          [`bodies.${i}.position.x`, b.position?.x],
+          [`bodies.${i}.position.y`, b.position?.y],
+          [`bodies.${i}.velocity.x`, b.velocity?.x],
+          [`bodies.${i}.velocity.y`, b.velocity?.y],
+        ]),
+        ["duration", q.duration],
+        ["samples", q.samples],
+      ];
+      for (const [path, v] of numbers)
+        if (typeof v !== "number" || !Number.isFinite(v))
+          throw fieldError(path, "Enter a finite number.");
+      const start = performance.now();
+      const raw = tangentGardenThreeBody(JSON.stringify({ request: q }));
       postLifted(data.id, raw, start);
       return;
     }

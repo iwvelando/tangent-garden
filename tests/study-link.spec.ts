@@ -3845,6 +3845,93 @@ test("loom links carry derived paths with the pole or distance they read", async
   assert.equal(at({ kind: "inversion", input: "offset" }), "offset");
 });
 
+test("three-body links conform the configuration, an edited state and the presentation, never the history", async () => {
+  const { presetThreeBody, threeBodyPresets } =
+    await import("../web/threebody/model");
+  const ordinary = planarPreset(0);
+  // Absent: an older link opens exactly as before, with no three bodies.
+  assert.equal("threeBody" in planarStudy(ordinary), false);
+  assert.deepEqual(planarStudy(ordinary), structuredClone(ordinary));
+  const body = (mass: number, x: number) => ({
+    mass,
+    position: { x, y: -x / 2 },
+    velocity: { x: 0.1, y: -0.2 },
+  });
+  const edited = {
+    bodies: [body(0.5, -1), body(0.25, 0.5), body(0.25, 1.5)],
+    duration: Math.PI,
+  };
+  for (let i = 0; i < threeBodyPresets.length; i++)
+    for (const extra of [{}, edited]) {
+      const threeBody = {
+        ...presetThreeBody(i),
+        ...extra,
+        view: { x: 12, y: -4, zoom: 3.5 },
+      };
+      const saved = planarStudy({ ...ordinary, threeBody });
+      assert.deepEqual(saved.threeBody, threeBody);
+      const decoded = await readStudyLink(await writeStudyLink("2d", saved));
+      assert.deepEqual(planarStudy(decoded.study).threeBody, threeBody);
+      assert.deepEqual(
+        Object.keys(planarStudy(decoded.study).threeBody!).sort(),
+        [
+          "configuration",
+          "framing",
+          "ghost",
+          "speed",
+          "trail",
+          "triangle",
+          "view",
+          "weight",
+          "window",
+          ...Object.keys(extra),
+        ].sort(),
+      );
+    }
+  const threeBody = { ...presetThreeBody(0), ...edited };
+  // Bounds are accepted.
+  for (const patch of [
+    { duration: 100 },
+    { duration: Number.MIN_VALUE },
+    { speed: 0.01 },
+    { speed: 100 },
+    { window: 0.01 },
+    { window: 100 },
+    { bodies: [body(0.001, -10), body(0.499, 10), body(0.5, 0)] },
+  ])
+    assert.deepEqual(
+      planarStudy({ ...ordinary, threeBody: { ...threeBody, ...patch } })
+        .threeBody,
+      { ...threeBody, ...patch },
+    );
+  for (const [patch, field] of [
+    [{ configuration: "four-body" }, "threeBody.configuration"],
+    [{ duration: 0 }, "threeBody.duration"],
+    [{ duration: 100.5 }, "threeBody.duration"],
+    [{ speed: 0.001 }, "threeBody.speed"],
+    [{ window: 101 }, "threeBody.window"],
+    [{ trail: "comet" }, "threeBody.trail"],
+    [{ framing: "follow" }, "threeBody.framing"],
+    [{ ghost: 1 }, "threeBody.ghost"],
+    [{ bodies: edited.bodies.slice(0, 2) }, "threeBody.bodies"],
+    [
+      { bodies: [body(0.0005, 0), ...edited.bodies.slice(1)] },
+      "threeBody.bodies[0].mass",
+    ],
+    [
+      { bodies: [...edited.bodies.slice(0, 2), body(0.25, 10.5)] },
+      "threeBody.bodies[2].position.x",
+    ],
+    [{ samples: 20 }, "threeBody.samples"],
+    [{ progress: 0.5 }, "threeBody.progress"],
+  ] as const)
+    assert.throws(
+      () => planarStudy({ ...ordinary, threeBody: { ...threeBody, ...patch } }),
+      (e: Error) => e instanceof LinkError && e.field === field,
+      field,
+    );
+});
+
 test("garden links conform settings, selection and view without geometry, and older planar links stay unchanged", async () => {
   const { presetGarden, gardenPresets } = await import("../web/garden/model");
   const ordinary = planarPreset(0);

@@ -819,6 +819,84 @@ test("curves that smooth themselves help fits both tiers and states the engine's
     expect(text).toContain(limit);
 });
 
+test("three-body help fits both tiers and states the engine's limits", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  await page.locator('[data-threebody-example="0"]').click();
+  const d = page.getByRole("dialog", { name: "Three bodies" });
+  await expect(d.locator("#threebody-artwork")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
+  const entries = await d.evaluate((root) =>
+    Array.from(root.querySelectorAll(".help-toggle"), (toggle) => {
+      const h = document.getElementById(toggle.getAttribute("aria-controls")!)!;
+      const brief = h.querySelector(".hint-brief")?.cloneNode(true) as
+        HTMLElement | undefined;
+      brief?.querySelector(".help-more")?.remove();
+      return {
+        topic: toggle.getAttribute("aria-label"),
+        paired: !!toggle.closest(".pair"),
+        brief: brief?.textContent ?? h.textContent ?? "",
+        more: h.querySelector(".hint-more")?.textContent ?? "",
+      };
+    }),
+  );
+  const bodies = [1, 2, 3].flatMap((i) => [
+    `About Body ${i} mass`,
+    `About Body ${i} position x`,
+    `About Body ${i} position y`,
+    `About Body ${i} velocity x`,
+    `About Body ${i} velocity y`,
+  ]);
+  expect(entries.map((e) => e.topic)).toEqual([
+    "About Configuration",
+    "About Animation progress",
+    "About Speed",
+    "About Export resolution",
+    "About Export quality",
+    "About Trail",
+    "About Trail length",
+    "About Frame",
+    ...bodies,
+    "About Duration",
+    "About Line weight",
+  ]);
+  for (const e of entries) {
+    expect(words(e.brief), e.topic!).toBeLessThanOrEqual(
+      e.paired ? pairedBriefWords : 20,
+    );
+    expect(words(e.more), e.topic!).toBeLessThanOrEqual(moreWords);
+  }
+  // The help and the editor's note state the limits the engine enforces,
+  // the note's second tier one click away.
+  await d
+    .locator(".threebody-units")
+    .getByRole("button", { name: "Show more" })
+    .click();
+  await expect(d.locator("#threebody-units-more")).toBeVisible();
+  const text = [
+    ...entries.map((e) => `${e.brief} ${e.more}`),
+    await d.locator("#threebody-units-more").textContent(),
+  ].join(" ");
+  for (const limit of [
+    "0.001–1",
+    "total 1",
+    "±10",
+    "at most 20",
+    "up to 100",
+    "0.0001",
+    "200,000",
+    "1e−6",
+    "0.01–100",
+    "closer than 0.01",
+    "√(L³/GM)",
+  ])
+    expect(text).toContain(limit);
+});
+
 test("surface engraving help states its scope within the sidebar word limits", async ({
   page,
 }) => {

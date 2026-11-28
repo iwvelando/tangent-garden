@@ -53,6 +53,8 @@ The profile travels by its values, never by a printer's name alone, so a recipie
 
 The schema bounds each value as Go does: diameter 10–300, the clip 0.05–0.98 and the grid 0.05–1, and the profile's envelope at most 2,000, nozzle and extrusion width 5, layer heights 2, finest values and minima 50, its `id` at most 64 characters and `name` 120. Unknown members, damaged values and an incomplete profile are refused by their field. A settings or profile version newer than this build reads is refused under `lace.physical.version` or `lace.physical.profile.version`, saying a newer version is needed; the study beneath is left as it was. Go refuses the exclusive bounds (a line or relief of 0) and a crop's radius past 0.95 under their controls when the plaque is prepared. The prepared solid, the job and the file never enter a link.
 
+A 2D link may carry one study open over the notebook's: `garden`, `lace`, `shorten` or `threeBody`, each conformed by its own schema in `planar-link.ts` ([architecture](architecture.md)). A three-body link carries the configuration's name, an edited initial state and duration only once edited, and the presentation; never the integrated history or the playback position, which the recipient's worker prepares again.
+
 Limits apply independently:
 
 | Budget | Limit |

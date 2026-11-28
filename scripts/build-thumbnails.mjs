@@ -230,12 +230,13 @@ try {
         await loom.waitFor({ state: "hidden" });
         console.log(`2d ${name}`);
       }
-      // The Apollonian garden's, hyperbolic lace's and curve shortening's
-      // authored studies open over the study too.
+      // The Apollonian garden's, hyperbolic lace's, curve shortening's and
+      // three bodies' authored studies open over the study too.
       for (const [kind, title, selector] of [
         ["garden", "The Apollonian garden", "#garden-artwork"],
         ["lace", "Hyperbolic lace", "#lace-artwork"],
         ["shorten", "Curves that smooth themselves", "#shorten-artwork"],
+        ["threebody", "Three bodies", "#threebody-artwork"],
       ]) {
         await button.click();
         const overlays = await gallery
