@@ -250,8 +250,11 @@ func TestPythagoreanAgainstTheReference(t *testing.T) {
 			break
 		}
 	}
-	// Measured 28.1 at 10⁻⁶ (37.3 at 10⁻³).
-	if horizon < 25 {
+	// Measured 23.1 at 10⁻⁶ in WASM (30.6 at 10⁻³) and on an amd64 runner
+	// with FMA, 27.9 (37.2) on arm64 and 28.1 (37.3) on amd64 without FMA:
+	// a last-bit difference in the step controller's math.Pow moves which
+	// close approach breaks agreement.
+	if horizon < 20 {
 		t.Errorf("agreement within 10⁻⁶ only until %g", horizon)
 	}
 	// Bodies 2 and 3 (masses 4 and 5) end bound; body 1 (mass 3) recedes.
@@ -321,13 +324,14 @@ func TestReverseTimeReturns(t *testing.T) {
 		max  float64
 	}{
 		// Positions measured within 9.2·10⁻⁹, 2.1·10⁻⁷, 7.4·10⁻⁹ and,
-		// before its close approaches, 3.8·10⁻⁹ for Burrau's problem; the
-		// hierarchical inner binary's velocities, turning ten times as
-		// fast, within 2·10⁻⁶.
+		// through its first close approaches, 1.0·10⁻⁸ (arm64) to 4.2·10⁻⁸
+		// (an amd64 runner with FMA) for Burrau's problem; the hierarchical
+		// inner binary's velocities, turning ten times as fast, within
+		// 2·10⁻⁶.
 		{"figure-eight", 100, 5e-8},
 		{"hierarchical", 100, 5e-6},
 		{"lagrange-routh", 100, 5e-8},
-		{"pythagorean", 20, 2e-8},
+		{"pythagorean", 20, 1e-7},
 	} {
 		k := caseNamed(c.name)
 		p, _ := Request{Bodies: k.Bodies, Duration: c.dur, Samples: 2}.Prepare()

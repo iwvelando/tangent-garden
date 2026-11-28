@@ -27,7 +27,11 @@ type Case struct {
 	Duration        float64 `json:"duration"`
 	Periodicity     string  `json:"periodicity"`
 	Stability       string  `json:"stability"`
-	Observed        string  `json:"observed"`
+	// What the study's own history shows against the independent
+	// reference. The study runs the WASM build, whose arithmetic is the same
+	// in every browser; native builds step sensitive cases differently
+	// (docs/mathematics.md#three-bodies), so its numbers are WASM's.
+	Observed string `json:"observed"`
 }
 
 // normalize maps published masses, positions and velocities (G = 1) to the
@@ -108,7 +112,7 @@ func Corpus() []Case {
 		PublishedPeriod: 6.32591398, Period: 6.32591398 * tf, Duration: 3 * 6.32591398 * tf,
 		Periodicity: "periodic: a choreography, each body on the same curve a third of a period apart",
 		Stability:   "linearly stable (Roberts 2007) and, numerically, KAM stable (Simó)",
-		Observed:    "over 100 time units the history stays within 4·10⁻⁹ of an independent high-precision reference, and the labeled positions and velocities return within 6·10⁻¹⁰ after one period",
+		Observed:    "over 100 time units the history stays within 5·10⁻⁹ of an independent high-precision reference, and the labeled positions and velocities return within 6·10⁻¹⁰ after one period",
 	})
 
 	equal := []float64{1.0 / 3, 1.0 / 3, 1.0 / 3}
@@ -119,7 +123,7 @@ func Corpus() []Case {
 		Period: period, Duration: 2 * period,
 		Periodicity: "periodic: a rigid rotation",
 		Stability:   "linearly unstable: Routh's value 27(m₁m₂+m₁m₃+m₂m₃)/M² is 9, above 1",
-		Observed:    "rounding alone breaks the rotation: the history stays within 10⁻⁶ of an independent high-precision reference only until t = 72.6",
+		Observed:    "rounding alone breaks the rotation: the history stays within 10⁻⁶ of an independent high-precision reference only until t = 73.0",
 	})
 
 	routh := []float64{0.97, 0.025, 0.005}
@@ -147,7 +151,7 @@ func Corpus() []Case {
 		Duration:    20,
 		Periodicity: "not known to be periodic",
 		Stability:   "regular by the empirical Mardling–Aarseth criterion (outer to inner separation 6.25 against about 3.1), not proven",
-		Observed:    "over 100 time units the history stays within 10⁻⁷ of an independent high-precision reference",
+		Observed:    "over 100 time units the history stays within 1.1·10⁻⁷ of an independent high-precision reference",
 	})
 
 	// Burrau's problem: masses 3, 4, 5 at rest at the corners of a 3-4-5
@@ -160,7 +164,7 @@ func Corpus() []Case {
 		Duration:    math.Min(100, 70*tf),
 		Periodicity: "not periodic: it ends with the lightest body ejected and the others bound",
 		Stability:   "unstable: it disintegrates",
-		Observed:    "the history stays within 10⁻⁶ of an independent high-precision reference until t = 28.1 and within 10⁻³ until t = 37.3; later positions are not reproducible, but the outcome is: under perturbations of 10⁻¹³ body 1 is still ejected",
+		Observed:    "the history stays within 10⁻⁶ of an independent high-precision reference until t = 23.1 and within 10⁻³ until t = 30.6; later positions are not reproducible, but the outcome is: under perturbations of 10⁻¹³ body 1 is still ejected",
 	})
 
 	// Lagrange's equal-mass triangle with body 1 moved outward by 10⁻⁶.
@@ -172,7 +176,7 @@ func Corpus() []Case {
 		Duration:    60,
 		Periodicity: "not periodic",
 		Stability:   "a perturbation of a linearly unstable equilibrium",
-		Observed:    "the history stays within 10⁻⁶ of an independent high-precision reference until t = 83.8",
+		Observed:    "the history stays within 10⁻⁶ of an independent high-precision reference until t = 77.2",
 	})
 	// Two bodies falling together from rest, the third above them: a
 	// terminal to inspect, not an orbit. The history stops where bodies 1
