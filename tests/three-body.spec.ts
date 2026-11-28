@@ -755,3 +755,78 @@ for (const [name, viewport] of [
         await toggle.click();
       }
   });
+
+// Burrau's ejected body flies far out: the whole history's frame shrinks
+// the dance, and the close dance's keeps it large, each fixed for the
+// history whatever the moment shown.
+test("the close dance frames the encounters without the fleeing body", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const d = await openStudy(page, burrau);
+  await expect(d.getByLabel("Frame", { exact: true })).toHaveValue("close");
+  const close = (await still(page, d)).record;
+  await seek(d, 1);
+  expect((await still(page, d)).record.frame).toEqual(close.frame);
+  await d.getByLabel("Frame", { exact: true }).selectOption("whole");
+  const whole = (await still(page, d)).record;
+  expect(whole.frame.k).toBeLessThan(close.frame.k / 2);
+  // The whole history's frame holds every body to the end; the close
+  // dance's lets the ejected one leave it.
+  const inside = (f: any, v: any) => {
+    const p = onPage(f, v);
+    return p.x >= 0 && p.x <= 1000 && p.y >= 0 && p.y <= 760;
+  };
+  expect(whole.final.positions.every((v: any) => inside(whole.frame, v))).toBe(
+    true,
+  );
+  expect(close.final.positions.some((v: any) => !inside(close.frame, v))).toBe(
+    true,
+  );
+});
+
+// Returning to the history already shown, while another is still being
+// prepared, drops that one: its reply never replaces the drawing.
+test("a configuration abandoned before its history arrives never shows", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const post = Worker.prototype.postMessage;
+    (window as any).held = [];
+    Worker.prototype.postMessage = function (data: any, ...rest: any[]) {
+      if ((window as any).hold && data.action === "threeBody") {
+        (window as any).held.push(() =>
+          (post as any).call(this, data, ...rest),
+        );
+        return;
+      }
+      return (post as any).call(this, data, ...rest);
+    };
+  });
+  await page.goto("/");
+  const d = await openStudy(page);
+  await page.evaluate(() => {
+    (window as any).hold = true;
+    (window as any).seen = [];
+    const status = document.querySelector(".threebody-status")!;
+    new MutationObserver(() =>
+      (window as any).seen.push(status.textContent),
+    ).observe(status, { subtree: true, characterData: true, childList: true });
+  });
+  const pick = d.getByLabel("Configuration", { exact: true });
+  await pick.selectOption("pythagorean");
+  await expect
+    .poll(() => page.evaluate(() => (window as any).held.length))
+    .toBe(1);
+  await pick.selectOption("figure-eight");
+  await page.evaluate(() => {
+    (window as any).hold = false;
+    for (const send of (window as any).held) send();
+  });
+  await page.waitForTimeout(1000);
+  await ready(d);
+  await expect(status(d)).toContainText("t = 32.8704");
+  expect(
+    await page.evaluate(() => (window as any).seen.join(" ")),
+  ).not.toContain("43.121");
+});
