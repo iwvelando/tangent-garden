@@ -830,3 +830,82 @@ test("a configuration abandoned before its history arrives never shows", async (
     await page.evaluate(() => (window as any).seen.join(" ")),
   ).not.toContain("43.121");
 });
+
+// A presentation value being retyped, emptied or out of range is refused
+// under its field: the drawing keeps the last trail length it could draw,
+// and nothing that would record the refused value is offered.
+test("a refused speed or trail length keeps the drawing and holds back the link and exports", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  const d = await openStudy(page);
+  await seek(d, 0.5);
+  const drawn = await picture(d);
+  const link = d.getByRole("button", { name: "Copy link", exact: true });
+  const image = d.getByRole("button", { name: /Export image/ });
+  const movie = d.getByRole("button", {
+    name: /^Export (MP4 video|animated WebP)/,
+  });
+  await expect(link).toBeEnabled();
+  await expect(image).toBeEnabled();
+  await expect(movie).toBeEnabled();
+  const length = d.getByLabel("Trail length", { exact: true });
+  for (const value of ["", "0", "500"]) {
+    await length.fill(value);
+    await expect(
+      refusal(d, "Trail length must be 0.01–100 time units."),
+    ).toBeVisible();
+    expect((await picture(d)).trailPaths).toEqual(drawn.trailPaths);
+    await expect(link).toBeDisabled();
+    await expect(image).toBeDisabled();
+    await expect(movie).toBeDisabled();
+  }
+  // Whole trails put back the last length admitted, so the refused one
+  // cannot return with the moving window.
+  const trail = d.getByLabel("Trail", { exact: true });
+  await trail.selectOption("whole");
+  await expect(link).toBeEnabled();
+  await trail.selectOption("window");
+  await expect(length).toHaveValue("3");
+  expect((await picture(d)).trailPaths).toEqual(drawn.trailPaths);
+  await length.fill("1");
+  await expect(d.locator(".field-error")).toHaveCount(0);
+  await expect(link).toBeEnabled();
+  expect((await picture(d)).trails[0]).toBeLessThan(drawn.trails[0]);
+  const speed = d.getByLabel("Speed", { exact: true });
+  for (const value of ["", "200"]) {
+    await speed.fill(value);
+    await expect(
+      refusal(d, "Speed must be 0.01–100 time units per second."),
+    ).toBeVisible();
+    await expect(link).toBeDisabled();
+  }
+  await speed.fill("2");
+  await expect(link).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+// The configurations come from the engine; if they cannot be read, the
+// study says so and offers to try again rather than waiting forever.
+test("configurations that cannot be read are reported, and Try again reads them", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await settled(page);
+  await page.route(/\.wasm/, (r) => r.abort());
+  await page.getByRole("button", { name: "Browse notebook examples" }).click();
+  const gallery = page.getByRole("dialog", { name: "Notebook examples" });
+  await gallery
+    .locator(`[data-threebody-example][data-example-title="${eight}"]`)
+    .click();
+  const d = page.getByRole("dialog", { name: title });
+  const again = d.getByRole("button", { name: "Try again", exact: true });
+  await expect(again).toBeVisible();
+  await page.unroute(/\.wasm/);
+  await again.click();
+  await ready(d);
+  await expect(status(d)).toContainText("t = 32.8704");
+  await expect(again).toHaveCount(0);
+});

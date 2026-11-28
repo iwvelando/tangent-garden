@@ -218,13 +218,22 @@ export function ThreeBodyPreview({
       : history && end / study.speed > 3600
         ? `At this speed the motion would last over an hour; it must be at least ${readout(end / 3600, 3)}.`
         : "";
+  const windowValid =
+    Number.isFinite(study.window) &&
+    study.window >= windows[0] &&
+    study.window <= windows[1];
   const windowError =
-    study.trail === "window" &&
-    (!Number.isFinite(study.window) ||
-      study.window < windows[0] ||
-      study.window > windows[1])
+    study.trail === "window" && !windowValid
       ? `Trail length must be ${windows[0]}–${windows[1]} time units.`
       : "";
+  // The trail length drawn: the last one admitted, so a value being
+  // retyped, emptied or out of range never reaches the drawing. Whole
+  // trails bring it back to the field (see Trail).
+  const [drawnWindow, setDrawnWindow] = useState(study.window);
+  if (windowValid && drawnWindow !== study.window) setDrawnWindow(study.window);
+  // A refused speed or trail length would enter a link or an export's
+  // record as entered, so neither is offered until it is corrected.
+  const presentable = !speedError && !windowError;
   const scalarError = Object.values(scalars).find((s) => s.error);
   const scalarPending = Object.values(scalars).some((s) => s.pending);
   const activeError =
@@ -261,7 +270,9 @@ export function ThreeBodyPreview({
     let live = true;
     loadCorpus().then(
       (cases) => live && setCorpus(cases),
-      (e: Error) => live && setError({ message: e.message }),
+      // Before the corpus there is no request, so its refusal is the
+      // empty request's.
+      (e: Error) => live && setError({ message: e.message, key: "" }),
     );
     return () => {
       live = false;
@@ -401,7 +412,7 @@ export function ThreeBodyPreview({
       frame,
       time,
       trail: study.trail,
-      window: study.window,
+      window: drawnWindow,
       ghost: study.ghost,
       triangle: study.triangle,
       camera: study.view,
@@ -471,7 +482,7 @@ export function ThreeBodyPreview({
   });
   async function still(format: string, settings: Still) {
     const props = drawing();
-    if (!ready || !props) return;
+    if (!ready || windowError || !props) return;
     const id = ++exportGeneration.current;
     try {
       await threeBodyStill(
@@ -490,7 +501,7 @@ export function ThreeBodyPreview({
   // only Cancel or Return discards it.
   async function movie() {
     const props = drawing();
-    if (!canPlay || !props) return;
+    if (!canPlay || windowError || !props) return;
     pause();
     setExporting(true);
     setExportProgress(0);
@@ -529,7 +540,7 @@ export function ThreeBodyPreview({
     key,
     time,
     study.trail,
-    study.window,
+    drawnWindow,
     study.ghost,
     study.triangle,
     study.framing,
@@ -739,12 +750,12 @@ export function ThreeBodyPreview({
             const { garden: _, lace: __, shorten: ___, ...base } = entry.study;
             return { ...base, threeBody: study };
           }}
-          disabled={!valid || !current}
+          disabled={!valid || !current || !presentable}
         />
         <ExportImageMenu
           kind="three-bodies"
           revision={drawn}
-          disabled={!ready || playing || exporting}
+          disabled={!ready || !!windowError || playing || exporting}
           base={threeBodyPage}
           onSave={still}
         />
@@ -866,6 +877,7 @@ export function ThreeBodyPreview({
                   className="animation-export"
                   disabled={
                     !canPlay ||
+                    !!windowError ||
                     exportState.formats?.[exportState.chosen] !== "yes" ||
                     Math.ceil((end / study.speed) * exportState.fps) > 7200
                   }
@@ -888,7 +900,11 @@ export function ThreeBodyPreview({
                       ["whole", "Whole so far"],
                       ["window", "Moving window"],
                     ],
-                    (trail) => present({ trail }),
+                    (trail) =>
+                      present({
+                        trail,
+                        ...(!windowValid && { window: drawnWindow }),
+                      }),
                     threeBodyHelp.trail,
                   )}
                   <Field label="Trail length" help={threeBodyHelp.window}>
